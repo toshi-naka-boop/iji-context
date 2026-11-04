@@ -1,24 +1,23 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
-  "designVersion": "v4",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v4:a93344817a4e",
+  "currentNode": "実装",
+  "status": "in_progress",
+  "designVersion": "v5",
+  "approvedDesignVersion": "v5",
+  "approvedDesignSha256": "0687ff9407f4285a3fdcc7da8d7ca391ba61943a271e7a005d902fea871afc20",
+  "approvedAt": "2026-11-04T15:37:38+09:00",
+  "approvalEvidence": "v4:a93344817a4e 承認。C-11 は (b)。K2 に F400 処方箋料 60 点を足し合計 6,253 点とする。特定疾患処方管理加算は主病が糖尿病・高血圧のため付けない（2024 改定で対象外）。(a) は不採用：処方箋を交付しない月は C002 注の 300 点加算が立つため、6,193 点を維持できない。EM #7-6 の下に K2 の変更を spec-input 決定として注記し、決定56 を 6,253 点に更新。コミットして 11/5 の依存導入と Agent SDK 確認に進んでよい。",
+  "requiredApprovalFingerprint": "v5:0687ff9407f4",
   "baseline": "main@634e39d",
   "criticRound": 2,
-  "openIssueIds": [
-    "C-11"
-  ],
+  "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "v4 の承認（fingerprint 付き・500字以内）と C-11 の回答を待つ。承認後 11/5 から実装",
+  "nextAction": "11/5: 依存導入と Agent SDK の API Route 動作確認（impl-plan 最大リスク）。その後 design.md の実装",
   "lastUpdated": "2026-11-04",
   "delegation": {
     "批評": "claude/claude-opus-5-5 + codex/gpt-6.1-sol xhigh"
-  }
+  },
+  "approvalNote": "承認は v4:a93344817a4e に対するもの。v5 は同じ返信で指示された C-11(b)（K2=6,253 点）の反映のみで、それ以外の差分はない"
 }
