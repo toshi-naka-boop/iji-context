@@ -1,0 +1,24 @@
+{
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
+  "designVersion": "v4",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v4:a93344817a4e",
+  "baseline": "main@634e39d",
+  "criticRound": 2,
+  "openIssueIds": [
+    "C-11"
+  ],
+  "requiredReads": [
+    "design.md",
+    "ledger.md"
+  ],
+  "nextAction": "v4 の承認（fingerprint 付き・500字以内）と C-11 の回答を待つ。承認後 11/5 から実装",
+  "lastUpdated": "2026-11-04",
+  "delegation": {
+    "批評": "claude/claude-opus-5-5 + codex/gpt-6.1-sol xhigh"
+  }
+}
