@@ -16,7 +16,7 @@
     "reviews/round-16-correctness.md",
     "reviews/round-16-codex.md"
   ],
-  "nextAction": "round-16 対応済み（v21:1892f740faf1、§7 合格 315 本）。コミットと PR #1 への push の承認待ち",
+  "nextAction": "未コミット：F4 UKE・K3〜K6・SDK 確認・F1 医師確認・F7/F10・F9・F2（Agent SDK でツール 6 つ、構造化出力、実機で 1 回動作確認済み）。361 本合格。ユーザー確認待ち：S-1（FR-66 と X-57）、K3・K4 の要介護度、K6 の保険、キャラ設定、F7 の正解の定義・F10 のしきい値・F9 の数え方。次は画面（算定画面・医師画面・会議の議題）",
   "lastUpdated": "2026-11-05",
   "delegation": {
     "実装": "claude/claude-opus-5-5（メイン）",

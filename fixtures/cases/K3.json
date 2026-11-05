@@ -1,0 +1,144 @@
+{
+  "claimId": "K3-2025-03",
+  "yearMonth": "2025-03",
+  "payer": "国保連",
+  "prefecture": "東京都",
+  "facts": {
+    "age": {
+      "known": true,
+      "value": 78
+    },
+    "insurance": {
+      "known": true,
+      "value": "後期高齢者"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.1
+    },
+    "careLevel": {
+      "known": false
+    },
+    "table7": {
+      "known": true,
+      "value": true
+    },
+    "table8_2": {
+      "known": true,
+      "value": true
+    },
+    "mainDisease": {
+      "known": true,
+      "value": "パーキンソン病"
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": null
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    }
+  },
+  "events": [
+    {
+      "type": "visit",
+      "date": "2025-03-03",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-04",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-05",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-06",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-10",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-12",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-14",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-17",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-19",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-21",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-24",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-27",
+      "sameBuildingCount": 1
+    }
+  ],
+  "lines": [
+    {
+      "kubun": "C001_1I",
+      "count": 12,
+      "dates": [
+        "2025-03-03",
+        "2025-03-04",
+        "2025-03-05",
+        "2025-03-06",
+        "2025-03-10",
+        "2025-03-12",
+        "2025-03-14",
+        "2025-03-17",
+        "2025-03-19",
+        "2025-03-21",
+        "2025-03-24",
+        "2025-03-27"
+      ]
+    },
+    {
+      "kubun": "C002_2I1",
+      "count": 1,
+      "dates": [
+        "2025-03-27"
+      ]
+    }
+  ]
+}

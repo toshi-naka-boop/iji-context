@@ -1,0 +1,12 @@
+{
+  "_note": "合成データ。氏名・性別・生年月日・保険者番号・負担者番号・受給者番号はすべて架空（年齢と保険・公費は EM 5-1 に合わせた。それ以外は根拠のない仮置き）。傷病名は未コード化（0000999）で名称だけを載せる",
+  "clinic": { "code": "9999999", "name": "架空在宅クリニック", "phone": "0300000000" },
+  "patients": {
+    "K1-2025-03": { "name": "架空　一郎", "sex": 1, "birth": "19390401", "receiptType": "1318", "insurer": { "number": "39139999", "symbol": "", "no": "00000001" }, "kohi": [], "diseases": [{ "name": "慢性心不全", "start": "20240401", "main": true }, { "name": "高血圧症", "start": "20240401" }, { "name": "２型糖尿病", "start": "20240401" }, { "name": "脳梗塞後遺症", "start": "20240401" }] },
+    "K2-2025-03": { "name": "架空　二郎", "sex": 1, "birth": "19440401", "receiptType": "1318", "insurer": { "number": "39139999", "symbol": "", "no": "00000002" }, "kohi": [], "diseases": [{ "name": "２型糖尿病", "start": "20250101", "main": true }, { "name": "高血圧症", "start": "20250101" }] },
+    "K3-2025-03": { "name": "架空　三郎", "sex": 1, "birth": "19460401", "receiptType": "1328", "insurer": { "number": "39139999", "symbol": "", "no": "00000003" }, "kohi": [{ "payerNo": "54139999", "recipientNo": "9999999" }], "diseases": [{ "name": "パーキンソン病", "start": "20240401", "main": true }, { "name": "慢性心不全", "start": "20240401" }] },
+    "K4-2025-03": { "name": "架空　四郎", "sex": 1, "birth": "19480401", "receiptType": "1318", "insurer": { "number": "39139999", "symbol": "", "no": "00000004" }, "kohi": [], "diseases": [{ "name": "心房細動", "start": "20240401", "main": true }] },
+    "K5-2025-03": { "name": "架空　五郎", "sex": 1, "birth": "19360401", "receiptType": "1318", "insurer": { "number": "39139999", "symbol": "", "no": "00000005" }, "kohi": [], "diseases": [{ "name": "末期悪性腫瘍", "start": "20241001", "main": true, "outcome": 3 }] },
+    "K6-2025-03": { "name": "架空　六郎", "sex": 1, "birth": "19540401", "receiptType": "1118", "insurer": { "number": "139999", "symbol": "架空", "no": "00000006" }, "kohi": [], "diseases": [{ "name": "慢性心不全", "start": "20240401", "main": true }] }
+  }
+}
