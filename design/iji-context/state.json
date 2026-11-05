@@ -3,18 +3,20 @@
   "status": "awaiting_user",
   "designVersion": "v21",
   "approvedDesignVersion": "v21",
-  "approvedDesignSha256": "4f82ffc186029e673ccdd8f101c702aa8a20e751a7b765a24568e658d65424d9",
+  "approvedDesignSha256": "1892f740faf1d4de88454945696fd984aaac3b4116ce318bade4d77b6ac0823d",
   "approvedAt": "2026-11-05T00:00:00+09:00",
-  "approvalEvidence": "v21:4f82ffc18602 承認",
-  "requiredApprovalFingerprint": "v21:4f82ffc18602",
+  "approvalEvidence": "v21:1892f740faf1 承認",
+  "requiredApprovalFingerprint": "v21:1892f740faf1",
   "baseline": "feat/scaffold（docs/iji-context-design@7b02e90 から分岐）",
-  "criticRound": 15,
+  "criticRound": 16,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
-    "ledger.md"
+    "ledger.md",
+    "reviews/round-16-correctness.md",
+    "reviews/round-16-codex.md"
   ],
-  "nextAction": "v21 実装済み・§7 #1〜#11 合格（310 本）。コミットの承認待ち（3 分割、tsconfig.tsbuildinfo を .gitignore に）。その後 F4 以降",
+  "nextAction": "round-16 対応済み（v21:1892f740faf1、§7 合格 315 本）。コミットと PR #1 への push の承認待ち",
   "lastUpdated": "2026-11-05",
   "delegation": {
     "実装": "claude/claude-opus-5-5（メイン）",
