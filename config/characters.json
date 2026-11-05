@@ -1,0 +1,8 @@
+{
+  "_note": "メンターの 3 キャラ（男性 3 名。spec 決定24）。名前・一人称・口調はユーザーが決める（未定）。id は変えない",
+  "characters": [
+    { "id": "a", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" },
+    { "id": "b", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" },
+    { "id": "c", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" }
+  ]
+}
