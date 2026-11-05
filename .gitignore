@@ -5,3 +5,6 @@ node_modules/
 .next/
 *.db
 query-log/*.json
+
+# TypeScript のビルド情報
+tsconfig.tsbuildinfo
