@@ -18,7 +18,7 @@ import {
   type StoreOptions,
 } from "./store";
 import { assertTime, canonicalTime, ms } from "./time";
-import { evaluateTriggers } from "./triggers";
+import { evaluateTriggers, triggersOf } from "./triggers";
 import type { Basis, KnowledgeMeta, LifecycleEvent, TriggerKind } from "./types";
 
 export type ReviewDeps = {
@@ -197,6 +197,17 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
   buildItems(deps, reviewId, now);
   // 整理を記録するのは最後（途中で止まった整理が、議題と次の会議の日の判定を隠さないように。round-14 X-56）
   deps.db.insert(reviews).values({ reviewId, ranAt }).onConflictDoNothing().run();
+  // 待たせていた miss が今回の議題から消えた recheck の答えを反映し、議題を作り直す（v21 補足。round-16 C-61）
+  const held = deps.db
+    .select()
+    .from(digestItems)
+    .where(and(eq(digestItems.kind, "recheck"), eq(digestItems.applied, false), eq(digestItems.stale, false)))
+    .all()
+    .filter((r) => r.answer !== null);
+  if (held.length > 0) {
+    for (const r of held) reflect(deps, r.itemId, now);
+    buildItems(deps, reviewId, now);
+  }
   return { reviewId };
 }
 
@@ -211,9 +222,11 @@ function triggerOf(e: LifecycleEvent): TriggerKind {
 
 type ItemKind = "miss" | "recheck" | "ignored" | "disposal";
 
+/** 直近の改定日・改選日。トリガーと同じ規則（元の知識の層を引き継ぐ。round-16 C-62・X-60） */
 function basisDate(deps: ReviewDeps, meta: KnowledgeMeta, now: string): string | null {
-  if (meta.layer === "制度") return latestRevision(deps.calendar, now);
-  if (meta.layer === "地域") return latestReappointment(deps.calendar, meta.match.payer, meta.match.prefecture, now);
+  const t = triggersOf(meta, new Map(listKnowledge(deps.store).map((m) => [m.id, m])));
+  if (t.revision) return latestRevision(deps.calendar, now);
+  if (t.reappointment) return latestReappointment(deps.calendar, meta.match.payer, meta.match.prefecture, now);
   return null;
 }
 
@@ -495,17 +508,16 @@ export function answerItem(
   const row = deps.db.select().from(digestItems).where(eq(digestItems.itemId, input.itemId)).get();
   if (!row) throw new Error(`未知の項目: ${input.itemId}`);
   if (row.answer !== null) return { status: "duplicate" }; // round-4 X-19
+  // 最新の会議に載っていない古い項目への回答は記録だけ（round-15 X-58）。回答が届いた時点で確かめ、
+  // 回答と stale の印を同じ書き込みで残す（途中で止まっても拾い直しで反映されない。round-16 X-62）
+  const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+  const old = latest !== undefined && row.reviewId !== latest.reviewId;
   deps.db
     .update(digestItems)
-    .set({ answer: input.answer, freeText: input.freeText ?? null, answeredAt: now, applied: false })
+    .set({ answer: input.answer, freeText: input.freeText ?? null, answeredAt: now, applied: false, stale: old })
     .where(eq(digestItems.itemId, input.itemId))
     .run();
-  // 最新の会議に載っていない古い項目への回答は記録だけ（round-15 X-58）。回答が届いた時点で確かめる（v21）
-  const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
-  if (latest && row.reviewId !== latest.reviewId) {
-    deps.db.update(digestItems).set({ stale: true }).where(eq(digestItems.itemId, input.itemId)).run();
-    return { status: "stale" };
-  }
+  if (old) return { status: "stale" };
   return reflect(deps, input.itemId, now);
 }
 
@@ -578,7 +590,10 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
         .all()
         .filter((m) => (JSON.parse(m.snapshot) as { status_since: string }).status_since === since);
       if (misses.some((m) => m.answer === 2 && m.applied)) return markStale();
-      if (misses.some((m) => !m.applied)) return { status: "held" };
+      // 待たせるのは、最新の会議に載っている未回答の miss と、回答済みで未反映の miss だけ（v21 補足。round-16 C-61・X-61）
+      const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+      const blocking = misses.filter((m) => !m.applied && (m.answer !== null || m.reviewId === latest?.reviewId));
+      if (blocking.length > 0) return { status: "held" };
     }
     if (row.kind === "ignored") {
       if (meta.status === "保管") return markStale(); // v16 ユーザー判断

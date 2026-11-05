@@ -613,3 +613,70 @@ describe("v21（同じ会議の miss と recheck は査定側を優先。答え�
     expect(answer(miss, 1, "2025-03-23T00:00:00+09:00")).toEqual({ status: "stale" });
   });
 });
+
+describe("反証 round-16 の回帰（実装）", () => {
+  it("C-62・X-60: 制度層の知識の修正版も、改定日をまたいで届いた recheck の回答 1 は記録だけ", () => {
+    const k = h.system("r01");
+    h.submit("bad", "2026-05-01T00:00:00+09:00", { applied: ["R01"], kubun: ["C001", "C002"] });
+    h.result("bad", "査定", ["C002"], "2026-05-10T00:00:00+09:00");
+    h.review("2026-05-16T00:00:00+09:00");
+    answer(itemOf("miss", k)!.itemId, 2, "2026-05-17T00:00:00+09:00", "条件が足りない");
+    const fix = candidates(k)[0].id;
+    applyEvent(h.deps.store, fix, { type: "VERIFY_APPROVE" }, "2026-05-18T00:00:00+09:00");
+    applyEvent(h.deps.store, fix, { type: "TRIGGER", trigger: "idle" }, "2026-05-29T00:00:00+09:00");
+    h.review("2026-05-30T00:00:00+09:00");
+    expect(answer(itemOf("recheck", fix)!.itemId, 1, "2026-06-02T00:00:00+09:00")).toEqual({ status: "stale" });
+    expect(h.get(fix).status).toBe("要再検証");
+  });
+
+  it("X-62: 最新の会議に載っていない項目への回答は、回答と stale の印が同時に残り、拾い直しでも反映されない", () => {
+    const k = h.regional("a");
+    h.submit("bad", "2025-03-05T00:00:00+09:00");
+    h.result("bad", "査定", ["C001"], "2025-03-10T00:00:00+09:00");
+    h.review("2025-03-15T00:00:00+09:00");
+    const old = itemOf("miss", k)!;
+    h.result("bad", "通過", [], "2025-03-18T00:00:00+09:00", "保険者再審査");
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(answer(old.itemId, 2, "2025-03-23T00:00:00+09:00", "x")).toEqual({ status: "stale" });
+    const row = h.deps.db.select().from(digestItems).where(eq(digestItems.itemId, old.itemId)).get()!;
+    expect([row.answer, row.stale, row.applied]).toEqual([2, true, false]);
+    h.review("2025-03-29T00:00:00+09:00");
+    expect(h.get(k).status).toBe("承認済み");
+  });
+});
+
+describe("v21 補足（round-16 C-61・X-61）", () => {
+  function heldScenario() {
+    const k = h.regional("a");
+    h.submit("bad", "2025-03-05T00:00:00+09:00", { claimId: "c-bad" });
+    applyEvent(h.deps.store, k, { type: "TRIGGER", trigger: "idle" }, "2025-03-06T00:00:00+09:00");
+    h.result("bad", "返戻", ["C001"], "2025-03-10T00:00:00+09:00");
+    h.review("2025-03-15T00:00:00+09:00");
+    const recheck = itemOf("recheck", k)!.itemId;
+    expect(answer(recheck, 1, "2025-03-16T00:00:00+09:00")).toEqual({ status: "held" });
+    return { k, recheck };
+  }
+
+  it("待たせていた miss の提出が superseded になると、次の会議で recheck の答えが反映される", () => {
+    const { k, recheck } = heldScenario();
+    h.submit("bad2", "2025-03-17T00:00:00+09:00", { claimId: "c-bad" });
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(h.get(k).status).toBe("承認済み");
+    const row = h.deps.db.select().from(digestItems).where(eq(digestItems.itemId, recheck)).get()!;
+    expect(row.applied).toBe(true);
+  });
+
+  it("待たせていた miss の外れが通過に訂正されても、次の会議で recheck の答えが反映される", () => {
+    const { k } = heldScenario();
+    h.result("bad", "通過", [], "2025-03-18T00:00:00+09:00", "保険者再審査");
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(h.get(k).status).toBe("承認済み");
+  });
+
+  it("miss が議題に載り続けている間は待ち続ける", () => {
+    const { k } = heldScenario();
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(h.get(k).status).toBe("要再検証");
+    expect(itemOf("miss", k)?.waitingRecheck).toBe(true);
+  });
+});

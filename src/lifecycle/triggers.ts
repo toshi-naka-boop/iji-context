@@ -17,7 +17,7 @@ function idleReached(meta: KnowledgeMeta, now: string): boolean {
 }
 
 /** 効くトリガー：自分の層に加え、relates_to をたどった元の知識の層の改定・改選（v21。round-15 X-57） */
-function triggersOf(meta: KnowledgeMeta, byId: Map<string, KnowledgeMeta>): Record<TriggerKind, boolean> {
+export function triggersOf(meta: KnowledgeMeta, byId: Map<string, KnowledgeMeta>): Record<TriggerKind, boolean> {
   const t = { ...LAYER_TRIGGERS[meta.layer] };
   const seen = new Set([meta.id]);
   let cur = meta.relates_to;
