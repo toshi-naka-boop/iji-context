@@ -1,23 +1,23 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
-  "designVersion": "v5",
-  "approvedDesignVersion": "v5",
-  "approvedDesignSha256": "0687ff9407f4285a3fdcc7da8d7ca391ba61943a271e7a005d902fea871afc20",
-  "approvedAt": "2026-11-04T15:37:38+09:00",
-  "approvalEvidence": "v4:a93344817a4e 承認。C-11 は (b)。K2 に F400 処方箋料 60 点を足し合計 6,253 点とする。特定疾患処方管理加算は主病が糖尿病・高血圧のため付けない（2024 改定で対象外）。(a) は不採用：処方箋を交付しない月は C002 注の 300 点加算が立つため、6,193 点を維持できない。EM #7-6 の下に K2 の変更を spec-input 決定として注記し、決定56 を 6,253 点に更新。コミットして 11/5 の依存導入と Agent SDK 確認に進んでよい。",
-  "requiredApprovalFingerprint": "v5:0687ff9407f4",
+  "currentNode": "完了",
+  "status": "awaiting_user",
+  "designVersion": "v21",
+  "approvedDesignVersion": "v21",
+  "approvedDesignSha256": "4f82ffc186029e673ccdd8f101c702aa8a20e751a7b765a24568e658d65424d9",
+  "approvedAt": "2026-11-05T00:00:00+09:00",
+  "approvalEvidence": "v21:4f82ffc18602 承認",
+  "requiredApprovalFingerprint": "v21:4f82ffc18602",
   "baseline": "feat/scaffold（docs/iji-context-design@7b02e90 から分岐）",
-  "criticRound": 2,
+  "criticRound": 15,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "Agent SDK は API Route 内で API キー認証まで通過（pong, 6.3 秒）。確認ルートは削除済み。雛形コミット後、design.md v5 の実装へ",
-  "lastUpdated": "2026-11-04",
+  "nextAction": "v21 実装済み・§7 #1〜#11 合格（310 本）。コミットの承認待ち（3 分割、tsconfig.tsbuildinfo を .gitignore に）。その後 F4 以降",
+  "lastUpdated": "2026-11-05",
   "delegation": {
-    "批評": "claude/claude-opus-5-5 + codex/gpt-6.1-sol xhigh"
-  },
-  "approvalNote": "承認は v4:a93344817a4e に対するもの。v5 は同じ返信で指示された C-11(b)（K2=6,253 点）の反映のみで、それ以外の差分はない"
+    "実装": "claude/claude-opus-5-5（メイン）",
+    "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol xhigh"
+  }
 }

@@ -1,6 +1,6 @@
 # iji-context 設計書 — ルールエンジンと知識ライフサイクル（F5）
 
-版: v5（2026-11-04。v4 をユーザーが承認した返信の中で指示された C-11(b)（K2 を 6,253 点）だけを反映。v4 の内訳：v3 にユーザーの C-10 判断と取り忘れ検出の範囲の明確化を反映。v3 の内訳：批評 1 巡目の C-1〜C-5・X-1〜X-5 と、2 巡目の C-6〜C-9・X-6〜X-10 を反映。2 巡目の反映分は批評を受けていない）
+版: v21（2026-11-05。round-15 の 2 件を反映：同じ会議に同じ知識の「外れの確認」と「確かめ直し」が並んだら、査定を出す審査支払機関が上位なので外れの確認の答えを優先する。修正版の候補は元の知識の層の改定・改選の見直しを引き継ぐ。v20：2026-11-05。ユーザーの意図に合わせて v19 を直した：「止める」は知識の更新を止めることで、使用は止めない。査定・返戻が届いても知識は更新せず、新人のメンターは今までどおり使う。毎週土日のレセメン会議で、その週に届いた外れと、同じ知識を適用したほかの請求を議題にし、責任者が判断する。知識を更新するのは会議での回答（とカレンダーのトリガー、再審査の操作）だけ。v19 の内訳は ledger.md）
 要求入力: design/iji-context/spec.md（FR-01〜04, FR-38〜51, FR-64〜66）
 対象外: UKE パーサ（F4）、メンター（F2/F6）、UI、医師確認（F1/F3）。これらは impl-plan.md で扱い、本設計とは §6 の境界でつなぐ
 
@@ -11,6 +11,7 @@
 3. **知識（Skill）は「説明文（SKILL.md）＋決定的な適用条件（meta.json の `match`）＋向き（`polarity`）」で構成する**。提出を確定した版ごとに「どの知識が適用されたか」を記録し、提出結果はその版の記録に結びつけて取り込む（C-3、X-3、X-4、C-6、C-7、X-6）
 4. **状態遷移は表駆動の純関数 1 つ**（`transition`）に閉じる。表にない遷移は例外にする。時刻は引数で受け取る
 5. **知識の正はファイル（`knowledge/`）、適用記録と取り込み済み結果は SQLite**。状態が変わるたびに同期スクリプトを走らせ、さらに読み出し側でも状態を確かめる（X-1）
+6. **結果では知識を更新せず、毎週土日のレセメン会議で責任者が判断する**（v20）。査定・返戻が届いても知識はそのまま使い、会議でその週の外れと、同じ知識を適用したほかの請求を確認する。知識を更新するのは会議での回答だけ。LLM は文章を作って届けるだけで、知識の状態を決めない
 
 ## 1. ディレクトリ構成
 
@@ -29,7 +30,8 @@ src/
 │   ├── triggers.ts         # evaluateTriggers(metas, now, calendar)
 │   ├── calendar.ts         # 改定日・改選日
 │   ├── match.ts            # matches(meta, ctx, applied): boolean
-│   ├── applications.ts     # 適用記録と提出結果の取り込み（SQLite）
+│   ├── applications.ts     # 適用記録と提出結果の取り込み（SQLite。記録だけ）
+│   ├── review.ts           # レセメン会議の整理 meetingReview(now)・buildDigest()（議題）・回答の反映・dueMeeting()（v20）
 │   ├── queue.ts            # 検証キュー（FR-65）
 │   └── store.ts            # knowledge/ の読み書き（原子的書き込み＋同期の呼び出し）
 scripts/sync-skills.ts      # 承認済みだけを .claude/skills/ へ（FR-48）
@@ -57,8 +59,11 @@ UKE そのものではなく、正規化済みの 1 患者 1 か月分を受け�
 | `facts` | 判定に使う事実。各値は `Fact<T> = { known: true; value: T } \| { known: false }`（C-4） |
 | `events` | 日付付きの出来事：訪問診療（同一建物の患者数つき）、往診（種別）、検査、処方箋交付（内服種類数・日数）、死亡、退院、在医総管の算定開始月 |
 | `lines` | 算定行：`{ kubun, count, dates[] }` |
+| `comments` | 摘要コメント：`{ kubun, code }[]`（どの区分に付いたコメントか。UKE の CO レコードから F4 が作る。コードは架空） |
+| `history` | 過去月の算定：`{ yearMonth, kubun[] }[]`（設定ファイルの固定値。spec 決定62） |
 
 - `facts` の主な項目：年齢、保険種別、負担割合、要介護度、別表第七・第八の二の該当、主病、在宅酸素の有無、看取りの場所。**合成症例 K1〜K6 はすべて `known: true` で埋める**
+- `comments`・`history` も `events` と同じく「記録されたものの一覧」で、載っていないものは「なかった」とみなす
 - `events` は「記録された出来事の一覧」で、載っていない出来事は「なかった」とみなす。出来事の有無そのものが不明なときは、対応する `facts` の項目（例：`facts.visitsComplete`）を `known: false` にする
 
 ### 2-2. 出力
@@ -95,7 +100,7 @@ type EngineResult = {
 | R02 | 在宅酸素中（別表第八の二）は重症区分 4,585。3,685 は過少。重症区分に包括的支援加算 150 は付けない | 区分誤り／背反 |
 | R03 | 包括的支援加算は要介護 3 以上かつ重症区分以外。満たさないのに立てていれば要件不足、満たすのに立てていなければ取り忘れ | 要件不足／取り忘れ |
 | R04 | 在宅療養指導管理料は主たる 1 つのみ。材料加算は各々可 | 背反 |
-| R05 | 在医総管算定月に包括される項目を別に立てない。院外処方なら注2（+300）不可。処方箋料（F400）は包括されない（EM #7-6） | 背反 |
+| R05 | 在医総管算定月に包括される項目を別に立てない。処方箋料（F400）とそれに付く加算も包括される（EM #7-6、疑義解釈 令和8年 その2 問66）。院外処方なら注2（+300）不可 | 背反 |
 | R06 | 特定疾患処方管理加算は主病が対象疾患のとき（糖尿病・高血圧は 2024年6月から不可） | 要件不足 |
 | R07 | 処方箋料は内服 7 種類以上で 32 点。68 点を使わない | 区分誤り |
 | R08 | ベースアップ評価料(Ⅰ) 訪問診療時は 28 点。往診のみの日は再診時等 2 点 | 区分誤り |
@@ -137,7 +142,7 @@ type KnowledgeMeta = {
   layer: "制度" | "地域" | "ベテラン" | "院内";
   status: "未検証" | "承認済み" | "contested" | "要再検証" | "停止" | "保管";   // FR-64 の6つで閉じる
   summary: string;             // 1 行の説明（SKILL.md の description に使う）
-  rev: string;                 // SKILL.md 本文と match の内容ハッシュ先頭12桁。本文か match を変えると変わる（X-9）
+  rev: string;                 // SKILL.md 本文・match・polarity・matchApprox・conditionNote の内容ハッシュ先頭12桁。どれを変えても変わる（X-9・round-7 X-27）
   polarity: "avoid" | "allow"; // avoid＝「この条件だと返戻・査定される」、allow＝「この条件なら通る／こう算定する」（C-6）
   matchApprox: boolean;        // match が条件を表しきれていないとき true（X-7）
   conditionNote: string | null;// match で表せない条件の文章（matchApprox のとき必須）
@@ -145,14 +150,21 @@ type KnowledgeMeta = {
   relates_to: string | null;   // 提案（F11）が対象とする既存知識の id
   valid_from: string;
   review_by: string | null;
-  hits: number;
+  hits: number;                // 以下 3 つは store が meta を書くたびに DB から数え直すキャッシュ（§4-4。v7・v8）
   misses: number;
-  last_hit_at: string | null;
+  last_hit_at: string | null;  // max(last_used_at, 今有効な HIT の結果の取り込み日)
+  last_used_at: string | null; // USED を受けた最後の日（v7）
   status_since: string;        // 現在の状態に入った日
   retired_reason: string | null;
   empathy: number;             // 共感数（FR-65）
   match: Match;
-  history: { at: string; from: string; to: string; event: string; actor: "veteran" | "clerk" | "system" }[];
+  history: { at: string; from: string; to: string; event: string; actor: "veteran" | "clerk" | "system"; basis: Basis | null }[];
+};
+type Basis = {                 // 遷移の根拠（v15。round-10 の A・F・E）
+  submissionIds?: string[];    // 会議の「外れの確認」への回答で要再検証にしたとき、その外れの提出（v20）
+  kubun?: string[];            // 外れた提出の、関係ありの区分
+  trigger?: "revision" | "reappointment" | "idle";   // トリガーによる遷移、または結果の遷移と同じ整理で同時に当たったトリガー
+  itemId?: string;             // ベテランの回答による遷移のとき、その項目 id
 };
 type Match = {
   ruleId?: string;             // 制度層：エンジンの applied に含まれれば適用（X-3）
@@ -160,10 +172,12 @@ type Match = {
   payer?: "支払基金" | "国保連";
   prefecture?: string;
   facts?: Partial<{ careLevelMin: number; insurance: string; table8_2: boolean; table7: boolean }>;
+  commentOn?: { kubun: string; present: boolean }[];   // その区分に摘要コメントが付いている（present=true）／付いていない（false）。v6
+  consecutiveMonths?: { kubun: string; min: number };  // 当月を含め、その区分を何か月続けて算定しているか（history から数える）。v6
 };
 ```
 
-- `match` は宣言的な条件だけで、自由な式は書けない。`facts` の条件は、対応する事実が `known: false` なら「適用せず」とする
+- `match` は宣言的な条件だけで、自由な式は書けない。`facts` の条件は、対応する事実が `known: false` なら「適用せず」とする。判定は三値（当てはまる／当てはまらない／不明）で、不明は「適用せず」かつ「直した」とも数えない（round-3 X-14）
 - 層ごとの `match` の必須項目（`store` が書き込み時に検証。C-8）：
 
 | 層 | 必須 | polarity の既定 |
@@ -173,9 +187,12 @@ type Match = {
 | ベテラン | なし（`kubunAll` は任意） | allow |
 | 院内 | なし（`kubunAll` は任意） | 返戻由来は avoid、それ以外は allow |
 
+- **コメントと連続月（v6）**：「BNP を毎月、コメントなしで算定すると査定される（avoid）」と「同じ状況でコメントを付ければ通る（allow）」を、どちらも近似なしの知識として持てる。K6 のデモはこの 2 つを組にする
 - 条件が `match` で表しきれない知識（訪問回数・日付の関係・処方の種類数など）も、元の層の候補として作る。このとき `matchApprox: true` とし、表せない部分を `conditionNote` に書く（X-7。v2 の「院内メモに留める」は廃止）
+- 空の `kubunAll` は条件なしとして扱う（round-3 X-13）
 - `matchApprox: true` の知識と、`match` に `kubunAll` も `ruleId` もない知識には、提出結果から自動でイベントを出さない。状態を動かすのは、メンターの引用（`USED`）とベテランの操作だけ（§4-4）
 - `actor` は役割名だけを記録し、個人名を残さない（FR-50）
+- **時刻の形式（v16。round-11 C-52、前提）**：`at`・`status_since`・`submittedAt`・`importedAt`・`now` など時刻はすべて、タイムゾーン付きの ISO 8601（例 `2025-03-10T10:00:00+09:00`、`Z` も可）に限る。日付だけ・タイムゾーンなしの値は、store・`submit`・`importResult`・`meetingReview`・`answerItem` の入口で例外にする。大小の比較は文字列ではなく時刻（ミリ秒）で行う。改定日・改選日（`MM-DD`）は日本時間のその日 0 時とする。診療年月 `yearMonth`（`YYYY-MM`）は時刻ではないのでこの規則の対象外
 
 ## 4. 状態遷移
 
@@ -206,13 +223,13 @@ type Match = {
 | contested | `REEXAM_RESULT{原審どおり}` | 承認済み | |
 | contested | `REEXAM_RESULT{復活}` | 保管 | 地域層の承認済み知識を 1 件生成（effect） |
 | 承認済み | `TRIGGER{revision\|reappointment\|idle}` | 要再検証 | 層に効かないトリガーは例外 |
-| 承認済み | `HIT` | 承認済み | hits を加算、last_hit_at を更新 |
-| 承認済み | `COUNTER_EXAMPLE` | 承認済み | misses を加算 |
-| 承認済み | `USED` | 承認済み | last_hit_at を更新（C-6、C-8） |
-| 要再検証 | `RECHECK_PASS{claim\|veteran}` | 承認済み | |
-| 要再検証 | `COUNTER_EXAMPLE` | 停止 | misses を加算、廃棄提案を出す |
+| 承認済み | `COUNTER_EXAMPLE` | 要再検証 | 会議の「外れの確認」で責任者が「直す必要がある」と答えたとき（v20。§4-4）。新人のメンターは使わなくなる。misses は store が数え直す |
+| 承認済み | `USED` | 承認済み | last_used_at を更新（C-6、C-8） |
+| 要再検証 | `RECHECK_PASS{claim\|veteran}` | 承認済み | v19 では `{claim}`（請求の通過で戻す）は出さない。戻すのは責任者の判断（`{veteran}`）だけ |
+| 要再検証 | `RECHECK_FAIL`（veteran） | 停止 | 廃棄提案を出し、ベテランが書いた修正版の候補の id を添える（round-8 C-38）。考え直したときは `DISPOSAL_REJECT` で承認済みに戻せる |
+| 要再検証 | `COUNTER_EXAMPLE` | 停止 | v19 以降は出さない（結果では知識を動かさない）。行は遷移表に残す |
 | 要再検証 | `IDLE_EXPIRED` | 停止 | 廃棄提案を出す（X-10）。層に③が効かない場合は例外（X-2） |
-| 要再検証 | `USED` | 要再検証 | last_hit_at を更新（再承認はしない） |
+| 要再検証 | `USED` | 要再検証 | last_used_at を更新（再承認はしない） |
 | 停止 | `DISPOSAL_APPROVE`（veteran） | 保管 | retired_reason 必須 |
 | 停止 | `DISPOSAL_REJECT`（veteran） | 承認済み | |
 
@@ -221,7 +238,10 @@ type Match = {
 - `VERIFY_REJECT` は FR に明記がない。未検証の候補をベテランが誤りと判断したときの出口として追加した（L-2）
 - `REEXAM_FILED`（→contested）は、FR-43「再審査申出中は contested」を、査定を取り込んだ後に申し出た場合にも満たすために追加した（L-5）
 - `USED` は状態を変えない自己遷移で、U-H の遷移を増やさない
-- 承認済みでの `COUNTER_EXAMPLE` は状態を変えず misses を数えるだけにする
+- 結果による当たりは状態を変えないので、`HIT` はイベントとしては持たない（v8：遷移表から削除。round-5 C-27）
+- 後から届いた結果で状態を前に戻すことはしない（round-4 C-19・X-16）
+- 承認済みでの `COUNTER_EXAMPLE` は要再検証に下げる（停止ではない）。出すのは会議の「外れの確認」で責任者が「直す必要がある」と答えたときだけ（v20）。要再検証の知識は、次の会議の `recheck` で責任者が確かめ、`RECHECK_PASS{veteran}` で承認済みに戻す（ユーザー判断 C-31・v20）
+- 提出結果では状態を動かさない（v20）。トリガーは会議の整理（§4-4）の中で起きる。ベテランの操作（回答・検証・廃棄判断）、`USED`、医療事務の再審査の操作（`REEXAM_FILED`・`REEXAM_RESULT`）は、その時点ですぐ反映する（round-10 C-45）
 
 ### 4-3. トリガー判定（`triggers.ts`）
 
@@ -234,40 +254,133 @@ type Match = {
 | ③ idle（承認済み） | `max(last_hit_at, status_since)` から 180 日以上（C-2） | FR-66 で③が効く層の承認済み |
 | ③ idle（要再検証） | `max(last_hit_at, status_since)` から 180 日以上 → `IDLE_EXPIRED` | FR-66 で③が効く層の要再検証のみ（制度層は対象外: X-2） |
 
-- 層×トリガーの対応は `layers.ts` の定数表だけを参照する
+- 層×トリガーの対応は `layers.ts` の定数表だけを参照する。`relates_to` を持つ知識（修正版の候補など）は、自分の層のトリガーに加えて、`relates_to` をたどった元の知識の層のトリガー（改定・改選）も効く。改選は自分の `match` の payer・prefecture で決める（v21。round-15 X-57）
 - 起点に `status_since` を含めるので、ベテランの再確認や廃棄却下で承認済みに戻った知識は、戻った日から数え直しになる（C-2）
-- 制度層の要再検証から出る道は、`RECHECK_PASS` と `COUNTER_EXAMPLE` だけになる
+- 制度層の要再検証から出る道は、責任者の判断（`RECHECK_PASS{veteran}`・`RECHECK_FAIL`）だけになる
 
-### 4-4. 適用記録と提出結果（`applications.ts`、C-3・X-3・X-4・C-6・C-7・X-6・X-9）
+### 4-4. 適用記録・提出結果・レセメン会議（`applications.ts`・`review.ts`、v20）
+
+**v20 の方針（ユーザー判断）**：レセメンは同僚で、ミスもある。だから全部の判断を AI（機械）にさせない。知識の状態は機械が推し量らず、責任者（ベテラン）が判断する。
+
+- **結果では知識を更新しない**：査定・返戻が届いても、知識の状態は変えない。新人のメンターは今までどおり使う。間違っているかどうかは査定が届くまで分からないので、届くまでの使用は止めない。届いた後も、会議で判断するまでは更新しない（「止める」＝更新を止める）
+- **毎週土日のレセメン会議**：責任者とレセメンで、その週に届いた外れ（まだ会議で扱っていない外れ）を確認する。外れがあった知識ごとに、**同じ知識を適用したほかの請求**も議題に並べる（同じように適用して、まだ結果が出ていない・通っている請求がないかを確かめるため）
+- **知識を更新するのは会議での回答だけ**：「直す必要がある」なら要再検証にして（新人のメンターは使わなくなる）修正版の候補を作る。カレンダーで決まる見直し（改定・改選・idle）と再審査の操作は今までどおり
+- エージェント（LLM）は議題を言い換えて届けるだけで、知識を承認・降格しない
+- 廃止したもの：v19 の「外れを取り込んだらその場で使用を止める」（ユーザーの意図の取り違えだった）と、確認日の設定。v14〜v18 の結果による自動の降格・再承認と追跡も引き続き持たない
+- 件数の目安：査定率は請求 1 万点あたり約 40 点（0.40%）、返戻率は 0.460%（evidence-master 4-1・4-2）
 
 **記録するのは「提出を確定した版」だけ**にする。評価は何度でもしてよいが、記録は提出確定のときに 1 回だけ書く（C-7、X-6）。
 
-SQLite に 3 つの表を持つ：
+SQLite に 5 つの表を持つ：
 
 | 表 | 列 | 書くとき |
 |---|---|---|
-| `submissions` | submissionId（一意）, claimId, linesHash, submittedAt, superseded | 本人が提出を確定したとき。同じ claimId の以前の版は `superseded=true` にする |
-| `applications` | submissionId, knowledgeId, rev, status, statusSince, role（`final`／`avoided`） | 提出確定のとき。承認済み・要再検証の知識を対象に、確定版の lines で `matches` が真なら `final`。その請求の評価途中で一度でも真になり、確定版では偽なら `avoided`（本人が助言どおりに直した） |
-| `claim_results` | resultId（一意）, submissionId, outcome（通過／返戻／査定）, kubun[], importedAt | 提出結果を取り込んだとき |
+| `submissions` | submissionId（一意）, claimId, yearMonth（診療年月）, linesHash, submittedAt, superseded | 本人が提出を確定したとき。同じ claimId の以前の版は `superseded=true` にする |
+| `applications` | submissionId, knowledgeId, rev, role（`final`／`avoided`／`ignored`）, removedKubun[] | 提出確定のとき。承認済み・要再検証の知識を対象にする（下記） |
+| `claim_results` | resultId（一意）, submissionId, kind, outcome（通過／返戻／査定）, kubun[], contentHash, adopted（今有効な結果として採用したか）, importedAt | 提出結果を受け取ったとき。採用しなかった結果も必ず残す（round-5 X-24） |
+| `reviews` | reviewId（`now` の UTC 正規形から決める。同じ瞬間で回し直すと同じ行を使う）, ranAt（整理の `now`） | 会議の整理を回したとき |
+| `digest_items` | itemId, reviewId（最後に載せた整理）, kind（`miss`／`recheck`／`ignored`／`disposal`）, knowledgeId, submissionId（`ignored` のみ）, snapshot（整理時点の値。下記の手順 3）, reason, answer, freeText, answeredAt, applied, stale | 会議の整理で議題を作るとき（下記の手順 3） |
 
-提出結果の取り込み（`importResult`）：
+**役割（role）の決め方**（確定版と、同じ請求の評価途中を比べる。途中経過に別の請求が混ざっていたら記録を拒否する：round-3 X-15）：
 
-1. `resultId` が取り込み済みなら何もしない（重複排除）
-2. `submissionId` が `superseded` なら、その結果からイベントを出さない（X-6）
-3. その `submissionId` の適用記録を引き、知識の**現在の状態・`status_since`・`rev` がすべて記録時と同じ**ものだけを対象にする。違えば捨てる（X-4、X-9）
-4. `matchApprox` の知識と、`kubunAll` も `ruleId` もない知識は対象外（§3）
-5. 次の表でイベントに変換する（C-6）。「関係あり」＝結果の `kubun[]` が知識の `match.kubunAll`（制度層は該当ルールの `kubun`）と重なる
+| 確定版での判定 | 評価途中 | polarity | role |
+|---|---|---|---|
+| 当てはまる | — | どちらでも | `final` |
+| 当てはまらない | 一度でも当てはまった | avoid | `avoided`（助言どおり直した） |
+| 当てはまらない | 一度でも当てはまり、kubunAll の区分を外した | allow | `ignored`（通る知識に従わずに外した。C-16） |
+| 不明 | — | どちらでも | 記録しない（round-3 X-14） |
 
-| role | polarity | outcome | 承認済みのとき | 要再検証のとき |
+- `ignored` にするのは、**知識の `kubunAll` の区分のうち、評価途中にはあって確定版にはないものが 1 つ以上あるとき**だけ。要介護度の訂正など、区分を外していないのに当てはまらなくなった場合は記録しない（round-4 C-20・X-20）。外された区分を `removedKubun[]` に入れる
+- `avoided` は提出確定のときに `USED` を 1 回出す（結果を待たない。状態は変えない）
+
+**結果の種類（kind）**：`原審査`／`保険者再審査`／`縦覧点検`／`突合点検`／`資格`。後から別の結果が届く仕組みは実在する（支払基金「増減点連絡書・各種通知書の見方」令和8年2月版。ledger C-13）。**`資格`（資格喪失後の受診など）は受付での資格確認の問題で、算定の知識とは関係しないので、記録だけして判定に使わない**
+
+**提出結果の取り込み（`importResult`）**：
+
+1. `resultId` が受信済みなら何もしない。同じ提出の**今有効な結果**と内容（kind・outcome・kubun[]）が同じなら、`adopted=false` で記録だけする（再送された ID が後で訂正を上書きしないように、受け取った ID はすべて残す。round-5 X-24）。過去に有効だった結果と同じ内容でも、今有効なものと違えば採用する（round-4 X-17）
+2. 同じ提出に複数の結果が届いたら、**最後に採用した結果（`資格` を除く）をその提出の「今有効な結果」とする**（C-13）
+3. 返戻・査定は、別途 §4-1 の生成元として新しい候補（未検証）を作る
+4. 知識の状態は動かさない（v20）。新人のメンターは今までどおりその知識を使う。外れは次の会議の議題になる
+
+**会議の日（v20。ユーザー判断）**：毎週土日に開く。`config/review.json` の `meetingWeekday`（0＝日〜6＝土。既定 6）で、整理を回す曜日を決める（変更の画面は F6 側。impl-plan.md）。F5 は「いつ整理を回すか」を持たず、`dueMeeting(lastRanAt, now, weekday)` で「前回の整理の後に、その曜日の日本時間 0 時を過ぎたか」を返すだけにする。ホスト（デモの時計・UI）がこれを見て整理を回す
+
+**会議の整理（`meetingReview(now)`）**。次の順に行う。途中で止まっても、もう一度回せば同じ結果になる。整理を記録する（`reviews` に書く）のは最後（round-14 X-56）：
+
+0. **答えの拾い直し**。回答が記録されているのに `applied=false` で `stale` でない項目を、下の「回答の反映」で反映し直す
+1. **数え直し**。全知識の hits・misses・last_hit_at を次から計算する（足し引きしない。store も meta を書くたびに同じ計算をする。round-5 C-23）。トリガーより先に行うので、届いた当たりが idle の判定に入る（round-10 C-46）
+   - hits＝今有効な結果の効果が当たりの（提出×知識）の数
+   - misses＝効果が外れの数＋`ignored` の項目で、確定した回答が 2 で `applied=true` のものの数（提出×知識で 1 回）
+   - last_hit_at＝max(`last_used_at`, 効果が当たりの今有効な結果の `importedAt`)
+2. **トリガー**。`evaluateTriggers(metas, now, calendar)`（§4-3）の結果を反映し、history の `basis.trigger` に残す
+3. **議題**。整理を終えた時点の状態から、会議の項目を作る
+   - `miss`（外れの確認。v20）：承認済み・要再検証の知識で、まだ会議で扱っていない外れがあるもの。外れは（提出×今有効な結果の `resultId`）の単位で、今の `rev` の適用記録だけを見る。「会議で扱った」＝その外れを載せた `miss` 項目に、回答 1 か 2 が反映されたこと。理由に次を載せる
+     - `misses`：扱っていない外れ（提出・`resultId`・関係ありの区分）
+     - `sameApplied`：同じ知識を同じ `rev` で適用した、ほかの提出（`superseded` でなく、`misses` の提出を除く。role が `final` のもの）。各提出の請求 id・診療年月・今有効な結果（通過／返戻／査定、なければ「結果待ち」）
+   - `recheck`：要再検証の知識すべて（会議で「直す必要がある」とした知識と、トリガーで要再検証になった知識）。理由は、要再検証に入った history の `basis` から決める
+   - `ignored`：まだ回答で閉じていない `ignored` の適用記録（提出が `superseded` でなく、知識が保管でないもの）
+   - `disposal`：停止の知識すべて（廃棄提案）。理由は停止に入った history から決める（`RECHECK_FAIL` なら修正版の候補の id、`IDLE_EXPIRED` なら長く使われていないこと）
+   - 各項目に整理時点の `snapshot` を持たせる。`miss`・`recheck`・`disposal` は status・status_since・rev・その層の直近の改定日・改選日 `basisDate`。`ignored` は rev だけ（round-11 C-51）。`miss` の `misses` は snapshot に入れない（入れると、回答の記録後・反映前に新しい外れが届いたときだけ回答が照合に落ちる。v18 の実装中に判明）。回答の反映では、その項目の `reason.misses` を「会議で扱った」にする。後から届いた外れは扱っていないので、次の会議に載る
+   - **項目の id（round-10 C-49）**：（種類・知識・提出・snapshot）が同じで未回答の項目がすでにあれば、その項目を使い回し、`reviewId` と `reason` をこの整理のものに更新する。なければ新しい id を振る。前の回の未回答の項目で今回載らなかったものは残すが、回答が来ても照合に落ちて記録だけになる
+
+変換表（効果の決め方）。「関係あり」＝結果の `kubun[]` が知識の `match.kubunAll`（`match.ruleId` を持つ知識は、層にかかわらず該当ルールの `kubun`。v20。round-14 X-55）と重なる。**関係のない査定は、その知識にとっては「通過」と同じに扱う（C-15）。返戻はレセプトごと戻されて中身が審査済みとは限らないので、関係のない返戻は「なし」にする（round-4 C-21）**
+
+| role | polarity | outcome | 効果 |
+|---|---|---|---|
+| final | allow | 通過、または査定（関係なし） | 当たり |
+| final | allow | 返戻・査定（関係あり） | 外れ |
+| final | avoid | 返戻・査定（関係あり） | 当たり（予告どおり落ちた） |
+| final | avoid | 通過、または査定（関係なし） | 外れ（落ちなかった） |
+| final | どちらでも | 返戻（関係なし） | なし |
+| avoided | avoid | どれでも | なし（確定時に `USED` を出し済み） |
+| ignored | allow | どれでも | なし（責任者の回答で決める） |
+
+**議題と回答**
+
+- 議題は `buildDigest()` が決定的に組み立てる構造化データで、**点数・金額の欄を持たない**。ベテラン本人のメンター（F6）がこれを言い換えて本人に届ける（CLAUDE.md「ベテラン本人への問いは、本人のメンター経由でのみ届く」）。メンター（LLM）は選択肢を足し引きしない
+- 各項目の選択肢は 4 つで、必ず「その他」「判定不能」を含む
+
+| 種類 | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|
-| final | allow | 通過 | `HIT` | `RECHECK_PASS{claim}` |
-| final | allow | 返戻・査定（関係あり） | `COUNTER_EXAMPLE` | `COUNTER_EXAMPLE` |
-| final | avoid | 返戻・査定（関係あり） | `HIT`（予告どおり落ちた） | `RECHECK_PASS{claim}` |
-| final | avoid | 通過 | `COUNTER_EXAMPLE`（落ちなかった） | `COUNTER_EXAMPLE` |
-| avoided | どちらでも | どれでも | `USED` | `USED` |
+| `miss`（外れの確認） | 今も正しい（外れは前提条件の違いなど） | 直す必要がある（足りない条件・変わった内容を自由記述） | その他（自由記述） | 判定不能 |
+| `recheck`（確かめ直し） | 今も正しい（改定・改選後も変わらない／直さなくてよい） | 直す必要がある（足りない条件・変わった内容を自由記述） | その他（自由記述） | 判定不能 |
+| `ignored`（新人が外した理由） | 知識が正しい（新人の取り忘れ） | この状況には当てはまらない（知識の条件が足りない。足りない条件を自由記述） | その他（自由記述） | 判定不能 |
+| `disposal`（廃棄提案） | 廃棄する（`DISPOSAL_APPROVE`） | 廃棄しない（`DISPOSAL_REJECT`） | その他（自由記述） | 判定不能 |
 
-6. 返戻・査定は、別途 §4-1 の生成元として新しい候補も作る
+- `sameApplied` に並んだ請求をどうするか（再請求・取り下げなど）は会議で人が決める。F5 は並べるだけで、請求には触れない
+- **同じ会議に同じ知識の `miss` と `recheck` が並んだとき（v21。round-15 C-60。ユーザー判断）**：要再検証の知識に外れが届くと、両方が議題に並ぶ。査定を出す審査支払機関は医療事務の責任者より上位なので、`miss`（査定・返戻から来た項目）の答えを優先する
+  - `miss` が 2（直す必要がある）なら、その知識は停止（`RECHECK_FAIL`）になり修正版の候補を作る。同じ会議の `recheck` の答えは記録だけにする（照合に落とす）
+  - `miss` が 1・3・4 なら、`recheck` の答えをいつもどおり反映する
+  - `recheck` に先に答えたときは、同じ会議の `miss` に答えが反映されるまで、`recheck` の答えを反映しない（記録したまま待つ）。`miss` を反映したら、続けて待っている `recheck` を反映する。答える順番で結果は変わらない
+  - `miss` に答えないまま次の会議になったら、`miss` を議題に載せ直して責任者にもう一度届ける（`waitingRecheck: true` を付け、確かめ直しの答えが待っていることを示す）。`recheck` の答えは、`miss` の答えが来るまで待ち続ける（ユーザー判断：外れの確認に答えないことは想定しない）。待っている間は、その知識の `recheck` を新しく議題に載せない
+  - 「同じ会議」は、知識が今の状態に入った時点（`status_since`）が同じ `miss` と `recheck` の組とする。トリガーなどで知識の状態が変わったら、待っていた `recheck` の答えは照合に落ちて記録だけになる
+  - 最新の会議に載っていない古い項目への回答を記録だけにする規則（round-15 X-58）は、回答が届いた時点で確かめる。待っている `recheck` の答えには当てはめない
+  - 査定そのものに異議があれば、責任者は再審査で争う（`REEXAM_FILED`）
 
+**回答の反映**（回答が届いたときにすぐ行う。失敗しても会議の整理の手順 0 で拾い直す）
+
+1. 回答をまず `applied=false` で記録する。同じ項目に 2 回目の回答が来たら無視する（round-4 X-19）
+2. **途中まで反映済みかを見る**（拾い直しのため。round-10 C-47）：知識の history に `basis.itemId` がこの項目のものがあれば、状態の遷移は済んでいるので手順 4 の残りに進む。`ignored` 2 は、その項目の候補があれば途中まで反映済みとみなす
+3. **照合**：知識の今の値が項目の `snapshot` と同じか。`ignored` は rev だけを比べ、提出が `superseded` でなく、同じ（提出×知識）がほかの回答でまだ閉じておらず、知識が保管でないことを確かめる。`ignored` 1 の `USED` は今の状態が許すときだけ出す。通らなければ記録だけにする（`applied` は false のまま `stale` の印を付け、拾い直しでも反映しない。候補も作らない）
+4. 照合に通れば次の表のとおり反映する。順番は「状態の遷移（history の `basis.itemId` に項目 id、`miss` 2 は `basis.submissionIds`・`basis.kubun` に外れの提出と区分を残す）→ 候補の作成・書き足し（候補にも項目 id を残し、同じ項目 id がすでにあれば作らない）→ `applied=true`」とし、どこで止まっても拾い直しで二重にならない。**（提出×知識）を閉じるのは、照合に通って反映された `ignored` の回答だけ**で、閉じていなければ次の会議にまた載る
+
+| 種類・回答 | 元の知識 | ほかに起きること |
+|---|---|---|
+| `miss` 1 | なし | 載せた外れを「会議で扱った」にする |
+| `miss` 2 | 承認済みなら `COUNTER_EXAMPLE`（承認済み→要再検証。新人のメンターは使わなくなる）。要再検証なら `RECHECK_FAIL`（要再検証→停止。v21） | 修正版の候補（`recheck` 2 と同じ作り方）を作る。載せた外れを「会議で扱った」にする。次の会議で `recheck` として確かめる |
+| `miss` 3・4 | なし | 記録だけ。外れは「会議で扱った」にならず、次の会議にまた載る |
+| `recheck` 1 | `RECHECK_PASS{veteran}`（使用を再開） | — |
+| `recheck` 2 | `RECHECK_FAIL`（要再検証→停止。ユーザー判断 C-38） | 修正版の候補（ベテラン層、生成元 `エスカレーション`、`relates_to`＝元の知識、未検証。元の polarity・matchApprox・conditionNote を引き継ぐ）を作り、廃棄提案に添える |
+| `recheck` 3・4 | なし | 記録だけ。要再検証のまま、次の会議にまた載る |
+| `ignored` 1 | `USED`（今の状態が許すとき） | 新人のメンターに「取り忘れだった」を返す（F2 が本人に伝え、F10 の記録に使う。未配信の通知は DB に残す）。（提出×知識）を閉じる |
+| `ignored` 2 | 状態は動かさない。外れとして数える（ユーザー判断 C-36） | 足りない条件を書いた候補（`recheck` 2 と同じ作り方）を作る。（提出×知識）を閉じる |
+| `ignored` 3・4 | なし | 記録だけ。（提出×知識）を閉じる |
+| `disposal` 1・2 | `DISPOSAL_APPROVE`／`DISPOSAL_REJECT` | — |
+| `disposal` 3・4 | なし | 記録だけ。停止のままなら次の会議にまた載る |
+
+- 修正版の候補は、同じ `relates_to` の未検証の候補がすでにあれば作らず、その候補に回答の記述を書き足す（round-9 C-44）。照合に落ちた回答 2 では候補を作らない
+- **再審査（round-10 C-45）**：医療事務が再審査を申し出たとき（`REEXAM_FILED`）と、再審査の結果（原審どおり／復活）を入力したとき（`REEXAM_RESULT`）は、その場で状態を動かす
+- `ignored` の回答 2 で元の知識を下げないのは、ベテランが「その条件では正しく、今回は前提が違っていた」と答えたから（C-36）。`recheck` の回答 2 で停止にするのは「この知識自体を直す必要がある」と答えたから（C-38）
+- `recheck` と `disposal` の回答は misses に数えない
 - avoid の知識は、助言どおりに直されると確定版では当たらない。`avoided` の `USED` で last_hit_at を更新するので、使われ続けている限り 180 日ヒットなしで消えない（C-6）
 - メンターが回答で知識を引用したときも `USED` を出す（ベテラン層など、提出結果と結びつかない知識の生存確認。C-8）
 - デモでは提出結果を JSON ファイルで取り込む（審査支払機関とはつながない）
@@ -299,7 +412,12 @@ SQLite に 3 つの表を持つ：
 | F1/F3 | `Finding.missing` | 回答で更新された `facts` |
 | F9 防いだ額 | `Finding` と修正前後の `lines` | — |
 | F2 メンター（引用） | — | 回答で引用した知識 id（`USED` を出す） |
-| 提出結果の取り込み | — | 結果 JSON（`resultId`, `submissionId`, outcome, kubun[]）、再審査申出（`REEXAM_FILED` の対象 id） |
+| 提出結果の取り込み | — | 結果 JSON（`resultId`, `submissionId`, kind, outcome, kubun[]）。記録だけで、知識は会議まで更新しない（v20） |
+| 再審査の操作（医療事務） | — | 再審査申出（`REEXAM_FILED` の対象 id）と再審査の結果（`REEXAM_RESULT{原審どおり\|復活}`）。その場で状態を動かす（round-10 C-45） |
+| デモの時計（UI） | — | 「時計を進める」操作の後、`dueMeeting()` が true なら `meetingReview(now)` を呼ぶ |
+| 会議の曜日の設定（F6・責任者） | `config/review.json` の `meetingWeekday` | 責任者が変えた曜日（v20） |
+| F4（UKE パーサ） | — | `comments`（CO レコード）と `history`（過去月の設定） |
+| F6 ベテランのメンター | `buildDigest()` のレセメン会議の議題（`miss`・`recheck`・`ignored`・`disposal`） | ベテランの回答（項目 id・選択肢番号・自由記述） |
 
 ## 7. 検証可能な完了条件
 
@@ -308,27 +426,32 @@ SQLite に 3 つの表を持つ：
 | # | コマンド | 合格条件 |
 |---|---|---|
 | 1 | `npx vitest run tests/engine/rules` | R01〜R13 それぞれ「違反あり」「違反なし」の 2 本が通る。違反フィクスチャは点数未収載の区分を含んでよい（`total` は null） |
-| 2 | `npx vitest run tests/engine/totals.test.ts` | `evaluate(K1).total === 14819`、`evaluate(K2).total === 6253`。K1 の findings が空。K1 の `facts` を 1 項目 `known: false` にすると、その項目を使うルールの `情報不足` が出る。K2 から包括的支援加算と在宅移行早期加算の行を外すと、R03・R14 の `取り忘れ` が 1 件ずつ出る（R14 は L-1 の確認後） |
-| 3 | `npx vitest run tests/lifecycle/machine.test.ts` | §4-2 の全行が通る。6 状態 × 全イベントの残りの組み合わせはすべて例外になる。`IDLE_EXPIRED` と `COUNTER_EXAMPLE` による停止で、どちらも廃棄提案が出る |
-| 4 | `npx vitest run tests/lifecycle/triggers.test.ts` | FR-66 にない層×トリガーで発火しない。制度層の要再検証は 180 日経っても `IDLE_EXPIRED` にならない。改選と idle が同時に該当しても 1 件だけ返る。`DISPOSAL_REJECT` 直後の知識は即座に再発火しない。国保連の改選日が null なら②は発火しない。2025-06-01 で K6（支払基金）の地域知識が要再検証になる |
-| 5 | `npx vitest run tests/lifecycle/applications.test.ts` | §4-4 の変換表の全行が通る。同じ resultId を 2 回取り込んでも hits は 1 回分。superseded の版の結果ではイベントが出ない。要再検証に入る前の記録、または rev が変わった後の記録では承認済みに戻らない。入った後の請求の「通過」（allow）で戻る。avoid の知識を助言どおり直した請求で `USED` が出る |
-| 6 | `npx vitest run tests/lifecycle/layers.test.ts` | 提案から制度層・ベテラン層を作ろうとすると拒否される。地域層は payer と prefecture がないと拒否される。`matchApprox` の知識は conditionNote がないと拒否される |
+| 2 | `npx vitest run tests/engine/totals.test.ts` | `evaluate(K1).total === 14693`、`evaluate(K2).total === 6193`。K1 の findings が空。K1 の `facts` を 1 項目 `known: false` にすると、その項目を使うルールの `情報不足` が出る。K2 から包括的支援加算と在宅移行早期加算の行を外すと、R03・R14 の `取り忘れ` が 1 件ずつ出る（R14 は L-1 の確認後） |
+| 3 | `npx vitest run tests/lifecycle/machine.test.ts` | §4-2 の全行が通る。承認済みの `COUNTER_EXAMPLE` で要再検証になる。6 状態 × 全イベントの残りの組み合わせはすべて例外になる。`IDLE_EXPIRED`・`COUNTER_EXAMPLE`・`RECHECK_FAIL` による停止で、どれも廃棄提案が出る（`RECHECK_FAIL` では修正版の候補の id が添えられる） |
+| 4 | `npx vitest run tests/lifecycle/triggers.test.ts` | FR-66 にない層×トリガーで発火しない。制度層の要再検証は 180 日経っても `IDLE_EXPIRED` にならない。改選と idle が同時に該当しても 1 件だけ返る。`DISPOSAL_REJECT` 直後の知識は即座に再発火しない。国保連の改選日が null なら②は発火しない。2025-06-01 で K6（支払基金）の地域知識が要再検証になる。制度層の知識の修正版（ベテラン層、`relates_to`＝制度層の知識）は、改定日を過ぎると要再検証になる。地域層の知識の修正版は改選日を過ぎると要再検証になる（v21） |
+| 5 | `npx vitest run tests/lifecycle/review.test.ts` | 変換表の全行が通る。同じ resultId を 2 回取り込んでも hits は 1。superseded の版の結果は効かない。`kind=資格` は効果なし。関係のない査定は通過と同じ効果、関係のない返戻は効果なし。`ruleId` を持つベテラン層の知識（制度層から作った修正版）も、ルールの対象区分で関係を決める。avoid の知識を助言どおり直した請求で確定時に `USED` が出る。**結果では更新しない**：(a) 承認済みの知識に外れ（allow なら関係ありの査定・返戻、avoid なら通過）が届いても、状態は承認済みのままで、同期先にも残る。数え直しで misses は増える (b) 要再検証・停止・contested・保管の知識も、結果では状態が変わらない（例外にもならない） **会議の整理**：(c) 同じ `now` で 2 回回しても、状態・数・議題（項目 id を含む）は変わらない。途中で止めてもう一度回すと 1 回で回したのと同じ。議題を作る直前で止まった整理は記録されず、前回の議題が残る (d) 180 日近く当たりのない承認済みの知識に通過が届くと、同じ整理で idle の要再検証にならない (e) 改定（制度層）・改選（地域層）・idle のトリガーは整理の中で要再検証にする (f) `REEXAM_FILED` は整理を待たずに contested にし、`REEXAM_RESULT{原審どおり}` で承認済み、`{復活}` で保管＋地域層の承認済み知識 1 件 **会議の日**：(g) `dueMeeting(lastRanAt, now, weekday)` は、前回の整理の後にその曜日（日本時間 0 時）を過ぎていれば true、過ぎていなければ false。前回の整理がなければ true。曜日を変えると結果が変わる。0〜6 以外は例外 **時刻**：(h) 日付だけ・タイムゾーンなしの時刻は `submit`・`importResult`・`meetingReview`・`answerItem` で例外になる。`+09:00` と `Z` で同じ瞬間を表す時刻は同じに扱う |
+| 6 | `npx vitest run tests/lifecycle/layers.test.ts` | store 経由で `USED` を受け続けた知識は、結果の取り込みがなくても、evaluateTriggers で idle の要再検証にならない（round-5 C-23・round-6 C-32）。提案から制度層・ベテラン層を作ろうとすると拒否される。地域層は payer と prefecture がないと拒否される。`matchApprox` の知識は conditionNote がないと拒否される |
 | 7 | `npx vitest run tests/lifecycle/queue.test.ts` | empathy で並び順だけが変わり、状態は変わらない |
 | 8 | `npx vitest run tests/scripts/sync.test.ts` | 一時ディレクトリで同期を 2 回実行し、2 回の出力が完全に一致する。承認済みかつ院内以外だけが入り、各 SKILL.md に name と description がある。承認済みの知識を要再検証に遷移させると、同期先から消える |
 | 9 | `npx tsc --noEmit` | 型エラーなし |
+| 10 | `npx vitest run tests/lifecycle/match.test.ts` | `commentOn`（あり／なし）と `consecutiveMonths`（history から数える。途切れたら数え直し）で当てはまりが変わる。history を 3 か月連続で持つ固定のフィクスチャで、BNP の avoid（コメントなし・3 か月以上）／allow（コメントあり・3 か月以上）の組が、コメントの有無でちょうど片方だけ当てはまる |
+| 11 | `npx vitest run tests/lifecycle/digest.test.ts` | **議題の中身**：整理の後の議題に、扱っていない外れのある承認済み・要再検証の知識（`miss`）、要再検証の知識すべて（`recheck`）、閉じていない `ignored`、停止の知識すべて（`disposal`）が入り、それ以外は入らない。`buildDigest()` の出力に点数・金額の欄がなく、各項目の選択肢が 4 つ（「その他」「判定不能」を含む）。**miss**：外れの提出・`resultId`・区分が `misses` に、同じ知識を同じ rev で適用したほかの提出（請求 id・診療年月・今の結果。結果がなければ「結果待ち」）が `sameApplied` に出る。superseded の提出・ignored の適用・外れの提出自身は `sameApplied` に出ない。外れのない週は `miss` が出ない。回答 1 で状態は変わらず、その外れは次の会議に出ない。回答 2 で承認済み→要再検証（同期先から消える）、修正版の候補（元の polarity・matchApprox・conditionNote を引き継ぐ）ができ、次の会議に `recheck` が出る。回答 3・4 では状態は変わらず、次の会議にまた出る。回答の記録後・反映前に新しい外れが届いても、拾い直しで回答は反映され、新しい外れだけが次の会議に出る。同じ提出に種類だけ違う結果が届くと（`resultId` が変わる）、もう一度出る。区分を外した請求で `ignored` が 1 件でき、事実の訂正だけではできない。**ignored**：回答 1 で `USED` と未配信の「取り忘れだった」、回答 2 で misses が 1 増え候補（relates_to 付き）ができ、状態は変わらない。回答 3・4 で状態も数も変わらない。どの回答でも反映されれば次の会議から消える。知識の rev が変わってから届いた回答は記録だけ。同じ知識の `recheck` に先に答えても `ignored` の回答は反映される。提出が superseded になると次の会議から消え、その回答は記録だけ。知識が保管になると回答は記録だけで、議題にも載らない。同じ項目への 2 回目の回答は無視。**recheck**：回答 1 で承認済み（同期先に戻る）、回答 2 で停止になり修正版の候補が添えられた `disposal` が次の会議に出る。回答 3・4 では要再検証のまま次の会議にまた出る。改定日をまたいで届いた回答 1 は記録だけ。照合に落ちた回答 2 では候補を作らない。照合に通った回答 2 が同じ知識に 2 回続いても候補は 1 件だけ（同じ relates_to には書き足す）。**disposal**：回答 1 で保管、回答 2 で承認済み。**拾い直し**：回答を記録して反映前に止めても、次の整理の手順 0 で反映される。状態の遷移の後・候補の作成の前で止めても、拾い直しで遷移は 1 回、候補は 1 件。**項目 id**：何も変わらない回は未回答の項目の id が同じ。snapshot が変わった後に古い項目へ届いた回答は記録だけ（stale）。**同じ会議の miss と recheck（v21）**：要再検証の知識に外れが届くと両方が並ぶ。miss 2 と recheck 1 は、どちらの順で答えても停止になり候補は 1 件、recheck の答えは記録だけ。miss 1 と recheck 1 は、どちらの順でも承認済みになる。recheck に先に答えて miss に答えないまま次の会議になると、miss が `waitingRecheck: true` 付きで載り直し、recheck は新しく載らない。その後 miss に答えると、待っていた recheck の答えも反映される。待っている間に知識の状態が変わると、recheck の答えは記録だけ |
 
 ## 8. 前提・既知の論点
 
-- **P-1（データの癖）**：K1（14,819 点）はベースアップ評価料・DX 加算・連携加算を含み（report-A の前提）、K2（6,253 点）は含まない（report-B の前提）。同じ架空クリニックなのに届出の前提が違う。届出依存の加算の付け忘れを検出しないことで、両方の合計を成立させる
-- **C-11（解決）**：K2 に F400 処方箋料 60 点を足し、合計 6,253 点とする（spec-input 決定56、EM #7-6 の注）。特定疾患処方管理加算は付けない
+- **v20（ユーザーの意図に合わせた修正）**：v19 では「止める」を「使用を止める」と取り違え、外れを取り込んだらその場で知識を要再検証にしていた。ユーザーの意図は「会議で判断するまで更新を止める」で、使用は止めない。round-14 C-59（在医総管の査定 1 件で制度層の知識がまとめて止まる）は、使用を止めないので起きなくなった。ただし同じ査定で、在医総管の区分を共有する制度層の知識が議題に複数並ぶことはある。会議で 1 回答えれば済むので許容する
+- **許容するずれ（v19・v20）**：責任者が答えた後に、すでに扱った外れの結果が種類だけ変えて届く（縦覧点検など）と、`resultId` が変わるのでもう一度議題に載る。会議で 1 回答えれば済むので、同僚のミスとして許容する
+- **会議までの使用**：外れが届いた知識も、会議で判断するまでは新人のメンターが使う。査定が届くまで間違いかどうかは分からず、届いた後も週内には会議で判断するので、受け入れる（ユーザー判断）
+- **P-1（データの癖）**：K1（14,693 点）はベースアップ評価料・DX 加算・連携加算を含み（report-A の前提）、K2（6,193 点）は含まない（report-B の前提）。同じ架空クリニックなのに届出の前提が違う。届出依存の加算の付け忘れを検出しないことで、両方の合計を成立させる
+- **C-11（撤回）**：K2 に F400 を足した 6,253 点は、C-12 により撤回。K2 は 6,193 点
 - **L-1**：R14 の条件は EM 未収載。実装前に一次資料で確認する
 - **L-2**：`VERIFY_REJECT`（未検証→保管）を追加した
 - **L-3**：東京都国保連の改選日が未設定のため、K1〜K5 の地域知識はトリガー②で落ちない
 - **L-4**：`match` の表現力は §3 で固定した。表現できない知識は `matchApprox` 付きで元の層に置き、提出結果からは自動で動かさない
 - **L-5**：`REEXAM_FILED`（未検証・承認済み→contested）を追加した
-- **C-10（解決）**：在医総管の月でも処方箋料は別算定できる（report-A に合わせる。EM #7-6）。R05 は F400 を包括に含めない
+- **C-10・C-12（解決）**：在医総管の月は処方箋料を算定しない（ユーザー判断で疑義解釈 令和8年 その2 問66 を採用。EM #7-6）。K1 は 14,693 点。令和6年版の資料に明文はなく、後から確認した解釈として 2025年3月分に当てはめる
 - **L-6**：事実だけで判定できる加算のうち、R03・R14 以外の付け忘れ検出は持たない
-- 時刻はすべて引数の `now` で受け取る。デモは時計を 2025-03 → 2025-06-01 に進めて K6 の降格を見せる
+- 時刻はすべて引数の `now` で受け取る（形式は §3。タイムゾーン付き ISO 8601）。デモは時計を 2025-03 → 2025-06-01 に進めて K6 の降格を見せる
 - Skill の frontmatter の規則（name の文字種など）は実装時に Claude Code のドキュメントで確認する
 
 ## 9. 承認が要る依存追加
