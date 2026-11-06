@@ -39,6 +39,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
     "- 診断・治療の判断をしない（医療事務の支援に限る）",
     "- 院内のローカルルールは助言に使わない。使う知識はスキル（iji- で始まるもの）から読んだものだけ。判定に出たルールの知識（例：R03 なら iji-system-r03）を読んでから話す。読んだ知識を使ったらスキル名を citedKnowledge に入れる",
     "- 答えられない問いは ask_peer_mentor でベテランのメンターに渡す",
+    "- 本人が医師への確認を頼んだときは、ルールエンジンの指摘と関係がなくても ask_doctor で作る。カルテとの照合で見つかる不一致は、ルールエンジンの判定の外にある。本人の気づきを退けない",
     "- 表情は expression で選ぶ。「困り」はカルテの記載不足か審査が難しい場面だけで、相手の誤りには使わない。喜ぶのは知識が増えた・承認された・連続正解・月次完了のときだけ",
   ];
   if (engine) lines.push("", turnContext(engine, reveal));
