@@ -1,0 +1,76 @@
+:root {
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --ink: #23262b;
+  --muted: #6b7078;
+  --line: #e2e0da;
+  --accent: #2f6f62;
+  --accent-ink: #ffffff;
+  --warn: #9a5b00;
+  --warn-bg: #fff4e0;
+  --ok: #2f6f3a;
+  --ok-bg: #e9f5ec;
+  --bubble: #eef3f1;
+  font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191c;
+    --panel: #212429;
+    --ink: #e8e9eb;
+    --muted: #9aa0a8;
+    --line: #33373d;
+    --accent: #6fbfab;
+    --accent-ink: #10201c;
+    --warn: #f0b456;
+    --warn-bg: #3a2e1a;
+    --ok: #8fd3a0;
+    --ok-bg: #1f3326;
+    --bubble: #263330;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.6; }
+a { color: var(--accent); }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+input, select, textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.shell { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.top { display: flex; align-items: center; gap: 16px; justify-content: space-between; margin-bottom: 12px; }
+.top nav { display: flex; gap: 12px; flex-wrap: wrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+.muted { color: var(--muted); font-size: 13px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.notice { border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.notice.warn { background: var(--warn-bg); color: var(--warn); }
+.notice.ok { background: var(--ok-bg); color: var(--ok); }
+/* 算定画面：下に吹き出しの欄、右に会話の履歴の窓 */
+.work { padding-bottom: 190px; }
+@media (min-width: 900px) { .work.with-log { margin-right: 376px; } }
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; gap: 12px; align-items: flex-end; max-width: 1200px; margin: 0 auto; padding: 0 16px 16px; pointer-events: none; }
+.dock > * { pointer-events: auto; }
+.portrait { flex: none; width: 140px; height: 180px; border-radius: 12px 12px 0 0; background: var(--bubble); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 8px; text-align: center; }
+.portrait-figure { flex: 1; display: grid; place-items: center; font-weight: bold; }
+.dialog { flex: 1; min-width: 0; background: var(--panel); border: 2px solid var(--accent); border-radius: 12px; padding: 12px 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); }
+.dialog-line { min-height: 72px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; }
+.dialog-actions { display: flex; gap: 8px; margin-top: 8px; }
+.dialog-actions input { flex: 1; min-width: 0; }
+.log { position: fixed; top: 64px; right: 16px; bottom: 210px; z-index: 11; width: min(360px, calc(100vw - 32px)); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); }
+.log-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.log-item { margin-bottom: 10px; }
+.log-item.from-me .bubble { background: transparent; border: 1px solid var(--line); }
+@media (max-width: 640px) {
+  .portrait { width: 72px; height: 104px; font-size: 12px; }
+  .dialog-actions { flex-wrap: wrap; }
+  .work { padding-bottom: 230px; }
+  .log { bottom: 250px; }
+}
+.mentor { display: flex; gap: 12px; align-items: flex-start; }
+.avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--bubble); display: grid; place-items: center; text-align: center; font-size: 12px; flex: none; border: 1px solid var(--line); }
+.bubble { background: var(--bubble); border-radius: 12px; padding: 10px 12px; white-space: pre-wrap; }
+.level { font-size: 12px; color: var(--muted); }
