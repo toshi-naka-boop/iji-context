@@ -3,8 +3,8 @@ import { body, handle } from "../../../src/server/http";
 import { getApp } from "../../../src/server/instance";
 export async function POST(req: Request) {
   return handle(async () => {
-    const b = await body<{ clerkId: string; claimId: string }>(req);
-    return getApp().start(b.clerkId, b.claimId);
+    const b = await body<{ clerkId: string; claimId: string; mode?: "通常" | "選択" }>(req);
+    return getApp().start(b.clerkId, b.claimId, b.mode);
   });
 }
 

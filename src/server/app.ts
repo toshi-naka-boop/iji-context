@@ -12,7 +12,8 @@ import type { Calendar } from "../lifecycle/calendar";
 import { answerItem, buildDigest, dueMeeting, meetingReview, submit, type ReviewDeps } from "../lifecycle/review";
 import { assertTime } from "../lifecycle/time";
 import { answerQuery, approveQuery, listQueries, tickQueries, type BusinessDays, type QueryLog } from "../query/doctor-query";
-import { checkDraft, confirm, finish, myStatus, startQuestion, toExplanation, type Question } from "../practice/practice";
+import { checkDraft, confirm, finish, myStatus, startQuestion, toExplanation, type Mode, type Question } from "../practice/practice";
+import { choiceItems, judgePick, type ChoiceGroup } from "../practice/choice";
 import { managerReport, personalView, preventedOf } from "../prevented/prevented";
 import { toClaimContext, type UkeSources } from "../uke/cases";
 import { candidateOf, resolveNotice, type Notice } from "../notice/notice";
@@ -60,7 +61,9 @@ export function openApp(paths: AppPaths) {
   const cfg = (f: string) => path.join(paths.root, "config", f);
   const calendar = json<Calendar>(cfg("calendar.json"));
   const businessDays = json<BusinessDays>(cfg("business-days.json"));
-  const levels = json<{ thresholds: number[] }>(cfg("levels.json")).thresholds;
+  const levelCfg = json<{ thresholds: number[]; choiceWeight?: number }>(cfg("levels.json"));
+  const levels = levelCfg.thresholds;
+  const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
   const facility = json<Facility>(cfg("facility.json"));
   const deps: ReviewDeps = { db, store, calendar, ruleKubun };
@@ -145,11 +148,11 @@ export function openApp(paths: AppPaths) {
   };
   const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
 
-  function start(clerkId: string, claimId: string): Question {
+  function start(clerkId: string, claimId: string, mode: Mode = "通常"): Question {
     clerk(clerkId);
     caseOf(claimId);
     const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now());
+    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode);
     saveQ(q);
     return q;
   }
@@ -183,7 +186,21 @@ export function openApp(paths: AppPaths) {
     saveQ(q);
     return q;
   }
-  const status = (clerkId: string) => myStatus(allQ(), clerkId, levels);
+  // 選択モード：問題は UKE の原案（医療事務が入力した明細）から作り、正誤はユスティだけで決める
+  function choiceQ(id: string) {
+    const q = loadQ(id);
+    if (q.mode !== "選択") throw new Error(`選択モードの問題ではない: ${id}`);
+    if (q.phase !== "ヒント") throw new Error(`選べない段階: ${q.phase}`);
+    return q;
+  }
+  const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
+  function pick(id: string, lineIndex: number, option: string) {
+    const q = choiceQ(id);
+    const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
+    saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
+    return r;
+  }
+  const status = (clerkId: string) => myStatus(allQ(), clerkId, levels, levelCfg.choiceWeight ?? 1);
   const questionsOf = (clerkId: string) => allQ().filter((q) => q.clerkId === clerkId);
 
   // -------------------------------------------------------------------------
@@ -336,6 +353,8 @@ export function openApp(paths: AppPaths) {
     clerk,
     setSession,
     start,
+    choices,
+    pick,
     draft,
     confirm: confirmQ,
     explain,

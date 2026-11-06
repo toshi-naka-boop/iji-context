@@ -52,9 +52,9 @@ describe("スコア（件数・連続正解。FR-29）とレベル（FR-16）", 
   it("K1〜K6 を順に解くと件数と連続正解が増え、間違えると連続正解が 0 に戻る", () => {
     const qs: Question[] = [];
     ["K1", "K2", "K3", "K4", "K5", "K6"].forEach((k, i) => qs.push(solve(`q${i}`, "c1", k, T(String(10 + i)))));
-    expect(score(qs, "c1")).toEqual({ count: 6, streak: 6, bestStreak: 6 });
+    expect(score(qs, "c1")).toEqual({ count: 6, credit: 6, streak: 6, bestStreak: 6 });
     qs.push(solve("q6", "c1", "K2", T("20"), true));
-    expect(score(qs, "c1")).toEqual({ count: 7, streak: 0, bestStreak: 6 });
+    expect(score(qs, "c1")).toEqual({ count: 7, credit: 7, streak: 0, bestStreak: 6 });
     expect(Object.keys(score(qs, "c1")).some((k) => /yen|amount|金額/.test(k))).toBe(false);
   });
 

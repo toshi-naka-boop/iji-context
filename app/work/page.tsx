@@ -10,6 +10,9 @@ import { TopBar } from "../nav";
 type Master = { kubun: string; name: string; points: number | null }[];
 type Status = { level: number; count: number; streak: number };
 type Bubble = { from: "mentor" | "me"; text: string; expression?: string };
+/** 選択モードの問題（正誤はサーバーでユスティが決める。画面は正解を持たない） */
+type ChoiceItem = { lineIndex: number; group: string; options: string[] };
+type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "未回答" | "正解" | "判定不能" };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
 
 const CLERK = "new1";
@@ -42,6 +45,9 @@ export default function Work() {
   const [cross, setCross] = useState<Cross | null>(null);
   const [proxy, setProxy] = useState("");
   const [proxyMsg, setProxyMsg] = useState("");
+  /** 選択モード（急いでいるとき）：区分を選ぶ箇所を、正解と間違えやすい区分の選択肢で答える */
+  const [choiceMode, setChoiceMode] = useState(false);
+  const [quiz, setQuiz] = useState<ChoiceState[]>([]);
   async function sendProxy() {
     if (!q) return;
     setBusy(true);
@@ -72,8 +78,13 @@ export default function Work() {
 
   async function begin(claimId: string) {
     setErr("");
-    const nq = await api<Question>("/api/questions", { clerkId: CLERK, claimId });
+    const nq = await api<Question>("/api/questions", { clerkId: CLERK, claimId, mode: choiceMode ? "選択" : "通常" });
     setQ(nq);
+    setQuiz([]);
+    if (choiceMode) {
+      const items = await api<ChoiceItem[]>(`/api/questions/${nq.id}/choices`);
+      setQuiz(items.map((item) => ({ item, wrong: [], reason: "", state: "未回答" })));
+    }
     setLines(cases.find((c) => c.claimId === claimId)!.lines.map((l) => ({ ...l, dates: [...l.dates] })));
     setCareLevel("");
     setChat([]);
@@ -95,6 +106,26 @@ export default function Work() {
     setChat((c) => [...c, { from: "me", text: "照合のこととは別のことを聞きたい" }]);
     await mentor(pendingAsk, "カルテ不足", q?.id, true, true);
   }
+
+  /** 選択モードで 1 つ選ぶ。正誤はユスティ。間違いならその指摘を理由として見せ、もう一度選べる */
+  async function choose(lineIndex: number, option: string) {
+    if (!q) return;
+    try {
+      const r = await api<{ correct: boolean; findings: Finding[] }>(`/api/questions/${q.id}/choices`, { lineIndex, option });
+      setQuiz((qs) =>
+        qs.map((x) => {
+          if (x.item.lineIndex !== lineIndex) return x;
+          if (option === "判定不能") return { ...x, state: "判定不能", reason: "区分を表から自分で選ぶか、メンターに聞いてみましょう。" };
+          if (r.correct) return { ...x, state: "正解", reason: "" };
+          return { ...x, wrong: [...x.wrong, option], reason: r.findings.map(findingText).join(" ") || "ユスティの判定では合いません。" };
+        }),
+      );
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  /** 選択モードで、まだ答えていない行（区分を「？」で隠す） */
+  const hidden = (i: number) => quiz.some((x) => x.item.lineIndex === i && x.state === "未回答");
 
   async function sendQuery(ruleId: string) {
     if (!q) return;
@@ -175,6 +206,11 @@ export default function Work() {
       {!q && (
         <div className="panel">
           <h2 style={{ marginTop: 0 }}>今日のレセプト</h2>
+          <p>
+            <label>
+              <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ。レベルの上がり方は小さめ）
+            </label>
+          </p>
           <div className="chips">
             {cases.map((c) => (
               <button key={c.claimId} onClick={() => begin(c.claimId)}>
@@ -188,8 +224,30 @@ export default function Work() {
         <div className={`work${showLog ? " with-log" : ""}`}>
           <section className="panel">
             <h2 style={{ marginTop: 0 }}>
-              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}</span>
+              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}</span>
             </h2>
+            {q.mode === "選択" && q.phase === "ヒント" && (
+              <div className="quiz">
+                {quiz.length === 0 && <div className="notice ok">このレセプトには選択式で出せる箇所がありません。いつもどおり表を見直してください。</div>}
+                {quiz.map((x) => (
+                  <div key={x.item.lineIndex} className={`notice ${x.state === "正解" ? "ok" : x.wrong.length ? "warn" : ""}`}>
+                    <strong>{x.item.group}は？</strong>（{x.item.lineIndex + 1} 行目）
+                    {x.state === "未回答" ? (
+                      <div className="dialog-actions" role="group" aria-label={`${x.item.group}を選ぶ`}>
+                        {x.item.options.map((o) => (
+                          <button key={o} disabled={x.wrong.includes(o)} onClick={() => choose(x.item.lineIndex, o)}>
+                            {o === "なし" || o === "判定不能" ? o : nameOf(o)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span>　{x.state === "正解" ? "正解です" : "判定不能"}</span>
+                    )}
+                    {x.reason && <div className="muted">{x.reason}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
             <table>
               <thead>
                 <tr><th>区分</th><th>回数</th><th>日（3 月）</th><th>点数</th><th /></tr>
@@ -198,9 +256,9 @@ export default function Work() {
                 {lines.map((l, i) => (
                   <tr key={i}>
                     <td>
-                      <select value={l.kubun} disabled={q.phase !== "ヒント"} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, kubun: e.target.value } : x)))}>
+                      {hidden(i) ? <span aria-label="選択式で答える区分">？（上で選ぶ）</span> : <select value={l.kubun} disabled={q.phase !== "ヒント"} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, kubun: e.target.value } : x)))}>
                         {master.map((m) => <option key={m.kubun} value={m.kubun}>{m.name}</option>)}
-                      </select>
+                      </select>}
                     </td>
                     <td>{l.count}</td>
                     <td>
@@ -214,8 +272,8 @@ export default function Work() {
                         }}
                       />
                     </td>
-                    <td>{pointsOf(l.kubun) ?? "未収載"}</td>
-                    <td>{q.phase === "ヒント" && <button onClick={() => setLines(lines.filter((_, j) => j !== i))}>外す</button>}</td>
+                    <td>{hidden(i) ? "？" : pointsOf(l.kubun) ?? "未収載"}</td>
+                    <td>{q.phase === "ヒント" && quiz.length === 0 && <button onClick={() => setLines(lines.filter((_, j) => j !== i))}>外す</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -223,7 +281,7 @@ export default function Work() {
             {q.phase === "ヒント" && (
               <p>
                 <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: ["2025-03-10"] }])}>行を足す</button>
-                <span className="muted">　合計 {total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
+                <span className="muted">　合計 {quiz.some((x) => x.state === "未回答") ? "？" : total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
               </p>
             )}
             {careUnknown && (
@@ -260,7 +318,11 @@ export default function Work() {
               <button disabled={busy || !proxy.trim()} onClick={sendProxy}>整えて医師確認に回す</button>
               {proxyMsg && <div className="notice ok" style={{ whiteSpace: "pre-wrap" }}>{proxyMsg}</div>}
             </details>
-            {q.phase === "ヒント" && <button className="primary" onClick={doConfirm}>確定する</button>}
+            {q.phase === "ヒント" && (
+              <button className="primary" onClick={doConfirm} disabled={quiz.some((x) => x.state === "未回答")}>
+                確定する
+              </button>
+            )}
             {q.confirmed && (
               <div>
                 <h3>ユスティの判定</h3>

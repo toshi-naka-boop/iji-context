@@ -134,3 +134,16 @@ describe("F3 代行入力", () => {
     expect(app.approveDoctor(r.query!.id, "院長").query.status).toBe("承認済み");
   });
 });
+
+describe("選択モード", () => {
+  it("選択モードで始めると、問題が引けて、選んだものが記録される。通常の問題では引けない", () => {
+    const k1 = app.caseOf("K1-2025-03");
+    const q = app.start("new1", k1.claimId, "選択");
+    const items = app.choices(q.id);
+    expect(items.map((x) => x.group)).toEqual(["在医総管の区分"]);
+    expect(app.pick(q.id, items[0].lineIndex, "C002_2RO1").correct).toBe(false);
+    expect(app.pick(q.id, items[0].lineIndex, "C002_2I1").correct).toBe(true);
+    expect(app.question(q.id).picks?.map((p) => p.correct)).toEqual([false, true]);
+    expect(() => app.choices(app.start("new1", k1.claimId).id)).toThrow(/選択モードの問題ではない/);
+  });
+});
