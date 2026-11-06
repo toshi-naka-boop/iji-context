@@ -1,0 +1,38 @@
+{
+  "id": "system/r02",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R02：在宅酸素療法中など別表第八の二に当たる患者は重症区分（2イ）で算定する。重症区分に包括的支援加算は付けない",
+  "rev": "9d58578f8917",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R02",
+    "at": "2025-03-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2025-03-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": "2025-03-10T09:00:00+09:00",
+  "last_used_at": "2025-03-10T09:00:00+09:00",
+  "status_since": "2025-03-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "match": {
+    "ruleId": "R02"
+  },
+  "history": [
+    {
+      "at": "2025-03-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

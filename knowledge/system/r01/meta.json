@@ -1,0 +1,38 @@
+{
+  "id": "system/r01",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R01：在医総管の区分は同月の訪問診療の算定回数で決まる。訪問診療のない月の在医総管は算定できない",
+  "rev": "274bb7d52ee8",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R01",
+    "at": "2025-03-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2025-03-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": "2025-03-10T09:00:00+09:00",
+  "last_used_at": "2025-03-10T09:00:00+09:00",
+  "status_since": "2025-03-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "match": {
+    "ruleId": "R01"
+  },
+  "history": [
+    {
+      "at": "2025-03-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}
