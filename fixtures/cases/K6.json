@@ -10,7 +10,7 @@
     },
     "insurance": {
       "known": true,
-      "value": "国保"
+      "value": "協会けんぽ"
     },
     "burdenRatio": {
       "known": true,

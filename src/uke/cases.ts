@@ -6,11 +6,28 @@ import type { UkeClinic, UkeFile, UkePatient } from "./types";
 
 export type UkeSources = { clinic: UkeClinic; patients: Record<string, UkePatient> };
 
+/**
+ * 保険者番号から審査支払機関を決める（保険証の情報で区別する。2026-11-06 ユーザー判断）。
+ * 6 桁は国保（市町村国保・国保組合）、39 で始まる 8 桁は後期高齢者医療 → 国保連。それ以外の 8 桁は被用者保険（社保）→ 支払基金
+ */
+export function payerOfInsurer(insurerNumber: string): Payer {
+  if (/^\d{6}$/.test(insurerNumber)) return "国保連";
+  if (/^39\d{6}$/.test(insurerNumber)) return "国保連";
+  if (/^\d{8}$/.test(insurerNumber)) return "支払基金";
+  throw new Error(`保険者番号の形式が不正: ${insurerNumber}`);
+}
+
 /** 審査支払機関ごとに 1 ファイル（spec FR-05：国保連 IR=2、支払基金 IR=1）。並びは入力の順 */
 export function buildUkeFiles(cases: ClaimContext[], src: UkeSources, billingMonth: string): Record<Payer, UkeFile> {
   const files = {} as Record<Payer, UkeFile>;
+  for (const c of cases) {
+    const patient = src.patients[c.claimId];
+    if (!patient) throw new Error(`患者情報がない: ${c.claimId}`);
+    const derived = payerOfInsurer(patient.insurer.number);
+    if (derived !== c.payer) throw new Error(`${c.claimId}: 保険証（${patient.insurer.number}）では ${derived} だが、請求は ${c.payer}`);
+  }
   for (const payer of ["国保連", "支払基金"] as const) {
-    const mine = cases.filter((c) => c.payer === payer);
+    const mine = cases.filter((c) => payerOfInsurer(src.patients[c.claimId].insurer.number) === payer);
     const prefs = new Set(mine.map((c) => c.prefecture));
     if (prefs.size > 1) throw new Error(`1 ファイルに複数の都道府県: ${[...prefs].join(",")}`);
     files[payer] = {

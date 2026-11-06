@@ -51,3 +51,14 @@ describe("取り忘れ（K2）", () => {
     expect(evaluate(late).findings.map((f) => `${f.ruleId}:${f.kind}`)).toEqual(["R14:要件不足"]);
   });
 });
+
+describe("K3・K4 の要介護度（2026-11-06 ユーザー判断）", () => {
+  it("K3 は要介護3。重症区分なので包括的支援加算は付かず、指摘なし", () => {
+    expect(evaluate(loadCase("K3")).findings).toEqual([]);
+  });
+  it("K4 は要介護度が未入力で、医療事務あての情報不足が 1 件。要介護2 を入れると包括的支援加算は対象外で指摘なし", () => {
+    const k4 = loadCase("K4");
+    expect(evaluate(k4).findings.map((f) => [f.ruleId, f.kind, f.missing])).toEqual([["R03", "情報不足", { target: "clerk", field: "careLevel" }]]);
+    expect(evaluate(withFact(k4, "careLevel", { known: true, value: 2 })).findings).toEqual([]);
+  });
+});

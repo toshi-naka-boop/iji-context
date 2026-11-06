@@ -17,7 +17,8 @@
       "value": 0.1
     },
     "careLevel": {
-      "known": false
+      "known": true,
+      "value": 3
     },
     "table7": {
       "known": true,

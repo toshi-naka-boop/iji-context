@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BILLING_MONTH, CASES, generate, loadSources, UKE_FILES } from "../../scripts/gen-uke";
 import { evaluate } from "../../src/engine";
-import { buildUkeFiles, toClaimContext } from "../../src/uke/cases";
+import { buildUkeFiles, payerOfInsurer, toClaimContext } from "../../src/uke/cases";
 import { formatUke, parseUke, writeUke } from "../../src/uke/uke";
 import { loadCase } from "../engine/helpers";
 
@@ -100,5 +100,28 @@ describe("形式（FR-06）", () => {
     expect(() => formatUke(buildUkeFiles([bad1], src, BILLING_MONTH).支払基金)).toThrow(/点数未収載/);
     const bad2 = { ...k6, lines: [{ kubun: "D008_18", count: 1, dates: ["2025-04-01"] }] };
     expect(() => formatUke(buildUkeFiles([bad2], src, BILLING_MONTH).支払基金)).toThrow(/診療年月の外/);
+  });
+});
+
+describe("審査支払機関は保険証（保険者番号）で決まる", () => {
+  it("6 桁（国保）と 39 で始まる 8 桁（後期）は国保連、それ以外の 8 桁（社保）は支払基金。形式が違えば例外", () => {
+    expect(payerOfInsurer("139999")).toBe("国保連");
+    expect(payerOfInsurer("39139999")).toBe("国保連");
+    expect(payerOfInsurer("01139999")).toBe("支払基金");
+    expect(payerOfInsurer("06139999")).toBe("支払基金");
+    expect(() => payerOfInsurer("1234")).toThrow(/形式/);
+  });
+
+  it("K1〜K5 は後期高齢者で国保連、K6 は協会けんぽで支払基金", () => {
+    const { cases, src } = loadSources();
+    expect(cases.map((c) => [c.claimId, payerOfInsurer(src.patients[c.claimId].insurer.number)])).toEqual([
+      ["K1-2025-03", "国保連"], ["K2-2025-03", "国保連"], ["K3-2025-03", "国保連"], ["K4-2025-03", "国保連"], ["K5-2025-03", "国保連"], ["K6-2025-03", "支払基金"],
+    ]);
+  });
+
+  it("請求の審査支払機関が保険証と食い違うと UKE を作らない", () => {
+    const { cases, src } = loadSources();
+    const k6 = { ...cases.find((c) => c.claimId === "K6-2025-03")!, payer: "国保連" as const };
+    expect(() => buildUkeFiles([k6], src, BILLING_MONTH)).toThrow(/保険証/);
   });
 });
