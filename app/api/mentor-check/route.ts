@@ -25,6 +25,8 @@ export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const model = url.searchParams.get("model");
   const effort = url.searchParams.get("effort") as Effort | null;
+  // ?explain=1 で確定したあとの解説を試す（判定の中身を渡す）
+  const explain = url.searchParams.get("explain") === "1";
   try {
     const base = process.cwd();
     const k2 = JSON.parse(readFileSync(path.join(base, "fixtures/cases/K2.json"), "utf8"));
@@ -56,11 +58,11 @@ export async function GET(req: Request): Promise<Response> {
       ctx,
       engine,
       situation: "新人の誤り",
-      message: "この請求を確定する前に、ヒントをください。",
+      message: explain ? "（本人が確定した。判定の理由を短く解説してください）" : "この請求を確定する前に、ヒントをください。",
       now: () => new Date().toISOString(),
       ...(model ? { model: { model, ...(effort ? { effort } : {}) } } : {}),
       workspace: (() => { const cwd = ensureWorkspace(path.join(root, "ws"), "check", deps.store.skillsDir, "# 動作確認\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
-      reveal: false,
+      reveal: explain,
     });
     return Response.json({ ok: true, ...r, ms: Date.now() - started });
   } catch (e) {

@@ -116,7 +116,7 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
         situation: input.situation,
         message: input.message,
         now: () => a.now(),
-        model: modelFor("mentor", { level }),
+        model: modelFor("mentor", { level, scene: q.confirmed !== null ? "explain" : "hint" }),
         workspace: p.workspace,
         // 確定する前（ヒントの段階）は判定の中身を渡さない
         reveal: q.confirmed !== null,

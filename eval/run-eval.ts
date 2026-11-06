@@ -117,7 +117,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
         situation: c.kind === "doctor" ? "カルテ不足" : (c.situation ?? "通常"),
         message: c.message!,
         now: () => "2025-03-10T09:00:00+09:00",
-        model: modelFor("mentor", { level: 1 }),
+        model: modelFor("mentor", { level: 1, scene: c.kind !== "doctor" && c.reveal ? "explain" : "hint" }),
         workspace: (() => { const cwd = ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
         reveal: c.kind === "doctor" ? false : !!c.reveal,
       },
@@ -178,12 +178,12 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
   const cats = new Map<string, number>();
   for (const r of results) for (const f of r.failures) cats.set(f.category, (cats.get(f.category) ?? 0) + 1);
   const regress = results.filter((r) => prevResults.get(r.id) === true && !r.pass).map((r) => r.id);
-  const models = { mentor: modelFor("mentor", { level: 1 }), scribe: modelFor("scribe") };
+  const models = { mentor: modelFor("mentor", { level: 1 }), explain: modelFor("mentor", { level: 1, scene: "explain" }), scribe: modelFor("scribe") };
   const md = [
     `# prompt-eval ${runId}`,
     "",
     `- 正答：${passed} / ${results.length}${prev ? `（前回 ${prev}）` : ""}`,
-    `- モデル：メンター ${models.mentor.model}（${models.mentor.effort ?? "既定"}）、整文 ${models.scribe.model}`,
+    `- モデル：メンター ${models.mentor.model}（ヒント ${models.mentor.effort ?? "既定"}・解説 ${models.explain.effort ?? "既定"}）、整文 ${models.scribe.model}`,
     `- 前回パス → 今回失敗：${regress.join("、") || "なし"}`,
     `- 失敗の種類：${[...cats.entries()].map(([k, v]) => `${k} ${v}`).join("、") || "なし"}`,
     "",

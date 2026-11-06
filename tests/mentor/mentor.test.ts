@@ -210,6 +210,12 @@ describe("役割ごとのモデル（config/models.json）", () => {
     expect(modelFor("mentor", { level: 6 }).model).toBe("claude-opus-5-5");
     expect(modelFor("mentor", { level: 10 }).model).toBe("claude-opus-5-5");
   });
+  it("場面：Lv.5 までは解説だけ考える深さが「中」、ヒントは「低」。Lv.6 以上はレベルの段（Opus）が優先", async () => {
+    const { modelFor } = await import("../../src/mentor/models");
+    expect(modelFor("mentor", { level: 1, scene: "hint" })).toEqual({ model: "claude-sonnet-5-5", effort: "low" });
+    expect(modelFor("mentor", { level: 1, scene: "explain" })).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
+    expect(modelFor("mentor", { level: 6, scene: "explain" })).toEqual(modelFor("mentor", { level: 6 }));
+  });
 });
 
 describe("医師に聞く前に正しい決まりを読む（照合の不一致 M01）", () => {
