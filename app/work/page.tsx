@@ -263,7 +263,7 @@ export default function Work() {
             {q.phase === "ヒント" && <button className="primary" onClick={doConfirm}>確定する</button>}
             {q.confirmed && (
               <div>
-                <h3>判定</h3>
+                <h3>ユスティの判定</h3>
                 {q.correct ? <div className="notice ok">確認してほしい点はありません</div> : null}
                 {findings.map((f, i) => (
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>
