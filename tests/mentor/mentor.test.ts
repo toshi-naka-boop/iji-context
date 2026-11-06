@@ -16,7 +16,9 @@ const T = "2025-03-10T09:00:00+09:00";
 
 describe("出力の検査と表情（FR-21〜24）", () => {
   it("形が正しい出力は通り、引用 id は重複を除く", () => {
-    expect(parseMentorOutput({ body: "在医総管の区分を見直してみて", expression: "考え中", citedKnowledge: ["a", "a"] }, "通常")).toEqual({ body: "在医総管の区分を見直してみて", expression: "考え中", citedKnowledge: ["a"] });
+    expect(parseMentorOutput({ body: "在医総管の区分を見直してみて", expression: "考え中", citedKnowledge: ["a", "a"], topic: "算定" }, "通常")).toEqual({ body: "在医総管の区分を見直してみて", expression: "考え中", citedKnowledge: ["a"], topic: "算定" });
+    // topic が欠けていたら「算定」として扱う（雑談の回数を数えない側に倒す）
+    expect(parseMentorOutput({ body: "x", expression: "通常", citedKnowledge: [] }, "通常").topic).toBe("算定");
   });
   it("本文なし・表情が範囲外・引用が配列でない出力は例外", () => {
     expect(() => parseMentorOutput({ body: "", expression: "通常", citedKnowledge: [] }, "通常")).toThrow(/本文/);
@@ -272,5 +274,38 @@ describe("医師に聞く前に正しい決まりを読む（照合の不一致 
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("雑談（3 回続いたら算定に戻る声かけ）", () => {
+  it("雑談が続いた回数を数え、3 回目で声かけを添えたら 0 に戻す。算定の話でも 0 に戻す", async () => {
+    const { nextSmalltalkStreak } = await import("../../src/mentor/output");
+    let n = 0;
+    n = nextSmalltalkStreak(n, "雑談");
+    expect(n).toBe(1);
+    n = nextSmalltalkStreak(n, "雑談");
+    expect(n).toBe(2);
+    n = nextSmalltalkStreak(n, "雑談"); // 3 回目：声かけを添えた回
+    expect(n).toBe(0);
+    expect(nextSmalltalkStreak(2, "算定")).toBe(0);
+  });
+  it("雑談が 2 回続いたあとの発言には、算定に戻る一言を添えるよう伝える。1 回では伝えない", async () => {
+    const { turnContext } = await import("../../src/mentor/prompt");
+    const e = evaluate(loadCase("K3"));
+    expect(turnContext(e, false, [], 2)).toContain("算定のほうは終わりました");
+    expect(turnContext(e, false, [], 1)).not.toContain("算定のほうは終わりました");
+  });
+});
+
+describe("ヒントの段階で渡すもの（prompt-eval M5 の改訂）", () => {
+  it("情報不足は、入っていない事実と確かめ方を渡す。取り忘れの項目名は渡さない。今日の日付を添える", async () => {
+    const { turnContext } = await import("../../src/mentor/prompt");
+    const k4 = turnContext(evaluate(loadCase("K4")), false, [], 0, "2025-03-10");
+    expect(k4).toContain("情報不足（本人の誤りではない）：要介護度が入っていません。介護保険証で確かめて入力してください");
+    expect(k4).toContain("その行に加算が付いているという意味ではない");
+    expect(k4).toContain("今日の日付：2025-03-10");
+    const k2 = turnContext(evaluate(without(loadCase("K2"), "C002_N10_HOKATSU")), false);
+    expect(k2).not.toContain("包括的支援加算");
+    expect(k2).not.toContain("情報不足（");
   });
 });

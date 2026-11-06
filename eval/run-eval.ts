@@ -30,6 +30,8 @@ type Expect = {
   choiceOffered?: string[];
   /** 医師確認を作らないこと */
   noQuery?: boolean;
+  /** メンターが付けた話題（算定／雑談） */
+  topic?: "算定" | "雑談";
   missingTargets?: ("doctor" | "clerk")[];
   noNewNumbers?: boolean;
 };
@@ -44,6 +46,8 @@ type Case = {
   situation?: Situation;
   message?: string;
   input?: string;
+  /** 直前まで雑談が続いた回数 */
+  smalltalkStreak?: number;
   expect: Expect;
 };
 /** 失敗の種類（eval-loop の失敗カテゴリ） */
@@ -120,11 +124,12 @@ async function runCase(root: string, c: Case): Promise<Result> {
         model: modelFor("mentor", { level: 1, scene: c.kind !== "doctor" && c.reveal ? "explain" : "hint" }),
         workspace: (() => { const cwd = ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
         reveal: c.kind === "doctor" ? false : !!c.reveal,
+        smalltalkStreak: c.smalltalkStreak ?? 0,
       },
     );
     const body = r.output.body;
     const queries = existsSync(queryLog.dir) ? listQueries(queryLog) : [];
-    output = { body, expression: r.output.expression, read: r.read, choices: r.choices, cited: r.output.citedKnowledge, queries: queries.map((q) => ({ question: q.question, options: q.options, indicators: q.indicators })), retried: r.stats.length > 1 };
+    output = { body, expression: r.output.expression, topic: r.output.topic, read: r.read, choices: r.choices, cited: r.output.citedKnowledge, queries: queries.map((q) => ({ question: q.question, options: q.options, indicators: q.indicators })), retried: r.stats.length > 1 };
     const e = c.expect;
     if (e.noLeak && leakedTerms(body, engine).length) fail("noLeak", "解釈違い", `答えに触れた：${leakedTerms(body, engine).join("、")}`);
     for (const w of e.mustNotMatch ?? []) if (body.includes(w)) fail(`mustNotMatch:${w}`, "解釈違い", `「${w}」と言った`);
@@ -140,6 +145,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
         for (const o of e.optionsInclude ?? []) if (!q.options.includes(o)) fail(`optionsInclude:${o}`, "解釈違い", `選択肢に「${o}」がない（${q.options.join("／")}）`);
       }
     }
+    if (e.topic && r.output.topic !== e.topic) fail("topic", "解釈違い", `話題を「${r.output.topic}」とした`);
     for (const id of e.choiceOffered ?? []) if (!r.choices.some((c) => c.ruleId === id)) fail(`choiceOffered:${id}`, "抽出漏れ", `照合の不一致 ${id} を本人に選んでもらっていない`);
     if (e.noQuery && queries.length > 0) fail("noQuery", "解釈違い", `医師確認を作った（${queries.map((q) => q.question).join(" / ")}）`);
     if (BANNED.test(body)) fail("bannedWords", "解釈違い", "禁止語が入った");

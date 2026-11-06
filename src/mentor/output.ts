@@ -9,7 +9,24 @@ export type MentorOutput = {
   expression: Expression;
   /** 引用した知識の id（F5 に USED として渡す） */
   citedKnowledge: string[];
+  /** 本人の発言が算定の話か、算定と関係ない雑談か（雑談が続いたら算定に戻る声かけをする） */
+  topic: Topic;
 };
+
+export const TOPICS = ["算定", "雑談"] as const;
+export type Topic = (typeof TOPICS)[number];
+
+/** 雑談が何回続いたら、算定に戻る声かけを添えるか */
+export const SMALLTALK_NUDGE_AFTER = 3;
+
+/**
+ * 雑談が続いた回数を数える（決まった規則）。算定の話なら 0 に戻す。
+ * 声かけを添えた回（SMALLTALK_NUDGE_AFTER 回目）のあとも 0 に戻し、また 3 回続いたら声をかける
+ */
+export function nextSmalltalkStreak(prev: number, topic: Topic): number {
+  if (topic !== "雑談") return 0;
+  return prev + 1 >= SMALLTALK_NUDGE_AFTER ? 0 : prev + 1;
+}
 
 /** Agent SDK の outputFormat（json_schema）に渡すスキーマ */
 export const MENTOR_OUTPUT_SCHEMA = {
@@ -18,8 +35,9 @@ export const MENTOR_OUTPUT_SCHEMA = {
     body: { type: "string" },
     expression: { type: "string", enum: [...EXPRESSIONS] },
     citedKnowledge: { type: "array", items: { type: "string" } },
+    topic: { type: "string", enum: [...TOPICS] },
   },
-  required: ["body", "expression", "citedKnowledge"],
+  required: ["body", "expression", "citedKnowledge", "topic"],
   additionalProperties: false,
 } as const;
 
@@ -48,7 +66,9 @@ export function parseMentorOutput(raw: unknown, s: Situation): MentorOutput {
   if (typeof o.body !== "string" || o.body.trim() === "") throw new Error("本文がない");
   if (!EXPRESSIONS.includes(o.expression as Expression)) throw new Error(`表情が不正: ${String(o.expression)}`);
   if (!Array.isArray(o.citedKnowledge) || o.citedKnowledge.some((x) => typeof x !== "string")) throw new Error("引用した知識の id が不正");
-  return { body: o.body, expression: guardExpression(o.expression as Expression, s), citedKnowledge: [...new Set(o.citedKnowledge)] };
+  // topic が欠けたり範囲外なら「算定」として扱う（雑談の回数を数えない側に倒す）
+  const topic: Topic = TOPICS.includes(o.topic as Topic) ? (o.topic as Topic) : "算定";
+  return { body: o.body, expression: guardExpression(o.expression as Expression, s), citedKnowledge: [...new Set(o.citedKnowledge)], topic };
 }
 
 /** 言い直させても答えに触れていたときの決まった文 */

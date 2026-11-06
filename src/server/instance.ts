@@ -1,7 +1,7 @@
 // API Route から使うアプリの実体（プロセスに 1 つ）。DB は data/resemen.db（.gitignore 済み）
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { Situation } from "../mentor/output";
+import { nextSmalltalkStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
 import type { Character } from "../mentor/prompt";
 import { askVeteranMentor } from "../mentor/peer";
@@ -120,10 +120,12 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
         workspace: p.workspace,
         // 確定する前（ヒントの段階）は判定の中身を渡さない
         reveal: q.confirmed !== null,
+        smalltalkStreak: Number(a.setting(`smalltalk:${q.id}`) ?? "0"),
       },
     ),
   );
   a.setSession(clerk.id, r.sessionId);
   a.setSetting(`session_gen:${clerk.id}`, p.generation);
+  a.setSetting(`smalltalk:${q.id}`, String(nextSmalltalkStreak(Number(a.setting(`smalltalk:${q.id}`) ?? "0"), r.output.topic)));
   return r;
 }
