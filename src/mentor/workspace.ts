@@ -8,6 +8,7 @@ import path from "node:path";
 import type { HookCallbackMatcher, HookEvent } from "@anthropic-ai/claude-agent-sdk";
 import { listKnowledge, type StoreOptions } from "../lifecycle/store";
 import type { Question } from "../practice/practice";
+import { MISMATCH_RULES } from "../uke/crosscheck";
 
 /**
  * 作業場所の置き場所。Claude Code は cwd から上の階層の CLAUDE.md も読むので、
@@ -24,34 +25,64 @@ export function workspaceRoot(root = process.env.RESEMEN_WORKSPACES ?? path.join
   return abs;
 }
 
-/** 作業場所を用意する（何度呼んでもよい）。CLAUDE.md は中身が変わったときだけ書き換える */
-export function ensureWorkspace(root: string, id: string, skillsDir: string, claudeMd: string): string {
+/**
+ * 作業場所を用意する（何度呼んでもよい）。CLAUDE.md は中身が変わったときだけ書き換える。
+ * .claude/skills には、同期先の承認済み知識（iji-*）へのリンクと、照合の規則のスキル（extra）を置き、それ以外は消す
+ */
+export function ensureWorkspace(root: string, id: string, skillsDir: string, claudeMd: string, extra: { name: string; content: string }[] = []): string {
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`作業場所の id が不正: ${id}`);
   const dir = path.join(root, id);
-  mkdirSync(path.join(dir, ".claude"), { recursive: true });
-  const link = path.join(dir, ".claude", "skills");
+  const skills = path.join(dir, ".claude", "skills");
+  // 以前の形（skills 全体へのリンク）なら作り直す
+  try {
+    if (lstatSync(skills).isSymbolicLink()) rmSync(skills, { force: true });
+  } catch {
+    /* ない */
+  }
+  mkdirSync(skills, { recursive: true });
   const target = path.resolve(skillsDir);
   mkdirSync(target, { recursive: true });
-  let ok = false;
-  try {
-    ok = lstatSync(link).isSymbolicLink() && readlinkSync(link) === target;
-  } catch {
-    ok = false;
+  const want = new Set<string>();
+  for (const name of skillNames(target)) {
+    want.add(name);
+    const link = path.join(skills, name);
+    let ok = false;
+    try {
+      ok = lstatSync(link).isSymbolicLink() && readlinkSync(link) === path.join(target, name);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      rmSync(link, { recursive: true, force: true });
+      symlinkSync(path.join(target, name), link);
+    }
   }
-  if (!ok) {
-    rmSync(link, { recursive: true, force: true });
-    symlinkSync(target, link);
+  for (const x of extra) {
+    if (!/^[a-z0-9-]+$/.test(x.name)) throw new Error(`スキル名が不正: ${x.name}`);
+    want.add(x.name);
+    mkdirSync(path.join(skills, x.name), { recursive: true });
+    writeIfChanged(path.join(skills, x.name, "SKILL.md"), x.content);
   }
-  const file = path.join(dir, "CLAUDE.md");
-  if (!existsSync(file) || readFileSync(file, "utf8") !== claudeMd) {
-    const tmp = `${file}.tmp-${process.pid}`;
-    writeFileSync(tmp, claudeMd);
-    renameSync(tmp, file);
-  }
+  for (const e of readdirSync(skills)) if (!want.has(e)) rmSync(path.join(skills, e), { recursive: true, force: true });
+  writeIfChanged(path.join(dir, "CLAUDE.md"), claudeMd);
   return dir;
 }
 
-/** 同期先にある知識のスキル名（iji-*）。これだけを有効にし、Claude Code 同梱のスキルは出さない */
+function writeIfChanged(file: string, content: string): void {
+  if (existsSync(file) && readFileSync(file, "utf8") === content) return;
+  const tmp = `${file}.tmp-${process.pid}`;
+  writeFileSync(tmp, content);
+  renameSync(tmp, file);
+}
+
+/** 作業場所で有効にするスキル名（同期先の iji-* と、照合の規則の crosscheck-*）。Claude Code 同梱のスキルは出さない */
+export function workspaceSkillNames(cwd: string): string[] {
+  const dir = path.join(cwd, ".claude", "skills");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((n) => n.startsWith("iji-") || n.startsWith("crosscheck-")).sort();
+}
+
+/** 同期先にある知識のスキル名（iji-*） */
 export function skillNames(skillsDir: string): string[] {
   if (!existsSync(skillsDir)) return [];
   return readdirSync(skillsDir, { withFileTypes: true })
@@ -82,6 +113,9 @@ export function skillGuard(store: StoreOptions): { hooks: Partial<Record<HookEve
     return typeof ti?.skill === "string" ? ti.skill : "";
   };
   const allowed = (name: string) => {
+    // 照合の規則（状態を持たない決まった規則）はいつでも読める。記録は crosscheck/<id>
+    const cross = /^crosscheck-([a-z0-9]+)$/.exec(name);
+    if (cross && MISMATCH_RULES.some((r) => r.id.toLowerCase() === cross[1])) return `crosscheck/${cross[1]}`;
     const m = listKnowledge(store).find((x) => `iji-${x.id.replace("/", "-")}` === name);
     return m && m.status === "承認済み" && m.layer !== "院内" ? m.id : null;
   };

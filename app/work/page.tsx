@@ -34,6 +34,9 @@ export default function Work() {
   const [chat, setChat] = useState<Bubble[]>([]);
   const [ask, setAsk] = useState("");
   const [showLog, setShowLog] = useState(false);
+  /** 医師に聞きたいと言われたときに、照合の不一致から本人に選んでもらう選択肢（メンターは質問を書かない） */
+  const [choices, setChoices] = useState<{ ruleId: string; about: string }[]>([]);
+  const [pendingAsk, setPendingAsk] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [cross, setCross] = useState<Cross | null>(null);
@@ -79,6 +82,20 @@ export default function Work() {
     void mentor(OPENING, "通常", nq.id, true);
   }
 
+  /** 照合の不一致を本人が選んだ：決まった質問で医師確認を送る */
+  async function chooseCross(ruleId: string, about: string) {
+    setChoices([]);
+    setChat((c) => [...c, { from: "me", text: `「${about}」のことを医師に聞く` }]);
+    await sendQuery(ruleId);
+    setChat((c) => [...c, { from: "mentor", text: "決まった質問で医師に確認を送りました。回答が来たら一緒に見ましょう。", expression: "通常" }]);
+  }
+  /** それ以外：この 1 回は照合の不一致を渡さず、メンターが質問を作る */
+  async function chooseOther() {
+    setChoices([]);
+    setChat((c) => [...c, { from: "me", text: "照合のこととは別のことを聞きたい" }]);
+    await mentor(pendingAsk, "カルテ不足", q?.id, true, true);
+  }
+
   async function sendQuery(ruleId: string) {
     if (!q) return;
     try {
@@ -90,13 +107,18 @@ export default function Work() {
   }
 
   /** silent=true はメンターから話しかける場面（本人の発言として画面に出さない） */
-  async function mentor(message: string, situation: Situation, questionId = q?.id, silent = false) {
+  async function mentor(message: string, situation: Situation, questionId = q?.id, silent = false, skipCrosscheck = false) {
     if (!questionId) return;
     setBusy(true);
+    setChoices([]);
     if (!silent) setChat((c) => [...c, { from: "me", text: message }]);
     try {
-      const r = await api<{ output: MentorOutput }>("/api/mentor", { clerkId: CLERK, questionId, message, situation });
+      const r = await api<{ output: MentorOutput; choices: { ruleId: string; about: string }[] }>("/api/mentor", { clerkId: CLERK, questionId, message, situation, skipCrosscheck });
       setChat((c) => [...c, { from: "mentor", text: r.output.body, expression: r.output.expression }]);
+      if (r.choices?.length) {
+        setChoices(r.choices);
+        setPendingAsk(message);
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -264,6 +286,16 @@ export default function Work() {
               <div className="dialog-line">
                 {busy ? <span className="muted">メンターが目を通しています…</span> : (lastMentor ?? "今日もよろしく。気になるところがあったら声をかけてね。")}
               </div>
+              {choices.length > 0 && (
+                <div className="dialog-actions" role="group" aria-label="医師に聞くことを選ぶ">
+                  {choices.map((c) => (
+                    <button key={c.ruleId} className="primary" disabled={busy} onClick={() => chooseCross(c.ruleId, c.about)}>
+                      照合：{c.about}
+                    </button>
+                  ))}
+                  <button disabled={busy} onClick={chooseOther}>それ以外のこと</button>
+                </div>
+              )}
               <div className="dialog-actions">
                 {q.phase === "ヒント" && (
                   <>

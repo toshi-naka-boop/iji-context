@@ -11,8 +11,10 @@ import { modelFor } from "../src/mentor/models";
 import { leakedTerms, type Situation } from "../src/mentor/output";
 import { askMentor } from "../src/mentor/session";
 import { tidy } from "../src/mentor/scribe";
-import { ensureWorkspace, skillNames } from "../src/mentor/workspace";
+import { ensureWorkspace, workspaceSkillNames } from "../src/mentor/workspace";
 import { listQueries, validateQuery } from "../src/query/doctor-query";
+import { crosscheck, crosscheckSkills, type Chart } from "../src/uke/crosscheck";
+import type { UkePatient } from "../src/uke/types";
 
 type Expect = {
   noLeak?: boolean;
@@ -22,6 +24,12 @@ type Expect = {
   mustRead?: string[];
   expressionNot?: string[];
   queryCreated?: boolean;
+  /** 作った医師確認の選択肢に含まれていること（聞く軸がずれていないか） */
+  optionsInclude?: string[];
+  /** 本人に選んでもらう照合の不一致として出したもの */
+  choiceOffered?: string[];
+  /** 医師確認を作らないこと */
+  noQuery?: boolean;
   missingTargets?: ("doctor" | "clerk")[];
   noNewNumbers?: boolean;
 };
@@ -53,6 +61,15 @@ function loadCase(root: string, c: Case): ClaimContext {
   if (c.remove) lines = lines.filter((l) => !c.remove!.includes(l.kubun));
   if (c.replace) lines = lines.map((l) => (c.replace![l.kubun] ? { ...l, kubun: c.replace![l.kubun] } : l));
   return { ...k, facility, lines };
+}
+
+/** 本番と同じ照合（F4）を、合成の UKE 患者情報とカルテから作る */
+function crossOf(root: string, claimId: string) {
+  const f = path.join(root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
+  if (!existsSync(f)) return [];
+  const chart = JSON.parse(readFileSync(f, "utf8")) as Chart;
+  const src = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "patients.json"), "utf8")) as { patients: Record<string, UkePatient> };
+  return crosscheck(src.patients[claimId], chart).map((m) => ({ ruleId: m.ruleId, disease: m.disease, why: m.draft.why, draft: m.draft, sent: false }));
 }
 
 const nums = (s: string) => new Set(s.match(/\d+/g) ?? []);
@@ -89,7 +106,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
     const ctx = loadCase(root, c);
     const engine = evaluate(ctx);
     const r = await askMentor(
-      { store, queryLog, askPeerMentor: async () => null, askHuman: async () => ({ queued: "eval" }) },
+      { store, queryLog, askPeerMentor: async () => null, askHuman: async () => ({ queued: "eval" }), crosscheck: () => crossOf(root, ctx.claimId) },
       {
         clerkId: "eval",
         sessionId: null,
@@ -101,13 +118,13 @@ async function runCase(root: string, c: Case): Promise<Result> {
         message: c.message!,
         now: () => "2025-03-10T09:00:00+09:00",
         model: modelFor("mentor", { level: 1 }),
-        workspace: { cwd: ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n"), skills: skillNames(store.skillsDir) },
+        workspace: (() => { const cwd = ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
         reveal: c.kind === "doctor" ? false : !!c.reveal,
       },
     );
     const body = r.output.body;
     const queries = existsSync(queryLog.dir) ? listQueries(queryLog) : [];
-    output = { body, expression: r.output.expression, read: r.read, cited: r.output.citedKnowledge, queries: queries.map((q) => ({ question: q.question, options: q.options, indicators: q.indicators })), retried: r.stats.length > 1 };
+    output = { body, expression: r.output.expression, read: r.read, choices: r.choices, cited: r.output.citedKnowledge, queries: queries.map((q) => ({ question: q.question, options: q.options, indicators: q.indicators })), retried: r.stats.length > 1 };
     const e = c.expect;
     if (e.noLeak && leakedTerms(body, engine).length) fail("noLeak", "解釈違い", `答えに触れた：${leakedTerms(body, engine).join("、")}`);
     for (const w of e.mustNotMatch ?? []) if (body.includes(w)) fail(`mustNotMatch:${w}`, "解釈違い", `「${w}」と言った`);
@@ -120,8 +137,11 @@ async function runCase(root: string, c: Case): Promise<Result> {
       for (const q of mine) {
         const errs = validateQuery(q);
         if (errs.length) fail("7要件", "解釈違い", errs.join(" / "));
+        for (const o of e.optionsInclude ?? []) if (!q.options.includes(o)) fail(`optionsInclude:${o}`, "解釈違い", `選択肢に「${o}」がない（${q.options.join("／")}）`);
       }
     }
+    for (const id of e.choiceOffered ?? []) if (!r.choices.some((c) => c.ruleId === id)) fail(`choiceOffered:${id}`, "抽出漏れ", `照合の不一致 ${id} を本人に選んでもらっていない`);
+    if (e.noQuery && queries.length > 0) fail("noQuery", "解釈違い", `医師確認を作った（${queries.map((q) => q.question).join(" / ")}）`);
     if (BANNED.test(body)) fail("bannedWords", "解釈違い", "禁止語が入った");
     if (MARKDOWN.test(body)) fail("noMarkdown", "フォーマット崩れ", "マークダウンの記号がある");
   } catch (err) {

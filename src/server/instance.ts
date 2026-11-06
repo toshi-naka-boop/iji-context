@@ -6,7 +6,8 @@ import { modelFor } from "../mentor/models";
 import type { Character } from "../mentor/prompt";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
-import { clerkMemo, ensureWorkspace, skillNames, skillsGeneration, workspaceRoot } from "../mentor/workspace";
+import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceSkillNames } from "../mentor/workspace";
+import { crosscheckSkills } from "../uke/crosscheck";
 import { defaultPaths, openApp, type App } from "./app";
 
 let app: App | null = null;
@@ -41,10 +42,10 @@ function prepare(a: App, clerkId: string): { workspace: { cwd: string; skills: s
   const c = a.clerk(clerkId);
   const s = a.status(clerkId);
   const memo = clerkMemo({ name: c.name, callName: c.call_name, role: c.role, level: s.level, count: s.count, streak: s.streak }, a.questionsOf(clerkId));
-  const cwd = ensureWorkspace(workspaceRoot(), clerkId, a.store.skillsDir, memo);
+  const cwd = ensureWorkspace(workspaceRoot(), clerkId, a.store.skillsDir, memo, crosscheckSkills());
   const generation = skillsGeneration(a.store.skillsDir);
   const same = a.setting(`session_gen:${clerkId}`) === generation;
-  return { workspace: { cwd, skills: skillNames(a.store.skillsDir) }, sessionId: same ? c.session_id : null, generation };
+  return { workspace: { cwd, skills: workspaceSkillNames(cwd) }, sessionId: same ? c.session_id : null, generation };
 }
 
 /** 続きのセッションで失敗したら（作業場所が変わって履歴が見つからないなど）、新しいセッションで一度だけやり直す */
@@ -69,7 +70,10 @@ async function askVeteran(a: App, question: string) {
 }
 
 /** メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す） */
-export async function talkToMentor(input: { clerkId: string; questionId: string; message: string; situation: Situation }) {
+/**
+ * skipCrosscheck：本人が「照合の不一致とは別のことを医師に聞きたい」と選んだとき。この 1 回だけ照合の不一致を渡さない
+ */
+export async function talkToMentor(input: { clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
   const a = getApp();
   const clerk = a.clerk(input.clerkId);
   const q = a.question(input.questionId);
@@ -93,6 +97,14 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
           return v.answer.body;
         },
         askHuman: async (question) => a.peerToHuman(clerk.id, question),
+        crosscheck: () =>
+          input.skipCrosscheck ? [] : a.crosscheckOf(q.claimId).mismatches.map((m) => ({
+            ruleId: m.ruleId,
+            disease: m.disease,
+            why: m.draft.why,
+            draft: m.draft,
+            sent: m.query !== null,
+          })),
       },
       {
         clerkId: clerk.id,

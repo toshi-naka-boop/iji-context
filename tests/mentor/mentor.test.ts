@@ -9,7 +9,7 @@ import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/
 import { guardExpression, leakedTerms, parseMentorOutput } from "../../src/mentor/output";
 import { buildSystemPrompt, levelBehavior } from "../../src/mentor/prompt";
 import { askPeerThenHuman, markCited, queryHistory } from "../../src/mentor/tools";
-import { clerkMemo, ensureWorkspace, skillGuard, skillNames, workspaceRoot } from "../../src/mentor/workspace";
+import { clerkMemo, ensureWorkspace, skillGuard, skillNames, workspaceRoot, workspaceSkillNames } from "../../src/mentor/workspace";
 import { loadCase, without } from "../engine/helpers";
 
 const T = "2025-03-10T09:00:00+09:00";
@@ -167,14 +167,15 @@ describe("一人ひとりの作業場所", () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it("CLAUDE.md を書き、.claude/skills は同期先への参照にする（何度呼んでも同じ）", () => {
+  it("CLAUDE.md を書き、.claude/skills には同期先の知識へのリンクだけを置く（何度呼んでも同じ）", () => {
     const skills = path.join(root, "skills");
     mkdirSync(path.join(skills, "iji-system-r03"), { recursive: true });
     mkdirSync(path.join(skills, "other"), { recursive: true });
     const dir = ensureWorkspace(path.join(root, "ws"), "new1", skills, "# メモ\n");
     ensureWorkspace(path.join(root, "ws"), "new1", skills, "# メモ\n");
     expect(readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toBe("# メモ\n");
-    expect(readlinkSync(path.join(dir, ".claude", "skills"))).toBe(path.resolve(skills));
+    expect(readlinkSync(path.join(dir, ".claude", "skills", "iji-system-r03"))).toBe(path.join(path.resolve(skills), "iji-system-r03"));
+    expect(workspaceSkillNames(dir)).toEqual(["iji-system-r03"]);
     expect(skillNames(skills)).toEqual(["iji-system-r03"]);
     expect(() => ensureWorkspace(path.join(root, "ws"), "../x", skills, "")).toThrow(/id/);
   });
@@ -208,5 +209,62 @@ describe("役割ごとのモデル（config/models.json）", () => {
     expect(modelFor("mentor", { level: 5 })).toEqual(modelFor("mentor"));
     expect(modelFor("mentor", { level: 6 }).model).toBe("claude-opus-5-5");
     expect(modelFor("mentor", { level: 10 }).model).toBe("claude-opus-5-5");
+  });
+});
+
+describe("医師に聞く前に正しい決まりを読む（照合の不一致 M01）", () => {
+  const draft = { claimId: "K4-2025-03", field: "SY:心房細動の病型", why: "w", question: "q", indicators: [{ source: "s", text: "t" }], options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"], createdBy: "clerk" as const };
+  const item = { ruleId: "M01", disease: "心房細動", why: "w", draft, sent: false };
+  it("Hooks：このレセプトに当てはまる決まり（applied と照合の規則）のどれかを読むまで医師確認を作らせない。決まりがなければベテランへ。医療事務あては止めない", async () => {
+    const { doctorReadGuard, relevantRules } = await import("../../src/mentor/session");
+    const k5 = relevantRules(["R09", "R10", "R13"], []);
+    const k4 = relevantRules(["R03"], [item]);
+    expect(k4).toEqual(["system/r03", "crosscheck/m01"]);
+    const call = async (reads: string[], rel: string[], tool: string, ti: Record<string, unknown>) =>
+      doctorReadGuard(reads, () => rel).hooks[0]({ hook_event_name: "PreToolUse", tool_name: `mcp__resemen__${tool}`, tool_input: ti } as never, undefined, { signal: new AbortController().signal });
+    const deny = { hookSpecificOutput: { permissionDecision: "deny" } };
+    expect(await call([], k5, "ask_doctor", {})).toMatchObject(deny);
+    expect(await call(["system/r03"], k5, "ask_doctor", {})).toMatchObject(deny); // 関係ない知識では通らない
+    expect(await call(["system/r09"], k5, "ask_doctor", {})).toEqual({});
+    expect(await call(["crosscheck/m01"], k4, "ask_missing", { target: "doctor" })).toEqual({});
+    expect(await call(["system/r09"], [], "ask_doctor", {})).toMatchObject({ hookSpecificOutput: { permissionDecisionReason: expect.stringMatching(/ベテランのメンター/) } });
+    expect(await call([], k5, "ask_missing", { target: "clerk" })).toEqual({});
+  });
+  it("照合でまだ送っていない不一致があれば、メンターは医師確認を作らず、本人に選んでもらう", async () => {
+    const { mentorServer } = await import("../../src/mentor/session");
+    const root = mkdtempSync(path.join(tmpdir(), "iji-choice-"));
+    try {
+      const offered: string[] = [];
+      const deps = { store: { knowledgeDir: path.join(root, "k"), skillsDir: path.join(root, "s") }, queryLog: { dir: path.join(root, "q") }, askPeerMentor: async () => null, askHuman: async () => ({ queued: "x" }), crosscheck: () => [item] };
+      const server = mentorServer(deps, loadCase("K4"), () => T, (items) => offered.push(...items.map((m) => m.ruleId)));
+      const tools = (server.instance as unknown as { _registeredTools: Record<string, { handler?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }>; callback?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> })._registeredTools;
+      const t = tools.ask_doctor;
+      const fn = t.handler ?? t.callback!;
+      const r = await fn({ field: "病型", why: "w", question: "心房細動の続き方を教えてください", indicators: [{ source: "カルテ", text: "AF" }], options: ["発作性", "持続性", "その他", "判定不能"] }, {});
+      expect(r.content[0].text).toContain("needsClerkChoice");
+      expect(offered).toEqual(["M01"]);
+      expect(existsSync(path.join(root, "q"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it("照合の規則 M01 は、作業場所に crosscheck-m01 として置かれ、いつでも読める（状態を持たない決まった規則）", async () => {
+    const { crosscheckSkills } = await import("../../src/uke/crosscheck");
+    const root = mkdtempSync(path.join(tmpdir(), "iji-cross-"));
+    try {
+      const skills = path.join(root, "skills");
+      mkdirSync(path.join(skills, "iji-system-r03"), { recursive: true });
+      const cwd = ensureWorkspace(path.join(root, "ws"), "new1", skills, "# メモ\n", crosscheckSkills());
+      expect(workspaceSkillNames(cwd)).toEqual(["crosscheck-m01", "iji-system-r03"]);
+      expect(readFileSync(path.join(cwd, ".claude", "skills", "crosscheck-m01", "SKILL.md"), "utf8")).toContain("非弁膜症性");
+      const g = skillGuard({ knowledgeDir: path.join(root, "k"), skillsDir: skills });
+      const call = (h: (typeof g.hooks.PreToolUse)[number]["hooks"][number], name: string) => h({ hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: name } } as never, undefined, { signal: new AbortController().signal });
+      expect(await call(g.hooks.PreToolUse![0].hooks[0], "crosscheck-m01")).toEqual({});
+      await call(g.hooks.PostToolUse![0].hooks[0], "crosscheck-m01");
+      expect(g.reads).toEqual(["crosscheck/m01"]);
+      expect(await call(g.hooks.PreToolUse![0].hooks[0], "crosscheck-m99")).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

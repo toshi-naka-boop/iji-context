@@ -10,8 +10,9 @@ import type { Effort } from "../../../src/mentor/models";
 import { askVeteranMentor } from "../../../src/mentor/peer";
 import { modelFor } from "../../../src/mentor/models";
 import { askMentor } from "../../../src/mentor/session";
-import { ensureWorkspace, skillNames } from "../../../src/mentor/workspace";
+import { ensureWorkspace, workspaceSkillNames } from "../../../src/mentor/workspace";
 import { syncSkills } from "../../../scripts/sync-skills";
+import { crosscheckSkills } from "../../../src/uke/crosscheck";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,8 @@ export async function GET(req: Request): Promise<Response> {
     // ?peer=問い でベテランのメンター（config/models.json の veteranMentor）を試す
     const peer = url.searchParams.get("peer");
     if (peer) {
-      const ws = { cwd: ensureWorkspace(path.join(root, "ws"), "vet", deps.store.skillsDir, "# 動作確認（ベテラン）\n"), skills: skillNames(deps.store.skillsDir) };
+      const vcwd = ensureWorkspace(path.join(root, "ws"), "vet", deps.store.skillsDir, "# 動作確認（ベテラン）\n", crosscheckSkills());
+      const ws = { cwd: vcwd, skills: workspaceSkillNames(vcwd) };
       const v = await askVeteranMentor(deps.store, peer, null, ws, modelFor("veteranMentor"));
       return Response.json({ ok: true, ...v, ms: Date.now() - started });
     }
@@ -57,7 +59,7 @@ export async function GET(req: Request): Promise<Response> {
       message: "この請求を確定する前に、ヒントをください。",
       now: () => new Date().toISOString(),
       ...(model ? { model: { model, ...(effort ? { effort } : {}) } } : {}),
-      workspace: { cwd: ensureWorkspace(path.join(root, "ws"), "check", deps.store.skillsDir, "# 動作確認\n"), skills: skillNames(deps.store.skillsDir) },
+      workspace: (() => { const cwd = ensureWorkspace(path.join(root, "ws"), "check", deps.store.skillsDir, "# 動作確認\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
       reveal: false,
     });
     return Response.json({ ok: true, ...r, ms: Date.now() - started });

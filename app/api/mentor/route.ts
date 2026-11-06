@@ -4,7 +4,7 @@ import type { Situation } from "../../../src/mentor/output";
 import { talkToMentor } from "../../../src/server/instance";
 
 export async function POST(req: Request) {
-  return handle(async () => talkToMentor(await body<{ clerkId: string; questionId: string; message: string; situation: Situation }>(req)));
+  return handle(async () => talkToMentor(await body<{ clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }>(req)));
 }
 
 export const runtime = "nodejs";

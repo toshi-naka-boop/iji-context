@@ -2,7 +2,7 @@
 // query_history / ask_peer_mentor / ask_human / ask_doctor / ask_missing（知識は Skill で読む。workspace.ts の Hooks で状態を確かめる）
 import type { ClaimContext } from "../engine/types";
 import { applyEvent, readKnowledge, type StoreOptions } from "../lifecycle/store";
-import { askMissing, type AskMissing, type QueryLog } from "../query/doctor-query";
+import { askMissing, type AskMissing, type QueryDraft, type QueryLog } from "../query/doctor-query";
 
 export type MentorDeps = {
   store: StoreOptions;
@@ -11,7 +11,13 @@ export type MentorDeps = {
   askPeerMentor: (question: string) => Promise<string | null>;
   /** ベテラン本人に届ける（ベテランのメンター経由のみ。CLAUDE.md） */
   askHuman: (question: string) => Promise<{ queued: string }>;
+  /** カルテとの照合で見つかった不一致（F4）。医師確認は決まった質問で送る */
+  crosscheck?: () => CrossItem[];
 };
+
+/** 照合の不一致 1 件。sent は同じ項目の医師確認がもう送られているか */
+export type CrossItem = { ruleId: string; disease: string; why: string; draft: QueryDraft; sent: boolean };
+
 
 /** query_history：その請求の過去月の算定（設定ファイルの固定値。決定62） */
 export function queryHistory(ctx: ClaimContext): { yearMonth: string; kubun: string[] }[] {

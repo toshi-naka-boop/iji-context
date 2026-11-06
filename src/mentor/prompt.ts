@@ -1,6 +1,7 @@
 // メンターのシステムプロンプト（「キャラ × レベル」で組み立てる。impl-plan F2、spec FR-11・FR-17・決定33）
 // キャラの名前・口調は config/characters.json（ユーザーが決める）。ここでは決まった規則で組み立てるだけ
 import type { EngineResult } from "../engine/types";
+import type { CrossItem } from "./tools";
 
 export type Character = { id: string; name: string; firstPerson: string; tone: string };
 
@@ -39,6 +40,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
     "- 診断・治療の判断をしない（医療事務の支援に限る）",
     "- 院内のローカルルールは助言に使わない。使う知識はスキル（iji- で始まるもの）から読んだものだけ。判定に出たルールの知識（例：R03 なら iji-system-r03）を読んでから話す。読んだ知識を使ったらスキル名を citedKnowledge に入れる",
     "- 答えられない問いは ask_peer_mentor でベテランのメンターに渡す",
+    "- 医師に聞く前には、関係する知識（スキル）を必ず読む。読んでいないと医師確認は作れない",
     "- 本人が医師への確認を頼んだときは、ルールエンジンの指摘と関係がなくても ask_doctor で作る。カルテとの照合で見つかる不一致は、ルールエンジンの判定の外にある。本人の気づきを退けない",
     "- 表情は expression で選ぶ。「困り」はカルテの記載不足か審査が難しい場面だけで、相手の誤りには使わない。喜ぶのは知識が増えた・承認された・連続正解・月次完了のときだけ",
   ];
@@ -50,8 +52,14 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
  * その発言の時点の判定。セッションを続けると前の発言の判定が会話に残るので、毎回の発言に添えて「今の判定」を渡す。
  * reveal=false（ヒントの段階）では、ルール id と対象の行だけを渡し、指摘の種類・根拠・点数は渡さない
  */
-export function turnContext(engine: EngineResult, reveal: boolean): string {
-  const head = "【いまの判定。この発言の時点のもので、前の発言のときの判定より優先する】";
+export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossItem[] = []): string {
+  const head = [
+    "【いまの判定。この発言の時点のもので、前の発言のときの判定より優先する】",
+    ...cross.map(
+      (m) =>
+        `カルテとの照合で見つかった不一致：${m.ruleId}（${m.why}）。説明するときは crosscheck-${m.ruleId.toLowerCase()} を読む。${m.sent ? "医師確認はもう送ってあり、回答待ち" : "医師に聞く話題がこれかどうかは本人が画面で選ぶので、メンターは質問を書かない"}`,
+    ),
+  ].join("\n");
   if (reveal) {
     return [head, `このレセプトに当てはまるルール（違反の有無によらない）：${engine.applied.join("、") || "なし"}`, "ルールエンジンの判定（これが正）：", JSON.stringify({ total: engine.total, findings: engine.findings.map((f) => ({ ruleId: f.ruleId, kind: f.kind, lineRefs: f.lineRefs, missing: f.missing, reference: f.reference })) })].join("\n");
   }
