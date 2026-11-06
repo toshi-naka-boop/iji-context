@@ -1,10 +1,14 @@
 // F9 防いだ額（spec FR-52〜58、決定44〜50、EM #7-5）
 // 「防いだ」＝提出前にエンジンが指摘し、提出までに本人が直した項目だけ。自己申告は数えない
 // 金額は点数×10円で、常に「推定」。公費・自己負担の内訳は分けない。「多く取る」方向の表示はしない
-// 数え方（実装上の解釈。起きたらユーザーに確認）：
-//   取りこぼしを防いだ ＝ 下書きで「取り忘れ」と指摘され、確定版にはない指摘。確定版で足した、そのルールの対象区分の点数
-//   差し戻しを防いだ   ＝ 下書きで「背反・区分誤り・要件不足」と指摘され、確定版にはない指摘。指摘された行のうち確定版で外した区分の点数
-//   医師記載起因       ＝ 下書きで医師あての「情報不足」と指摘され、医師確認（F1）で解決したもの。件数だけ
+// 数え方（2026-11-06 ユーザー判断）：下書きで指摘され、確定版では消えた指摘ごとに、そのルールの対象区分の点数が下書き→確定版でどう変わったかを見る
+//   取りこぼしを防いだ ＝ 点数が増えた（取り忘れた加算を足した、過少の区分を正しい区分に直した）。増えた分
+//   差し戻しを防いだ   ＝ 点数が減った（背反・要件不足の行を外した、過大の区分を直した）。減った分
+//   医師記載起因       ＝ 医師あての情報不足が医師確認（F1）で解決したもの。医師の回答で算定できるようになった分（増えた分）も金額で出す。
+//                        事務長から医師へ「記載不足でこのくらい取りこぼしている」を伝える材料にする（決定47）
+// FR-56「多く取る方向の表示・誘導をしない」の趣旨は、経営の目線を持たせすぎて、取れない算定まで取りにいかせないこと。
+// ここで数えるのはルールエンジンが正しいと判定した確定版との差だけなので、この趣旨に反しない
+// 同じ区分の変化は 1 つの指摘にだけ数える（重なるルールで二重に数えない）
 import { RULES } from "../engine";
 import { pointsOf } from "../engine/points-2024";
 import type { ClaimLine, Finding } from "../engine/types";
@@ -33,11 +37,17 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
   if (!q.confirmed || q.drafts.length === 0) return [];
   const final = q.confirmed;
   const finalKeys = new Set(final.result.findings.map(key));
-  const finalKubun = new Set(final.lines.map((l) => l.kubun));
   const seen = new Set<string>();
+  const counted = new Set<string>();
   const out: PreventedItem[] = [];
+  /** そのルールの対象区分のうち、まだ数えていないものの点数の変化（確定版 − 下書き） */
+  const delta = (draft: ClaimLine[], ruleId: string): number => {
+    const kubun = (RULES.find((r) => r.id === ruleId)?.kubun ?? []).filter((k) => !counted.has(k));
+    const d = kubun.reduce((sum, k) => sum + linePoints(final.lines, k) - linePoints(draft, k), 0);
+    if (d !== 0) for (const k of kubun) if (linePoints(final.lines, k) !== linePoints(draft, k)) counted.add(k);
+    return d;
+  };
   for (const d of q.drafts) {
-    const draftKubun = new Set(d.lines.map((l) => l.kubun));
     for (const f of d.findings) {
       if (finalKeys.has(key(f)) || seen.has(key(f))) continue;
       seen.add(key(f));
@@ -47,18 +57,13 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
         const field = f.missing?.field;
         if (f.missing?.target === "doctor" && field && resolvedByDoctor.includes(field) && !seen.has(`field|${field}`)) {
           seen.add(`field|${field}`);
-          out.push({ ...base, kind: "医師記載起因", points: 0 });
+          out.push({ ...base, kind: "医師記載起因", points: Math.max(0, delta(d.lines, f.ruleId)) });
         }
         continue;
       }
-      if (f.kind === "取り忘れ") {
-        const ruleKubun = RULES.find((r) => r.id === f.ruleId)?.kubun ?? [];
-        const added = ruleKubun.filter((k) => finalKubun.has(k) && !draftKubun.has(k));
-        if (added.length) out.push({ ...base, kind: "取りこぼし", points: added.reduce((s, k) => s + linePoints(final.lines, k), 0) });
-        continue;
-      }
-      const removed = f.lineRefs.filter((k) => draftKubun.has(k) && !finalKubun.has(k));
-      if (removed.length) out.push({ ...base, kind: "差し戻し", points: removed.reduce((s, k) => s + linePoints(d.lines, k), 0) });
+      const change = delta(d.lines, f.ruleId);
+      if (change > 0) out.push({ ...base, kind: "取りこぼし", points: change });
+      else if (change < 0) out.push({ ...base, kind: "差し戻し", points: -change });
     }
   }
   return out;
@@ -68,7 +73,7 @@ export type PreventedSummary = {
   label: typeof ESTIMATE_LABEL;
   取りこぼし: { count: number; yen: number };
   差し戻し: { count: number; yen: number };
-  医師記載起因: { count: number };
+  医師記載起因: { count: number; yen: number };
 };
 
 export function summarize(items: PreventedItem[]): PreventedSummary {
@@ -78,7 +83,7 @@ export function summarize(items: PreventedItem[]): PreventedSummary {
     label: ESTIMATE_LABEL,
     取りこぼし: { count: sum("取りこぼし").length, yen: yen(sum("取りこぼし")) },
     差し戻し: { count: sum("差し戻し").length, yen: yen(sum("差し戻し")) },
-    医師記載起因: { count: sum("医師記載起因").length },
+    医師記載起因: { count: sum("医師記載起因").length, yen: yen(sum("医師記載起因")) },
   };
 }
 

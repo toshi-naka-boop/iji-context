@@ -155,7 +155,8 @@ export function approveQuery(log: QueryLog, id: string, approver: string, now: s
   if (q.status !== "回答済み" || !q.answer) throw new Error(`承認できない状態: ${q.status}`);
   const next: DoctorQuery = { ...q, status: "承認済み", approval: { approver, at: now } };
   save(log, next);
-  const name = q.answer.option === UNDETERMINABLE ? null : q.answer.option === OTHER ? q.answer.freeText : q.answer.option;
+  // 傷病名を確かめる質問（field が "SY:" で始まる）だけが傷病名を確定する。代行入力の確認などは確定しない
+  const name = !q.field.startsWith("SY:") || q.answer.option === UNDETERMINABLE ? null : q.answer.option === OTHER ? q.answer.freeText : q.answer.option;
   return { query: next, confirmed: name ? { claimId: q.claimId, queryId: q.id, name, approver, at: now } : null };
 }
 
