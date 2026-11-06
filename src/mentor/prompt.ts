@@ -2,7 +2,7 @@
 // キャラの名前・口調は config/characters.json（ユーザーが決める）。ここでは決まった規則で組み立てるだけ
 import type { EngineResult } from "../engine/types";
 import { findingText } from "../messages";
-import { SMALLTALK_NUDGE_AFTER } from "./output";
+import { SMALLTALK_NUDGE_AFTER, VENT_OFFER_AFTER } from "./output";
 import type { CrossItem } from "./tools";
 
 export type Character = { id: string; name: string; firstPerson: string; tone: string };
@@ -43,6 +43,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
     "- 院内のローカルルールは助言に使わない。使う知識はスキル（iji- で始まるもの）から読んだものだけ。判定に出たルールの知識（例：R03 なら iji-system-r03）を読んでから話す。読んだ知識を使ったらスキル名を citedKnowledge に入れる",
     "- 答えられない問いは ask_peer_mentor でベテランのメンターに渡す",
     "- 算定と関係ない雑談にも、同僚として短く気さくに応じる。ただし診断・治療の話と、ほかの人の個人情報には踏み込まない。本人の発言が算定と関係ない雑談なら topic を「雑談」、それ以外は「算定」にする",
+    "- 仕事のつらさや、クレーム電話などのあとの気持ちを吐き出しているときは topic を「愚痴」にする（雑談か愚痴か迷ったら「愚痴」）。愚痴はまず受け止めてねぎらう。解決策や「こうすればよかった」は聞かれない限り言わない。算定に戻そうとしない。電話の相手や患者さんを評価・批判しない。相手の名前や病状などは聞き出さない。あなたは同僚で、カウンセラーではない",
     "- 医師に聞く前には、関係する知識（スキル）を必ず読む。読んでいないと医師確認は作れない",
     "- 本人が医師への確認を頼んだときは、ユスティの指摘と関係がなくても ask_doctor で作る。カルテとの照合で見つかる不一致は、ルールエンジンの判定の外にある。本人の気づきを退けない",
     "- 表情は expression で選ぶ。「困り」はカルテの記載不足か審査が難しい場面だけで、相手の誤りには使わない。喜ぶのは知識が増えた・承認された・連続正解・月次完了のときだけ",
@@ -55,7 +56,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
  * その発言の時点の判定。セッションを続けると前の発言の判定が会話に残るので、毎回の発言に添えて「今の判定」を渡す。
  * reveal=false（ヒントの段階）では、ルール id と対象の行だけを渡し、指摘の種類・根拠・点数は渡さない
  */
-export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossItem[] = [], smalltalkStreak = 0, today?: string): string {
+export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossItem[] = [], smalltalkStreak = 0, today?: string, ventStreak = 0): string {
   const head = [
     "【いまの判定。この発言の時点のもので、前の発言のときの判定より優先する】",
     // 季節や締め日の話がデモの時計と食い違わないように、今日の日付を添える
@@ -66,6 +67,9 @@ export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossI
     ),
     ...(smalltalkStreak >= SMALLTALK_NUDGE_AFTER - 1
       ? [`雑談が ${smalltalkStreak} 回続いている。今回の発言も雑談なら、返事の最後に、責めずにやわらかく「算定のほうは終わりました？」のように算定に戻る一言を添える`]
+      : []),
+    ...(ventStreak >= VENT_OFFER_AFTER - 1
+      ? [`愚痴が ${ventStreak} 回続いている。今回の発言も愚痴なら、受け止めたうえで、一度だけ「少し休んでから続けます？」や「責任者さんやベテランさんにも話してみます？」のように、休む・人に話す提案を添える（提案だけ。誰かに知らせることはしない）`]
       : []),
   ].join("\n");
   if (reveal) {

@@ -309,3 +309,27 @@ describe("ヒントの段階で渡すもの（prompt-eval M5 の改訂）", () =
     expect(k2).not.toContain("情報不足（");
   });
 });
+
+describe("愚痴（数えずに聞く）", () => {
+  it("愚痴は雑談の回数に数えず 0 に戻す。愚痴が続いた回数は別に数え、3 回目で提案を添えたら 0 に戻す", async () => {
+    const { nextSmalltalkStreak, nextVentStreak } = await import("../../src/mentor/output");
+    expect(nextSmalltalkStreak(2, "愚痴")).toBe(0);
+    expect(nextVentStreak(0, "愚痴")).toBe(1);
+    expect(nextVentStreak(1, "愚痴")).toBe(2);
+    expect(nextVentStreak(2, "愚痴")).toBe(0);
+    expect(nextVentStreak(2, "雑談")).toBe(0);
+  });
+  it("愚痴が 2 回続いたあとは、休む・人に話す提案を一度だけ添えるよう伝える（知らせはしない）", async () => {
+    const { turnContext } = await import("../../src/mentor/prompt");
+    const e = evaluate(loadCase("K3"));
+    const c = turnContext(e, false, [], 0, undefined, 2);
+    expect(c).toContain("少し休んでから続けます？");
+    expect(c).toContain("誰かに知らせることはしない");
+    expect(turnContext(e, false, [], 0, undefined, 1)).not.toContain("少し休んで");
+  });
+  it("愚痴の受け止め方の決まりがシステムプロンプトに入っている", () => {
+    const p = buildSystemPrompt(characters.characters[0], 1);
+    for (const w of ["愚痴", "解決策", "評価・批判しない", "聞き出さない", "カウンセラーではない"]) expect(p).toContain(w);
+    expect(p).not.toMatch(/教育|学習|学ぶ|教える/);
+  });
+});

@@ -31,7 +31,7 @@ type Expect = {
   /** 医師確認を作らないこと */
   noQuery?: boolean;
   /** メンターが付けた話題（算定／雑談） */
-  topic?: "算定" | "雑談";
+  topic?: "算定" | "雑談" | "愚痴";
   missingTargets?: ("doctor" | "clerk")[];
   noNewNumbers?: boolean;
 };
@@ -48,6 +48,8 @@ type Case = {
   input?: string;
   /** 直前まで雑談が続いた回数 */
   smalltalkStreak?: number;
+  /** 直前まで愚痴が続いた回数 */
+  ventStreak?: number;
   expect: Expect;
 };
 /** 失敗の種類（eval-loop の失敗カテゴリ） */
@@ -125,6 +127,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
         workspace: (() => { const cwd = ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
         reveal: c.kind === "doctor" ? false : !!c.reveal,
         smalltalkStreak: c.smalltalkStreak ?? 0,
+        ventStreak: c.ventStreak ?? 0,
       },
     );
     const body = r.output.body;

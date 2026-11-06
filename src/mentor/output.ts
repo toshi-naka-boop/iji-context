@@ -9,11 +9,11 @@ export type MentorOutput = {
   expression: Expression;
   /** 引用した知識の id（F5 に USED として渡す） */
   citedKnowledge: string[];
-  /** 本人の発言が算定の話か、算定と関係ない雑談か（雑談が続いたら算定に戻る声かけをする） */
+  /** 本人の発言が算定の話か、雑談か、愚痴か（雑談が続いたら算定に戻る声かけ。愚痴は数えずに聞く） */
   topic: Topic;
 };
 
-export const TOPICS = ["算定", "雑談"] as const;
+export const TOPICS = ["算定", "雑談", "愚痴"] as const;
 export type Topic = (typeof TOPICS)[number];
 
 /** 雑談が何回続いたら、算定に戻る声かけを添えるか */
@@ -24,8 +24,17 @@ export const SMALLTALK_NUDGE_AFTER = 3;
  * 声かけを添えた回（SMALLTALK_NUDGE_AFTER 回目）のあとも 0 に戻し、また 3 回続いたら声をかける
  */
 export function nextSmalltalkStreak(prev: number, topic: Topic): number {
-  if (topic !== "雑談") return 0;
+  if (topic !== "雑談") return 0; // 愚痴は数えない。愚痴のあとすぐに算定へ戻そうとしないよう 0 に戻す
   return prev + 1 >= SMALLTALK_NUDGE_AFTER ? 0 : prev + 1;
+}
+
+/** 愚痴が何回続いたら、休む・人に話す提案を一度だけ添えるか */
+export const VENT_OFFER_AFTER = 3;
+
+/** 愚痴が続いた回数（決まった規則）。提案を添えた回のあとは 0 に戻す。愚痴でなければ 0 */
+export function nextVentStreak(prev: number, topic: Topic): number {
+  if (topic !== "愚痴") return 0;
+  return prev + 1 >= VENT_OFFER_AFTER ? 0 : prev + 1;
 }
 
 /** Agent SDK の outputFormat（json_schema）に渡すスキーマ */

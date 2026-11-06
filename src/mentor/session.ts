@@ -122,6 +122,8 @@ export type MentorTurn = {
   reveal: boolean;
   /** この問いで、直前まで雑談が続いた回数（決まった規則で数える） */
   smalltalkStreak?: number;
+  /** この問いで、直前まで愚痴が続いた回数（決まった規則で数える） */
+  ventStreak?: number;
 };
 
 /**
@@ -147,7 +149,7 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
     maxTurns: 8,
     ...modelOptions(t.model),
   };
-  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10))}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
+  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
   const stats = [r.stats];
   let sessionId = r.sessionId || (t.sessionId ?? "");
   let output = parseMentorOutput(r.structured, t.situation);
