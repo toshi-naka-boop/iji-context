@@ -68,9 +68,29 @@ npx tsx scripts/gen-uke.ts
 
 判定はルールエンジン、判断は人が持ち、Claude は「読む・話す・整える」を受け持ちます。役割ごとにモデルと考える深さを変えています（`config/models.json`）。
 
+```mermaid
+flowchart LR
+  clerk([医療事務]) --> ui[算定画面]
+  ui --> engine[ルールエンジン<br>R01〜R14・決まった規則]
+  engine -- いまの判定 --> mentor
+  subgraph claude[Claude（Agent SDK）]
+    mentor[メンター<br>Sonnet・Lv.6 から Opus]
+    vet[ベテランのメンター<br>Opus・深く考える]
+    scribe[代行入力の整文<br>Haiku]
+    notice[通知の読み取り<br>Sonnet・PDF]
+  end
+  mentor -- Skill --> skills[(承認済みの知識<br>.claude/skills)]
+  hooks{{Hooks<br>読む直前に状態を確かめる}} -.-> skills
+  memo[(本人の CLAUDE.md<br>記録から決まった規則で生成)] --> mentor
+  mentor -- 答えられない --> vet -- 根拠がない --> human([ベテラン本人])
+  mentor -- ask_doctor --> check{7 要件の検証} --> doctor([医師])
+  scribe --> check
+  pdf[/査定・返戻の通知 PDF/] --> notice --> map[対応づけ<br>決まった規則] --> person([本人が確かめる]) --> knowledge[(知識の候補)]
+```
+
 | 役割 | モデル | していること |
 |---|---|---|
-| 新人の隣のメンター | Sonnet（考える深さ：低） | レセプトを開くと先に声をかけ、確定すると解説を始める。速さを優先 |
+| 新人の隣のメンター | Sonnet（考える深さ：低）。Lv.6 からは Opus | レセプトを開くと先に声をかけ、確定すると解説を始める。速さを優先 |
 | ベテランのメンター | Opus（考える深さ：高） | 新人のメンターが答えられない問いに、承認済みの知識を根拠に答える。根拠がなければベテラン本人に回す |
 | 代行入力の整文 | Haiku | 下書きを整える。足りない項目は推定せずに聞く |
 | 査定・返戻の通知の読み取り | Sonnet | PDF から書かれていることを取り出す。区分・請求・審査支払機関への対応づけは決まった規則で行う |
@@ -79,6 +99,34 @@ npx tsx scripts/gen-uke.ts
 - **一人ひとりの CLAUDE.md**：医療事務ごとに作業場所を作り、レベルや直近で確認が入ったルールを書いた CLAUDE.md を、記録から決まった規則で書き換えます（AI には書かせません）。作業場所は、上の階層に CLAUDE.md がない場所に置きます（既定は OS の一時フォルダ。`RESEMEN_WORKSPACES` で変えられます）。
 - **答えを言わない仕組み**：確定する前のメンターには、判定のうちルールと行だけを渡し、指摘の中身と点数は渡しません。返事が答え（足すべき項目の名前・指摘の種類・点数）に触れていたら、決まった規則で見つけて一度だけ書き直させます。
 - **所要時間の記録**：呼び出しごとにモデル・所要時間・トークン数をサーバーのログに残します（プロンプトと本文は残しません）。
+
+### 知識が育って廃れる流れ
+
+```mermaid
+stateDiagram-v2
+  state "未検証" as unverified
+  state "承認済み" as approved
+  state "contested（再審査中）" as contested
+  state "要再検証" as recheck
+  state "停止" as stopped
+  state "保管" as archived
+  [*] --> unverified: 返戻・査定・エスカレーション・提案
+  [*] --> contested: 査定（再審査を申し出た）
+  [*] --> approved: 初期投入（制度層）
+  unverified --> approved: ベテランが検証して承認
+  unverified --> archived: ベテランが却下
+  unverified --> contested: 再審査を申し出た
+  approved --> contested: 再審査を申し出た
+  contested --> approved: 原審どおり
+  contested --> archived: 復活（査定が覆った）
+  approved --> recheck: 改定・改選・長く使われない・外れ
+  recheck --> approved: 会議で確かめ直して合格
+  recheck --> stopped: 不合格・外れ・長く使われない
+  stopped --> archived: 会議で廃棄を承認
+  stopped --> approved: 会議で廃棄を却下
+```
+
+状態を動かすのは決まった規則と人の判断だけで、AI は状態を決めません。査定・返戻の結果は記録するだけで、知識を直すのは毎週のレセメン会議です。
 
 ## 構成とテスト
 
@@ -89,6 +137,7 @@ npx tsx scripts/gen-uke.ts
 - `src/query/`：医師確認（7 要件の検証・記録・承認・リマインド）
 - `src/mentor/`：メンター・ベテランのメンター・代行入力の整文・作業場所（CLAUDE.md と Skill の Hooks）・役割ごとのモデル
 - `src/notice/`：査定・返戻の通知（PDF）の読み取りと対応づけ
+- `eval/`：prompt-eval（本番と同じ関数・モデルで 10 件を回し、決まった規則で判定する。開発サーバーの `/api/eval` から実行）
 - `src/practice/`・`src/prevented/`：1 件＝1 問の流れ、レベル、防いだ額
 
 ```bash
