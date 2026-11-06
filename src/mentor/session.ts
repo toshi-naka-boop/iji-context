@@ -1,21 +1,24 @@
 // メンターのセッション（spec FR-10・FR-13、impl-plan F2）。医療事務 1 人に 1 セッション（Agent SDK）
-// ツールは 6 つだけを渡し、Claude Code の組み込みツール（ファイル操作・シェルなど）は使わせない
-import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
+// ツールは Skill（承認済みの知識を読む）と自前の 5 つだけを渡し、Claude Code の組み込みツール（ファイル操作・シェルなど）は使わせない
+import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { ClaimContext, EngineResult } from "../engine/types";
-import { MENTOR_OUTPUT_SCHEMA, parseMentorOutput, type MentorOutput, type Situation } from "./output";
-import { buildSystemPrompt, type Character } from "./prompt";
-import { askMissingTool, askPeerThenHuman, markCited, queryHistory, querySkills, type MentorDeps } from "./tools";
+import { ANSWER_FALLBACK, leakedTerms, MENTOR_OUTPUT_SCHEMA, parseMentorOutput, type MentorOutput, type Situation } from "./output";
+import { modelOptions, type ModelChoice } from "./models";
+import { buildSystemPrompt, turnContext, type Character } from "./prompt";
+import { runOnce, type RunStats } from "./run";
+import { askMissingTool, askPeerThenHuman, markCited, queryHistory, type MentorDeps } from "./tools";
+import { skillGuard } from "./workspace";
 
 export const SERVER = "resemen";
-export const TOOL_NAMES = ["query_skills", "query_history", "ask_peer_mentor", "ask_human", "ask_doctor", "ask_missing"] as const;
+export const TOOL_NAMES = ["query_history", "ask_peer_mentor", "ask_human", "ask_doctor", "ask_missing"] as const;
 export const ALLOWED_TOOLS = TOOL_NAMES.map((t) => `mcp__${SERVER}__${t}`);
 
 const text = (v: unknown) => ({ content: [{ type: "text" as const, text: typeof v === "string" ? v : JSON.stringify(v) }] });
 
 const indicator = z.object({ source: z.string(), text: z.string() });
 
-/** 6 つのツールを持つ MCP サーバー。ctx は今の 1 問の請求、now は時刻（決定的な処理に渡す） */
+/** 自前の 5 つのツールを持つ MCP サーバー（知識は Skill で読む）。ctx は今の 1 問の請求、now は時刻（決定的な処理に渡す） */
 export function mentorServer(deps: MentorDeps, ctx: ClaimContext, now: () => string) {
   const doctor = {
     field: z.string().describe("何が足りないか"),
@@ -35,9 +38,6 @@ export function mentorServer(deps: MentorDeps, ctx: ClaimContext, now: () => str
     name: SERVER,
     version: "0.1.0",
     tools: [
-      tool("query_skills", "承認済みの知識（制度・地域・ベテランの判断）を語で探す。院内のローカルルールは返らない", { keyword: z.string() }, async (a) =>
-        run(() => querySkills(deps.store, a.keyword)),
-      ),
       tool("query_history", "今の請求の過去月の算定を返す", {}, async () => run(() => queryHistory(ctx))),
       tool("ask_peer_mentor", "ベテランのメンターに問いを渡す。解けなければベテラン本人に届く", { question: z.string() }, async (a) =>
         text(await askPeerThenHuman(deps, a.question)),
@@ -72,34 +72,53 @@ export type MentorTurn = {
   situation: Situation;
   message: string;
   now: () => string;
-  model?: string;
+  model?: ModelChoice;
+  /** 本人の作業場所（cwd）と、有効にするスキル名 */
+  workspace: { cwd: string; skills: string[] };
+  /** 判定を本人に見せてよい段階か（確定後の解説は true、ヒントの段階は false） */
+  reveal: boolean;
 };
 
-/** メンターに 1 回話しかける。出力は検査してから返し、引用した知識に USED を出す */
-export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ output: MentorOutput; sessionId: string; used: string[] }> {
-  let sessionId = t.sessionId ?? "";
-  let structured: unknown = null;
-  for await (const m of query({
-    prompt: t.message,
-    options: {
-      systemPrompt: buildSystemPrompt(t.character, t.level, t.engine),
-      tools: [],
-      allowedTools: ALLOWED_TOOLS,
-      mcpServers: { [SERVER]: mentorServer(deps, t.ctx, t.now) },
-      settingSources: [],
-      outputFormat: { type: "json_schema", schema: MENTOR_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
-      maxTurns: 6,
-      ...(t.sessionId ? { resume: t.sessionId } : {}),
-      ...(t.model ? { model: t.model } : {}),
-    },
-  })) {
-    if ("session_id" in m && m.session_id) sessionId = m.session_id;
-    if (m.type === "result") {
-      if (m.subtype !== "success") throw new Error(`メンターが失敗した: ${m.subtype}`);
-      structured = m.structured_output ?? null;
+/**
+ * メンターに 1 回話しかける。出力は検査してから返す。
+ * ヒントの段階で答え（根拠の区分・指摘の種類・点数）に触れていたら、一度だけ言い直させる。それでも触れていたら決まった文に置き換える。
+ * USED は、引用した知識のうち実際にスキルとして読んだものだけに出す
+ */
+export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ output: MentorOutput; sessionId: string; used: string[]; read: string[]; stats: RunStats[] }> {
+  const guard = skillGuard(deps.store);
+  const options = {
+    systemPrompt: buildSystemPrompt(t.character, t.level),
+    cwd: t.workspace.cwd,
+    settingSources: ["project" as const],
+    tools: ["Skill"],
+    skills: t.workspace.skills,
+    allowedTools: ALLOWED_TOOLS,
+    mcpServers: { [SERVER]: mentorServer(deps, t.ctx, t.now) },
+    hooks: guard.hooks,
+    outputFormat: { type: "json_schema" as const, schema: MENTOR_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
+    maxTurns: 8,
+    ...modelOptions(t.model),
+  };
+  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
+  const stats = [r.stats];
+  let sessionId = r.sessionId || (t.sessionId ?? "");
+  let output = parseMentorOutput(r.structured, t.situation);
+  if (!t.reveal) {
+    const leaks = leakedTerms(output.body, t.engine);
+    if (leaks.length > 0) {
+      const again = await runOnce(
+        "mentor-retry",
+        `さっきの返事は答え（${leaks.join("、")}）に触れていました。答えを言わずに、見るとよい場所を一つだけ示す形で書き直してください。さっきの返事は本人には見せていないので、書き直したことには触れないでください。`,
+        { ...options, resume: sessionId },
+      );
+      stats.push(again.stats);
+      sessionId = again.sessionId || sessionId;
+      output = parseMentorOutput(again.structured, t.situation);
+      if (leakedTerms(output.body, t.engine).length > 0) output = { ...output, body: ANSWER_FALLBACK, expression: "考え中" };
     }
   }
-  const output = parseMentorOutput(structured, t.situation);
-  const used = markCited(deps.store, output.citedKnowledge, t.now());
-  return { output, sessionId, used };
+  const read = [...guard.reads];
+  const cited = output.citedKnowledge.map((x) => read.find((id) => x === id || x === `iji-${id.replace("/", "-")}`)).filter((x): x is string => !!x);
+  const used = markCited(deps.store, [...new Set(cited)], t.now());
+  return { output: { ...output, citedKnowledge: [...new Set(cited)] }, sessionId, used, read, stats };
 }

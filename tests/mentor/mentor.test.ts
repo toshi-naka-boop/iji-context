@@ -1,14 +1,15 @@
 // F2 メンターの決定的な部分（出力の検査・表情の制約・プロンプト・ツールの中身）
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import characters from "../../config/characters.json";
 import { evaluate } from "../../src/engine";
 import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
-import { guardExpression, parseMentorOutput } from "../../src/mentor/output";
+import { guardExpression, leakedTerms, parseMentorOutput } from "../../src/mentor/output";
 import { buildSystemPrompt, levelBehavior } from "../../src/mentor/prompt";
-import { askPeerThenHuman, markCited, queryHistory, querySkills } from "../../src/mentor/tools";
+import { askPeerThenHuman, markCited, queryHistory } from "../../src/mentor/tools";
+import { clerkMemo, ensureWorkspace, skillGuard, skillNames, workspaceRoot } from "../../src/mentor/workspace";
 import { loadCase, without } from "../engine/helpers";
 
 const T = "2025-03-10T09:00:00+09:00";
@@ -39,7 +40,9 @@ describe("プロンプト（キャラ × レベル）", () => {
     const p8 = buildSystemPrompt(c, 8, e);
     expect(p1).not.toEqual(p8);
     expect(p1).toContain(levelBehavior(1).timing);
-    expect(p8).toContain("聞かれたときだけ");
+    expect(p8).toContain("聞かれたときに一言だけ");
+    expect(p8).toContain("あなたなら余裕ですね");
+    expect(p1).toContain("同僚");
   });
   it("判定を上書きしない・答えを言わない・「その他」「判定不能」・院内ルールを使わない、が入っていて、判定（R03 の取り忘れ）を渡す", () => {
     const p = buildSystemPrompt(c, 1, evaluate(without(loadCase("K2"), "C002_N10_HOKATSU")));
@@ -68,13 +71,19 @@ describe("ツールの中身", () => {
     return m.id;
   };
 
-  it("query_skills は承認済みかつ院内以外だけを返す", () => {
+  it("Skill を読む直前の Hooks：承認済みかつ院内以外だけ読ませ、読めたものを知識 id で記録する", async () => {
     const ok = mk("地域", "ok", true);
-    mk("地域", "draft", false);
-    mk("院内", "local", true);
-    const vet = mk("ベテラン", "vet", true);
-    expect(querySkills(store(), "BNP").map((x) => x.id).sort()).toEqual([ok, vet].sort());
-    expect(querySkills(store(), "存在しない語")).toEqual([]);
+    const draft = mk("地域", "draft", false);
+    const local = mk("院内", "local", true);
+    const g = skillGuard(store());
+    const pre = g.hooks.PreToolUse![0].hooks[0];
+    const post = g.hooks.PostToolUse![0].hooks[0];
+    const call = (h: typeof pre, id: string) => h({ hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: `iji-${id.replace("/", "-")}` } } as never, undefined, { signal: new AbortController().signal });
+    expect(await call(pre, ok)).toEqual({});
+    for (const id of [draft, local, "regional/none"]) expect(await call(pre, id)).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    await call(post, ok);
+    await call(post, draft);
+    expect(g.reads).toEqual([ok]);
   });
 
   it("引用した知識に USED が出る（承認済み・要再検証だけ。未検証や未知の id は飛ばす）", () => {
@@ -96,10 +105,9 @@ describe("ツールの中身", () => {
 });
 
 describe("Agent SDK への登録（API は呼ばない）", () => {
-  it("ツールは 6 つだけで、名前は mcp__resemen__ の下にある", async () => {
+  it("自前のツールは 5 つだけで、名前は mcp__resemen__ の下にある（知識は Skill で読む）", async () => {
     const { ALLOWED_TOOLS, mentorServer } = await import("../../src/mentor/session");
     expect(ALLOWED_TOOLS).toEqual([
-      "mcp__resemen__query_skills",
       "mcp__resemen__query_history",
       "mcp__resemen__ask_peer_mentor",
       "mcp__resemen__ask_human",
@@ -114,5 +122,91 @@ describe("Agent SDK への登録（API は呼ばない）", () => {
     };
     const server = mentorServer(deps, loadCase("K2"), () => T);
     expect(server).toMatchObject({ type: "sdk", name: "resemen" });
+  });
+});
+
+describe("指摘の文言", () => {
+  it("すべてのルールの指摘に文言があり、禁止語・金額を含まない", async () => {
+    const { FINDING_TEXT, findingText } = await import("../../src/messages");
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const dir = path.join(__dirname, "..", "..", "src", "engine", "rules");
+    const keys = readdirSync(dir)
+      .filter((f) => /^r\d+\.ts$/.test(f))
+      .flatMap((f) => [...readFileSync(path.join(dir, f), "utf8").matchAll(/finding\(this, "[^"]+", [\s\S]*?"([a-z_0-9]+)"\)/g)].map((m) => `${f.slice(0, 3).toUpperCase()}.${m[1]}`));
+    expect(keys.length).toBeGreaterThan(25);
+    for (const k of keys) expect(FINDING_TEXT[k], k).toBeTruthy();
+    for (const t of Object.values(FINDING_TEXT)) expect(t).not.toMatch(/教育|学習|学ぶ|教える|円/);
+    expect(findingText({ ruleId: "R03", kind: "情報不足", lineRefs: [], missing: { target: "clerk", field: "careLevel" }, messageKey: "R03.missing_fact", reference: "" })).toBe("要介護度が入っていません。介護保険証で確かめて入力してください");
+  });
+});
+
+describe("ヒントの段階で答えに触れていないか（決まった規則）", () => {
+  const e = evaluate(without(loadCase("K2"), "C002_N10_HOKATSU"));
+  it("取り忘れでは、足すべき項目の名前・指摘の種類・点数の数字に触れたら拾う", () => {
+    expect(leakedTerms("包括的支援加算を付けてください", e)).toContain("包括的支援加算");
+    expect(leakedTerms("取り忘れがあります", e)).toContain("取り忘れ");
+    expect(leakedTerms("合計は 6043 点です", e)).toContain("6043 点");
+  });
+  it("見る場所を示すだけなら通す", () => {
+    expect(leakedTerms("R03 の条件を、患者さんの要介護度と見比べてみてください。", e)).toEqual([]);
+  });
+  it("ヒントの段階のプロンプトには、指摘の種類・根拠・点数を渡さない", () => {
+    const c = characters.characters[0];
+    const p = buildSystemPrompt(c, 1, e, false);
+    expect(p).toContain('"ruleId":"R03"');
+    expect(p).not.toContain("取り忘れ");
+    expect(p).not.toContain("包括的支援加算");
+    expect(p).not.toContain('"total"');
+  });
+});
+
+describe("一人ひとりの作業場所", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(path.join(tmpdir(), "iji-ws-"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("CLAUDE.md を書き、.claude/skills は同期先への参照にする（何度呼んでも同じ）", () => {
+    const skills = path.join(root, "skills");
+    mkdirSync(path.join(skills, "iji-system-r03"), { recursive: true });
+    mkdirSync(path.join(skills, "other"), { recursive: true });
+    const dir = ensureWorkspace(path.join(root, "ws"), "new1", skills, "# メモ\n");
+    ensureWorkspace(path.join(root, "ws"), "new1", skills, "# メモ\n");
+    expect(readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toBe("# メモ\n");
+    expect(readlinkSync(path.join(dir, ".claude", "skills"))).toBe(path.resolve(skills));
+    expect(skillNames(skills)).toEqual(["iji-system-r03"]);
+    expect(() => ensureWorkspace(path.join(root, "ws"), "../x", skills, "")).toThrow(/id/);
+  });
+
+  it("上の階層に CLAUDE.md がある場所には置かない（メンターに読み込まれてしまう）", () => {
+    writeFileSync(path.join(root, "CLAUDE.md"), "x");
+    expect(() => workspaceRoot(path.join(root, "a", "ws"))).toThrow(/CLAUDE\.md/);
+    expect(existsSync(path.join(root, "a"))).toBe(false);
+  });
+
+  it("本人の CLAUDE.md：レベルと、直近で確認が入ったルールを数える", () => {
+    const k2 = without(loadCase("K2"), "C002_N10_HOKATSU");
+    const q = (id: string, ctx = k2) => ({ id, clerkId: "new1", claimId: ctx.claimId, phase: "完了" as const, startedAt: `2025-03-1${id}T09:00:00+09:00`, drafts: [], confirmed: { lines: ctx.lines, result: evaluate(ctx), at: T }, correct: false, finishedAt: T });
+    const memo = clerkMemo({ name: "新人", callName: "さん", role: "clerk", level: 2, count: 25, streak: 0 }, [q("1"), q("2")]);
+    expect(memo).toContain("Lv.2（処理 25 件");
+    expect(memo).toContain("R03 2 回");
+    expect(memo).not.toMatch(/教育|学習|学ぶ|教える/);
+  });
+});
+
+describe("役割ごとのモデル（config/models.json）", () => {
+  it("4 つの役割にモデルがあり、深く考える（high 以上）のはベテランのメンターだけ", async () => {
+    const { modelFor } = await import("../../src/mentor/models");
+    const roles = ["mentor", "veteranMentor", "scribe", "notice"] as const;
+    const deep = roles.filter((r) => ["high", "xhigh", "max"].includes(modelFor(r).effort ?? ""));
+    for (const r of roles) expect(modelFor(r).model).toMatch(/^claude-/);
+    expect(deep).toEqual(["veteranMentor"]);
+  });
+  it("メンターは Lv.6 から段が変わる（Lv.5 は速さ優先、Lv.6 以上は深く考える）", async () => {
+    const { modelFor } = await import("../../src/mentor/models");
+    expect(modelFor("mentor", { level: 5 })).toEqual(modelFor("mentor"));
+    expect(modelFor("mentor", { level: 6 }).model).toBe("claude-opus-5-5");
+    expect(modelFor("mentor", { level: 10 }).model).toBe("claude-opus-5-5");
   });
 });
