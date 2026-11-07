@@ -30,7 +30,7 @@ export default function UkeImport() {
       <TopBar />
       {err && <div className="notice warn">{err}</div>}
       <div className="panel">
-        <h2 style={{ marginTop: 0 }}>UKE を取り込む</h2>
+        <h2 className="with-avatar" style={{ marginTop: 0 }}><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />UKE を取り込む</h2>
         <p>月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、算定画面の「月末の点検（UKE・提出前）」に並びます。</p>
         <p className="muted">このデモでは、用意した 2 本（合成データ・架空コード）から選んで取り込みます。ファイルを選んで読み込む機能は、まだありません。</p>
         {list.map((u) => (

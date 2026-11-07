@@ -361,7 +361,7 @@ export default function Work() {
               );
             })}
           </div>
-          <h2>月末の点検（UKE・提出前）</h2>
+          <h2 className="with-avatar"><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />月末の点検（UKE・提出前）</h2>
           <p>
             <label>
               <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ）
@@ -527,7 +527,7 @@ export default function Work() {
             )}
             {q.confirmed && (
               <div>
-                <h3>ユスティの判定</h3>
+                <h3 className="with-avatar"><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />ユスティの判定</h3>
                 {q.correct ? <div className="notice ok">確認してほしい点はありません</div> : null}
                 {findings.map((f, i) => (
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>

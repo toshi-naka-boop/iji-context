@@ -32,6 +32,9 @@ export default function Login() {
 
   return (
     <main className="shell">
+      <div className="with-figure">
+      {/* ユスティ（ルールエンジン）の立ち絵。幅の狭い画面では出さない（2026-11-07 ユーザー判断） */}
+      <img className="side-figure" src="/characters/yusti.png" alt="ユスティ" />
       <div className="phone" style={{ marginTop: 48 }}>
         <h1 style={{ margin: 0 }}>レセメン</h1>
         <p className="muted" style={{ marginTop: 0 }}>医療事務一人ひとりに、隣で働く同僚としての AI メンターを。</p>
@@ -60,6 +63,7 @@ export default function Login() {
         {mode === "register" && (
           <p className="muted">登録すると、あなた専用のクリニック（合成データ・架空コード）が用意されます。ほかの人の操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
         )}
+      </div>
       </div>
     </main>
   );

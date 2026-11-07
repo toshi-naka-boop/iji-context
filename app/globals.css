@@ -88,3 +88,10 @@ th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line
 .chart-field textarea { width: 100%; box-sizing: border-box; }
 /* 院内ルールの履歴（git log のイメージ） */
 .gitlog { background: var(--bubble); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 13px; line-height: 1.7; white-space: pre; }
+/* ユスティ（ルールエンジン）の絵：判定や点検の見出しに小さな顔、ログイン画面に立ち絵（2026-11-07） */
+.with-avatar { display: flex; align-items: center; gap: 10px; }
+.yusti-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--bubble); border: 1px solid var(--line); flex: none; }
+.with-figure { display: flex; justify-content: center; align-items: center; gap: 24px; margin-top: 24px; }
+.with-figure .phone { margin-left: 0; margin-right: 0; flex: 0 1 420px; }
+.side-figure { height: 440px; width: auto; }
+@media (max-width: 760px) { .side-figure { display: none; } }
