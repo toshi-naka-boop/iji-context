@@ -1,0 +1,7 @@
+{
+  "model": "lyria-002",
+  "project": "cuc-opening-movie",
+  "prompt": "Gentle, quietly hopeful solo piano with soft warm ambient pads, slow tempo around 70 BPM, major key, minimal and clean, cinematic, understated, room to breathe",
+  "negative": "vocals, singing, lyrics, drums, percussion, dark, ominous, sad, minor key, horror",
+  "createdAt": "2026-11-07T15:59:38.726Z"
+}

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>レセメン オープニング</title>
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage {
+    position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+    background: #0a0f1f; overflow: hidden; transform-origin: 0 0;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; color: #f5f6fa;
+  }
+  .layer { position: absolute; inset: 0; }
+  .layer > svg { position: absolute; inset: 0; }
+  .text {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    text-shadow: 0 0 18px rgba(10,15,31,.95), 0 0 40px rgba(10,15,31,.95);
+  }
+  .big { font-weight: 700; letter-spacing: .04em; line-height: 1.3; }
+  .small { font-weight: 300; letter-spacing: .06em; line-height: 1.6; margin-top: 36px; max-width: 1640px; color: #e8eaf0; }
+  .flat { width: 1400px; height: 2px; background: rgba(255,255,255,.55); margin-top: 20px; }
+  .source { position: absolute; right: 56px; bottom: 44px; font-weight: 300; color: #e8eaf0; }
+  .logo { font-weight: 800; letter-spacing: .14em; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+/* 画面の中身は scenes.json、画面11の階段は us-ladder.json に置く。renderAt(t) は t 秒時点の 1 コマを描く（書き出しと再生で共通） */
+const stage = document.getElementById('stage');
+let S, L, starts = [], total = 0;
+
+const clamp = (x) => Math.max(0, Math.min(1, x));
+const ease = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const fade = (lt, start, len) => ease((lt - start) / len);
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function rng(seed) { return () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }; }
+const svg = (inner) => `<svg viewBox="0 0 1920 1080" width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+const NOTE_COLORS = ['255,226,140', '255,186,206', '170,215,255', '235,238,245'];
+
+// 手書きの走り書きに見える線（文字は書かない）
+function scribble(x, y, w, h, r, lines, alpha) {
+  let d = '';
+  for (let i = 0; i < lines; i++) {
+    const ly = y + h * (0.28 + i * 0.22);
+    const len = w * (0.55 + r() * 0.3);
+    d += `M${x + w * 0.14} ${ly} q${len * 0.25} ${-6 + r() * 12} ${len * 0.5} 0 t${len * 0.5} 0 `;
+  }
+  return `<path d="${d}" fill="none" stroke="rgba(255,255,255,${alpha})" stroke-width="3" stroke-linecap="round"/>`;
+}
+
+function note(x, y, w, h, rot, color, alpha, seed) {
+  const r = rng(seed);
+  return `<g transform="rotate(${rot} ${x + w / 2} ${y + h / 2})">` +
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="rgba(${color},${alpha})"/>` +
+    scribble(x, y, w, h, r, 3, alpha * 0.9) + `</g>`;
+}
+
+const partTime = (i) => 0.5 + i * 0.3;
+
+// 画面5の机に積む物の簡単なピクトグラム（文字は書かない）
+function icon(kind, x, y, w, h) {
+  const st = 'stroke="rgba(255,255,255,.34)" stroke-width="4" fill="#111a33" stroke-linejoin="round"';
+  switch (kind) {
+    case 'papers':
+      return [0, 1, 2].map((k) => `<rect x="${x + k * 6}" y="${y + k * 14}" width="${w - 12}" height="14" ${st}/>`).join('');
+    case 'phone':
+      return `<rect x="${x + 10}" y="${y + 30}" width="${w - 20}" height="${h - 30}" rx="10" ${st}/>` +
+        `<path d="M${x} ${y + 30} q0 -26 ${w / 2} -26 q${w / 2} 0 ${w / 2} 26 l-24 0 q-4 -10 -${w / 2 - 24} -10 q-${w / 2 - 24} 0 -${w / 2 - 24} 10 z" ${st}/>` +
+        `<circle cx="${x + w / 2}" cy="${y + 30 + (h - 30) / 2}" r="12" ${st}/>`;
+    case 'bell':
+      return `<path d="M${x + 16} ${y + h - 16} a${w / 2 - 16} ${h - 30} 0 0 1 ${w - 32} 0 z" ${st}/>` +
+        `<rect x="${x}" y="${y + h - 16}" width="${w}" height="16" rx="4" ${st}/>` +
+        `<rect x="${x + w / 2 - 6}" y="${y}" width="12" height="16" rx="3" ${st}/>`;
+    case 'window':
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" ${st}/>` +
+        `<path d="M${x + 18} ${y + h - 22} v-${h - 60} a${w / 2 - 18} 26 0 0 1 ${w - 36} 0 v${h - 60} z" ${st}/>` +
+        `<line x1="${x}" x2="${x + w}" y1="${y + h - 22}" y2="${y + h - 22}" stroke="rgba(255,255,255,.34)" stroke-width="4"/>`;
+    case 'folder':
+      return `<path d="M${x} ${y + 12} h${w * 0.35} l10 -12 h${w * 0.65 - 10} v${h} h-${w} z" ${st}/>` +
+        `<rect x="${x}" y="${y + 22}" width="${w}" height="${h - 22}" ${st}/>`;
+    default:
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ${st}/>` +
+        `<path d="M${x} ${y} l${w / 2} ${h * 0.55} l${w / 2} -${h * 0.55}" fill="none" stroke="rgba(255,255,255,.34)" stroke-width="4"/>`;
+  }
+}
+
+const FX = {
+  // 画面5：業務名が 1 つ出るたびに、その業務の物が机の上に落ちてきて積み上がる
+  deskPile(sc, lt) {
+    const deskY = 990, cols = 11, colW = 150, x0 = 135;
+    const kinds = ['papers', 'phone', 'bell', 'window', 'folder', 'envelope'];
+    const heights = { papers: 40, phone: 64, bell: 54, window: 76, folder: 60, envelope: 52 };
+    const r = rng(4242);
+    const colH = new Array(cols).fill(0);
+    let s = `<line x1="80" x2="1840" y1="${deskY}" y2="${deskY}" stroke="rgba(255,255,255,.28)" stroke-width="6"/>` +
+      `<line x1="200" x2="200" y1="${deskY}" y2="1080" stroke="rgba(255,255,255,.2)" stroke-width="6"/>` +
+      `<line x1="1720" x2="1720" y1="${deskY}" y2="1080" stroke="rgba(255,255,255,.2)" stroke-width="6"/>`;
+    kinds.forEach((kind, i) => {
+      for (let j = 0; j < 8; j++) {
+        // 低い列の中からばらばらに選び、山が崩れたように積む（上限は小さい文字の下まで）
+        const order = [...colH.keys()].sort((a, b) => colH[a] - colH[b]).slice(0, 5);
+        const c = order[Math.floor(r() * order.length)];
+        const h = heights[kind], w = 96 + r() * 34;
+        const x = x0 + c * colW + (colW - w) / 2 + (r() - 0.5) * 50;
+        const ty = Math.max(660, deskY - colH[c] - h - 4);
+        colH[c] += h + 4;
+        const rot = -9 + r() * 18;
+        const p = fade(lt, partTime(i) + j * 0.035, 0.3);
+        if (p <= 0) continue;
+        const y = ty - (1 - p) * 420;
+        s += `<g opacity="${p}" transform="rotate(${rot} ${x + w / 2} ${y + h / 2})">${icon(kind, x, y, w, h)}</g>`;
+      }
+    });
+    return svg(s);
+  },
+
+  // 画面2：診療所から請求書が審査・支払の窓口へ飛び、コインが診療所へ戻ってくる（金額は出さない）
+  claim(sc, lt) {
+    const a = fade(lt, 0, 0.4);
+    const line = 'stroke="rgba(255,255,255,.6)" stroke-width="4" fill="#0f1730" stroke-linejoin="round"';
+    const cx = 430, px = 1490, by = 300;
+    const qb = (p0, c, p1, t) => [(1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p1[0], (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p1[1]];
+    const go = [[cx + 110, by - 90], [960, by - 250], [px - 120, by - 90]];
+    const back = [[px - 120, by - 40], [960, by + 40], [cx + 120, by - 40]];
+    let s = `<g opacity="${a}">` +
+      // 診療所（屋根の建物と脈の線）
+      `<path d="M${cx - 90} ${by} v-110 l90 -62 l90 62 v110 z" ${line}/>` +
+      `<path d="M${cx - 55} ${by - 62} h26 l12 -26 l18 48 l12 -22 h34" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="4" stroke-linejoin="round"/>` +
+      // 審査・支払の窓口（柱の建物。文字は書かない）
+      `<path d="M${px - 105} ${by - 128} l105 -48 l105 48 z" ${line}/>` +
+      [-70, -24, 24, 70].map((dx) => `<rect x="${px + dx - 11}" y="${by - 122}" width="22" height="106" ${line}/>`).join('') +
+      `<rect x="${px - 115}" y="${by - 16}" width="230" height="16" ${line}/>` +
+      `<path d="M${go[0][0]} ${go[0][1]} Q ${go[1][0]} ${go[1][1]} ${go[2][0]} ${go[2][1]}" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="3" stroke-dasharray="10 12"/>` +
+      `<path d="M${back[0][0]} ${back[0][1]} Q ${back[1][0]} ${back[1][1]} ${back[2][0]} ${back[2][1]}" fill="none" stroke="rgba(255,214,120,.2)" stroke-width="3" stroke-dasharray="10 12"/>` +
+      `</g>`;
+    // 請求書が飛ぶ
+    const p = ease((lt - 0.3) / 0.9);
+    if (p > 0 && lt < 1.5) {
+      const [x, y] = qb(...go, p);
+      const da = 1 - fade(lt, 1.2, 0.25);
+      s += `<g opacity="${da}" transform="translate(${x - 42} ${y - 54}) scale(1.5) rotate(${-10 + 20 * p} 28 36)">` +
+        `<path d="M0 0 h40 l16 16 v56 h-56 z" ${line}/>` +
+        [24, 36, 48].map((ly) => `<line x1="10" x2="46" y1="${ly}" y2="${ly}" stroke="rgba(255,255,255,.6)" stroke-width="3"/>`).join('') + `</g>`;
+    }
+    // コインが戻る
+    for (let k = 0; k < 4; k++) {
+      const q = ease((lt - 1.35 - k * 0.16) / 0.75);
+      if (q <= 0) continue;
+      const [x, y] = qb(...back, q);
+      // 着いたコインは診療所の横に積む
+      const sy = q >= 1 ? by - 12 - k * 16 : y;
+      const sx = q >= 1 ? cx + 160 : x;
+      s += `<g transform="translate(${sx} ${sy})"><circle r="32" fill="#2a2a20" stroke="rgba(255,214,120,.9)" stroke-width="5"/>` +
+        `<text y="13" font-size="38" font-weight="700" text-anchor="middle" fill="rgba(255,214,120,.95)">¥</text></g>`;
+    }
+    return svg(s);
+  },
+
+  // 画面7：略語だけが並ぶカルテの断片（人物・顔は出さない）
+  chart(sc, lt) {
+    const a = fade(lt, 0, 0.8);
+    const paper = (x, y, w, h, rot, rows) => {
+      let s = `<g transform="rotate(${rot} ${x + w / 2} ${y + h / 2})"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(255,255,255,${0.035 * a})" stroke="rgba(255,255,255,${0.09 * a})" stroke-width="2"/>`;
+      for (let k = 1; k < 9; k++) s += `<line x1="${x + 24}" x2="${x + w - 24}" y1="${y + k * h / 9}" y2="${y + k * h / 9}" stroke="rgba(255,255,255,${0.05 * a})" stroke-width="2"/>`;
+      rows.forEach(([txt, dx, row, size]) => {
+        s += `<text x="${x + dx}" y="${y + row * h / 9 - 10}" font-family="Noteworthy" font-weight="300" font-size="${size}" fill="rgba(255,255,255,${0.17 * a})">${txt}</text>`;
+      });
+      return s + '</g>';
+    };
+    if (sc.bg) {
+      // 背景画像にカルテと人物が描かれている画面では、紙は描かず略語だけを人物の間に散らす
+      const words = [['PD', 560, 180, 80, -8], ['DM', 900, 140, 70, 5], ['Do', 1250, 200, 76, -4], ['DM', 620, 880, 66, 6], ['Do', 960, 940, 72, -6], ['PD', 1280, 860, 68, 4]];
+      return svg(words.map(([w, x, y, size, rot], i) => {
+        const wa = fade(lt, 0.1 + i * 0.1, 0.4);
+        return `<text x="${x}" y="${y}" font-family="Noteworthy" font-weight="300" font-size="${size}" text-anchor="middle" transform="rotate(${rot} ${x} ${y})" fill="rgba(255,255,255,${0.22 * wa})">${w}</text>`;
+      }).join(''));
+    }
+    return svg(
+      paper(90, 80, 760, 620, -5, [['PD', 60, 2, 74], ['DM', 330, 2, 64], ['Do', 80, 4, 70], ['DM', 120, 6, 60], ['Do', 420, 6, 76], ['PD', 260, 8, 62]]) +
+      paper(1100, 380, 720, 640, 4, [['Do', 70, 2, 72], ['PD', 300, 3, 60], ['DM', 90, 5, 74], ['Do', 380, 5, 62], ['PD', 120, 8, 70], ['Do', 430, 8, 60]])
+    );
+  },
+
+  // 画面8：パソコンの縁に貼られた付箋
+  sticky(sc, lt) {
+    const a = fade(lt, 0, 0.6);
+    let s = `<rect x="360" y="140" width="1200" height="720" rx="30" fill="none" stroke="rgba(255,255,255,${0.11 * a})" stroke-width="14"/>` +
+      `<rect x="830" y="868" width="260" height="60" fill="rgba(255,255,255,${0.05 * a})"/>` +
+      `<rect x="700" y="928" width="520" height="14" rx="7" fill="rgba(255,255,255,${0.07 * a})"/>`;
+    const notes = [[290, 100, -8], [440, 82, 5], [1180, 86, -4], [1460, 120, 7], [1490, 300, -6], [1480, 520, 4], [270, 300, 6], [280, 560, -5], [1300, 760, 8], [420, 770, -7]];
+    notes.forEach(([x, y, rot], i) => {
+      const na = fade(lt, 0.1 + i * 0.08, 0.3) * a;
+      s += note(x, y, 140, 130, rot, NOTE_COLORS[i % 3], 0.14 * na, 300 + i);
+    });
+    // 孤独：モニターの前にひとり（後ろ姿のピクトグラム）、左右の席は空いている
+    const pa = fade(lt, 0.2, 0.5);
+    const chair = (x) => `<g stroke="rgba(255,255,255,${0.2 * pa})" stroke-width="6" fill="none" stroke-linecap="round">` +
+      `<path d="M${x - 60} ${870} v-110 M${x - 60} 870 h120 M${x - 50} 870 v70 M${x + 50} 870 v70"/></g>`;
+    s += chair(190) + chair(1730) +
+      `<line x1="0" x2="1920" y1="1000" y2="1000" stroke="rgba(255,255,255,${0.1 * pa})" stroke-width="4"/>` +
+      `<g fill="#111a33" stroke="rgba(255,255,255,${0.34 * pa})" stroke-width="5">` +
+      `<path d="M820 1080 v-50 q0 -80 140 -80 q140 0 140 80 v50 z"/><circle cx="960" cy="895" r="48"/></g>`;
+    return svg(s);
+  },
+
+  // 画面9：12月と1月のカレンダー。10日に締め切りの印、12/31〜1/3 に作業中の印
+  calendar(sc, lt) {
+    const a = fade(lt, 0, 0.6);
+    const month = (x0, y0, year, m, label, work) => {
+      const first = new Date(year, m, 1).getDay();
+      const days = new Date(year, m + 1, 0).getDate();
+      const cw = 92, ch = 82;
+      let s = `<text x="${x0}" y="${y0}" font-size="44" font-weight="600" fill="rgba(255,255,255,${0.16 * a})">${label}</text>`;
+      '日月火水木金土'.split('').forEach((d, i) => {
+        s += `<text x="${x0 + i * cw + cw / 2}" y="${y0 + 64}" font-size="24" text-anchor="middle" fill="rgba(255,255,255,${0.12 * a})">${d}</text>`;
+      });
+      for (let d = 1; d <= days; d++) {
+        const idx = first + d - 1, cx = x0 + (idx % 7) * cw + cw / 2, cy = y0 + 120 + Math.floor(idx / 7) * ch;
+        if (work.includes(d)) {
+          const wa = fade(lt, 1.0 + work.indexOf(d) * 0.12, 0.3) * a;
+          s += `<rect x="${cx - 38}" y="${cy - 40}" width="76" height="64" rx="8" fill="rgba(255,200,120,${0.16 * wa})"/>` +
+            `<path d="M${cx - 30} ${cy + 14} l20 -20 M${cx - 12} ${cy + 18} l26 -26 M${cx + 8} ${cy + 18} l22 -22" stroke="rgba(255,200,120,${0.32 * wa})" stroke-width="3"/>`;
+        }
+        s += `<text x="${cx}" y="${cy}" font-size="30" text-anchor="middle" fill="rgba(255,255,255,${0.15 * a})">${d}</text>`;
+        if (d === 10) {
+          const ma = fade(lt, 0.6, 0.3) * a;
+          s += `<circle cx="${cx}" cy="${cy - 10}" r="34" fill="none" stroke="rgba(255,120,120,${0.4 * ma})" stroke-width="4"/>`;
+        }
+      }
+      return s;
+    };
+    return svg(month(250, 200, 2025, 11, '12月', [31]) + month(1030, 200, 2026, 0, '1月', [1, 2, 3]));
+  },
+
+  // 画面10：付箋やメモが下から積み上がっていく
+  pile(sc, lt) {
+    const r = rng(777);
+    const cols = 12, colW = 160, heights = new Array(cols).fill(0);
+    let s = '';
+    for (let i = 0; i < 48; i++) {
+      const c = Math.floor(r() * cols);
+      const w = 150 + r() * 90, h = 90 + r() * 80, rot = -10 + r() * 20;
+      const x = c * colW + (colW - w) / 2 + (r() - 0.5) * 40;
+      const ty = 1080 - heights[c] - h + 20;
+      heights[c] += h * 0.62;
+      const p = fade(lt, 0.15 + i * 0.065, 0.45);
+      if (p <= 0) continue;
+      const y = ty + (1 - p) * 520;
+      const color = NOTE_COLORS[Math.floor(r() * NOTE_COLORS.length)];
+      s += note(x, y, w, h, rot, color, (0.10 + r() * 0.06) * p, 900 + i);
+    }
+    return svg(s);
+  },
+
+  // 画面11：右上へ上がる米国の役職の階段。最後の 1 秒で消え、日本側だけが残る
+  ladder(sc, lt) {
+    const steps = L.steps.filter((st) => st.include);
+    const n = steps.length;
+    if (!n) return '';
+    const x0 = 150, x1 = 1790, yBottom = 1010, yTop = 160;
+    const w = (x1 - x0) / n, rise = (yBottom - yTop) / n;
+    const bg = 1 - fade(lt, sc.dur - 1, 0.6);
+    const span = 1.4;
+    let s = '';
+    steps.forEach((st, i) => {
+      const a = fade(lt, 1.1 + i * (span / n), 0.4) * bg;
+      const dy = (1 - fade(lt, 1.1 + i * (span / n), 0.4)) * 40;
+      const x = x0 + i * w, top = yBottom - (i + 1) * rise;
+      s += `<g transform="translate(0 ${dy})">` +
+        `<rect x="${x}" y="${top}" width="${w}" height="${yBottom - top}" fill="rgba(200,205,215,${0.07 * a})"/>` +
+        `<line x1="${x}" x2="${x + w}" y1="${top}" y2="${top}" stroke="rgba(220,225,235,${0.24 * a})" stroke-width="3"/>` +
+        `<line x1="${x}" x2="${x}" y1="${top}" y2="${top + rise}" stroke="rgba(220,225,235,${0.24 * a})" stroke-width="3"/>` +
+        `<text x="${x + 20}" y="${top + 46}" font-size="30" font-weight="300" fill="rgba(230,233,240,${0.4 * a})">${esc(st.title)}</text>` +
+        (st.sub ? `<text x="${x + 20}" y="${top + 82}" font-size="22" font-weight="300" fill="rgba(230,233,240,${0.32 * a})">${esc(st.sub)}</text>` : '') +
+        `</g>`;
+    });
+    const la = fade(lt, 1.1 + (n - 1) * (span / n), 0.4) * bg;
+    s += `<text x="${x1}" y="${yTop - 26}" font-size="26" font-weight="300" text-anchor="end" fill="rgba(230,233,240,${0.4 * la})">${esc(L.regionLabel)}</text>`;
+    // 米国側の一文。階段がそろい始めたら左上に出し、背景と一緒に消す
+    if (sc.usText) {
+      const ua = fade(lt, 2.0, 0.4) * bg;
+      s += `<text x="${x0}" y="210" font-size="${S.style.smallPx}" font-weight="300" letter-spacing="2" fill="rgba(232,234,240,${0.9 * ua})">${esc(sc.usText)}</text>`;
+    }
+    return svg(s);
+  },
+};
+
+function sceneAt(t) {
+  for (let i = S.scenes.length - 1; i >= 0; i--) if (t >= starts[i]) return [S.scenes[i], t - starts[i], i];
+  return [S.scenes[0], 0, 0];
+}
+
+function renderAt(t) {
+  const st = S.style;
+  const [sc, lt, idx] = sceneAt(Math.min(Math.max(t, 0), total - 1e-6));
+  const isLast = idx === S.scenes.length - 1;
+  // 切り替え：最後の fadeOutSec で暗くし、blackSec は真っ暗のまま（合計 0.2 秒の暗転）
+  const out = isLast ? 1 : 1 - clamp((lt - (sc.dur - st.blackSec - st.fadeOutSec)) / st.fadeOutSec);
+  let html = '';
+  if (sc.logo) {
+    const a = fade(lt, 0.4, 0.6);
+    html = `<div class="text" style="opacity:${a}"><div class="logo" style="font-size:${st.logoPx}px">${esc(sc.logo)}</div></div>`;
+  } else {
+    // 背景画像：薄く敷いてゆっくり寄せ、文字の後ろだけさらに暗くする
+    if (sc.bg) {
+      const ba = fade(lt, 0, 0.6) * st.bgOpacity;
+      html += `<img class="layer" src="images/${sc.bg}.png" style="width:100%;height:100%;object-fit:cover;opacity:${ba};transform:scale(${1 + 0.05 * lt / sc.dur})">` +
+        `<div class="layer" style="background:radial-gradient(ellipse 52% 30% at 50% 50%, rgba(10,15,31,.92), rgba(10,15,31,0) 100%)"></div>` +
+        `<div class="layer" style="background:linear-gradient(to bottom, rgba(10,15,31,0) 32%, rgba(10,15,31,.8) 42%, rgba(10,15,31,.8) 60%, rgba(10,15,31,0) 70%)"></div>`;
+    }
+    if (FX[sc.fx]) html += `<div class="layer">${FX[sc.fx](sc, lt)}</div>`;
+    const bigA = fade(lt, 0, 0.5), smA = fade(lt, 0.5, 0.5);
+    const lift = (a) => (1 - a) * 14;
+    let small = '';
+    // 折り返しは文の区切り（。の後）でだけ起こす
+    const sentences = (s) => s.split(/(?<=。)/).map((x) => `<span style="display:inline-block">${esc(x)}</span>`).join('');
+    if (sc.small) small = `<div class="small" style="font-size:${st.smallPx}px;opacity:${smA};transform:translateY(${lift(smA)}px)">${sentences(sc.small)}</div>`;
+    if (sc.smallParts) {
+      small = `<div class="small" style="font-size:${st.smallPx}px">` +
+        sc.smallParts.map((p, i) => `<span style="opacity:${fade(lt, partTime(i), 0.25)}">${esc(p)}</span>`).join('') + `</div>`;
+    }
+    const flat = sc.fx === 'ladder' ? `<div class="flat" style="opacity:${smA}"></div>` : '';
+    html += `<div class="text"><div class="big" style="font-size:${st.bigPx}px;opacity:${bigA};transform:translateY(${lift(bigA)}px)">${esc(sc.big)}</div>${small}${flat}</div>`;
+    if (sc.source) html += `<div class="source" style="font-size:${st.sourcePx}px;opacity:${0.75 * smA}">${esc(sc.source)}</div>`;
+  }
+  stage.innerHTML = `<div class="layer" style="opacity:${out}">${html}</div>`;
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
+
+async function load() {
+  S = await (await fetch('scenes.json')).json();
+  L = await (await fetch('us-ladder.json')).json();
+  let t = 0;
+  for (const sc of S.scenes) { starts.push(t); t += sc.dur; }
+  total = t;
+  // 背景画像は先に読み込んでおく（書き出しのコマで画像が欠けないように）
+  await Promise.all(S.scenes.filter((sc) => sc.bg).map((sc) => { const im = new Image(); im.src = `images/${sc.bg}.png`; return im.decode(); }));
+  await document.fonts.ready;
+}
+
+window.renderAt = renderAt;
+window.ready = load().then(() => {
+  window.totalSec = total;
+  const params = new URLSearchParams(location.search);
+  if (params.has('render')) return;
+  // 確認用：画面に合わせて縮小し、ループ再生する。?t=秒 でその時点に止める
+  const fit = () => { const k = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `scale(${k})`; };
+  addEventListener('resize', fit); fit();
+  if (params.has('t')) { renderAt(Number(params.get('t'))); return; }
+  const t0 = performance.now();
+  const loop = () => { renderAt(((performance.now() - t0) / 1000) % total); requestAnimationFrame(loop); };
+  loop();
+});
+</script>
+</body>
+</html>
