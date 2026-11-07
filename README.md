@@ -64,6 +64,14 @@ npx tsx scripts/gen-notice.ts
 npx tsx scripts/gen-uke.ts
 ```
 
+### 公開（本番）
+
+公開版は Google Cloud の VM で Docker Compose で動かし、Caddy で https にしています。手順は [docs/deploy-gcp.md](docs/deploy-gcp.md) です。
+
+- 使う人はログイン ID とパスワードで登録・ログインします。パスワードは scrypt のハッシュだけを保存し、セッションは httpOnly の cookie で渡します。
+- ログインした人ごとに専用のクリニック（DB・知識・医師確認の記録・デモの時計）を持つので、人どうしの操作は混ざりません。
+- Claude の API キーは **Secret Manager** に置き、VM は自分のサービスアカウントの権限で起動のたびに読み出します。キーは git・Docker のイメージ・VM のファイルのどれにも書きません。
+
 ## Claude の使い方
 
 判定はユスティ（ルールエンジン）、判断は人が持ち、Claude は「読む・話す・整える」を受け持ちます。役割ごとにモデルと考える深さを変えています（`config/models.json`）。

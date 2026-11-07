@@ -2,7 +2,6 @@
 .env
 .env.*
 env.local.example
-deploy/app-settings
 .git
 node_modules
 .next

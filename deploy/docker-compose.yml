@@ -1,9 +1,12 @@
-# GCP の VM で動かす構成（docs/deploy-gcp.md）。Caddy が https の証明書を自動で取り、アプリへ渡す
+# GCP の VM で動かす構成（docs/deploy-gcp.md）。起動は deploy/start.sh から。Caddy が https の証明書を自動で取り、アプリへ渡す
 services:
   app:
     build: ..
     restart: unless-stopped
-    env_file: ./app-settings
+    # API キーは deploy/start.sh が Secret Manager から読み出して渡す（ファイルに書かない）
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?start.sh から起動してください}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
     volumes:
       - resemen-data:/data
     expose:
