@@ -61,7 +61,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <h3>査定・返戻の通知を読む</h3>
-      <p className="muted">Claude が PDF から書かれていることを取り出し、患者・区分・審査支払機関への対応づけは決まった規則で行います。知識の候補にするのは、確かめてボタンを押した項目だけです。</p>
+      <p className="muted">レセメン達が査定・返戻のデータを元にルールの改訂などを話し合います。</p>
       <p>
         <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・2 月分の査定）を読む</button>{" "}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

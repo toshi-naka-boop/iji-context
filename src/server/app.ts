@@ -553,7 +553,7 @@ export function openApp(paths: AppPaths) {
         id: m.id,
         layer: m.layer,
         status: m.status,
-        summary: m.summary,
+        summary: m.summary.replace("（中身は伏せています）", ""), // 2026-11-07 より前に入れた種の名前から外す（ユーザー判断）
         source: m.source_event.type,
         since: m.valid_from.slice(0, 10),
         hits: m.hits,

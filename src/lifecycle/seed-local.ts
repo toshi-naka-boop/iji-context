@@ -58,7 +58,7 @@ export function seedLocalRules(store: StoreOptions): string[] {
       {
         layer: "院内",
         slug: s.slug,
-        summary: `${name}に関する院内ローカル（中身は伏せています）`,
+        summary: `${name}に関する院内ローカル`,
         body: [`# ${name}に関する院内ローカル`, "", "中身は伏せています（合成データのデモ。院内ルールの中身は作り足さない）。", "", `対象の区分：${name}（${s.kubun}）`].join("\n"),
         source: { type: s.source, ref: `seed:${s.slug}` },
         empathy: s.empathy ?? 0,

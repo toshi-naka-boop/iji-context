@@ -338,7 +338,7 @@ describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
     app.seedLocalRules();
     const k1 = app.start("new1", "K1-2025-03");
     const inHouse = app.localRulesOf(k1.id).filter((r) => r.layer === "院内");
-    expect(inHouse.every((r) => r.summary.endsWith("に関する院内ローカル（中身は伏せています）"))).toBe(true);
+    expect(inHouse.every((r) => r.summary.endsWith("に関する院内ローカル"))).toBe(true);
     expect(inHouse.find((r) => r.summary.startsWith("在宅時医学総合管理料"))?.stale ?? inHouse.find((r) => r.id === "local/seed-01")?.stale).toBe(true);
     expect(inHouse.find((r) => r.id === "local/seed-08")).toMatchObject({ stale: false, lastUsed: "2025-02-26" });
     expect(inHouse.some((r) => r.id === "local/seed-10")).toBe(false); // しまわれたものは出さない
