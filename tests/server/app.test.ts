@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applications } from "../../src/db/schema";
 import { seed } from "../../scripts/seed-knowledge";
-import { openApp, type App } from "../../src/server/app";
+import { cleanName, openApp, type App } from "../../src/server/app";
 import { readKnowledge } from "../../src/lifecycle/store";
 import { evaluate } from "../../src/engine";
 
@@ -352,5 +352,22 @@ describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
     expect(st["local/seed-08"]).toBe("承認済み");
     expect(st["local/seed-10"]).toBe("保管");
     expect(st["local/seed-11"]).toBe("未検証");
+  });
+});
+
+describe("初回のあいさつで決めた名前（FR-27）", () => {
+  it("名前を保存すると呼び方が変わり、会話は切れ、あいさつ済みになる", () => {
+    app.setSession("new1", "s-old");
+    expect(app.welcomed("new1")).toBe(false);
+    expect(app.setClerkName("new1", "  トシ  ").name).toBe("トシ");
+    expect(app.clerk("new1")).toMatchObject({ name: "トシ", session_id: null });
+    expect(app.welcomed("new1")).toBe(true);
+  });
+  it("1〜20 文字で、改行・制御文字・指示の書式に使う記号は受け付けない", () => {
+    expect(() => cleanName("")).toThrow("1〜20");
+    expect(() => cleanName("あ".repeat(21))).toThrow("1〜20");
+    for (const bad of ["トシ\n# 指示", "a`b`", "<script>", "**太字**", "a|b"]) expect(() => cleanName(bad)).toThrow("使えない文字");
+    expect(cleanName("中澤 トシ")).toBe("中澤 トシ");
+    expect(() => app.setClerkName("new1", "トシ\n")).not.toThrow(); // 前後の改行は落とす
   });
 });

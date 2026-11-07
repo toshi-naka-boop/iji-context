@@ -8,6 +8,7 @@ import type { Question } from "../../src/practice/practice";
 import { findingText } from "../../src/messages";
 import { TopBar } from "../nav";
 import { MentorPicker, type MentorChoice } from "../mentor-picker";
+import { unlockAudio, Welcome } from "../welcome";
 import { SignIn, useClerk } from "../clerk";
 import { PatientPanel } from "./patient-panel";
 
@@ -70,6 +71,8 @@ export default function Work() {
   const [choiceMode, setChoiceMode] = useState(false);
   const [quiz, setQuiz] = useState<ChoiceState[]>([]);
   const [mentorChoice, setMentorChoice] = useState<MentorChoice | null>(null);
+  /** このページでキャラを押したばかり（初回の声をすぐ流してよい） */
+  const [justPicked, setJustPicked] = useState(false);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [drills, setDrills] = useState<{ fix: Drill[]; doctor: Drill[] }>({ fix: [], doctor: [] });
   const [drillState, setDrillState] = useState<DrillState>(null);
@@ -293,6 +296,8 @@ export default function Work() {
   }, [pendingVisit, visits, mentorChoice, cases, q]);
   const visitOf = q?.asOf ? visits.find((v) => v.claimId === q.claimId && v.date === q.asOf) ?? null : null;
   const showChooser = mentorChoice !== null && !mentorChoice.chosen;
+  /** 初回のあいさつ（FR-27）：キャラを選んだあと、呼び方を決めるまで */
+  const showWelcome = !!mentorChoice?.chosen && mentorChoice.welcomed === false;
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -305,10 +310,13 @@ export default function Work() {
         <div className="panel">
           <h2 style={{ marginTop: 0 }}>一緒に働くメンターを選んでください</h2>
           <p className="muted">あとから「設定」で変えられます。</p>
-          <MentorPicker choice={mentorChoice} clerkId={CLERK} onChange={setMentorChoice} onError={setErr} />
+          <MentorPicker choice={mentorChoice} clerkId={CLERK} onChange={setMentorChoice} onError={setErr} onPick={() => { unlockAudio(); setJustPicked(true); }} />
         </div>
       )}
-      {!q && mentorChoice?.chosen && (
+      {showWelcome && mentorChoice && (
+        <Welcome character={mentorChoice.current} autoStart={justPicked} onDone={() => setMentorChoice({ ...mentorChoice, welcomed: true })} />
+      )}
+      {!q && mentorChoice?.chosen && !showWelcome && (
         <div className="panel">
           <p className="muted">
             <button onClick={togglePrevented} aria-expanded={showPrevented}>{showPrevented ? "防いだ額を閉じる" : "防いだ額を見る"}</button>　既定では出しません。開いたときだけ表示します

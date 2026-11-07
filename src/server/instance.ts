@@ -99,12 +99,17 @@ export function characterOf(id: string): Character {
 /** 本人が選んだメンター（まだ選んでいなければ chosen=false）と、選べるキャラの一覧 */
 export function mentorChoice(clerkId: string) {
   const a = getApp();
-  return { chosen: a.characterChosen(clerkId), current: characterOf(a.clerk(clerkId).character_id), characters: characters(), style: a.styleOf(clerkId) };
+  return { chosen: a.characterChosen(clerkId), welcomed: a.welcomed(clerkId), current: characterOf(a.clerk(clerkId).character_id), characters: characters(), style: a.styleOf(clerkId) };
 }
 
 export function chooseStyle(clerkId: string, style: Style) {
   getApp().setStyle(clerkId, style);
   return mentorChoice(clerkId);
+}
+
+/** 初回のあいさつで本人が決めた名前を保存する（FR-27） */
+export function setClerkName(clerkId: string, name: string) {
+  return { name: getApp().setClerkName(clerkId, name).name };
 }
 
 export function chooseMentor(clerkId: string, characterId: string) {
