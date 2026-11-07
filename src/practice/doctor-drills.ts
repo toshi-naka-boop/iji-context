@@ -1,5 +1,5 @@
 // 医師確認の練習問題（spec FR-76。2026-11-07 ユーザー判断）：推測で算定せず、医師に聞いてから確定する練習。
-// 題材は根拠のある 3 つだけ（K1 の別表第八の二＝エンジンのテスト、週 4 回の訪問＝report-A 項目 21 の 13、K4 の DOAC と病型＝EM 5-1）。
+// 題材は根拠のある 3 つだけ（K3 の別表第八の二＝EM 5-1「重症区分（別表八の二: 難病）」「カルテに PD のみ記載」。2026-11-07 に K1 から入れ替え：K1 は在宅酸素療法中で、カルテだけで答えが決まってしまうため、週 4 回の訪問＝report-A 項目 21 の 13、K4 の DOAC と病型＝EM 5-1）。
 // 回答は問題の中だけで事実に戻す（本物の患者情報は変えない）。判定はユスティだけが行う
 import type { ClaimContext } from "../engine/types";
 import type { QueryDraft } from "../query/doctor-query";
@@ -15,12 +15,12 @@ const yesNo = (b: { known: boolean; value?: unknown }, yes: string, no: string) 
 export const FACT_QUESTIONS: Record<AskFact, FactQuestion> = {
   table8_2: {
     label: "別表第八の二に当たるか",
-    question: "在宅酸素療法を行っている患者さんについて、別表第八の二（特掲診療料の施設基準等 別表第八の二）に該当するかの記載が診療録にありません。該当するものを選んでください。",
+    question: "この患者さんについて、別表第八の二（特掲診療料の施設基準等 別表第八の二）に該当するかの記載が診療録にありません。該当するものを選んでください。",
     options: ["該当する", "該当しない", "その他", "判定不能"],
     value: { 該当する: true, 該当しない: false },
     indicators: (c) => [
-      { source: "診療録", text: `在宅酸素療法：${yesNo(c.facts.homeOxygen, "実施中", "なし")}` },
       { source: "傷病名", text: c.facts.mainDisease.known ? String(c.facts.mainDisease.value) : "記載なし" },
+      { source: "診療録", text: `在宅酸素療法：${yesNo(c.facts.homeOxygen, "実施中", "なし")}` },
     ],
   },
   acuteExacerbation: {
@@ -62,8 +62,8 @@ export type DoctorDrill = { id: string; claimId: string; situation: string[]; as
 export const DOCTOR_DRILLS: DoctorDrill[] = [
   {
     id: "m01",
-    claimId: "K1-2025-03",
-    situation: ["在宅酸素療法をしている", "別表第八の二に当たるかは、カルテに書かれていない"],
+    claimId: "K3-2025-03",
+    situation: ["パーキンソン病。在宅酸素療法はしていない", "別表第八の二に当たるかは、カルテに書かれていない"],
     ask: "table8_2",
     make: (k) => ({ ...k, facts: { ...k.facts, table8_2: { known: false } } }),
   },

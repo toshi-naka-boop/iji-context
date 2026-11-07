@@ -13,6 +13,7 @@ const start = (id: string) => {
 describe("医師確認の練習問題", () => {
   it("m01：別表第八の二が分からないと、R02・R03 が情報不足（宛先は医師）。「該当する」を戻すと指摘なし", () => {
     const c = start("m01");
+    expect(c.facts.homeOxygen).toEqual({ known: true, value: false }); // 在宅酸素療法中だと、カルテだけで答えが決まってしまう（2026-11-07 に K1 から K3 へ）
     const f = evaluate(c).findings;
     expect(f.map((x) => [x.ruleId, x.kind, x.missing?.target])).toEqual([["R02", "情報不足", "doctor"], ["R03", "情報不足", "doctor"]]);
     expect(evaluate(withAnswer(c, "table8_2", answerValue("table8_2", "該当する"))).findings).toEqual([]);
