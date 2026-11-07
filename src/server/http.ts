@@ -32,6 +32,19 @@ export async function authed(req: Request, fn: (user: User) => unknown | Promise
   return runAs(user, () => handle(() => fn(user)));
 }
 
+/** authed と同じくログインした本人で動かすが、JSON ではない応答（音声など）をそのまま返す */
+export async function authedResponse(req: Request, fn: (user: User) => Promise<Response>): Promise<Response> {
+  const user = userOf(req);
+  if (!user) return Response.json({ error: "ログインしてください" }, { status: 401 });
+  return runAs(user, async () => {
+    try {
+      return await fn(user);
+    } catch (e) {
+      return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    }
+  });
+}
+
 /** セッションの cookie（httpOnly。本番は https だけで送る） */
 export function sessionCookie(token: string, expires: Date): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";

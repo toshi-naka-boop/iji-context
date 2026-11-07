@@ -22,6 +22,8 @@ export type Character = {
   catchphrases?: string[];
   avoid?: string[];
   examples?: Partial<Record<ExampleScene, string>>;
+  /** 初回の声（ElevenLabs の Voice ID。秘密の値ではない）。指示には使わない */
+  voiceId?: string;
 };
 
 /** キャラの話し方（呼び方・敬語・口癖・使わない言い方・例文）。守ることより下に置き、例文は写さないよう添える */

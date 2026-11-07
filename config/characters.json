@@ -18,7 +18,8 @@
         "wrong": "あと少しで理解できそうですね。",
         "chat": "",
         "backToWork": "さて、仕事に戻りましょうか。"
-      }
+      },
+      "voiceId": "jFC0UIEzTxa9AlmUpvLs"
     },
     {
       "id": "b",
@@ -41,7 +42,8 @@
         "wrong": "惜しい〜！！",
         "chat": "",
         "backToWork": "仕事に戻りましょ！"
-      }
+      },
+      "voiceId": "ZUGgdvOA3Ci1wlNYW0yJ"
     },
     {
       "id": "c",
@@ -60,7 +62,8 @@
         "wrong": "間違えています",
         "chat": "",
         "backToWork": "仕事に戻らなくて大丈夫ですか？"
-      }
+      },
+      "voiceId": "mDxkcO3nsRCNeB4si9qg"
     },
     {
       "id": "d",
@@ -81,7 +84,8 @@
         "wrong": "私のヒントがダメだったか、、、",
         "chat": "",
         "backToWork": "仕事して！"
-      }
+      },
+      "voiceId": "9wuWjGIR6FYAWDzxx9um"
     }
   ]
 }
