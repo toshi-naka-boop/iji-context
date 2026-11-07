@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import { MentorPicker, type MentorChoice } from "../mentor-picker";
+import { PageGuide } from "../page-guide";
 
 export default function Settings() {
   const { clerk: user, ready } = useClerk();
@@ -19,10 +20,12 @@ export default function Settings() {
   return (
     <main className="shell">
       <TopBar />
+      <PageGuide who="mine" title="設定">
+        一緒に働くメンターと、話し方の好みをここで変えられます。変えると、メンターとの会話は新しく始まります。
+      </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <div className="panel">
-        <h2 style={{ marginTop: 0 }}>設定</h2>
-        <h3>メンター</h3>
+        <h3 style={{ marginTop: 0 }}>メンター</h3>
         <p className="muted">今のメンター：{choice?.current.name ?? ""}。変えると、メンターとの会話は新しく始まります。</p>
         {saved && <div className="notice ok">{saved}</div>}
         {choice && (

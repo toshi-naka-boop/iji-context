@@ -3,6 +3,9 @@ import { LocalRuleHistoryMock } from "./history-mock";
 // 知識の画面：ベテランへの質問（F6）、検証キュー（F5）、改善の提案と共感（F11）
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
+import { PageGuide } from "../page-guide";
+
+const STATUS_COLOR: Record<string, string> = { 承認済み: "var(--accent)", 未検証: "var(--sky)", 要再検証: "var(--warn-mark)", 停止: "#5a4632", 保管: "var(--muted)" };
 
 type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number };
 type Peer = { id: string; question: string; status: string; answer: string | null; answered_by: string | null; knowledge_id: string | null };
@@ -34,13 +37,17 @@ export default function Knowledge() {
   return (
     <main className="shell">
       <TopBar />
+      <PageGuide who="bob" title="知識">
+        院内や地域で育ったルールの置き場所です。未検証のものは、医事責任者が確かめると承認済みになります。使われなくなったものは、確かめ直しを経てしまわれます。
+      </PageGuide>
       {err && <div className="notice warn">{err}</div>}
-      <h2>知識</h2>
-      <p className="muted">
-        承認済み {count("承認済み")}・未検証 {count("未検証")}・確かめ直し待ち {count("要再検証")}・停止 {count("停止")}・保管 {count("保管")}
-      </p>
+      <div className="stats">
+        {([["承認済み", "承認済み"], ["未検証", "未検証"], ["要再検証", "確かめ直し待ち"], ["停止", "停止"], ["保管", "保管"]] as const).map(([s, label]) => (
+          <div key={s} className="stat" style={{ ["--stat-color" as string]: STATUS_COLOR[s] }}><div className="label">{label}</div><span className="value">{count(s)}</span><span className="unit">件</span></div>
+        ))}
+      </div>
 
-      <section className="panel" style={{ marginBottom: 12 }}>
+      <section className="panel" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>医事責任者への質問</h3>
         {peer.length === 0 && <p className="muted">届いている質問はありません。</p>}
         {peer.map((p) => (
@@ -58,23 +65,26 @@ export default function Knowledge() {
         ))}
       </section>
 
-      <section className="panel" style={{ marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>検証キュー（共感の多い順）</h3>
-        {queue.length === 0 && <p className="muted">未検証の知識はありません。</p>}
+      <div className="board-head"><h2>検証キュー（共感の多い順）</h2><span className="num" style={{ fontSize: 18, color: "var(--muted)" }}>{queue.length} 件</span></div>
+      {queue.length === 0 && <div className="panel muted">未検証の知識はありません。</div>}
+      <div className="card-list" style={{ marginBottom: 20 }}>
         {queue.map((k) => (
-          <div key={k.id} style={{ marginBottom: 10 }}>
-            <div><strong>{k.summary}</strong> <span className="muted">{k.layer === "ベテラン" ? "医事責任者" : k.layer}・共感 {k.empathy}</span></div>
-            <div className="bubble" style={{ margin: "4px 0" }}>{k.body}</div>
+          <article key={k.id} className="card">
+            <div className="card-band" style={{ background: STATUS_COLOR[k.status] ?? "var(--sky)" }} />
+            <div className="card-body">
+            <div className="chips" style={{ alignItems: "center" }}><span className="badge sky">{k.layer === "ベテラン" ? "医事責任者" : k.layer}</span><span className="badge">共感 {k.empathy}</span><strong>{k.summary}</strong></div>
+            <div className="bubble" style={{ margin: "10px 0" }}>{k.body}</div>
             <div className="chips">
               <button onClick={() => run(post("/api/knowledge", { action: "empathy", id: k.id }))}>共感する</button>
               <button className="primary" onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: true }))}>承認する（医事責任者）</button>
               <button onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: false }))}>却下する（医事責任者）</button>
             </div>
-          </div>
+            </div>
+          </article>
         ))}
-      </section>
+      </div>
 
-      <section className="panel">
+      <section className="panel" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>改善を提案する</h3>
         <p><input style={{ width: "100%" }} placeholder="要約（1 行）" value={prop.summary} onChange={(e) => setProp({ ...prop, summary: e.target.value })} /></p>
         <p><textarea style={{ width: "100%" }} rows={3} placeholder="内容" value={prop.body} onChange={(e) => setProp({ ...prop, body: e.target.value })} /></p>

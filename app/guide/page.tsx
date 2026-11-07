@@ -2,6 +2,15 @@
 // ルールの文は、知識に入れている制度層の要約（scripts/seed-knowledge.ts の RULE_TEXT）をそのまま使い、作り足さない
 import { RULE_TEXT } from "../../scripts/seed-knowledge";
 import { TopBar } from "../nav";
+import { PageGuide } from "../page-guide";
+
+/** 練習の流れ（文は前の手引きのまま、カードに分けた） */
+const STEPS: [string, string][] = [
+  ["明細を直す問題", "新人が入れたつもりの明細に、よくある間違いが 1 つ入っています。表の行を外したり、区分を選び直したりして直し、「確定する」を押します。"],
+  ["医師に確認する問題", "カルテに書かれていない事実があり、そのままでは決められません。推測で埋めずに「医師確認を送る」を押し、「医師確認」の画面で医師の役として回答・承認してから、問題に戻って確定します。"],
+  ["迷ったらメンターに", "下のメンターに「ヒントをください」と聞いてください。メンターは答えそのものは言わず、どこを見ればよいかを示します。"],
+  ["判定と解説", "確定すると、ユスティが判定し、メンターが理由を解説します。"],
+];
 
 const TERMS: [string, string][] = [
   ["訪問診療", "計画を立てて、決まった日に患者さんの家へ行く診療。"],
@@ -17,31 +26,33 @@ export default function Guide() {
   return (
     <main className="shell">
       <TopBar />
-      <div className="panel">
-        <h2 style={{ marginTop: 0 }}>練習問題の手引き</h2>
-        <p>医療事務や医師でなくても練習問題に取り組めるように、流れと用語をまとめました。合成データ・架空コードのデモです。</p>
+      <PageGuide who="makki" title="練習問題の手引き">
+        医療事務や医師でなくても練習問題に取り組めるように、流れと用語をまとめました。合成データ・架空コードのデモです。迷ったら、算定画面で私たちに聞いてください。
+      </PageGuide>
 
-        <h3>練習の流れ</h3>
-        <ol>
-          <li><strong>明細を直す問題</strong>：新人が入れたつもりの明細に、よくある間違いが 1 つ入っています。表の行を外したり、区分を選び直したりして直し、「確定する」を押します。</li>
-          <li><strong>医師に確認する問題</strong>：カルテに書かれていない事実があり、そのままでは決められません。推測で埋めずに「医師確認を送る」を押し、「医師確認」の画面で医師の役として回答・承認してから、問題に戻って確定します。</li>
-          <li>迷ったら、下のメンターに「ヒントをください」と聞いてください。メンターは答えそのものは言わず、どこを見ればよいかを示します。</li>
-          <li>確定すると、ユスティが判定し、メンターが理由を解説します。</li>
-        </ol>
+      <div className="board-head"><h2>練習の流れ</h2></div>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
+        {STEPS.map(([title, text], i) => (
+          <article key={title} className="card">
+            <div className="card-band" />
+            <div className="card-body">
+              <div className="qcard-no">{String(i + 1).padStart(2, "0")}</div>
+              <strong>{title}</strong>
+              <p style={{ margin: "6px 0 0", fontSize: 14 }}>{text}</p>
+            </div>
+          </article>
+        ))}
+      </div>
 
-        <h3>用語</h3>
-        <table>
-          <tbody>
-            {TERMS.map(([t, d]) => (
-              <tr key={t}>
-                <td style={{ whiteSpace: "nowrap", verticalAlign: "top" }}><strong>{t}</strong></td>
-                <td>{d}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="board-head"><h2>用語</h2></div>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+        {TERMS.map(([t, d]) => (
+          <article key={t} className="card"><div className="card-body"><strong style={{ color: "var(--accent)" }}>{t}</strong><p style={{ margin: "6px 0 0", fontSize: 14 }}>{d}</p></div></article>
+        ))}
+      </div>
 
-        <h3>ローカルルール</h3>
+      <div className="panel" style={{ marginTop: 20 }}>
+        <h3 style={{ marginTop: 0 }}>ローカルルール</h3>
         <p>
           ユスティが見るのは全国共通の決まりです。それとは別に、審査の結果（査定・返戻）や、ベテランの判断、院内の取り決めから育つ「ローカルルール」があります。算定画面では、明細に当てはまるローカルルールを、ユスティの判定とは別の欄に出します。
         </p>
@@ -51,7 +62,9 @@ export default function Guide() {
           <li>院内のルールも、何年分も積み上がった状態で入っています（中身は伏せ、何の区分に関するものかだけを出しています）。算定画面で K1 などを開くと、どの院内ルールが引っかかったか、どれが何年も使われていないかが分かります。「レセメン会議」を開くと、長く使われていないものが見直しに回ります。院内のルールは、メンターの助言には使いません。</li>
         </ul>
 
-        <h3>ユスティが見ているルール</h3>
+      </div>
+      <div className="panel" style={{ marginTop: 20 }}>
+        <h3 className="with-avatar" style={{ marginTop: 0 }}><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />ユスティが見ているルール</h3>
         <p className="muted">2024 年度の診療報酬改定後の決まりを、ユスティが判定に使う形に要約したものです。練習問題の間違いは、このどれかに関わります。</p>
         <table>
           <tbody>

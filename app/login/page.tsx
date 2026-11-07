@@ -31,13 +31,19 @@ export default function Login() {
   }
 
   return (
-    <main className="shell">
-      <div className="with-figure">
-      {/* ユスティ（ルールエンジン）の立ち絵。幅の狭い画面では出さない（2026-11-07 ユーザー判断） */}
-      <img className="side-figure" src="/characters/yusti.png" alt="ユスティ" />
-      <div className="phone" style={{ marginTop: 48 }}>
-        <h1 style={{ margin: 0 }}>レセメン</h1>
-        <p className="muted" style={{ marginTop: 0 }}>医療事務一人ひとりに、隣で働く同僚としての AI メンターを。</p>
+    <main className="login-page">
+      {/* 左：レセメンとユスティ。幅の狭い画面では絵を小さくする（2026-11-08 案 C+） */}
+      <section className="login-hero" aria-label="レセメン">
+        <div className="hud-tag">RESEMEN</div>
+        <h1>レセメン</h1>
+        <p>医療事務一人ひとりに、隣で働く同僚としての AI メンターを。</p>
+        <div className="login-cast">
+          {["makki", "black-hair", "bob", "suit"].map((c) => <img key={c} src={`/characters/${c}-select.png`} alt="" />)}
+          <img className="rule" src="/characters/yusti.png" alt="ユスティ" />
+        </div>
+      </section>
+      <div className="login-card">
+        <h2 style={{ margin: 0 }}>{mode === "login" ? "ログイン" : "はじめて使う"}</h2>
         <div className="chips" role="tablist">
           <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>ログイン</button>
           <button role="tab" aria-selected={mode === "register"} className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>はじめて使う</button>
@@ -63,7 +69,6 @@ export default function Login() {
         {mode === "register" && (
           <p className="muted">登録すると、あなた専用のクリニック（合成データ・架空コード）が用意されます。ほかの人の操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
         )}
-      </div>
       </div>
     </main>
   );

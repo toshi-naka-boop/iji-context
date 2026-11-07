@@ -1,7 +1,7 @@
 "use client";
 // 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → レセメン（訪問の記録）へ
 // 自由に書いて Haiku に SOAP の欄へ振り分けさせることも、見本（足りないカルテ・ちゃんとしたカルテ）を入れることもできる（2026-11-07 ユーザー判断）
-// 見た目はスマホで書く一般的な訪問カルテ。特定の製品に似せない
+// 見た目は PC・タブレットで書く一般的な訪問カルテ（2026-11-08 にスマホの枠をやめた）。特定の製品に似せない
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
@@ -9,6 +9,8 @@ import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import SAMPLES from "../../fixtures/charts/samples.json";
+import { PageGuide } from "../page-guide";
+import { colorOf } from "../work/board";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
@@ -96,25 +98,30 @@ export default function Chart() {
   return (
     <main className="shell">
       <TopBar />
+      <PageGuide who="black-hair" title="カルテを書く">
+        訪問したていで、デモ用のカルテを書けます。自由に書けば AI が SOAP の欄に振り分けます。書くのが初めてなら、見本のカルテを入れてみてください。保存すると、算定に要る事実を読み取ってレセメンに渡します。
+      </PageGuide>
       {err && <div className="notice warn">{err}</div>}
-      <div className="phone">
-        {!p && (
-          <>
-            <h2>訪問する患者</h2>
-            <p className="muted">デモ用のカルテ記載ができます。</p>
-            {patients.map((x) => (
-              <button key={x.claimId} className="patient-card" onClick={() => { setP(x); setNote(EMPTY); setEx(null); setFree(""); setUnmatched([]); }}>
+      <div className="two-col">
+        <aside aria-label="訪問する患者" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>訪問する患者</h2>
+          {patients.map((x) => (
+            <button key={x.claimId} className={`patient-card${p?.claimId === x.claimId ? " on" : ""}`} disabled={!!ex && p?.claimId !== x.claimId} onClick={() => { setP(x); setNote(EMPTY); setEx(null); setFree(""); setUnmatched([]); }}>
+              <span className="patient-band" style={{ background: colorOf(x.claimId).bg }} />
+              <span style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
                 <strong>{x.name}</strong>
-                <span>{x.sex}・{x.age ?? "?"} 歳・{x.insurance ?? ""}</span>
-                <span className="muted">主病：{x.mainDisease ?? "不明"}</span>
-              </button>
-            ))}
-          </>
-        )}
+                <span className="qcard-chip" style={{ background: colorOf(x.claimId).bg, color: colorOf(x.claimId).ink }}>{x.claimId.split("-")[0]}</span>
+              </span>
+              <span>{x.sex}・{x.age ?? "?"} 歳・{x.insurance ?? ""}</span>
+              <span className="muted">主病：{x.mainDisease ?? "不明"}</span>
+            </button>
+          ))}
+        </aside>
+        <section className="panel" aria-label="カルテ" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {!p && <div className="muted" style={{ padding: "40px 0", textAlign: "center" }}>左から訪問する患者を選んでください。</div>}
         {p && (
           <>
-            <button onClick={() => { setP(null); setEx(null); }}>← 患者を選び直す</button>
-            <h2>{p.name}　<span className="muted">{p.sex}・{p.age ?? "?"} 歳</span></h2>
+            <h2 style={{ margin: 0 }}>{p.name}　<span className="muted">{p.sex}・{p.age ?? "?"} 歳</span></h2>
             <div className="notice">
               <div>保険：{p.insurance ?? "不明"}　主病：{p.mainDisease ?? "不明"}</div>
               <div>傷病名：{p.diseases.join("、")}</div>
@@ -141,11 +148,13 @@ export default function Chart() {
               <button disabled={busy || !free.trim()} onClick={toSoap}>{busy ? "整えています…" : "SOAP に整える"}</button>
             )}
             {unmatched.length > 0 && <div className="notice warn">元の文にない言い回しがあります。確かめて直してください：{unmatched.join("、")}</div>}
-            {field("s", "S（主訴）")}
-            {field("o", "O（所見）")}
-            {field("a", "A（評価）")}
-            {field("p", "P（計画）")}
-            {field("rx", "処方")}
+            <div className="soap-grid">
+              {field("s", "S（主訴）")}
+              {field("o", "O（所見）")}
+              {field("a", "A（評価）")}
+              {field("p", "P（計画）")}
+              {field("rx", "処方")}
+            </div>
             {!ex && (
               <button className="primary" disabled={busy || !Object.values(note).some((v) => v.trim())} onClick={read}>
                 {busy ? "読み取っています…" : "保存して、算定に要る事実を読み取る"}
@@ -173,6 +182,7 @@ export default function Chart() {
             )}
           </>
         )}
+        </section>
       </div>
     </main>
   );

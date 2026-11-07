@@ -16,7 +16,7 @@ const COLORS: Record<string, { bg: string; ink: string }> = {
   K5: { bg: "#0b0e12", ink: "#ffffff" },
   K6: { bg: "#aab2bd", ink: "#0b0e12" },
 };
-const colorOf = (claimId: string) => COLORS[claimId.split("-")[0]] ?? { bg: "#aab2bd", ink: "#0b0e12" };
+export const colorOf = (claimId: string) => COLORS[claimId.split("-")[0]] ?? { bg: "#aab2bd", ink: "#0b0e12" };
 const kOf = (claimId: string) => claimId.split("-")[0];
 
 const Stethoscope = () => (

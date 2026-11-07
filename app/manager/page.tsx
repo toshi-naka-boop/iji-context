@@ -2,6 +2,7 @@
 // 事務長レポート（F9・FR-54〜58）：月次の集計だけ（個人別に分けない）。金額は常に「推定」
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
+import { PageGuide } from "../page-guide";
 
 type Report = {
   label: string;
@@ -11,28 +12,31 @@ type Report = {
   見逃し: { count: number; yen: number };
 };
 
+const ROWS: [keyof Omit<Report, "label">, string, string][] = [
+  ["取りこぼし", "取りこぼしを防いだ", "var(--accent)"],
+  ["差し戻し", "差し戻しを防いだ", "var(--sky)"],
+  ["医師記載起因", "医師確認で算定できた", "#5a4632"],
+  ["見逃し", "見逃し（返戻・査定になった）", "var(--warn-mark)"],
+];
+
 export default function Manager() {
   const [r, setR] = useState<Report | null>(null);
   useEffect(() => { fetch("/api/manager").then((x) => x.json()).then(setR); }, []);
-  const row = (name: string, v: { count: number; yen: number }) => (
-    <tr key={name}><td>{name}</td><td>{v.count} 件</td><td>{v.yen.toLocaleString()} 円（{r?.label}）</td></tr>
-  );
   return (
     <main className="shell">
       <TopBar />
-      <h2>事務長レポート</h2>
+      <PageGuide who="suit" title="事務長レポート">
+        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。
+      </PageGuide>
       {r && (
-        <div className="panel">
-          <table>
-            <thead><tr><th>項目</th><th>件数</th><th>金額</th></tr></thead>
-            <tbody>
-              {row("取りこぼしを防いだ", r.取りこぼし)}
-              {row("差し戻しを防いだ", r.差し戻し)}
-              {row("医師記載起因（医師確認で算定できた）", r.医師記載起因)}
-              {row("見逃し（返戻・査定になった）", r.見逃し)}
-            </tbody>
-          </table>
-          <p className="muted">金額は点数×10円の推定です。正しく算定する・取りこぼさないための集計で、個人別には分けません。</p>
+        <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+          {ROWS.map(([k, label, color]) => (
+            <div key={k} className="stat" style={{ ["--stat-color" as string]: color }}>
+              <div className="label">{label}</div>
+              <span className="value">{r[k].count}</span><span className="unit">件</span>
+              <div className="muted" style={{ marginTop: 4 }}>{r[k].yen.toLocaleString()} 円（{r.label}）</div>
+            </div>
+          ))}
         </div>
       )}
     </main>

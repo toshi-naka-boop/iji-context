@@ -15,7 +15,7 @@ export function LocalRuleHistoryMock() {
     <section className="panel">
       <h3 style={{ marginTop: 0 }}>院内ルールの履歴（git log のイメージ・仮）</h3>
       <p className="muted">知識はファイルとして git で残るので、ひとつのルールが生まれてから使われなくなり、しまわれるまでを、あとから追えます。下は表示のイメージで、ルールの中身は伏せた例です。</p>
-      <pre className="gitlog" aria-label="院内ルールの履歴の例">
+      <pre className="terminal" aria-label="院内ルールの履歴の例">
         {"$ git log --oneline -- knowledge/local/（例）院内ルール\n\n"}
         {LOG.map((l) => `${l.sha}  ${l.date}  ${l.msg}`).join("\n")}
       </pre>

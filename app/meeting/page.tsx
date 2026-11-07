@@ -5,6 +5,42 @@ import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
 import { TopBar } from "../nav";
 
+/** 会議室の絵（public/characters/ にあればそれを使い、なければ全員の絵を並べる。2026-11-08） */
+const MEETING_IMAGE: string | null = "/characters/meeting.jpg"; // assets/characters/meeting/meeting-2.png（Codex で生成。2026-11-08 ユーザーが案 2 を選んだ）
+const MEMBERS: [string, string][] = [["suit", "ハル"], ["makki", "マッキー"], ["black-hair", "ナツ"], ["bob", "ユキ"]];
+
+/** 全員が会議している様子。ハルが前に立って説明する */
+function MeetingRoom() {
+  return (
+    <section className="meeting-room" aria-label="レセメン会議の様子">
+      {MEETING_IMAGE ? (
+        <img className="meeting-art" src={MEETING_IMAGE} alt="ハルがホログラムのパネルでみんなに説明している" />
+      ) : (
+        <div className="meeting-members">
+          {MEMBERS.map(([img, name]) => (
+            <figure key={img}>
+              <img src={`/characters/${img}-select.png`} alt={name} />
+              <figcaption>{name}</figcaption>
+            </figure>
+          ))}
+          <figure className="rule">
+            <img src="/characters/yusti.png" alt="ユスティ" />
+            <figcaption>ユスティ</figcaption>
+          </figure>
+        </div>
+      )}
+      <div className="meeting-caption">
+        <div className="hud-tag">WEEKLY · 毎週土曜</div>
+        <h1>レセメン会議</h1>
+        <div className="page-guide-say">
+          <span className="page-guide-name">ハル</span>
+          <p>査定・返戻の通知をもとに、みんなでルールを見直します。長く使われていないルールも、ここで確かめ直しに回します。</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const KIND: Record<string, string> = { miss: "外れの確認", recheck: "確かめ直し", ignored: "新人が外した理由", disposal: "廃棄提案" };
 
 function reasonText(e: DigestEntry): string {
@@ -59,9 +95,9 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
   }
 
   return (
-    <div className="panel" style={{ marginBottom: 16 }}>
-      <h3>査定・返戻の通知を読む</h3>
-      <p className="muted">レセメン達が査定・返戻のデータを元にルールの改訂などを話し合います。</p>
+    <div className="panel" style={{ marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0 }}>査定・返戻の通知を読む</h3>
+      <p className="muted">通知に書かれていることを取り出し、確かめた項目だけを知識の候補にします。</p>
       <p>
         <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・2 月分の査定）を読む</button>{" "}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
@@ -120,13 +156,21 @@ export default function Meeting() {
   return (
     <main className="shell">
       <TopBar />
-      <h2>レセメン会議（毎週土曜）</h2>
+      <MeetingRoom />
       <NoticeReader onRegistered={load} />
-      <p><button onClick={run}>今すぐ整理を回す</button> <span className="muted">{msg}</span></p>
-      {items.length === 0 && <div className="panel muted">今週の議題はありません。</div>}
+      <div className="board-head">
+        <h2>今週の議題</h2>
+        <span className="num" style={{ fontSize: 18, color: "var(--muted)" }}>{items.length} 件</span>
+        <button onClick={run}>今すぐ整理を回す</button>
+        <span className="muted">{msg}</span>
+      </div>
+      {items.length === 0 && <div className="panel muted">今週の議題はありません。「今すぐ整理を回す」を押すと、長く使われていないルールなどが議題に上がります。</div>}
+      <div className="card-list">
       {items.map((e) => (
-        <div key={e.itemId} className="panel" style={{ marginBottom: 12 }}>
-          <div className="muted">{KIND[e.kind]}・{e.knowledgeId}{e.waitingRecheck ? "・確かめ直しの回答がこの回答を待っています" : ""}</div>
+        <article key={e.itemId} className="card">
+          <div className="card-band" style={{ background: e.kind === "disposal" ? "var(--warn-mark)" : "var(--accent)" }} />
+          <div className="card-body">
+          <div className="chips" style={{ alignItems: "center" }}><span className="badge blue">{KIND[e.kind]}</span><span className="muted">{e.knowledgeId}{e.waitingRecheck ? "・確かめ直しの回答がこの回答を待っています" : ""}</span></div>
           <p><strong>{e.summary}</strong></p>
           <div className="bubble">{reasonText(e)}</div>
           <p>
@@ -135,8 +179,10 @@ export default function Meeting() {
           <div className="chips">
             {e.choices.map((c) => <button key={c.no} onClick={() => answer(e.itemId, c.no)}>{c.label}</button>)}
           </div>
-        </div>
+          </div>
+        </article>
       ))}
+      </div>
     </main>
   );
 }
