@@ -4,7 +4,7 @@
 // ブラウザは操作の直後でないと音を出さないので、キャラを押したクリックの中で unlockAudio() を呼んでおく
 import { useEffect, useRef, useState } from "react";
 import type { Character } from "../src/mentor/prompt";
-import { faceImage } from "../src/mentor/face";
+import { selectImage } from "../src/mentor/face";
 import VOICE from "../config/voice-lines.json";
 
 type Line = "intro" | "askName" | "greeting" | "greetingNoName";
@@ -143,7 +143,7 @@ export function Welcome({ character, autoStart, onDone }: { character: Character
   return (
     <div className="panel">
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-        {character.image && <img src={faceImage(character.image, "喜び")} alt="" style={{ width: 180 }} />}
+        {character.image && <img src={selectImage(character.image)} alt="" style={{ width: 180 }} />}
         <div style={{ flex: 1, minWidth: 240 }}>
           <strong>{character.name}</strong>
           <div className="bubble" style={{ marginTop: 8 }}>{line}</div>
