@@ -1,5 +1,5 @@
 {
-  "_note": "役割ごとのモデルと考える深さ（effort）。新人の隣のメンターは速さ、ベテランのメンターは深さ、整文は軽さを優先する。byScene は場面ごとの上書き（hint＝開いたときの声かけとヒント、explain＝確定したあとの解説）。byLevel は本人のレベルが fromLevel 以上のときに使い、byScene より優先する。chartExtract は本人が書いた訪問カルテから算定に要る事実を取り出す役（取り出した事実は本人が確かめる）。chartSoap は自由に書いたカルテを SOAP の欄に振り分ける役（並べ替えるだけなので軽さを優先して Haiku。2026-11-07 ユーザー判断）",
+  "_note": "役割ごとのモデルと考える深さ（effort）。新人の隣のメンターは速さ、ベテランのメンターは深さ、整文は軽さを優先する。byScene は場面ごとの上書き（hint＝開いたときの声かけとヒント、explain＝確定したあとの解説）。byLevel は本人のレベルが fromLevel 以上のときに使い、byScene より優先する。chartExtract は本人が書いた訪問カルテから算定に要る事実を取り出す役（取り出した事実は本人が確かめる）。chartSoap は自由に書いたカルテを SOAP の欄に振り分ける役（並べ替えるだけなので軽さを優先して Haiku。2026-11-07 ユーザー判断）。nameKana は声で答えた名前に漢字が混じっていたら、ひらがなの読みに直す役（Haiku。2026-11-07 ユーザー判断）",
   "mentor": {
     "model": "claude-sonnet-5-5",
     "effort": "low",
@@ -32,6 +32,9 @@
     "effort": "low"
   },
   "chartSoap": {
+    "model": "claude-haiku-5-5"
+  },
+  "nameKana": {
     "model": "claude-haiku-5-5"
   }
 }
