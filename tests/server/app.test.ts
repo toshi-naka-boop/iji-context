@@ -194,13 +194,13 @@ describe("メンターを選ぶ（FR-19）", () => {
 });
 
 describe("訪問の記録（レセコンに入れる前。FR-68）", () => {
-  it("今日までの訪問だけ開けて、その日のカルテとその日までの実施が付く", () => {
-    app.advanceClock("2025-03-11T18:00:00+09:00");
+  it("時計に関係なく全部の訪問を開けて、その日のカルテとその日までの実施が付く", () => {
     const k4 = app.visits().filter((v) => v.claimId === "K4-2025-03");
-    expect(k4.map((v) => [v.date, v.open])).toEqual([["2025-03-11", true], ["2025-03-25", false]]);
+    expect(k4.map((v) => v.date)).toEqual(["2025-03-11", "2025-03-25"]);
     expect(k4[0].chart?.a).toBe("AF");
     expect(k4[0].lines.map((l) => [l.kubun, l.count])).toEqual([["C001_1I", 1]]);
-    expect(() => app.start("new1", "K4-2025-03", "通常", "2025-03-25")).toThrow();
+    expect(app.start("new1", "K4-2025-03", "通常", "2025-03-25").asOf).toBe("2025-03-25");
+    expect(() => app.start("new1", "K4-2025-03", "通常", "2025-03-12")).toThrow();
   });
   it("確定しても提出にならず、件数・防いだ額に数えない。照合はその日までのカルテで出る", () => {
     app.advanceClock("2025-03-11T18:00:00+09:00");
@@ -229,7 +229,7 @@ describe("訪問カルテを書く（FR-69）", () => {
     // ほかの利用者には、この人が書いたカルテは重ならない
     const other = app.createClerk("審査員A");
     expect(app.visits(other.id).some((x) => x.claimId === "K4-2025-03" && x.date === "2025-03-18")).toBe(false);
-    expect(v).toMatchObject({ open: true, written: true, chart: { a: "AF" } });
+    expect(v).toMatchObject({ written: true, chart: { a: "AF" } });
     const q = app.start("new1", "K4-2025-03", "通常", "2025-03-18");
     expect(app.caseFor(q).lines.find((l) => l.kubun === "C001_1I")?.count).toBe(2);
     expect(app.crosscheckOf("K4-2025-03", "2025-03-18", "new1").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);

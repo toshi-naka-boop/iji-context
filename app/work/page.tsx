@@ -22,7 +22,7 @@ type Bubble = { from: "mentor" | "me"; text: string; expression?: string; face?:
 type ChoiceItem = { lineIndex: number; group: string; options: string[] };
 type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "未回答" | "正解" | "判定不能" };
 /** 訪問の記録（レセコンに入れる前。FR-68）：その日のカルテと、その日までの実施 */
-type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; open: boolean; written: boolean };
+type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; written: boolean };
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
 type MentorChoice = { chosen: boolean; current: Character; characters: Character[]; style: Style };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
@@ -331,12 +331,11 @@ export default function Work() {
             </select>
           </p>
           <h2>訪問の記録（レセコンに入れる前）</h2>
-          <p className="muted">訪問のあった日に、その日のカルテとその日までの実施を見直します。在医総管の区分など月末に決まるものは、見込みだけ出します。件数・レベルには数えません。</p>
+          <p className="muted">訪問のあった日に、その日のカルテとその日までの実施を見直します（デモデータとして、どの日の訪問でも開けます）。在医総管の区分など月末に決まるものは、見込みだけ出します。件数・レベルには数えません。</p>
           <div className="chips">
-            {visits.filter((v) => v.open).length === 0 && <span className="muted">今日までの訪問はまだありません（時計を進めると増えます）。</span>}
-            {visits.filter((v) => v.open).map((v) => (
+            {visits.map((v) => (
               <button key={v.claimId + v.date} onClick={() => begin(v.claimId, v)}>
-                {Number(v.date.slice(5, 7))}/{Number(v.date.slice(8))} {v.claimId.split("-")[0]}（{v.mainDisease ?? "主病不明"}・{v.type === "oushin" ? "往診" : "訪問診療"}{v.written ? "・書いたカルテ" : ""}）
+                {Number(v.date.slice(5, 7))}/{Number(v.date.slice(8))} {v.claimId.split("-")[0]}（{v.mainDisease ?? "主病不明"}・{v.type === "oushin" ? "往診" : "訪問診療"}{v.written ? "・書いたカルテ" : ""}）{v.lines.length} 行
               </button>
             ))}
           </div>

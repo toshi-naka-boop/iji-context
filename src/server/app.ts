@@ -234,9 +234,8 @@ export function openApp(paths: AppPaths) {
       });
   }
 
-  /** 訪問の記録（レセコンに入れる前）：その月の訪問日と、その日のカルテ。今日より先の日は open=false */
+  /** 訪問の記録（レセコンに入れる前）：その月の訪問日と、その日のカルテ。デモデータとして、時計に関係なく全部の訪問で練習できる（2026-11-07 ユーザー判断） */
   function visits(clerkId?: string) {
-    const today = now().slice(0, 10);
     return cases().map((c) => monthOf(c.claimId, clerkId)).flatMap((c) =>
       visitDays(c).map((d) => ({
         claimId: c.claimId,
@@ -249,7 +248,6 @@ export function openApp(paths: AppPaths) {
         outlook: outlook(c, d.date),
         /** 本人が書いた訪問か */
         written: confirmedNotes(c.claimId, clerkId).some((n) => n.date === d.date),
-        open: d.date <= today,
       })),
     ).sort((a, b) => (a.date === b.date ? (a.claimId < b.claimId ? -1 : 1) : a.date < b.date ? -1 : 1));
   }
@@ -329,7 +327,6 @@ export function openApp(paths: AppPaths) {
     if (asOf) {
       if (mode !== "通常") throw new Error("訪問の時点の問題は通常モードだけ");
       if (!visitDays(c).some((d) => d.date === asOf)) throw new Error(`この日の訪問はない: ${claimId} ${asOf}`);
-      if (asOf > now().slice(0, 10)) throw new Error(`まだ来ていない日: ${asOf}`);
     }
     const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
     const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode, asOf);
