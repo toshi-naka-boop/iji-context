@@ -41,14 +41,14 @@ export default function Knowledge() {
       </p>
 
       <section className="panel" style={{ marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>ベテランへの質問</h3>
+        <h3 style={{ marginTop: 0 }}>医事責任者への質問</h3>
         {peer.length === 0 && <p className="muted">届いている質問はありません。</p>}
         {peer.map((p) => (
           <div key={p.id} style={{ marginBottom: 8 }}>
-            <div><strong>{p.question}</strong> <span className="muted">{p.status}{p.answered_by === "veteran_mentor" ? "（ベテランのメンターが回答）" : ""}</span></div>
+            <div><strong>{p.question}</strong> <span className="muted">{p.status}{p.answered_by === "veteran_mentor" ? "（医事責任者のメンターが回答）" : ""}</span></div>
             {p.status === "回答待ち" ? (
               <div className="chips">
-                <input style={{ flex: 1, minWidth: 240 }} value={ans[p.id] ?? ""} onChange={(e) => setAns({ ...ans, [p.id]: e.target.value })} placeholder="ベテランの回答" />
+                <input style={{ flex: 1, minWidth: 240 }} value={ans[p.id] ?? ""} onChange={(e) => setAns({ ...ans, [p.id]: e.target.value })} placeholder="医事責任者の回答" />
                 <button className="primary" onClick={() => run(post(`/api/peer/${p.id}/answer`, { answer: ans[p.id] ?? "" }))}>回答する</button>
               </div>
             ) : (
@@ -63,12 +63,12 @@ export default function Knowledge() {
         {queue.length === 0 && <p className="muted">未検証の知識はありません。</p>}
         {queue.map((k) => (
           <div key={k.id} style={{ marginBottom: 10 }}>
-            <div><strong>{k.summary}</strong> <span className="muted">{k.layer}・共感 {k.empathy}</span></div>
+            <div><strong>{k.summary}</strong> <span className="muted">{k.layer === "ベテラン" ? "医事責任者" : k.layer}・共感 {k.empathy}</span></div>
             <div className="bubble" style={{ margin: "4px 0" }}>{k.body}</div>
             <div className="chips">
               <button onClick={() => run(post("/api/knowledge", { action: "empathy", id: k.id }))}>共感する</button>
-              <button className="primary" onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: true }))}>承認する（ベテラン）</button>
-              <button onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: false }))}>却下する（ベテラン）</button>
+              <button className="primary" onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: true }))}>承認する（医事責任者）</button>
+              <button onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: false }))}>却下する（医事責任者）</button>
             </div>
           </div>
         ))}
