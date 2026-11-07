@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
-export type ModelRole = "mentor" | "veteranMentor" | "scribe" | "notice" | "chartExtract" | "chartSoap" | "nameKana";
+export type ModelRole = "mentor" | "veteranMentor" | "scribe" | "notice" | "chartExtract" | "chartSoap" | "chartImage" | "nameKana";
 export type ModelChoice = { model: string; effort?: Effort };
 /** メンターの場面：hint＝開いたときの声かけとヒント、explain＝確定したあとの解説 */
 export type Scene = "hint" | "explain";

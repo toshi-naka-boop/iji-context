@@ -13,6 +13,7 @@ import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceS
 import { crosscheckSkills } from "../uke/crosscheck";
 import { extractFacts, type ChartNote } from "../chart/extract";
 import { formatSoap } from "../chart/soap";
+import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
 import { defaultPaths, openApp, type App, type AppPaths } from "./app";
@@ -230,3 +231,4 @@ export async function writeChart(input: { claimId: string; clerkId: string; kind
 
 /** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
 export const formatChart = (text: string) => formatSoap(text, modelFor("chartSoap"));
+export const readChartFromImage = (image: Buffer) => readChartImage(image, modelFor("chartImage"));

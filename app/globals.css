@@ -278,3 +278,29 @@ th { font-size: 13px; color: var(--muted); }
   .login-cast img { height: 120px; margin-right: -10px; }
   .login-cast img.rule { height: 135px; margin-left: 12px; }
 }
+
+/* 電子カルテの画面の画像から取り込む（2026-11-08） */
+.image-drop{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:2px dashed var(--sky);border-radius:var(--radius);background:var(--surface);cursor:pointer}
+.image-drop:hover{border-color:var(--accent)}
+.image-drop input{display:none}
+.image-drop strong{color:var(--accent)}
+
+/* 架空の電子カルテ（デモ用・/demo/emr）。特定の製品に似せない、事務的な見た目 */
+.emr{min-height:100vh;background:#eef1f4;color:#1d232b;padding:0 0 24px;font-family:var(--font)}
+.emr-banner{background:#3a4350;color:#fff;font-size:13px;padding:6px 20px;letter-spacing:.04em}
+.emr-head{display:flex;justify-content:space-between;align-items:center;background:#fff;border-bottom:1px solid #d5dbe2;padding:14px 20px}
+.emr-name{font-size:26px;font-weight:700}
+.emr-meta{color:#5b6573;margin-top:2px}
+.emr-visit{display:flex;gap:10px;align-items:center}
+.emr-visit strong{background:#2f6f9f;color:#fff;padding:8px 18px;border-radius:6px}
+.emr-grid{display:grid;grid-template-columns:280px 1fr 300px;gap:12px;padding:12px 20px}
+.emr-box{background:#fff;border:1px solid #d5dbe2;border-radius:6px;padding:12px 14px}
+.emr-box h2{font-size:15px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #e3e7ec}
+.emr-sub{color:#5b6573;font-weight:400;font-size:13px}
+.emr-past{font-size:14px;line-height:1.7;padding:8px 0;border-bottom:1px dashed #e3e7ec}
+.emr-past-date{font-weight:700}
+.emr-table{width:100%;border-collapse:collapse;font-size:15px}
+.emr-table th,.emr-table td{text-align:left;padding:6px 8px;border-bottom:1px solid #e3e7ec}
+.emr-table th{background:#f4f6f8;font-weight:600;color:#5b6573}
+.emr-record{font-size:17px;line-height:1.9;min-height:220px}
+.emr-rx{font-size:16px;padding:8px 10px;background:#f4f6f8;border-radius:4px}

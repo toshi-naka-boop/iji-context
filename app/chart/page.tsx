@@ -2,6 +2,7 @@
 // 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → レセメン（訪問の記録）へ
 // 自由に書いて Haiku に SOAP の欄へ振り分けさせることも、見本（足りないカルテ・ちゃんとしたカルテ）を入れることもできる（2026-11-07 ユーザー判断）
 // 見た目は PC・タブレットで書く一般的な訪問カルテ（2026-11-08 にスマホの枠をやめた）。特定の製品に似せない
+// 電子カルテの画面を撮った画像を渡すと、AI が病名・診療記録・処方を書き写して自由記述の欄に入れる（2026-11-08 ユーザー判断。画像は保存しない）
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
@@ -75,6 +76,28 @@ export default function Chart() {
       setBusy(false);
     }
   }
+  async function fromImage(file: File | undefined) {
+    if (!file) return;
+    setErr("");
+    if (file.size > 5 * 1024 * 1024) return setErr("画像が 5MB を超えています");
+    setBusy(true);
+    try {
+      const b64 = await new Promise<string>((ok, ng) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(String(fr.result).split(",")[1] ?? "");
+        fr.onerror = () => ng(new Error("画像を読み込めませんでした"));
+        fr.readAsDataURL(file);
+      });
+      const r = await api<{ text: string }>("/api/chart/image", { imageBase64: b64 });
+      setFree(r.text);
+      setNote(EMPTY);
+      setUnmatched([]);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function hand() {
     if (!ex || !p) return;
     setErr("");
@@ -138,6 +161,17 @@ export default function Chart() {
               <span>自由に書く（AI が SOAP の欄に振り分けます）</span>
               <textarea rows={4} value={free} disabled={!!ex} onChange={(e) => setFree(e.target.value)} />
             </label>
+            {!ex && (
+              <label
+                className="image-drop"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); if (!busy) fromImage(e.dataTransfer.files[0]); }}
+              >
+                <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => { fromImage(e.target.files?.[0]); e.target.value = ""; }} />
+                <strong>{busy ? "読み取っています…" : "電子カルテの画面の画像から取り込む"}</strong>
+                <span className="muted">画像を選ぶか、ここに置いてください（PNG・JPEG・WebP、5MB まで）。病名・診療記録・処方を書き写して上の欄に入れます。画像は保存しません。</span>
+              </label>
+            )}
             {sampleOf(p.claimId) && !ex && (
               <div className="chips" role="group" aria-label="見本を入れる">
                 <button onClick={() => setFree(sampleOf(p.claimId)!.lacking)}>見本：足りないカルテ</button>
