@@ -671,7 +671,12 @@ export function openApp(paths: AppPaths) {
     judgeFor,
     visits,
     startDrill,
-    drills: () => ({ fix: drillList(), doctor: doctorDrillList() }),
+    /** 練習問題の一覧。cleared は本人がその練習を正解で終えたか（画面のカードの状態に使う。2026-11-08） */
+    drills: (clerkId?: string) => {
+      const done = new Set(clerkId ? questionsOf(clerkId).filter((q) => q.drill && q.correct === true).map((q) => q.drill) : []);
+      const mark = <T extends { id: string }>(xs: T[]) => xs.map((d) => ({ ...d, cleared: done.has(d.id) }));
+      return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
+    },
     askDoctorForDrill,
     drillState,
     saveNote,

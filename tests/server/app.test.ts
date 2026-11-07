@@ -285,6 +285,16 @@ describe("練習問題（FR-75）", () => {
     expect(app.personal("new1", true)).toMatchObject({ visible: true, summary: { 差し戻し: { count: 0 } } });
     expect(app.outlookOf(q)).toContain("練習問題");
   });
+  it("一覧には、本人が正解で終えた練習に cleared が付く（不正解・ほかの人の分は付かない）", () => {
+    const q = app.startDrill("new1", "d04");
+    app.confirm(q.id, app.caseFor(q).lines.filter((l) => l.kubun !== "B000"));
+    const w = app.startDrill("new1", "d02");
+    app.confirm(w.id, app.caseFor(w).lines);
+    const list = app.drills("new1").fix;
+    expect(list.find((d) => d.id === "d04")?.cleared).toBe(true);
+    expect(list.find((d) => d.id === "d02")?.cleared).toBe(false);
+    expect(app.drills("vet1").fix.every((d) => !d.cleared)).toBe(true);
+  });
   it("直さずに確定すると、ねらいのルールで不正解。状況の事実（要介護2）は問題の側で決まる", () => {
     const q = app.startDrill("new1", "d02");
     expect(app.caseFor(q).facts.careLevel).toEqual({ known: true, value: 2 });

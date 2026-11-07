@@ -11,6 +11,7 @@ import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { unlockAudio, Welcome } from "../welcome";
 import { SignIn, useClerk } from "../clerk";
 import { PatientPanel } from "./patient-panel";
+import { Board } from "./board";
 
 type Master = { kubun: string; name: string; points: number | null }[];
 type Status = { level: number; count: number; streak: number };
@@ -24,7 +25,7 @@ type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "
 /** 訪問の記録（レセコンに入れる前。FR-68）：その日のカルテと、その日までの実施 */
 type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; written: boolean };
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
-type Drill = { id: string; no: number; claimId: string; situation: string[] };
+type Drill = { id: string; no: number; claimId: string; situation: string[]; cleared?: boolean };
 /** この請求に当てはまるローカルルール（地域・ベテランの判断・院内。FR-78） */
 type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean };
 /** 医師確認の練習問題の今の状態（FR-76） */
@@ -94,6 +95,8 @@ export default function Work() {
     const v = new URLSearchParams(window.location.search).get("visit");
     if (v) setPendingVisit(v);
   }, []);
+  /** 練習問題の一覧（本人が正解で終えたものに cleared が付く） */
+  const loadDrills = () => api<{ fix: Drill[]; doctor: Drill[] }>("/api/drills").then(setDrills).catch(() => setDrills({ fix: [], doctor: [] }));
   const loadVisits = () => api<Visit[]>(`/api/visits?clerkId=${CLERK}`).then(setVisits).catch(() => setVisits([]));
   async function sendProxy() {
     if (!q) return;
@@ -115,7 +118,7 @@ export default function Work() {
     api<ClaimContext[]>("/api/cases").then(setCases).catch((e) => setErr(e.message));
     api<Master>("/api/master").then(setMaster).catch(() => {});
     loadVisits();
-    api<{ fix: Drill[]; doctor: Drill[] }>("/api/drills").then(setDrills).catch(() => setDrills({ fix: [], doctor: [] }));
+    loadDrills();
     api<MentorChoice>(`/api/character?clerkId=${CLERK}`).then(setMentorChoice).catch((e) => setErr(e.message));
     api<{ imported: boolean; receipts: { claimId: string }[] }[]>(`/api/uke?clerkId=${CLERK}`)
       .then((us) => setUkeClaims(us.filter((u) => u.imported).flatMap((u) => u.receipts.map((r) => r.claimId))))
@@ -275,6 +278,7 @@ export default function Work() {
     setDrillState(null);
     refreshStatus();
     loadVisits();
+    loadDrills();
   }
 
   const findings: Finding[] = q?.confirmed?.result.findings ?? [];
@@ -304,7 +308,7 @@ export default function Work() {
 
   return (
     <main className="shell">
-      <TopBar right={status && <span className="level">Lv.{status.level}・{status.count} 件・連続 {status.streak}</span>} />
+      <TopBar status={status} />
       {err && <div className="notice warn">{err}</div>}
       {showChooser && mentorChoice && (
         <div className="panel">
@@ -329,39 +333,21 @@ export default function Work() {
               <div className="muted">{prevented.summary.label}。提出前に指摘され、提出までに直した項目だけを数えています（点数×10 円）</div>
             </div>
           )}
-          <h2>訪問記録デモ</h2>
-          <p className="muted">訪問のデモデータです。</p>
-          <div className="chips">
-            {visits.map((v) => (
-              <button key={v.claimId + v.date} onClick={() => begin(v.claimId, v)}>
-                {Number(v.date.slice(5, 7))}/{Number(v.date.slice(8))} {v.claimId.split("-")[0]}（{v.mainDisease ?? "主病不明"}・{v.type === "oushin" ? "往診" : "訪問診療"}{v.written ? "・書いたカルテ" : ""}）{v.lines.length} 行
-              </button>
-            ))}
+          <Board
+            visits={visits}
+            cases={cases}
+            drills={drills}
+            onVisit={(v) => { const hit = visits.find((x) => x.claimId === v.claimId && x.date === v.date && x.type === v.type); if (hit) void begin(hit.claimId, hit); }}
+            onDrill={(d) => void begin(d.claimId, undefined, d)}
+          />
+          <section className="hud-panel" style={{ marginTop: 20 }} aria-label="月末の点検">
+          <div className="with-avatar">
+            <img className="yusti-avatar" src="/characters/yusti-face.png" alt="ユスティ" style={{ width: 64, height: 64 }} />
+            <div>
+              <div className="hud-tag">RULE ENGINE</div>
+              <h2 style={{ margin: 0, fontSize: 20 }}>月末の点検（UKE・提出前）</h2>
+            </div>
           </div>
-          <p className="notice">はじめての方へ：用語と練習の流れは <a href="/guide">練習問題の手引き</a> にまとめています。</p>
-          <h2>練習問題</h2>
-          <div className="chips">
-            {drills.fix.map((d) => {
-              const c = cases.find((x) => x.claimId === d.claimId);
-              return (
-                <button key={d.id} onClick={() => begin(d.claimId, undefined, d)}>
-                  練習 {d.no}（{d.claimId.split("-")[0]}・{c?.facts.mainDisease.known ? c.facts.mainDisease.value : ""}）
-                </button>
-              );
-            })}
-          </div>
-          <h2>医師確認用練習</h2>
-          <div className="chips">
-            {drills.doctor.map((d) => {
-              const c = cases.find((x) => x.claimId === d.claimId);
-              return (
-                <button key={d.id} onClick={() => begin(d.claimId, undefined, d)}>
-                  医師確認 {d.no}（{d.claimId.split("-")[0]}・{c?.facts.mainDisease.known ? c.facts.mainDisease.value : ""}）
-                </button>
-              );
-            })}
-          </div>
-          <h2 className="with-avatar"><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />月末の点検（UKE・提出前）</h2>
           <p>
             <label>
               <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ）
@@ -377,6 +363,7 @@ export default function Work() {
               </button>
             ))}
           </div>
+          </section>
         </div>
       )}
       {q && ctx && (
@@ -544,9 +531,9 @@ export default function Work() {
           <div className="dock" role="region" aria-label="メンター">
             <div className="portrait" aria-label={`${mentorName}の表情：${lastFace}`}>
               <div className="portrait-figure">{me?.image ? <img src={faceImage(me.image, lastFace)} alt="" /> : mentorName}</div>
-              <div><strong>{mentorName}</strong></div>
             </div>
             <div className="dialog">
+              <div className="dialog-name">{mentorName}</div>
               <div className="dialog-line">
                 {busy ? <span className="muted">{mentorName}が目を通しています…</span> : (lastMentor ?? me?.examples?.opening ?? "今日もよろしく。気になるところがあったら声をかけてね。")}
               </div>
