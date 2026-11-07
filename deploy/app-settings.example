@@ -1,0 +1,5 @@
+# deploy/app-settings にコピーして値を入れる（app-settings は git に入れない。chmod 600 にする）
+# Claude の API キー（Agent SDK が読む）
+ANTHROPIC_API_KEY=
+# 音声（ElevenLabs）を使う場合のキー。名前は音声の実装に合わせる
+ELEVENLABS_API_KEY=

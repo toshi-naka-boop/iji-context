@@ -8,3 +8,9 @@ query-log/*.json
 
 # TypeScript のビルド情報
 tsconfig.tsbuildinfo
+
+# 本番のデータと秘密の値（deploy/app-settings に API キーを書く）
+data/tenants/
+deploy/app-settings
+*.db-shm
+*.db-wal

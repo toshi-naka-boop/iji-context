@@ -1,0 +1,19 @@
+# イメージに入れないもの（秘密の値・手元のデータ・作業用の画像など）
+.env
+.env.*
+env.local.example
+deploy/app-settings
+.git
+node_modules
+.next
+data
+query-log
+knowledge
+.claude
+assets
+design
+docs
+eval
+tests
+*.db
+.DS_Store
