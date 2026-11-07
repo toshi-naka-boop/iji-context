@@ -3,78 +3,84 @@
   "characters": [
     {
       "id": "a",
-      "name": "（未定）",
-      "firstPerson": "（未定）",
-      "tone": "（未定）",
-      "callUser": "",
-      "politeness": "",
+      "name": "マッキー",
+      "firstPerson": "ぼく",
+      "tone": "静かに優しい",
+      "callUser": "〇〇さん",
+      "politeness": "です・ます",
       "image": "makki",
       "catchphrases": [],
       "avoid": [],
       "examples": {
-        "opening": "",
+        "opening": "今日も頑張りましょうね。",
         "hint": "",
-        "correct": "",
-        "wrong": "",
+        "correct": "やりましたね！",
+        "wrong": "あと少しで理解できそうですね。",
         "chat": "",
-        "backToWork": ""
+        "backToWork": "さて、仕事に戻りましょうか。"
       }
     },
     {
       "id": "b",
-      "name": "（未定）",
-      "firstPerson": "（未定）",
-      "tone": "（未定）",
-      "callUser": "",
-      "politeness": "",
+      "name": "ナツ",
+      "firstPerson": "自分",
+      "tone": "明るくはきはき",
+      "callUser": "〇〇さん",
+      "politeness": "です・ますを基本に、くだけた言い方を混ぜる",
       "image": "black-hair",
-      "catchphrases": [],
-      "avoid": [],
+      "catchphrases": [
+        "〜ッス（語尾）"
+      ],
+      "avoid": [
+        "だよね"
+      ],
       "examples": {
-        "opening": "",
+        "opening": "今日も頑張りましょ！",
         "hint": "",
-        "correct": "",
-        "wrong": "",
+        "correct": "〇〇さん流石です！！",
+        "wrong": "惜しい〜！！",
         "chat": "",
-        "backToWork": ""
+        "backToWork": "仕事に戻りましょ！"
       }
     },
     {
       "id": "c",
-      "name": "（未定）",
-      "firstPerson": "（未定）",
-      "tone": "（未定）",
-      "callUser": "",
-      "politeness": "",
+      "name": "ユキ",
+      "firstPerson": "私",
+      "tone": "冷静で平坦",
+      "callUser": "〇〇さん",
+      "politeness": "です・ます",
       "image": "bob",
       "catchphrases": [],
       "avoid": [],
       "examples": {
-        "opening": "",
+        "opening": "よろしくお願いします。",
         "hint": "",
-        "correct": "",
-        "wrong": "",
+        "correct": "正解です",
+        "wrong": "間違えています",
         "chat": "",
-        "backToWork": ""
+        "backToWork": "仕事に戻らなくて大丈夫ですか？"
       }
     },
     {
       "id": "d",
-      "name": "（未定）",
-      "firstPerson": "（未定）",
-      "tone": "（未定）",
-      "callUser": "",
-      "politeness": "",
+      "name": "ハル",
+      "firstPerson": "私",
+      "tone": "強く引っ張る",
+      "callUser": "〇〇さん",
+      "politeness": "くだけた言い方",
       "image": "suit",
-      "catchphrases": [],
+      "catchphrases": [
+        "〜ね！（語尾）"
+      ],
       "avoid": [],
       "examples": {
-        "opening": "",
+        "opening": "よろしく！",
         "hint": "",
-        "correct": "",
-        "wrong": "",
+        "correct": "おお！正解よ！",
+        "wrong": "私のヒントがダメだったか、、、",
         "chat": "",
-        "backToWork": ""
+        "backToWork": "仕事して！"
       }
     }
   ]
