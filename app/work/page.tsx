@@ -25,6 +25,8 @@ type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "
 type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; written: boolean };
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
 type Drill = { id: string; no: number; claimId: string; situation: string[] };
+/** 医師確認の練習問題の今の状態（FR-76） */
+type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
 type MentorChoice = { chosen: boolean; current: Character; characters: Character[]; style: Style };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
@@ -69,7 +71,9 @@ export default function Work() {
   const [quiz, setQuiz] = useState<ChoiceState[]>([]);
   const [mentorChoice, setMentorChoice] = useState<MentorChoice | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drills, setDrills] = useState<{ fix: Drill[]; doctor: Drill[] }>({ fix: [], doctor: [] });
+  const [drillState, setDrillState] = useState<DrillState>(null);
+  const allDrills = [...drills.fix, ...drills.doctor];
   /** 問題の始まりの請求（訪問の時点・練習問題では、月末の UKE とちがう） */
   const [qCase, setQCase] = useState<ClaimContext | null>(null);
   /** カルテを書いた直後（/work?visit=claimId|date）は、その訪問の記録を開く（FR-69） */
@@ -126,7 +130,7 @@ export default function Work() {
     api<ClaimContext[]>("/api/cases").then(setCases).catch((e) => setErr(e.message));
     api<Master>("/api/master").then(setMaster).catch(() => {});
     loadVisits();
-    api<Drill[]>("/api/drills").then(setDrills).catch(() => setDrills([]));
+    api<{ fix: Drill[]; doctor: Drill[] }>("/api/drills").then(setDrills).catch(() => setDrills({ fix: [], doctor: [] }));
     api<MentorChoice>(`/api/character?clerkId=${CLERK}`).then(setMentorChoice).catch((e) => setErr(e.message));
     api<{ imported: boolean; receipts: { claimId: string }[] }[]>(`/api/uke?clerkId=${CLERK}`)
       .then((us) => setUkeClaims(us.filter((u) => u.imported).flatMap((u) => u.receipts.map((r) => r.claimId))))
@@ -153,6 +157,7 @@ export default function Work() {
     const nq = await api<Question>("/api/questions", { claimId, mode: plain && choiceMode ? "選択" : "通常", asOf: visit?.date, drill: drill?.id });
     const start = await api<ClaimContext>(`/api/questions/${nq.id}/case`);
     setQCase(start);
+    setDrillState(drill ? await api<DrillState>(`/api/questions/${nq.id}/drill`).catch(() => null) : null);
     setQ(nq);
     setQuiz([]);
     if (plain && choiceMode) {
@@ -166,6 +171,24 @@ export default function Work() {
     void mentor(OPENING, "通常", nq.id, true);
   }
 
+  /** 医師確認の練習問題：決まった質問で医師確認を送る */
+  async function askDoctorDrill() {
+    if (!q) return;
+    setErr("");
+    try {
+      await api(`/api/questions/${q.id}/ask-doctor`, {});
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await refreshDrill();
+  }
+  /** 医師の回答と承認を、問題の事実に反映して画面を更新する */
+  async function refreshDrill() {
+    if (!q) return;
+    setDrillState(await api<DrillState>(`/api/questions/${q.id}/drill`).catch(() => null));
+    setQCase(await api<ClaimContext>(`/api/questions/${q.id}/case`).catch(() => null));
+    loadCross(q.claimId, q.asOf);
+  }
   /** 照合の不一致を本人が選んだ：決まった質問で医師確認を送る */
   async function chooseCross(ruleId: string, about: string) {
     setChoices([]);
@@ -264,6 +287,7 @@ export default function Work() {
     await api<Question>(`/api/questions/${q.id}/done`, {});
     setQ(null);
     setQCase(null);
+    setDrillState(null);
     refreshStatus();
     loadVisits();
   }
@@ -349,14 +373,27 @@ export default function Work() {
               </button>
             ))}
           </div>
+          <p className="notice">はじめての方へ：用語と練習の流れは <a href="/guide">練習問題の手引き</a> にまとめています。</p>
           <h2>練習問題（よくある間違いを入れた明細）</h2>
           <p className="muted">新人が入れたつもりの明細に、よくある間違いが 1 つ入っています。見直して直し、確定してください。間違いは報告書にある実例（13 項目）から取っています。件数・レベルには数え、防いだ額には数えません。</p>
           <div className="chips">
-            {drills.map((d) => {
+            {drills.fix.map((d) => {
               const c = cases.find((x) => x.claimId === d.claimId);
               return (
                 <button key={d.id} onClick={() => begin(d.claimId, undefined, d)}>
                   練習 {d.no}（{d.claimId.split("-")[0]}・{c?.facts.mainDisease.known ? c.facts.mainDisease.value : ""}）
+                </button>
+              );
+            })}
+          </div>
+          <h2>練習問題（医師に確認する）</h2>
+          <p className="muted">カルテに書かれていない事実があって、そのままでは算定を決められない明細です。推測で埋めずに「医師確認」を送り、医師の回答と承認を受けてから確定してください。医師の役は「医師確認」の画面で、あなた自身が回答できます。</p>
+          <div className="chips">
+            {drills.doctor.map((d) => {
+              const c = cases.find((x) => x.claimId === d.claimId);
+              return (
+                <button key={d.id} onClick={() => begin(d.claimId, undefined, d)}>
+                  医師確認 {d.no}（{d.claimId.split("-")[0]}・{c?.facts.mainDisease.known ? c.facts.mainDisease.value : ""}）
                 </button>
               );
             })}
@@ -387,8 +424,24 @@ export default function Work() {
             </h2>
             {q.drill && (
               <div className="notice">
-                <strong>練習問題</strong>　よくある間違いが 1 つ入っています。
-                {(drills.find((d) => d.id === q.drill)?.situation ?? []).map((x) => <div key={x}>状況：{x}</div>)}
+                <strong>練習問題</strong>　{drillState?.kind === "医師確認" ? "カルテに書かれていない事実があります。推測で埋めず、医師に確認してから確定してください。" : "よくある間違いが 1 つ入っています。"}
+                {(allDrills.find((d) => d.id === q.drill)?.situation ?? []).map((x) => <div key={x}>状況：{x}</div>)}
+                {drillState?.kind === "医師確認" && drillState.ask && q.phase === "ヒント" && (
+                  <div style={{ marginTop: 6 }}>
+                    {!drillState.query ? (
+                      <button className="primary" disabled={busy} onClick={askDoctorDrill}>医師確認を送る：{drillState.ask}</button>
+                    ) : (
+                      <span>
+                        医師確認：{drillState.query.status}{drillState.query.answer ? `（回答：${drillState.query.answer}）` : ""}　
+                        <a href="/doctor" target="_blank" rel="noreferrer">医師確認の画面を開く</a>　
+                        <button onClick={refreshDrill}>回答を反映する</button>
+                      </span>
+                    )}
+                  </div>
+                )}
+                {drillState?.kind === "医師確認" && !drillState.ask && (
+                  <div className="muted" style={{ marginTop: 6 }}>下の「確認してほしい点（カルテとの照合）」から医師確認を送り、<a href="/doctor" target="_blank" rel="noreferrer">医師確認の画面</a>で回答・承認してから確定してください。{drillState.crosscheckOpen ? "" : "（照合の不一致は解けています）"}</div>
+                )}
               </div>
             )}
             {visitOf && (

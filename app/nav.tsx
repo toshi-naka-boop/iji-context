@@ -29,6 +29,7 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
         <strong>レセメン</strong>
         <Link href="/chart">カルテを書く</Link>
         <Link href="/work">算定</Link>
+        <Link href="/guide">手引き</Link>
         <Link href="/uke">UKE 取り込み</Link>
         <Link href="/doctor">医師確認</Link>
         <Link href="/meeting">レセメン会議</Link>

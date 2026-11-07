@@ -293,3 +293,31 @@ describe("練習問題（FR-75）", () => {
     expect(c.confirmed?.result.findings.map((f) => f.ruleId)).toContain("R03");
   });
 });
+
+describe("医師確認の練習問題（FR-76）", () => {
+  it("聞かずに確定すると不正解。医師確認を送り、回答と承認がそろうと事実に戻り、確定して正解", () => {
+    const q1 = app.startDrill("new1", "m01");
+    expect(app.confirm(q1.id, app.caseFor(q1).lines).correct).toBe(false);
+
+    const q = app.startDrill("new1", "m01");
+    const sent = app.askDoctorForDrill(q.id);
+    expect(app.askDoctorForDrill(q.id).id).toBe(sent.id); // 2 回は送らない
+    expect(app.drillState(q.id)).toMatchObject({ kind: "医師確認", query: { status: "未回答" } });
+    expect(app.caseFor(q).facts.table8_2).toEqual({ known: false });
+    app.answerDoctor(sent.id, { option: "該当する", answeredBy: "医師" });
+    expect(app.caseFor(q).facts.table8_2).toEqual({ known: false }); // 承認まで戻さない
+    app.approveDoctor(sent.id, "医師");
+    expect(app.caseFor(q).facts.table8_2).toEqual({ known: true, value: true });
+    expect(app.confirm(q.id, app.caseFor(q).lines).correct).toBe(true);
+  });
+  it("K4 の照合の問題は、病型の医師確認が承認されるまで正解にならない", () => {
+    const q = app.startDrill("new1", "m03");
+    expect(app.drillState(q.id)).toMatchObject({ crosscheckOpen: true });
+    const sent = app.sendCrosscheck("K4-2025-03", "M01");
+    if (sent.route !== "F1") throw new Error("医師確認にならない");
+    app.answerDoctor(sent.query.id, { option: "非弁膜症性心房細動", answeredBy: "医師" });
+    app.approveDoctor(sent.query.id, "医師");
+    expect(app.drillState(q.id)).toMatchObject({ crosscheckOpen: false });
+    expect(app.confirm(q.id, app.caseFor(q).lines).correct).toBe(true);
+  });
+});

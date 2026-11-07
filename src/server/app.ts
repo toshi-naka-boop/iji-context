@@ -28,6 +28,7 @@ import { existsSync } from "node:fs";
 import { parseUke } from "../uke/uke";
 import { validateStyle, type Style } from "../mentor/style";
 import { drillList, drillOf } from "../practice/drills";
+import { answerValue, askField, doctorDrillList, doctorDrillOf, factQueryDraft, FACT_QUESTIONS, isDoctorDrill, withAnswer } from "../practice/doctor-drills";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../visit/as-of";
 import { validateFacts, type ChartNote, type ExtractedFact } from "../chart/extract";
 import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../chart/notes";
@@ -162,7 +163,47 @@ export function openApp(paths: AppPaths) {
   /** 問題の請求：訪問の時点の問題なら、その日までの実施と記録だけにする（FR-68） */
   const caseAt = (claimId: string, asOf?: string, clerkId?: string): ClaimContext => (asOf ? contextAsOf(monthOf(claimId, clerkId), asOf) : caseOf(claimId));
   /** 練習問題は、よくある間違いを入れた明細と、そのときの状況で始める（FR-75） */
-  const caseFor = (q: Question) => (q.drill ? drillOf(q.drill).make(caseOf(q.claimId)) : caseAt(q.claimId, q.asOf, q.clerkId));
+  const caseFor = (q: Question): ClaimContext => {
+    if (q.drill && isDoctorDrill(q.drill)) {
+      // 医師確認の練習問題：承認された回答だけを、この問題の事実に戻す（本物の患者情報は変えない。FR-76）
+      const d = doctorDrillOf(q.drill);
+      const base = d.make(caseOf(q.claimId));
+      const a = d.ask ? drillQuery(q) : null;
+      return d.ask && a?.status === "承認済み" && a.answer ? withAnswer(base, d.ask, answerValue(d.ask, a.answer.option)) : base;
+    }
+    return q.drill ? drillOf(q.drill).make(caseOf(q.claimId)) : caseAt(q.claimId, q.asOf, q.clerkId);
+  };
+  /** 医師確認の練習問題で、この問題から送った医師確認 */
+  const drillQuery = (q: Question) => {
+    const d = q.drill && isDoctorDrill(q.drill) ? doctorDrillOf(q.drill) : null;
+    return d?.ask ? (doctorQueries().find((x) => x.field === askField(d.ask!, q.id)) ?? null) : null;
+  };
+  /** 医師確認の練習問題で、医師に聞く（推測で算定しない）。同じ問題から 2 回は送らない */
+  function askDoctorForDrill(questionId: string) {
+    const q = loadQ(questionId);
+    const d = q.drill && isDoctorDrill(q.drill) ? doctorDrillOf(q.drill) : null;
+    if (!d?.ask) throw new Error("この問題では、ここから医師確認は送らない");
+    if (q.phase !== "ヒント") throw new Error(`医師確認を送れない段階: ${q.phase}`);
+    const existing = drillQuery(q);
+    if (existing) return existing;
+    const r = askMissing(queryLog, { target: "doctor", ...factQueryDraft(d.ask, caseFor(q), q.id) }, now());
+    if (r.route !== "F1") throw new Error("医師確認にならなかった");
+    return r.query;
+  }
+  /** 練習問題の今の状態（画面用）：医師確認の状態、照合の不一致が残っているか */
+  function drillState(questionId: string) {
+    const q = loadQ(questionId);
+    if (!q.drill) return null;
+    if (!isDoctorDrill(q.drill)) return { kind: "明細" as const };
+    const d = doctorDrillOf(q.drill);
+    const a = drillQuery(q);
+    return {
+      kind: "医師確認" as const,
+      ask: d.ask ? FACT_QUESTIONS[d.ask].label : null,
+      query: a ? { id: a.id, status: a.status, answer: a.answer?.option ?? null } : null,
+      crosscheckOpen: d.crosscheck ? crosscheckOf(q.claimId).mismatches.some((m) => m.ruleId === d.crosscheck) : false,
+    };
+  }
   /** 訪問の時点では、月末まで決まらないルールを指摘にしない */
   const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(evaluate(c)) : evaluate);
   const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>, asOf?: string, clerkId?: string): ClaimContext => {
@@ -255,7 +296,9 @@ export function openApp(paths: AppPaths) {
   }
   /** 訪問の時点の問題に添える見込み（指摘ではない） */
   const outlookOf = (q: Question) =>
-    q.drill
+    q.drill && isDoctorDrill(q.drill)
+      ? `これは医師確認の練習問題。カルテに書かれていない事実を推測で埋めず、医師確認を送ってから確定する。メンターは医師への質問を自分で書かず、本人が画面の「医師確認を送る」で送るよう促す。状況：${doctorDrillOf(q.drill).situation.join("。")}`
+      : q.drill
       ? `これは練習問題（よくある間違いを入れた明細）。本人が直して確定する。状況：${drillOf(q.drill).situation.join("。") || "特になし"}`
       : q.asOf
         ? `これは訪問の記録をレセコンに入れる前の確認（月の途中）。判定はその日までの実施と記録だけで、月末に決まるルール（在医総管の区分など）は入っていない。見込み：${outlook(monthOf(q.claimId, q.clerkId), q.asOf)}`
@@ -331,7 +374,7 @@ export function openApp(paths: AppPaths) {
   /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
   function startDrill(clerkId: string, drillId: string): Question {
     clerk(clerkId);
-    const d = drillOf(drillId);
+    const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
     const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
     const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, d.claimId, now(), "通常", undefined, d.id);
     saveQ(q);
@@ -359,7 +402,13 @@ export function openApp(paths: AppPaths) {
   function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
     const ctx = { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } };
-    const next = confirm(q, ctx, now(), judgeFor(q));
+    let next = confirm(q, ctx, now(), judgeFor(q));
+    // 医師確認の練習問題は、情報不足が残っている（医師に聞かずに確定した）ときや、照合の不一致が残っているときは不正解（FR-76）
+    if (q.drill && isDoctorDrill(q.drill)) {
+      const d = doctorDrillOf(q.drill);
+      const open = d.crosscheck ? crosscheckOf(q.claimId).mismatches.some((m) => m.ruleId === d.crosscheck) : false;
+      next = { ...next, correct: next.confirmed!.result.findings.length === 0 && !open };
+    }
     // 訪問の時点の確定と練習問題は提出ではない。適用記録は月末の UKE の問題でだけ書く
     if (q.asOf || q.drill) {
       saveQ(next);
@@ -555,7 +604,9 @@ export function openApp(paths: AppPaths) {
     judgeFor,
     visits,
     startDrill,
-    drills: drillList,
+    drills: () => ({ fix: drillList(), doctor: doctorDrillList() }),
+    askDoctorForDrill,
+    drillState,
     saveNote,
     noteOf,
     confirmNote,
