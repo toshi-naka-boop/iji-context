@@ -21,6 +21,7 @@ import { crosscheck, type Chart } from "../uke/crosscheck";
 import { escalationCandidate } from "../mentor/peer";
 import { proxyConfirmDraft, type ScribeResult } from "../mentor/scribe";
 import { verificationQueue } from "../lifecycle/queue";
+import { matchState } from "../lifecycle/match";
 import { applyEvent, createKnowledge, listKnowledge, readBody } from "../lifecycle/store";
 import type { UkePatient } from "../uke/types";
 import { askMissing } from "../query/doctor-query";
@@ -524,6 +525,43 @@ export function openApp(paths: AppPaths) {
     if (!item) throw new Error(`通知に ${index + 1} 件目の項目がない`);
     return createKnowledge(store, candidateOf(item, opts), now());
   }
+  /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
+  function seedLocalRules() {
+    const n = json<Notice>(path.join(paths.root, "fixtures", "notices", "K6-2025-02-satei.json"));
+    const items = resolveNoticeItems(n);
+    return items.flatMap((item, i) => {
+      const cand = candidateOf(item, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" });
+      if (listKnowledge(store).some((m) => m.id.endsWith(`/${cand.slug}`))) return [];
+      return [registerNotice(n, i, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" })];
+    });
+  }
+  /**
+   * ローカルルール（地域・ベテランの判断・院内）のうち、この請求に当てはまるもの（FR-78）。
+   * ユスティ（全国共通の決まり）とは別に見せる。保管・停止したものは出さない。院内のものはメンターの助言には使わない（FR-12）
+   */
+  function localRulesFor(ctx: ClaimContext) {
+    const applied = evaluate(ctx).applied;
+    return listKnowledge(store)
+      .filter((m) => m.layer !== "制度" && m.status !== "保管" && m.status !== "停止")
+      .map((m) => ({ m, state: matchState(m, ctx, applied) }))
+      .filter((x) => x.state !== "nomatch")
+      .map(({ m, state }) => ({
+        id: m.id,
+        layer: m.layer,
+        status: m.status,
+        summary: m.summary,
+        source: m.source_event.type,
+        since: m.valid_from.slice(0, 10),
+        hits: m.hits,
+        unknown: state === "unknown",
+        usedByMentor: m.status === "承認済み" && m.layer !== "院内",
+      }));
+  }
+  const localRulesOf = (questionId: string, lines?: ClaimLine[]) => {
+    const q = loadQ(questionId);
+    const c = caseFor(q);
+    return localRulesFor(lines ? { ...c, lines } : c);
+  };
   /** 知識の一覧（状態ごとの数を見せる用） */
   const knowledgeList = () => listKnowledge(store).map((m) => ({ id: m.id, layer: m.layer, status: m.status, summary: m.summary, empathy: m.empathy, hits: m.hits, misses: m.misses }));
 
@@ -656,6 +694,8 @@ export function openApp(paths: AppPaths) {
     knowledgeList,
     resolveNoticeItems,
     registerNotice,
+    seedLocalRules,
+    localRulesOf,
     peerResolvedByMentor,
     peerToHuman,
     peerAnswerByHuman,

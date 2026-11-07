@@ -321,3 +321,20 @@ describe("医師確認の練習問題（FR-76）", () => {
     expect(app.confirm(q.id, app.caseFor(q).lines).correct).toBe(true);
   });
 });
+
+describe("ローカルルール（FR-78・FR-79）", () => {
+  it("K6 の査定通知から地域ルールを入れると、K6（東京都・支払基金・BNP）にだけ当てはまり、K1（国保連）には当てはまらない", () => {
+    const made = app.seedLocalRules();
+    expect(made).toHaveLength(1);
+    expect(app.seedLocalRules()).toHaveLength(0); // 2 回目は入れない
+    const k6 = app.start("new1", "K6-2025-03");
+    const rules = app.localRulesOf(k6.id);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ layer: "地域", source: "査定", usedByMentor: false });
+    expect(rules[0].summary).toContain("BNP");
+    // BNP の行を外すと当てはまらない
+    expect(app.localRulesOf(k6.id, app.caseFor(k6).lines.filter((l) => l.kubun !== "D008_18"))).toHaveLength(0);
+    const k1 = app.start("new1", "K1-2025-03");
+    expect(app.localRulesOf(k1.id)).toHaveLength(0);
+  });
+});

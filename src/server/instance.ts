@@ -48,11 +48,14 @@ function openTenant(user: User): App {
   const paths = tenantPaths(user.id);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
   const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
-  if (!existsSync(paths.knowledgeDir)) {
+  const fresh = !existsSync(paths.knowledgeDir);
+  if (fresh) {
     seed(store);
     syncSkills(store);
   }
   const a = openApp(paths);
+  // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
+  a.seedLocalRules();
   a.upsertClerk({ id: ME, name: user.name, callName: "さん", characterId: "a", role: "clerk" });
   a.upsertClerk(DEMO_CLERKS[1]);
   return a;

@@ -74,6 +74,8 @@ describe("1 人 1 クリニック", () => {
       expect(getApp().characterChosen(ME)).toBe(false);
       expect(getApp().clerk(ME).name).toBe("びー");
       expect(getApp().knowledgeList().length).toBeGreaterThan(0);
+      // 新しいクリニックには、K6 の査定通知から作った地域ルールが 1 つ入っている（FR-79）
+      expect(getApp().knowledgeList().filter((k) => k.layer === "地域")).toHaveLength(1);
     });
     runAs(a, () => {
       expect(getApp().now()).toBe("2025-03-20T09:00:00+09:00");

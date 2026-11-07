@@ -25,6 +25,8 @@ type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "
 type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; written: boolean };
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
 type Drill = { id: string; no: number; claimId: string; situation: string[] };
+/** この請求に当てはまるローカルルール（地域・ベテランの判断・院内。FR-78） */
+type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; unknown: boolean; usedByMentor: boolean };
 /** 医師確認の練習問題の今の状態（FR-76） */
 type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
@@ -73,6 +75,15 @@ export default function Work() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [drills, setDrills] = useState<{ fix: Drill[]; doctor: Drill[] }>({ fix: [], doctor: [] });
   const [drillState, setDrillState] = useState<DrillState>(null);
+  const [localRules, setLocalRules] = useState<LocalRule[]>([]);
+  // 明細が変わるたびに、当てはまるローカルルールを当てはめ直す（決まった規則。AI は使わない）
+  useEffect(() => {
+    if (!q) return setLocalRules([]);
+    const t = setTimeout(() => {
+      api<LocalRule[]>(`/api/questions/${q.id}/local-rules`, { lines }).then(setLocalRules).catch(() => setLocalRules([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, lines]);
   const allDrills = [...drills.fix, ...drills.doctor];
   /** 問題の始まりの請求（訪問の時点・練習問題では、月末の UKE とちがう） */
   const [qCase, setQCase] = useState<ClaimContext | null>(null);
@@ -422,6 +433,16 @@ export default function Work() {
             <h2 style={{ marginTop: 0 }}>
               {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}{q.asOf ? `・${Number(q.asOf.slice(8))} 日の訪問（レセコンに入れる前）` : ""}</span>
             </h2>
+            <div className={`notice ${localRules.length ? "warn" : ""}`}>
+              <strong>ローカルルール</strong>　<span className="muted">ユスティ（全国共通の決まり）とは別に、この地域・この医院で育った知識です</span>
+              {localRules.length === 0 && <div className="muted">この明細に当てはまるローカルルールはありません。</div>}
+              {localRules.map((r) => (
+                <div key={r.id} style={{ marginTop: 4 }}>
+                  {r.layer === "地域" ? "地域ルール" : r.layer === "ベテラン" ? "ベテランの判断" : "院内ルール"}：{r.summary}
+                  <span className="muted">　{r.status}・{r.source}から・{r.since} から{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : "承認されるまでメンターは使わない"}</span>
+                </div>
+              ))}
+            </div>
             {q.drill && (
               <div className="notice">
                 <strong>練習問題</strong>　{drillState?.kind === "医師確認" ? "カルテに書かれていない事実があります。推測で埋めず、医師に確認してから確定してください。" : "よくある間違いが 1 つ入っています。"}
