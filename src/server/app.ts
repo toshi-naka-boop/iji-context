@@ -22,6 +22,8 @@ import { escalationCandidate } from "../mentor/peer";
 import { proxyConfirmDraft, type ScribeResult } from "../mentor/scribe";
 import { verificationQueue } from "../lifecycle/queue";
 import { matchState } from "../lifecycle/match";
+import { seedLocalRules as seedInHouse } from "../lifecycle/seed-local";
+import { IDLE_DAYS } from "../lifecycle/layers";
 import { applyEvent, createKnowledge, listKnowledge, readBody } from "../lifecycle/store";
 import type { UkePatient } from "../uke/types";
 import { askMissing } from "../query/doctor-query";
@@ -527,13 +529,15 @@ export function openApp(paths: AppPaths) {
   }
   /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
   function seedLocalRules() {
+    // 院内ルールの種（中身は伏せ、何の区分に関するものかだけ出す。何年も積み上がった様子を見せる。FR-80）
+    const inHouse = seedInHouse(store);
     const n = json<Notice>(path.join(paths.root, "fixtures", "notices", "K6-2025-02-satei.json"));
     const items = resolveNoticeItems(n);
-    return items.flatMap((item, i) => {
+    return [...inHouse.map((id) => ({ id })), ...items.flatMap((item, i) => {
       const cand = candidateOf(item, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" });
       if (listKnowledge(store).some((m) => m.id.endsWith(`/${cand.slug}`))) return [];
       return [registerNotice(n, i, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" })];
-    });
+    })];
   }
   /**
    * ローカルルール（地域・ベテランの判断・院内）のうち、この請求に当てはまるもの（FR-78）。
@@ -553,6 +557,10 @@ export function openApp(paths: AppPaths) {
         source: m.source_event.type,
         since: m.valid_from.slice(0, 10),
         hits: m.hits,
+        /** 最後に当たった・使われた日（なければ null） */
+        lastUsed: m.last_hit_at?.slice(0, 10) ?? null,
+        /** 承認済みのまま、使われない期間（180 日）を超えている。レセメン会議で要再検証に回る */
+        stale: m.status === "承認済み" && Date.parse(now()) - Date.parse(m.last_hit_at ?? m.status_since) >= IDLE_DAYS * 86_400_000,
         unknown: state === "unknown",
         usedByMentor: m.status === "承認済み" && m.layer !== "院内",
       }));

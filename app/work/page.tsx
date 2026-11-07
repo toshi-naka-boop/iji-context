@@ -26,7 +26,7 @@ type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDise
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
 type Drill = { id: string; no: number; claimId: string; situation: string[] };
 /** この請求に当てはまるローカルルール（地域・ベテランの判断・院内。FR-78） */
-type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; unknown: boolean; usedByMentor: boolean };
+type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean };
 /** 医師確認の練習問題の今の状態（FR-76） */
 type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
@@ -436,10 +436,12 @@ export default function Work() {
             <div className={`notice ${localRules.length ? "warn" : ""}`}>
               <strong>ローカルルール</strong>　<span className="muted">ユスティ（全国共通の決まり）とは別に、この地域・この医院で育った知識です</span>
               {localRules.length === 0 && <div className="muted">この明細に当てはまるローカルルールはありません。</div>}
-              {localRules.map((r) => (
+              {localRules.length > 0 && <div className="muted">{localRules.length} 件が当てはまります{localRules.some((r) => r.stale) ? `。うち ${localRules.filter((r) => r.stale).length} 件は長く使われていません（レセメン会議で見直しに回ります）` : ""}</div>}
+              {[...localRules].sort((a, b) => Number(b.stale) - Number(a.stale) || (a.since < b.since ? -1 : 1)).map((r) => (
                 <div key={r.id} style={{ marginTop: 4 }}>
+                  {r.stale && <strong>【長く使われていない】</strong>}
                   {r.layer === "地域" ? "地域ルール" : r.layer === "ベテラン" ? "ベテランの判断" : "院内ルール"}：{r.summary}
-                  <span className="muted">　{r.status}・{r.source}から・{r.since} から{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : "承認されるまでメンターは使わない"}</span>
+                  <span className="muted">　{r.status}・{r.source}から・{r.since} から・最後に使われた日 {r.lastUsed ?? "なし"}{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : "承認されるまでメンターは使わない"}</span>
                 </div>
               ))}
             </div>

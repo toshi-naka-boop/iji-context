@@ -322,19 +322,35 @@ describe("医師確認の練習問題（FR-76）", () => {
   });
 });
 
-describe("ローカルルール（FR-78・FR-79）", () => {
-  it("K6 の査定通知から地域ルールを入れると、K6（東京都・支払基金・BNP）にだけ当てはまり、K1（国保連）には当てはまらない", () => {
+describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
+  it("地域ルール（K6 の査定通知から）は K6（東京都・支払基金・BNP）に当てはまり、K1（国保連）には当てはまらない", () => {
     const made = app.seedLocalRules();
-    expect(made).toHaveLength(1);
+    expect(made).toHaveLength(13); // 院内 12 ＋ 地域 1
     expect(app.seedLocalRules()).toHaveLength(0); // 2 回目は入れない
     const k6 = app.start("new1", "K6-2025-03");
-    const rules = app.localRulesOf(k6.id);
-    expect(rules).toHaveLength(1);
-    expect(rules[0]).toMatchObject({ layer: "地域", source: "査定", usedByMentor: false });
-    expect(rules[0].summary).toContain("BNP");
-    // BNP の行を外すと当てはまらない
-    expect(app.localRulesOf(k6.id, app.caseFor(k6).lines.filter((l) => l.kubun !== "D008_18"))).toHaveLength(0);
+    const area = (id: string) => app.localRulesOf(id).filter((r) => r.layer === "地域");
+    expect(area(k6.id)).toHaveLength(1);
+    expect(area(k6.id)[0]).toMatchObject({ source: "査定", usedByMentor: false });
+    expect(app.localRulesOf(k6.id, app.caseFor(k6).lines.filter((l) => l.kubun !== "D008_18")).filter((r) => r.layer === "地域")).toHaveLength(0);
+    expect(area(app.start("new1", "K1-2025-03").id)).toHaveLength(0);
+  });
+  it("院内ルールは中身を伏せて区分の名前だけを出し、何年も使われていない承認済みのものが積み上がっている", () => {
+    app.seedLocalRules();
     const k1 = app.start("new1", "K1-2025-03");
-    expect(app.localRulesOf(k1.id)).toHaveLength(0);
+    const inHouse = app.localRulesOf(k1.id).filter((r) => r.layer === "院内");
+    expect(inHouse.every((r) => r.summary.endsWith("に関する院内ローカル（中身は伏せています）"))).toBe(true);
+    expect(inHouse.find((r) => r.summary.startsWith("在宅時医学総合管理料"))?.stale ?? inHouse.find((r) => r.id === "local/seed-01")?.stale).toBe(true);
+    expect(inHouse.find((r) => r.id === "local/seed-08")).toMatchObject({ stale: false, lastUsed: "2025-02-26" });
+    expect(inHouse.some((r) => r.id === "local/seed-10")).toBe(false); // しまわれたものは出さない
+    expect(inHouse.every((r) => !r.usedByMentor)).toBe(true); // 院内はメンターの助言に使わない
+  });
+  it("レセメン会議を開くと、長く使われていない院内ルールが要再検証に回る", () => {
+    app.seedLocalRules();
+    app.runMeeting();
+    const st = Object.fromEntries(app.knowledgeList().map((k) => [k.id, k.status]));
+    expect(st["local/seed-01"]).toBe("要再検証");
+    expect(st["local/seed-08"]).toBe("承認済み");
+    expect(st["local/seed-10"]).toBe("保管");
+    expect(st["local/seed-11"]).toBe("未検証");
   });
 });
