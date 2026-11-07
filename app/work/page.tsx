@@ -592,7 +592,7 @@ export default function Work() {
           <div className="dock" role="region" aria-label="メンター">
             <div className="portrait" aria-label={`${mentorName}の表情：${lastFace}`}>
               <div className="portrait-figure">{me?.image ? <img src={faceImage(me.image, lastFace)} alt="" /> : mentorName}</div>
-              <div><strong>{mentorName}</strong> <span className="muted">{lastFace}</span></div>
+              <div><strong>{mentorName}</strong></div>
             </div>
             <div className="dialog">
               <div className="dialog-line">
@@ -629,7 +629,7 @@ export default function Work() {
               {chat.length === 0 && <div className="muted">まだ会話はありません。</div>}
               {chat.map((b, i) => (
                 <div key={i} className={`log-item from-${b.from}`}>
-                  <div className="muted">{b.from === "me" ? "あなた" : `${mentorName}・${b.face ?? "通常"}`}</div>
+                  <div className="muted">{b.from === "me" ? "あなた" : mentorName}</div>
                   <div className="bubble">{b.text}</div>
                 </div>
               ))}
