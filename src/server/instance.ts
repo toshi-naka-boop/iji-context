@@ -12,6 +12,7 @@ import { askMentor } from "../mentor/session";
 import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceSkillNames } from "../mentor/workspace";
 import { crosscheckSkills } from "../uke/crosscheck";
 import { extractFacts, type ChartNote } from "../chart/extract";
+import { formatSoap } from "../chart/soap";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
 import { defaultPaths, openApp, type App, type AppPaths } from "./app";
@@ -221,3 +222,6 @@ export async function writeChart(input: { claimId: string; clerkId: string; kind
   const r = await extractFacts(input.note, modelFor("chartExtract"));
   return { ...saved, ...r };
 }
+
+/** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
+export const formatChart = (text: string) => formatSoap(text, modelFor("chartSoap"));

@@ -1,5 +1,6 @@
 "use client";
 // 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → レセメン（訪問の記録）へ
+// 自由に書いて Haiku に SOAP の欄へ振り分けさせることも、見本（足りないカルテ・ちゃんとしたカルテ）を入れることもできる（2026-11-07 ユーザー判断）
 // 見た目はスマホで書く一般的な訪問カルテ。特定の製品に似せない
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,10 +8,14 @@ import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
 import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
+import SAMPLES from "../../fixtures/charts/samples.json";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
 type Row = ExtractedFact & { keep: boolean };
+
+type Sample = { lacking: string; complete: string };
+const sampleOf = (claimId: string) => (SAMPLES as unknown as Record<string, Sample | undefined>)[claimId];
 
 const EMPTY: ChartNote = { s: "", o: "", a: "", p: "", rx: "" };
 const yesNo = (b: boolean | null, yes: string, no: string) => (b === null ? "分からない" : b ? yes : no);
@@ -33,6 +38,9 @@ export default function Chart() {
   const [ex, setEx] = useState<Extracted | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
+  /** 自由記述（SOAP に整える前） */
+  const [free, setFree] = useState("");
+  const [unmatched, setUnmatched] = useState<string[]>([]);
   const [err, setErr] = useState("");
   useEffect(() => {
     api<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
@@ -46,6 +54,19 @@ export default function Chart() {
       const r = await api<Extracted>("/api/chart", { claimId: p.claimId, clerkId: CLERK, kind, note });
       setEx(r);
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function toSoap() {
+    setErr("");
+    setBusy(true);
+    try {
+      const r = await api<{ note: ChartNote; unmatched: string[] }>("/api/chart/soap", { text: free });
+      setNote(r.note);
+      setUnmatched(r.unmatched);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -80,9 +101,9 @@ export default function Chart() {
         {!p && (
           <>
             <h2>訪問する患者</h2>
-            <p className="muted">合成データの患者です。選ぶと、今日（デモの時計の日）に訪問したていでカルテを書けます。</p>
+            <p className="muted">デモ用のカルテ記載ができます。</p>
             {patients.map((x) => (
-              <button key={x.claimId} className="patient-card" onClick={() => { setP(x); setNote(EMPTY); setEx(null); }}>
+              <button key={x.claimId} className="patient-card" onClick={() => { setP(x); setNote(EMPTY); setEx(null); setFree(""); setUnmatched([]); }}>
                 <strong>{x.name}</strong>
                 <span>{x.sex}・{x.age ?? "?"} 歳・{x.insurance ?? ""}</span>
                 <span className="muted">主病：{x.mainDisease ?? "不明"}</span>
@@ -106,6 +127,20 @@ export default function Chart() {
                 <button key={k} className={kind === k ? "primary" : ""} disabled={!!ex} onClick={() => setKind(k)}>{k}</button>
               ))}
             </div>
+            <label className="chart-field">
+              <span>自由に書く（AI が SOAP の欄に振り分けます）</span>
+              <textarea rows={4} value={free} disabled={!!ex} onChange={(e) => setFree(e.target.value)} />
+            </label>
+            {sampleOf(p.claimId) && !ex && (
+              <div className="chips" role="group" aria-label="見本を入れる">
+                <button onClick={() => setFree(sampleOf(p.claimId)!.lacking)}>見本：足りないカルテ</button>
+                <button onClick={() => setFree(sampleOf(p.claimId)!.complete)}>見本：ちゃんとしたカルテ</button>
+              </div>
+            )}
+            {!ex && (
+              <button disabled={busy || !free.trim()} onClick={toSoap}>{busy ? "整えています…" : "SOAP に整える"}</button>
+            )}
+            {unmatched.length > 0 && <div className="notice warn">元の文にない言い回しがあります。確かめて直してください：{unmatched.join("、")}</div>}
             {field("s", "S（主訴）")}
             {field("o", "O（所見）")}
             {field("a", "A（評価）")}
