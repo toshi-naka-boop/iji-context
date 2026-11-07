@@ -12,7 +12,7 @@ knowledge
 assets
 design
 docs
-eval
+eval/runs
 tests
 *.db
 .DS_Store
