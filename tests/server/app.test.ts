@@ -8,6 +8,7 @@ import { applications } from "../../src/db/schema";
 import { seed } from "../../scripts/seed-knowledge";
 import { openApp, type App } from "../../src/server/app";
 import { readKnowledge } from "../../src/lifecycle/store";
+import { evaluate } from "../../src/engine";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -28,6 +29,38 @@ describe("症例", () => {
     expect(app.cases().map((c) => [c.claimId, c.payer])).toEqual([
       ["K1-2025-03", "国保連"], ["K2-2025-03", "国保連"], ["K3-2025-03", "国保連"], ["K4-2025-03", "国保連"], ["K5-2025-03", "国保連"], ["K6-2025-03", "支払基金"],
     ]);
+  });
+});
+
+describe("患者ごとに確かめた情報", () => {
+  const care = { key: "careLevel" as const, value: 2, source: "介護保険証" as const, validUntil: "2025-05-31" };
+
+  it("K4 に要介護度（要介護2）を残すと R03 の情報不足が消え、開き直しても残っている", () => {
+    expect(evaluate(app.caseOf("K4-2025-03")).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
+    app.savePatientFact("K4-2025-03", "new1", care);
+    expect(evaluate(app.caseOf("K4-2025-03")).findings).toEqual([]);
+    expect(app.patientFacts("K4-2025-03").facts).toEqual([expect.objectContaining({ key: "careLevel", value: 2, source: "介護保険証", checkedBy: "new1", expired: false })]);
+  });
+
+  it("時計を有効期間の終わりの翌日に進めると、要介護度は分からないに戻り R03 の情報不足が戻る", () => {
+    app.savePatientFact("K4-2025-03", "new1", care);
+    app.advanceClock("2025-06-01T09:00:00+09:00");
+    expect(app.caseOf("K4-2025-03").facts.careLevel).toEqual({ known: false });
+    expect(evaluate(app.caseOf("K4-2025-03")).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
+    expect(app.patientFacts("K4-2025-03").facts[0].expired).toBe(true);
+  });
+
+  it("K2 で別表第八の二を当たるに直すと、在医総管の区分の指摘（R02）が出る", () => {
+    expect(evaluate(app.caseOf("K2-2025-03")).findings).toEqual([]);
+    app.savePatientFact("K2-2025-03", "new1", { key: "table8_2", value: true, source: "医師に確認", validUntil: null });
+    expect(evaluate(app.caseOf("K2-2025-03")).findings.map((f) => f.ruleId)).toContain("R02");
+  });
+
+  it("要介護度に有効期間の終わりがない・範囲外の値・登録していない医療事務は残せない", () => {
+    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, validUntil: null })).toThrow(/有効期間の終わり/);
+    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, value: 6 })).toThrow(/0〜5/);
+    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, validUntil: "2025-03-01" })).toThrow(/今日より前/);
+    expect(() => app.savePatientFact("K4-2025-03", "nobody", care)).toThrow(/登録されていない/);
   });
 });
 

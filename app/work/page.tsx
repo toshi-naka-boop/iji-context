@@ -6,6 +6,7 @@ import type { MentorOutput, Situation } from "../../src/mentor/output";
 import type { Question } from "../../src/practice/practice";
 import { findingText } from "../../src/messages";
 import { TopBar } from "../nav";
+import { PatientPanel } from "./patient-panel";
 
 type Master = { kubun: string; name: string; points: number | null }[];
 type Status = { level: number; count: number; streak: number };
@@ -33,7 +34,6 @@ export default function Work() {
   const [status, setStatus] = useState<Status | null>(null);
   const [q, setQ] = useState<Question | null>(null);
   const [lines, setLines] = useState<ClaimLine[]>([]);
-  const [careLevel, setCareLevel] = useState<string>("");
   const [chat, setChat] = useState<Bubble[]>([]);
   const [ask, setAsk] = useState("");
   const [showLog, setShowLog] = useState(false);
@@ -73,8 +73,6 @@ export default function Work() {
   const ctx = useMemo(() => cases.find((c) => c.claimId === q?.claimId) ?? null, [cases, q]);
   const nameOf = (k: string) => master.find((m) => m.kubun === k)?.name ?? k;
   const pointsOf = (k: string) => master.find((m) => m.kubun === k)?.points ?? null;
-  const facts = careLevel === "" ? undefined : { careLevel: { known: true as const, value: Number(careLevel) } };
-  const careUnknown = ctx ? !ctx.facts.careLevel.known : false;
 
   async function begin(claimId: string) {
     setErr("");
@@ -86,7 +84,6 @@ export default function Work() {
       setQuiz(items.map((item) => ({ item, wrong: [], reason: "", state: "未回答" })));
     }
     setLines(cases.find((c) => c.claimId === claimId)!.lines.map((l) => ({ ...l, dates: [...l.dates] })));
-    setCareLevel("");
     setChat([]);
     loadCross(claimId);
     // メンターから先に声をかける（聞かれるのを待たない）。下書きの記録は作らない（防いだ額に数えない）
@@ -160,7 +157,7 @@ export default function Work() {
   /** ヒント：下書きをエンジンにかけてから、メンターに聞く（指摘そのものは画面に出さない） */
   async function hint(message: string) {
     if (!q) return;
-    const d = await api<{ question: Question; result: EngineResult }>(`/api/questions/${q.id}/draft`, { lines, facts });
+    const d = await api<{ question: Question; result: EngineResult }>(`/api/questions/${q.id}/draft`, { lines });
     setQ(d.question);
     const doctor = d.result.findings.some((f) => f.missing?.target === "doctor");
     await mentor(message, doctor ? "カルテ不足" : "通常");
@@ -170,7 +167,7 @@ export default function Work() {
     if (!q) return;
     setErr("");
     try {
-      const cq = await api<Question>(`/api/questions/${q.id}/confirm`, { lines, facts });
+      const cq = await api<Question>(`/api/questions/${q.id}/confirm`, { lines });
       setQ(cq);
       // 確定したら、聞かれる前に解説を始める
       await explanation(cq);
@@ -284,15 +281,13 @@ export default function Work() {
                 <span className="muted">　合計 {quiz.some((x) => x.state === "未回答") ? "？" : total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
               </p>
             )}
-            {careUnknown && (
-              <p>
-                要介護度（介護保険証で確認）：
-                <select value={careLevel} disabled={q.phase !== "ヒント"} onChange={(e) => setCareLevel(e.target.value)}>
-                  <option value="">未入力</option>
-                  {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 0 ? "要支援・非該当" : `要介護${n}`}</option>)}
-                </select>
-              </p>
-            )}
+            <PatientPanel
+              claimId={q.claimId}
+              clerkId={CLERK}
+              facts={ctx.facts}
+              editable={q.phase === "ヒント" && q.mode !== "選択"}
+              onSaved={() => api<ClaimContext[]>("/api/cases").then(setCases).catch(() => {})}
+            />
             {cross && (cross.mismatches.length > 0 || cross.confirmed.length > 0) && (
               <div>
                 <h3>確認してほしい点（カルテとの照合）</h3>

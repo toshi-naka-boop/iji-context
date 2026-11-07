@@ -26,6 +26,7 @@ import type { UkePatient } from "../uke/types";
 import { askMissing } from "../query/doctor-query";
 import { existsSync } from "node:fs";
 import { parseUke } from "../uke/uke";
+import { applyPatientFacts, isExpired, patientKeyOf, validatePatientFact, type PatientFact, type PatientFactInput } from "../patient/facts";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -43,6 +44,7 @@ const APP_SQL = `
 CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS clerks (id TEXT PRIMARY KEY, name TEXT NOT NULL, call_name TEXT NOT NULL, character_id TEXT NOT NULL, role TEXT NOT NULL, session_id TEXT);
 CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, clerk_id TEXT NOT NULL, claim_id TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS patient_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_key TEXT NOT NULL, fact_key TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, valid_until TEXT, checked_at TEXT NOT NULL, checked_by TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS peer_questions (id TEXT PRIMARY KEY, from_clerk TEXT NOT NULL, question TEXT NOT NULL, status TEXT NOT NULL, answer TEXT, answered_by TEXT, knowledge_id TEXT, created_at TEXT NOT NULL, answered_at TEXT);
 `;
 
@@ -89,10 +91,42 @@ export function openApp(paths: AppPaths) {
       for (const r of file.receipts) {
         const k = r.claimId.split("-")[0];
         const c = json<ClaimContext>(path.join(paths.root, "fixtures", "cases", `${k}.json`));
-        out.push(toClaimContext(file, r.claimId, { facility, facts: c.facts, events: c.events, history: c.history }));
+        const facts = applyPatientFacts(c.facts, latestPatientFacts(patientKeyOf(r.patient)), now());
+        out.push(toClaimContext(file, r.claimId, { facility, facts, events: c.events, history: c.history }));
       }
     }
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 患者ごとに確かめた情報（履歴を残し、項目ごとに最新の 1 件を使う）
+
+  function latestPatientFacts(patientKey: string): PatientFact[] {
+    const rows = sqlite
+      .prepare("SELECT * FROM patient_facts WHERE id IN (SELECT MAX(id) FROM patient_facts WHERE patient_key = ? GROUP BY fact_key) ORDER BY id")
+      .all(patientKey) as { patient_key: string; fact_key: string; value: string; source: string; valid_until: string | null; checked_at: string; checked_by: string }[];
+    return rows.map((r) => ({
+      patientKey: r.patient_key,
+      key: r.fact_key as PatientFact["key"],
+      value: JSON.parse(r.value) as PatientFact["value"],
+      source: r.source as PatientFact["source"],
+      validUntil: r.valid_until,
+      checkedAt: r.checked_at,
+      checkedBy: r.checked_by,
+    }));
+  }
+  function patientFacts(claimId: string) {
+    const patientKey = patientKeyOf(patientOf(claimId));
+    return { patientKey, facts: latestPatientFacts(patientKey).map((f) => ({ ...f, expired: isExpired(f, now()) })) };
+  }
+  function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput) {
+    clerk(clerkId);
+    validatePatientFact(f, now());
+    const patientKey = patientKeyOf(patientOf(claimId));
+    sqlite
+      .prepare("INSERT INTO patient_facts (patient_key, fact_key, value, source, valid_until, checked_at, checked_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(patientKey, f.key, JSON.stringify(f.value), f.source, f.validUntil, now(), clerkId);
+    return patientFacts(claimId);
   }
   const caseOf = (claimId: string): ClaimContext => {
     const c = cases().find((x) => x.claimId === claimId);
@@ -347,6 +381,8 @@ export function openApp(paths: AppPaths) {
     close: () => sqlite.close(),
     cases,
     caseOf,
+    patientFacts,
+    savePatientFact,
     now,
     advanceClock,
     upsertClerk,
