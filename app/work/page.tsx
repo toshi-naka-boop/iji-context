@@ -370,7 +370,9 @@ export default function Work() {
         <div className={`work${showLog ? " with-log" : ""}`}>
           <section className="panel">
             <h2 style={{ marginTop: 0 }}>
-              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}{q.asOf ? `・${Number(q.asOf.slice(8))} 日の訪問（レセコンに入れる前）` : ""}</span>
+              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}</span>
+              {/* 訪問の時点（レセコンに入れる前）の算定だと、ひと目で分かる札（2026-11-08 ユーザー判断） */}
+              {q.asOf && <span className="badge sky" style={{ marginLeft: 8, fontSize: 14, verticalAlign: "middle" }}>レセコンに入れる前・{Number(q.asOf.slice(5, 7))}/{Number(q.asOf.slice(8))} の訪問</span>}
             </h2>
             <div className={`notice ${localRules.length ? "warn" : ""}`}>
               <strong>ローカルルール</strong>　<span className="muted">ユスティ（全国共通の決まり）とは別に、この地域・この医院で育った知識です</span>
