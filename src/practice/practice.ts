@@ -26,30 +26,35 @@ export type Question = {
   mode?: Mode;
   /** 選択モードで本人が選んだもの（正誤はユスティ） */
   picks?: { lineIndex: number; option: string; correct: boolean; at: string }[];
+  /** 訪問の時点（レセコンに入れる前）の問題なら、その訪問日（FR-68）。ないものは月末の UKE から */
+  asOf?: string;
 };
 
-export function startQuestion(id: string, clerkId: string, claimId: string, now: string, mode: Mode = "通常"): Question {
+/** 判定のしかた（訪問の時点では、月末まで決まらないルールを外す） */
+export type Judge = (ctx: ClaimContext) => EngineResult;
+
+export function startQuestion(id: string, clerkId: string, claimId: string, now: string, mode: Mode = "通常", asOf?: string): Question {
   assertTime(now, "now");
-  return { id, clerkId, claimId, phase: "ヒント", startedAt: now, drafts: [], confirmed: null, correct: null, finishedAt: null, mode, picks: [] };
+  return { id, clerkId, claimId, phase: "ヒント", startedAt: now, drafts: [], confirmed: null, correct: null, finishedAt: null, mode, picks: [], ...(asOf ? { asOf } : {}) };
 }
 
 /** ヒントの段階で下書きをエンジンにかける（何度でもよい）。メンターはこの指摘を手がかりにヒントを出す */
-export function checkDraft(q: Question, ctx: ClaimContext, now: string): { question: Question; result: EngineResult } {
+export function checkDraft(q: Question, ctx: ClaimContext, now: string, judge: Judge = evaluate): { question: Question; result: EngineResult } {
   assertTime(now, "now");
   if (q.phase !== "ヒント") throw new Error(`下書きを確かめられない段階: ${q.phase}`);
   if (ctx.claimId !== q.claimId) throw new Error(`別の請求: ${ctx.claimId}`);
-  const result = evaluate(ctx);
+  const result = judge(ctx);
   return { question: { ...q, drafts: [...q.drafts, { lines: ctx.lines, findings: result.findings, at: now }] }, result };
 }
 
 export const isCorrect = (r: EngineResult): boolean => r.findings.every((f) => f.kind === "情報不足");
 
 /** 本人が確定する。ここでエンジンが判定する */
-export function confirm(q: Question, ctx: ClaimContext, now: string): Question {
+export function confirm(q: Question, ctx: ClaimContext, now: string, judge: Judge = evaluate): Question {
   assertTime(now, "now");
   if (q.phase !== "ヒント") throw new Error(`確定できない段階: ${q.phase}`);
   if (ctx.claimId !== q.claimId) throw new Error(`別の請求: ${ctx.claimId}`);
-  const result = evaluate(ctx);
+  const result = judge(ctx);
   return { ...q, phase: "判定", confirmed: { lines: ctx.lines, result, at: now }, correct: isCorrect(result) };
 }
 
