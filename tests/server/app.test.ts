@@ -270,3 +270,26 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     expect(() => app.importUke(a.id, "other.UKE")).toThrow();
   });
 });
+
+describe("練習問題（FR-75）", () => {
+  it("間違いを入れた明細から始まり、直して確定すると正解。件数には数え、提出・防いだ額には数えない", () => {
+    const q = app.startDrill("new1", "d04");
+    const start = app.caseFor(q);
+    expect(start.lines.some((l) => l.kubun === "B000")).toBe(true);
+    const fixed = start.lines.filter((l) => l.kubun !== "B000");
+    app.draft(q.id, start.lines);
+    const c = app.confirm(q.id, fixed);
+    expect(c.correct).toBe(true);
+    app.done(app.explain(q.id).id);
+    expect(app.status("new1").count).toBe(1);
+    expect(app.personal("new1", true)).toMatchObject({ visible: true, summary: { 差し戻し: { count: 0 } } });
+    expect(app.outlookOf(q)).toContain("練習問題");
+  });
+  it("直さずに確定すると、ねらいのルールで不正解。状況の事実（要介護2）は問題の側で決まる", () => {
+    const q = app.startDrill("new1", "d02");
+    expect(app.caseFor(q).facts.careLevel).toEqual({ known: true, value: 2 });
+    const c = app.confirm(q.id, app.caseFor(q).lines);
+    expect(c.correct).toBe(false);
+    expect(c.confirmed?.result.findings.map((f) => f.ruleId)).toContain("R03");
+  });
+});

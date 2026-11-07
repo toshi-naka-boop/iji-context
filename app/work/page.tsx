@@ -23,6 +23,8 @@ type ChoiceItem = { lineIndex: number; group: string; options: string[] };
 type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "未回答" | "正解" | "判定不能" };
 /** 訪問の記録（レセコンに入れる前。FR-68）：その日のカルテと、その日までの実施 */
 type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; written: boolean };
+/** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
+type Drill = { id: string; no: number; claimId: string; situation: string[] };
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
 type MentorChoice = { chosen: boolean; current: Character; characters: Character[]; style: Style };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
@@ -67,6 +69,9 @@ export default function Work() {
   const [quiz, setQuiz] = useState<ChoiceState[]>([]);
   const [mentorChoice, setMentorChoice] = useState<MentorChoice | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [drills, setDrills] = useState<Drill[]>([]);
+  /** 問題の始まりの請求（訪問の時点・練習問題では、月末の UKE とちがう） */
+  const [qCase, setQCase] = useState<ClaimContext | null>(null);
   /** カルテを書いた直後（/work?visit=claimId|date）は、その訪問の記録を開く（FR-69） */
   const [pendingVisit, setPendingVisit] = useState<string | null>(null);
   useEffect(() => {
@@ -121,6 +126,7 @@ export default function Work() {
     api<ClaimContext[]>("/api/cases").then(setCases).catch((e) => setErr(e.message));
     api<Master>("/api/master").then(setMaster).catch(() => {});
     loadVisits();
+    api<Drill[]>("/api/drills").then(setDrills).catch(() => setDrills([]));
     api<MentorChoice>(`/api/character?clerkId=${CLERK}`).then(setMentorChoice).catch((e) => setErr(e.message));
     api<{ imported: boolean; receipts: { claimId: string }[] }[]>(`/api/uke?clerkId=${CLERK}`)
       .then((us) => setUkeClaims(us.filter((u) => u.imported).flatMap((u) => u.receipts.map((r) => r.claimId))))
@@ -136,21 +142,24 @@ export default function Work() {
     if (next) setPrevented(await api<{ prevented: Prevented }>(`/api/me?clerkId=${CLERK}&optIn=1`).then((d) => d.prevented).catch(() => null));
   }
 
-  const ctx = useMemo(() => cases.find((c) => c.claimId === q?.claimId) ?? null, [cases, q]);
+  const ctx = useMemo(() => qCase ?? cases.find((c) => c.claimId === q?.claimId) ?? null, [qCase, cases, q]);
   const nameOf = (k: string) => master.find((m) => m.kubun === k)?.name ?? k;
   const pointsOf = (k: string) => master.find((m) => m.kubun === k)?.points ?? null;
 
   /** visit があれば訪問の時点（レセコンに入れる前）の問題。なければ月末の UKE の問題 */
-  async function begin(claimId: string, visit?: Visit) {
+  async function begin(claimId: string, visit?: Visit, drill?: Drill) {
     setErr("");
-    const nq = await api<Question>("/api/questions", { clerkId: CLERK, claimId, mode: !visit && choiceMode ? "選択" : "通常", asOf: visit?.date });
+    const plain = !visit && !drill;
+    const nq = await api<Question>("/api/questions", { claimId, mode: plain && choiceMode ? "選択" : "通常", asOf: visit?.date, drill: drill?.id });
+    const start = await api<ClaimContext>(`/api/questions/${nq.id}/case`);
+    setQCase(start);
     setQ(nq);
     setQuiz([]);
-    if (!visit && choiceMode) {
+    if (plain && choiceMode) {
       const items = await api<ChoiceItem[]>(`/api/questions/${nq.id}/choices`);
       setQuiz(items.map((item) => ({ item, wrong: [], reason: "", state: "未回答" })));
     }
-    setLines((visit?.lines ?? cases.find((c) => c.claimId === claimId)!.lines).map((l) => ({ ...l, dates: [...l.dates] })));
+    setLines(start.lines.map((l) => ({ ...l, dates: [...l.dates] })));
     setChat([]);
     loadCross(claimId, visit?.date);
     // メンターから先に声をかける（聞かれるのを待たない）。下書きの記録は作らない（防いだ額に数えない）
@@ -254,6 +263,7 @@ export default function Work() {
     if (!q) return;
     await api<Question>(`/api/questions/${q.id}/done`, {});
     setQ(null);
+    setQCase(null);
     refreshStatus();
     loadVisits();
   }
@@ -339,6 +349,18 @@ export default function Work() {
               </button>
             ))}
           </div>
+          <h2>練習問題（よくある間違いを入れた明細）</h2>
+          <p className="muted">新人が入れたつもりの明細に、よくある間違いが 1 つ入っています。見直して直し、確定してください。間違いは報告書にある実例（13 項目）から取っています。件数・レベルには数え、防いだ額には数えません。</p>
+          <div className="chips">
+            {drills.map((d) => {
+              const c = cases.find((x) => x.claimId === d.claimId);
+              return (
+                <button key={d.id} onClick={() => begin(d.claimId, undefined, d)}>
+                  練習 {d.no}（{d.claimId.split("-")[0]}・{c?.facts.mainDisease.known ? c.facts.mainDisease.value : ""}）
+                </button>
+              );
+            })}
+          </div>
           <h2>月末の点検（UKE・提出前）</h2>
           <p>
             <label>
@@ -363,6 +385,12 @@ export default function Work() {
             <h2 style={{ marginTop: 0 }}>
               {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}{q.asOf ? `・${Number(q.asOf.slice(8))} 日の訪問（レセコンに入れる前）` : ""}</span>
             </h2>
+            {q.drill && (
+              <div className="notice">
+                <strong>練習問題</strong>　よくある間違いが 1 つ入っています。
+                {(drills.find((d) => d.id === q.drill)?.situation ?? []).map((x) => <div key={x}>状況：{x}</div>)}
+              </div>
+            )}
             {visitOf && (
               <div className="notice">
                 <strong>カルテ（{visitOf.date}）</strong>
@@ -432,8 +460,12 @@ export default function Work() {
               claimId={q.claimId}
               clerkId={CLERK}
               facts={ctx.facts}
-              editable={q.phase === "ヒント" && q.mode !== "選択"}
-              onSaved={() => api<ClaimContext[]>("/api/cases").then(setCases).catch(() => {})}
+              editable={q.phase === "ヒント" && q.mode !== "選択" && !q.drill}
+              onSaved={() => {
+                api<ClaimContext[]>("/api/cases").then(setCases).catch(() => {});
+                // 問題の始まりの請求にも、確かめた患者情報を反映する
+                api<ClaimContext>(`/api/questions/${q.id}/case`).then(setQCase).catch(() => {});
+              }}
             />
             {cross && (cross.mismatches.length > 0 || cross.confirmed.length > 0) && (
               <div>

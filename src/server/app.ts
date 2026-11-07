@@ -27,6 +27,7 @@ import { askMissing } from "../query/doctor-query";
 import { existsSync } from "node:fs";
 import { parseUke } from "../uke/uke";
 import { validateStyle, type Style } from "../mentor/style";
+import { drillList, drillOf } from "../practice/drills";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../visit/as-of";
 import { validateFacts, type ChartNote, type ExtractedFact } from "../chart/extract";
 import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../chart/notes";
@@ -160,7 +161,8 @@ export function openApp(paths: AppPaths) {
   };
   /** 問題の請求：訪問の時点の問題なら、その日までの実施と記録だけにする（FR-68） */
   const caseAt = (claimId: string, asOf?: string, clerkId?: string): ClaimContext => (asOf ? contextAsOf(monthOf(claimId, clerkId), asOf) : caseOf(claimId));
-  const caseFor = (q: Question) => caseAt(q.claimId, q.asOf, q.clerkId);
+  /** 練習問題は、よくある間違いを入れた明細と、そのときの状況で始める（FR-75） */
+  const caseFor = (q: Question) => (q.drill ? drillOf(q.drill).make(caseOf(q.claimId)) : caseAt(q.claimId, q.asOf, q.clerkId));
   /** 訪問の時点では、月末まで決まらないルールを指摘にしない */
   const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(evaluate(c)) : evaluate);
   const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>, asOf?: string, clerkId?: string): ClaimContext => {
@@ -252,7 +254,12 @@ export function openApp(paths: AppPaths) {
     ).sort((a, b) => (a.date === b.date ? (a.claimId < b.claimId ? -1 : 1) : a.date < b.date ? -1 : 1));
   }
   /** 訪問の時点の問題に添える見込み（指摘ではない） */
-  const outlookOf = (q: Question) => (q.asOf ? outlook(monthOf(q.claimId, q.clerkId), q.asOf) : null);
+  const outlookOf = (q: Question) =>
+    q.drill
+      ? `これは練習問題（よくある間違いを入れた明細）。本人が直して確定する。状況：${drillOf(q.drill).situation.join("。") || "特になし"}`
+      : q.asOf
+        ? `これは訪問の記録をレセコンに入れる前の確認（月の途中）。判定はその日までの実施と記録だけで、月末に決まるルール（在医総管の区分など）は入っていない。見込み：${outlook(monthOf(q.claimId, q.clerkId), q.asOf)}`
+        : null;
 
   // -------------------------------------------------------------------------
   // 時計（デモでは「時計を進める」で動く）
@@ -321,6 +328,15 @@ export function openApp(paths: AppPaths) {
   };
   const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
 
+  /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
+  function startDrill(clerkId: string, drillId: string): Question {
+    clerk(clerkId);
+    const d = drillOf(drillId);
+    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
+    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, d.claimId, now(), "通常", undefined, d.id);
+    saveQ(q);
+    return q;
+  }
   function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
     const c = monthOf(claimId, clerkId);
@@ -335,17 +351,17 @@ export function openApp(paths: AppPaths) {
   }
   function draft(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
-    const r = checkDraft(q, withLines(q.claimId, lines, facts, q.asOf, q.clerkId), now(), judgeFor(q));
+    const r = checkDraft(q, { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } }, now(), judgeFor(q));
     saveQ(r.question);
     return r;
   }
   /** 確定：エンジンが判定し、提出として適用記録を書く（ライフサイクルの submit） */
   function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
-    const ctx = withLines(q.claimId, lines, facts, q.asOf, q.clerkId);
+    const ctx = { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } };
     const next = confirm(q, ctx, now(), judgeFor(q));
-    // 訪問の時点の確定は提出ではない（レセコンに入れる前）。適用記録は月末の UKE の問題でだけ書く
-    if (q.asOf) {
+    // 訪問の時点の確定と練習問題は提出ではない。適用記録は月末の UKE の問題でだけ書く
+    if (q.asOf || q.drill) {
       saveQ(next);
       return next;
     }
@@ -519,8 +535,9 @@ export function openApp(paths: AppPaths) {
       .filter((q) => q.claimId === claimId && q.status === "承認済み")
       .map((q) => q.field.replace(/^fact:/, ""));
   }
+  // 防いだ額は実際の請求（月末の UKE の問題）だけで数える。練習問題は数えない
   const preventedItems = (clerkId?: string) =>
-    submitted()
+    submitted().filter((q) => !q.drill)
       .filter((q) => !clerkId || q.clerkId === clerkId)
       .flatMap((q) => preventedOf(q, resolvedFields(q.claimId)));
   const personal = (clerkId: string, optIn: boolean) => personalView(preventedItems(clerkId), optIn);
@@ -537,6 +554,8 @@ export function openApp(paths: AppPaths) {
     caseFor,
     judgeFor,
     visits,
+    startDrill,
+    drills: drillList,
     saveNote,
     noteOf,
     confirmNote,

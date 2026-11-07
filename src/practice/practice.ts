@@ -28,14 +28,16 @@ export type Question = {
   picks?: { lineIndex: number; option: string; correct: boolean; at: string }[];
   /** 訪問の時点（レセコンに入れる前）の問題なら、その訪問日（FR-68）。ないものは月末の UKE から */
   asOf?: string;
+  /** 練習問題（よくある間違いを入れた明細。FR-75）なら、その問題の id */
+  drill?: string;
 };
 
 /** 判定のしかた（訪問の時点では、月末まで決まらないルールを外す） */
 export type Judge = (ctx: ClaimContext) => EngineResult;
 
-export function startQuestion(id: string, clerkId: string, claimId: string, now: string, mode: Mode = "通常", asOf?: string): Question {
+export function startQuestion(id: string, clerkId: string, claimId: string, now: string, mode: Mode = "通常", asOf?: string, drill?: string): Question {
   assertTime(now, "now");
-  return { id, clerkId, claimId, phase: "ヒント", startedAt: now, drafts: [], confirmed: null, correct: null, finishedAt: null, mode, picks: [], ...(asOf ? { asOf } : {}) };
+  return { id, clerkId, claimId, phase: "ヒント", startedAt: now, drafts: [], confirmed: null, correct: null, finishedAt: null, mode, picks: [], ...(asOf ? { asOf } : {}), ...(drill ? { drill } : {}) };
 }
 
 /** ヒントの段階で下書きをエンジンにかける（何度でもよい）。メンターはこの指摘を手がかりにヒントを出す */
