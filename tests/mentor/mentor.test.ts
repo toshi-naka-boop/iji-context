@@ -327,6 +327,14 @@ describe("愚痴（数えずに聞く）", () => {
     expect(c).toContain("誰かに知らせることはしない");
     expect(turnContext(e, false, [], 0, undefined, 1)).not.toContain("少し休んで");
   });
+  it("キャラの話し方（呼び方・敬語・口調・使わない言い方・例文）が守ることの後に入り、例文は写さないよう添える。空の項目は入れない", () => {
+    const base = { id: "x", name: "テスト", firstPerson: "私", tone: "明るく短く" };
+    const p = buildSystemPrompt({ ...base, callUser: "〇〇さん", politeness: "です・ます", catchphrases: ["いい感じです", " "], avoid: ["マジで"], examples: { opening: "お疲れさまです。今日もよろしくお願いします", hint: "" } }, 1);
+    for (const w of ["相手の呼び方：〇〇さん", "敬語の度合い：です・ます", "口癖：「いい感じです」。毎回は使わず", "使わない言い方：「マジで」", "同じ文は使わず", "レセプトを開いたとき：お疲れさまです。今日もよろしくお願いします", "守ることを優先する"]) expect(p).toContain(w);
+    expect(p).not.toContain("ヒント：");
+    expect(p.indexOf("話し方（")).toBeGreaterThan(p.indexOf("守ること："));
+    expect(buildSystemPrompt(base, 1)).not.toContain("話し方（");
+  });
   it("愚痴の受け止め方の決まりがシステムプロンプトに入っている", () => {
     const p = buildSystemPrompt(characters.characters[0], 1);
     for (const w of ["愚痴", "解決策", "評価・批判しない", "聞き出さない", "カウンセラーではない"]) expect(p).toContain(w);

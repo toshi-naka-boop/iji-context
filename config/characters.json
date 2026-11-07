@@ -1,8 +1,81 @@
 {
-  "_note": "メンターの 3 キャラ（男性 3 名。spec 決定24）。名前・一人称・口調はユーザーが決める（未定）。id は変えない",
+  "_note": "メンターの 4 キャラ（男女を含む 4 名。spec FR-19・決定24、2026-11-07 変更）。名前・一人称・口調などはユーザーが決める（未定）。キャラ設定フォームの JSON をそのまま入れられる。空の項目はメンターへの指示に入れない。image は assets/characters/transparent/ の絵。id は変えない",
   "characters": [
-    { "id": "a", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" },
-    { "id": "b", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" },
-    { "id": "c", "name": "（未定）", "firstPerson": "（未定）", "tone": "（未定）" }
+    {
+      "id": "a",
+      "name": "（未定）",
+      "firstPerson": "（未定）",
+      "tone": "（未定）",
+      "callUser": "",
+      "politeness": "",
+      "image": "makki",
+      "catchphrases": [],
+      "avoid": [],
+      "examples": {
+        "opening": "",
+        "hint": "",
+        "correct": "",
+        "wrong": "",
+        "chat": "",
+        "backToWork": ""
+      }
+    },
+    {
+      "id": "b",
+      "name": "（未定）",
+      "firstPerson": "（未定）",
+      "tone": "（未定）",
+      "callUser": "",
+      "politeness": "",
+      "image": "black-hair",
+      "catchphrases": [],
+      "avoid": [],
+      "examples": {
+        "opening": "",
+        "hint": "",
+        "correct": "",
+        "wrong": "",
+        "chat": "",
+        "backToWork": ""
+      }
+    },
+    {
+      "id": "c",
+      "name": "（未定）",
+      "firstPerson": "（未定）",
+      "tone": "（未定）",
+      "callUser": "",
+      "politeness": "",
+      "image": "bob",
+      "catchphrases": [],
+      "avoid": [],
+      "examples": {
+        "opening": "",
+        "hint": "",
+        "correct": "",
+        "wrong": "",
+        "chat": "",
+        "backToWork": ""
+      }
+    },
+    {
+      "id": "d",
+      "name": "（未定）",
+      "firstPerson": "（未定）",
+      "tone": "（未定）",
+      "callUser": "",
+      "politeness": "",
+      "image": "suit",
+      "catchphrases": [],
+      "avoid": [],
+      "examples": {
+        "opening": "",
+        "hint": "",
+        "correct": "",
+        "wrong": "",
+        "chat": "",
+        "backToWork": ""
+      }
+    }
   ]
 }

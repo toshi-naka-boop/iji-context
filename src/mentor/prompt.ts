@@ -5,7 +5,40 @@ import { findingText } from "../messages";
 import { SMALLTALK_NUDGE_AFTER, VENT_OFFER_AFTER } from "./output";
 import type { CrossItem } from "./tools";
 
-export type Character = { id: string; name: string; firstPerson: string; tone: string };
+/** 場面ごとの話し方の例（キャラ設定フォームの項目） */
+export const EXAMPLE_SCENES = { opening: "レセプトを開いたとき", hint: "ヒント", correct: "正解したとき", wrong: "間違えたとき", chat: "雑談・愚痴を受け止める", backToWork: "算定に戻す声かけ" } as const;
+export type ExampleScene = keyof typeof EXAMPLE_SCENES;
+
+/** 名前・一人称・口調は必須。ほかはキャラ設定フォームで足した項目で、空なら指示に入れない。image は画面の絵で、指示には使わない */
+export type Character = {
+  id: string;
+  name: string;
+  firstPerson: string;
+  tone: string;
+  callUser?: string;
+  politeness?: string;
+  image?: string;
+  catchphrases?: string[];
+  avoid?: string[];
+  examples?: Partial<Record<ExampleScene, string>>;
+};
+
+/** キャラの話し方（呼び方・敬語・口癖・使わない言い方・例文）。守ることより下に置き、例文は写さないよう添える */
+export function characterVoice(c: Character): string[] {
+  const out: string[] = [];
+  if (c.callUser?.trim()) out.push(`- 相手の呼び方：${c.callUser.trim()}（名前が入るところは本人の名前にする）`);
+  if (c.politeness?.trim()) out.push(`- 敬語の度合い：${c.politeness.trim()}。レベルで口調を変えるときも、この話し方の範囲で変える`);
+  const phrases = (c.catchphrases ?? []).map((s) => s.trim()).filter(Boolean);
+  if (phrases.length) out.push(`- 口癖：${phrases.map((p) => `「${p}」`).join("")}。毎回は使わず、ときどき添える程度にする`);
+  const avoid = (c.avoid ?? []).map((s) => s.trim()).filter(Boolean);
+  if (avoid.length) out.push(`- 使わない言い方：${avoid.map((p) => `「${p}」`).join("")}`);
+  const ex = (Object.keys(EXAMPLE_SCENES) as ExampleScene[]).filter((k) => c.examples?.[k]?.trim());
+  if (ex.length) {
+    out.push("- 話し方の例（雰囲気の参考。同じ文は使わず、毎回言い方を変える。中身は真似せず、その場の判定と会話に合わせる）：");
+    for (const k of ex) out.push(`  ${EXAMPLE_SCENES[k]}：${c.examples![k]!.trim()}`);
+  }
+  return out.length ? ["", "話し方（守ることと食い違うときは、守ることを優先する）：", ...out] : [];
+}
 
 /**
  * レベルによる振る舞い（決定33：ヒントが短くなる／先に出さず聞かれたら出す／呼び方・口調が対等に寄る）。
@@ -47,6 +80,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
     "- 医師に聞く前には、関係する知識（スキル）を必ず読む。読んでいないと医師確認は作れない",
     "- 本人が医師への確認を頼んだときは、ユスティの指摘と関係がなくても ask_doctor で作る。カルテとの照合で見つかる不一致は、ルールエンジンの判定の外にある。本人の気づきを退けない",
     "- 表情は expression で選ぶ。「困り」はカルテの記載不足か審査が難しい場面だけで、相手の誤りには使わない。喜ぶのは知識が増えた・承認された・連続正解・月次完了のときだけ",
+    ...characterVoice(c),
   ];
   if (engine) lines.push("", turnContext(engine, reveal));
   return lines.join("\n");
