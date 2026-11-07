@@ -1,5 +1,5 @@
 "use client";
-// 画面上部の共通ナビ（デモの時計を含む）
+// 画面上部の共通ナビ（デモの日付を含む。時刻は出さない：2026-11-07 ユーザー判断）
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -9,7 +9,7 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
   const [msg, setMsg] = useState("");
   const [who, setWho] = useState("");
   useEffect(() => {
-    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setNow(d.now); setInput(d.now); } });
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setNow(d.now); setInput(d.now.slice(0, 10)); } });
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u) => setWho(u?.name ?? "")).catch(() => {});
   }, []);
   async function logout() {
@@ -17,7 +17,8 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
     window.location.href = "/login";
   }
   async function advance() {
-    const r = await fetch("/api/clock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ now: input }) });
+    // 日付だけを進める（時刻はその日の朝 9 時にそろえる）
+    const r = await fetch("/api/clock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ now: `${input}T09:00:00+09:00` }) });
     const d = await r.json();
     if (!r.ok) return setMsg(d.error);
     setNow(d.now);
@@ -35,11 +36,12 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
         <Link href="/meeting">レセメン会議</Link>
         <Link href="/knowledge">知識</Link>
         <Link href="/manager">事務長</Link>
+        <Link href="/settings">設定</Link>
       </nav>
       <div className="chips" style={{ alignItems: "center" }}>
-        <span className="muted">デモの時計 {now}</span>
-        <input value={input} onChange={(e) => setInput(e.target.value)} style={{ width: 230 }} aria-label="時計を進める" />
-        <button onClick={advance}>時計を進める</button>
+        <span className="muted">デモの日付 {now.slice(0, 10)}</span>
+        <input type="date" value={input} onChange={(e) => setInput(e.target.value)} aria-label="デモの日付" />
+        <button onClick={advance}>日付を進める</button>
         {msg && <span className="muted">{msg}</span>}
         {who && <span className="muted">{who}さん <button onClick={logout}>ログアウト</button></span>}
         {right}

@@ -3,12 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ClaimContext, ClaimLine, EngineResult, Finding } from "../../src/engine/types";
 import type { MentorOutput, Situation } from "../../src/mentor/output";
-import type { Character } from "../../src/mentor/prompt";
-import { PREFERENCES, TYPES16, type Style } from "../../src/mentor/style";
-import { faceFor, faceImage, selectImage, type Face } from "../../src/mentor/face";
+import { faceFor, faceImage, type Face } from "../../src/mentor/face";
 import type { Question } from "../../src/practice/practice";
 import { findingText } from "../../src/messages";
 import { TopBar } from "../nav";
+import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { SignIn, useClerk } from "../clerk";
 import { PatientPanel } from "./patient-panel";
 
@@ -30,7 +29,6 @@ type LocalRule = { id: string; layer: string; status: string; summary: string; s
 /** 医師確認の練習問題の今の状態（FR-76） */
 type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
-type MentorChoice = { chosen: boolean; current: Character; characters: Character[]; style: Style };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
 
 
@@ -94,33 +92,6 @@ export default function Work() {
     if (v) setPendingVisit(v);
   }, []);
   const loadVisits = () => api<Visit[]>(`/api/visits?clerkId=${CLERK}`).then(setVisits).catch(() => setVisits([]));
-  /** メンターを選び直している途中 */
-  const [picking, setPicking] = useState(false);
-  /** 伝え方のタイプ（FR-20。本人の申告、任意）。変えるとメンターとの会話は新しく始まる */
-  async function pickStyle(style: Style) {
-    setErr("");
-    try {
-      setMentorChoice(await api<MentorChoice>("/api/character", { clerkId: CLERK, style }));
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
-  async function pickMentor(characterId: string) {
-    setErr("");
-    try {
-      const m = await api<MentorChoice>("/api/character", { clerkId: CLERK, characterId });
-      const changed = mentorChoice?.chosen && mentorChoice.current.id !== characterId;
-      setMentorChoice(m);
-      setPicking(false);
-      // レセプトを開いている途中で替えたら、新しいメンターから声をかける（会話はセッションごと新しくなる）
-      if (changed && q) {
-        setChat([]);
-        void mentor(OPENING, "通常", q.id, true);
-      }
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
   async function sendProxy() {
     if (!q) return;
     setBusy(true);
@@ -321,7 +292,7 @@ export default function Work() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingVisit, visits, mentorChoice, cases, q]);
   const visitOf = q?.asOf ? visits.find((v) => v.claimId === q.claimId && v.date === q.asOf) ?? null : null;
-  const showChooser = mentorChoice !== null && (!mentorChoice.chosen || picking);
+  const showChooser = mentorChoice !== null && !mentorChoice.chosen;
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -332,26 +303,13 @@ export default function Work() {
       {err && <div className="notice warn">{err}</div>}
       {showChooser && mentorChoice && (
         <div className="panel">
-          <h2 style={{ marginTop: 0 }}>{mentorChoice.chosen ? "メンターを変える" : "一緒に働くメンターを選んでください"}</h2>
-          <p className="muted">あとから変えられます。変えると、メンターとの会話は新しく始まります。</p>
-          <div className="chooser">
-            {mentorChoice.characters.map((c) => (
-              <button key={c.id} className={`chooser-card${mentorChoice.chosen && c.id === mentorChoice.current.id ? " current" : ""}`} onClick={() => pickMentor(c.id)}>
-                {c.image && <img src={selectImage(c.image)} alt="" />}
-                <strong>{c.name}</strong>
-                <span className="muted">{c.tone}</span>
-                {c.examples?.opening && <span className="bubble">{c.examples.opening}</span>}
-              </button>
-            ))}
-          </div>
-          {mentorChoice.chosen && <p><button onClick={() => setPicking(false)}>変えずに戻る</button></p>}
+          <h2 style={{ marginTop: 0 }}>一緒に働くメンターを選んでください</h2>
+          <p className="muted">あとから「設定」で変えられます。</p>
+          <MentorPicker choice={mentorChoice} clerkId={CLERK} onChange={setMentorChoice} onError={setErr} />
         </div>
       )}
-      {!q && mentorChoice?.chosen && !picking && (
+      {!q && mentorChoice?.chosen && (
         <div className="panel">
-          <p className="muted">
-            メンター：{mentorName}　<button onClick={() => setPicking(true)}>メンターを変える</button>
-          </p>
           <p className="muted">
             <button onClick={togglePrevented} aria-expanded={showPrevented}>{showPrevented ? "防いだ額を閉じる" : "防いだ額を見る"}</button>　既定では出しません。開いたときだけ表示します
           </p>
@@ -363,20 +321,8 @@ export default function Work() {
               <div className="muted">{prevented.summary.label}。提出前に指摘され、提出までに直した項目だけを数えています（点数×10 円）</div>
             </div>
           )}
-          <p className="muted">
-            話し方の好み（任意）：
-            <select value={mentorChoice.style?.preference ?? ""} onChange={(e) => pickStyle({ ...mentorChoice.style, preference: (e.target.value || undefined) as Style["preference"] })}>
-              <option value="">指定しない</option>
-              {PREFERENCES.map((x) => <option key={x} value={x}>{x}</option>)}
-            </select>
-            　16 タイプ（任意・自己申告）：
-            <select value={mentorChoice.style?.type16 ?? ""} onChange={(e) => pickStyle({ ...mentorChoice.style, type16: (e.target.value || undefined) as Style["type16"] })}>
-              <option value="">指定しない</option>
-              {TYPES16.map((x) => <option key={x} value={x}>{x}</option>)}
-            </select>
-          </p>
-          <h2>訪問の記録（レセコンに入れる前）</h2>
-          <p className="muted">訪問のあった日に、その日のカルテとその日までの実施を見直します（デモデータとして、どの日の訪問でも開けます）。在医総管の区分など月末に決まるものは、見込みだけ出します。件数・レベルには数えません。</p>
+          <h2>訪問記録デモ</h2>
+          <p className="muted">訪問のデモデータです。</p>
           <div className="chips">
             {visits.map((v) => (
               <button key={v.claimId + v.date} onClick={() => begin(v.claimId, v)}>
@@ -385,8 +331,7 @@ export default function Work() {
             ))}
           </div>
           <p className="notice">はじめての方へ：用語と練習の流れは <a href="/guide">練習問題の手引き</a> にまとめています。</p>
-          <h2>練習問題（よくある間違いを入れた明細）</h2>
-          <p className="muted">新人が入れたつもりの明細に、よくある間違いが 1 つ入っています。見直して直し、確定してください。間違いは報告書にある実例（13 項目）から取っています。件数・レベルには数え、防いだ額には数えません。</p>
+          <h2>練習問題</h2>
           <div className="chips">
             {drills.fix.map((d) => {
               const c = cases.find((x) => x.claimId === d.claimId);
@@ -397,8 +342,7 @@ export default function Work() {
               );
             })}
           </div>
-          <h2>練習問題（医師に確認する）</h2>
-          <p className="muted">カルテに書かれていない事実があって、そのままでは算定を決められない明細です。推測で埋めずに「医師確認」を送り、医師の回答と承認を受けてから確定してください。医師の役は「医師確認」の画面で、あなた自身が回答できます。</p>
+          <h2>医師確認用練習</h2>
           <div className="chips">
             {drills.doctor.map((d) => {
               const c = cases.find((x) => x.claimId === d.claimId);
@@ -412,7 +356,7 @@ export default function Work() {
           <h2>月末の点検（UKE・提出前）</h2>
           <p>
             <label>
-              <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ。レベルの上がり方は小さめ）
+              <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ）
             </label>
           </p>
           {ukeClaims !== null && ukeClaims.length === 0 && (
@@ -616,7 +560,6 @@ export default function Work() {
                   </>
                 )}
                 <button onClick={() => setShowLog(!showLog)} aria-expanded={showLog}>会話の履歴（{chat.length}）</button>
-                <button disabled={busy} onClick={() => setPicking(true)}>メンターを変える</button>
               </div>
             </div>
           </div>
