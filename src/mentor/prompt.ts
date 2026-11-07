@@ -4,6 +4,7 @@ import type { EngineResult } from "../engine/types";
 import { findingText } from "../messages";
 import { SMALLTALK_NUDGE_AFTER, VENT_OFFER_AFTER } from "./output";
 import type { CrossItem } from "./tools";
+import { styleLines, type Style } from "./style";
 
 /** 場面ごとの話し方の例（キャラ設定フォームの項目） */
 export const EXAMPLE_SCENES = { opening: "レセプトを開いたとき", hint: "ヒント", correct: "正解したとき", wrong: "間違えたとき", chat: "雑談・愚痴を受け止める", backToWork: "算定に戻す声かけ" } as const;
@@ -59,7 +60,7 @@ export function levelBehavior(level: number): { hint: string; timing: string; re
 export const PEER_QUESTION_LEVEL = 8;
 
 /** reveal=false（ヒントの段階）では、判定のうちルール id と対象の行だけを渡し、指摘の種類・根拠・点数は渡さない */
-export function buildSystemPrompt(c: Character, level: number, engine?: EngineResult, reveal = true): string {
+export function buildSystemPrompt(c: Character, level: number, engine?: EngineResult, reveal = true, style?: Style): string {
   const b = levelBehavior(level);
   const lines = [
     `あなたは医療事務のメンター「${c.name}」です。一人称は「${c.firstPerson}」、口調は「${c.tone}」。`,
@@ -81,6 +82,7 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
     "- 本人が医師への確認を頼んだときは、ユスティの指摘と関係がなくても ask_doctor で作る。カルテとの照合で見つかる不一致は、ルールエンジンの判定の外にある。本人の気づきを退けない",
     "- 表情は expression で選ぶ。「困り」はカルテの記載不足か審査が難しい場面だけで、相手の誤りには使わない。喜ぶのは知識が増えた・承認された・連続正解・月次完了のときだけ",
     ...characterVoice(c),
+    ...styleLines(style),
   ];
   if (engine) lines.push("", turnContext(engine, reveal));
   return lines.join("\n");
@@ -90,11 +92,13 @@ export function buildSystemPrompt(c: Character, level: number, engine?: EngineRe
  * その発言の時点の判定。セッションを続けると前の発言の判定が会話に残るので、毎回の発言に添えて「今の判定」を渡す。
  * reveal=false（ヒントの段階）では、ルール id と対象の行だけを渡し、指摘の種類・根拠・点数は渡さない
  */
-export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossItem[] = [], smalltalkStreak = 0, today?: string, ventStreak = 0): string {
+export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossItem[] = [], smalltalkStreak = 0, today?: string, ventStreak = 0, note?: string): string {
   const head = [
     "【いまの判定。この発言の時点のもので、前の発言のときの判定より優先する】",
     // 季節や締め日の話がデモの時計と食い違わないように、今日の日付を添える
     ...(today ? [`今日の日付：${today}`] : []),
+    // 訪問の時点（レセコンに入れる前）の問題。月の途中なので、月末に決まる区分は判定に入っていない
+    ...(note ? [`これは訪問の記録をレセコンに入れる前の確認（月の途中）。判定はその日までの実施と記録だけで、月末に決まるルール（在医総管の区分など）は入っていない。見込み：${note}`] : []),
     ...cross.map(
       (m) =>
         `カルテとの照合で見つかった不一致：${m.ruleId}（${m.why}）。説明するときは crosscheck-${m.ruleId.toLowerCase()} を読む。${m.sent ? "医師確認はもう送ってあり、回答待ち" : "医師に聞く話題がこれかどうかは本人が画面で選ぶので、メンターは質問を書かない"}`,

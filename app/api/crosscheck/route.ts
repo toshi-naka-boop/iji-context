@@ -1,15 +1,16 @@
 // API Route：F4 の照合（病名と処方の不一致）と、医師確認を送る
-import { body, handle } from "../../../src/server/http";
-import { getApp } from "../../../src/server/instance";
+import { body, authed } from "../../../src/server/http";
+import { getApp, ME } from "../../../src/server/instance";
 
 export async function GET(req: Request) {
-  return handle(() => getApp().crosscheckOf(new URL(req.url).searchParams.get("claimId") ?? ""));
+  const u = new URL(req.url);
+  return authed(req, () => getApp().crosscheckOf(u.searchParams.get("claimId") ?? "", u.searchParams.get("asOf") ?? undefined, ME));
 }
 
 export async function POST(req: Request) {
-  return handle(async () => {
-    const b = await body<{ claimId: string; ruleId: string }>(req);
-    return getApp().sendCrosscheck(b.claimId, b.ruleId);
+  return authed(req, async () => {
+    const b = await body<{ claimId: string; ruleId: string; asOf?: string; clerkId?: string }>(req);
+    return getApp().sendCrosscheck(b.claimId, b.ruleId, b.asOf, ME);
   });
 }
 

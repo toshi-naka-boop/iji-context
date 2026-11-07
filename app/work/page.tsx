@@ -3,20 +3,30 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ClaimContext, ClaimLine, EngineResult, Finding } from "../../src/engine/types";
 import type { MentorOutput, Situation } from "../../src/mentor/output";
+import type { Character } from "../../src/mentor/prompt";
+import { PREFERENCES, TYPES16, type Style } from "../../src/mentor/style";
+import { faceFor, faceImage, selectImage, type Face } from "../../src/mentor/face";
 import type { Question } from "../../src/practice/practice";
 import { findingText } from "../../src/messages";
 import { TopBar } from "../nav";
+import { SignIn, useClerk } from "../clerk";
 import { PatientPanel } from "./patient-panel";
 
 type Master = { kubun: string; name: string; points: number | null }[];
 type Status = { level: number; count: number; streak: number };
-type Bubble = { from: "mentor" | "me"; text: string; expression?: string };
+/** 防いだ額（本人向け。FR-57：既定は出さず、本人が開いたときだけ。金額は推定） */
+type Prevented = { visible: false } | { visible: true; summary: { label: string; 取りこぼし: { count: number; yen: number }; 差し戻し: { count: number; yen: number }; 医師記載起因: { count: number; yen: number } } };
+/** face は立ち絵の表情（場面で決める）。expression はメンターが選んだ表情で、記録として残すだけ */
+type Bubble = { from: "mentor" | "me"; text: string; expression?: string; face?: Face };
 /** 選択モードの問題（正誤はサーバーでユスティが決める。画面は正解を持たない） */
 type ChoiceItem = { lineIndex: number; group: string; options: string[] };
 type ChoiceState = { item: ChoiceItem; wrong: string[]; reason: string; state: "未回答" | "正解" | "判定不能" };
+/** 訪問の記録（レセコンに入れる前。FR-68）：その日のカルテと、その日までの実施 */
+type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDisease: string | null; chart: { s: string; a: string; p: string } | null; lines: ClaimLine[]; outlook: string; open: boolean; written: boolean };
+/** 本人が選んだメンターと、選べるキャラ（FR-19） */
+type MentorChoice = { chosen: boolean; current: Character; characters: Character[]; style: Style };
 type Cross = { mismatches: { ruleId: string; disease: string; draft: { question: string }; query: { id: string; status: string } | null }[]; confirmed: string[] };
 
-const CLERK = "new1";
 
 /** レセプトを開いたときにメンターへ渡す合図（本人には見せない） */
 const OPENING = "（本人がこのレセプトを開いた。最初のひと声をかけてください。レベルに合わせて、見るとよい場所を一つ示すか、声かけだけにするかを決める）";
@@ -29,6 +39,13 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export default function Work() {
+  // 利用者（審査員などがそれぞれ自分の利用者で使う）
+  const { clerk: user, ready } = useClerk();
+  const CLERK = user?.id ?? "";
+  const [prevented, setPrevented] = useState<Prevented | null>(null);
+  const [showPrevented, setShowPrevented] = useState(false);
+  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象） */
+  const [ukeClaims, setUkeClaims] = useState<string[] | null>(null);
   const [cases, setCases] = useState<ClaimContext[]>([]);
   const [master, setMaster] = useState<Master>([]);
   const [status, setStatus] = useState<Status | null>(null);
@@ -48,6 +65,42 @@ export default function Work() {
   /** 選択モード（急いでいるとき）：区分を選ぶ箇所を、正解と間違えやすい区分の選択肢で答える */
   const [choiceMode, setChoiceMode] = useState(false);
   const [quiz, setQuiz] = useState<ChoiceState[]>([]);
+  const [mentorChoice, setMentorChoice] = useState<MentorChoice | null>(null);
+  const [visits, setVisits] = useState<Visit[]>([]);
+  /** カルテを書いた直後（/work?visit=claimId|date）は、その訪問の記録を開く（FR-69） */
+  const [pendingVisit, setPendingVisit] = useState<string | null>(null);
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("visit");
+    if (v) setPendingVisit(v);
+  }, []);
+  const loadVisits = () => api<Visit[]>(`/api/visits?clerkId=${CLERK}`).then(setVisits).catch(() => setVisits([]));
+  /** メンターを選び直している途中 */
+  const [picking, setPicking] = useState(false);
+  /** 伝え方のタイプ（FR-20。本人の申告、任意）。変えるとメンターとの会話は新しく始まる */
+  async function pickStyle(style: Style) {
+    setErr("");
+    try {
+      setMentorChoice(await api<MentorChoice>("/api/character", { clerkId: CLERK, style }));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  async function pickMentor(characterId: string) {
+    setErr("");
+    try {
+      const m = await api<MentorChoice>("/api/character", { clerkId: CLERK, characterId });
+      const changed = mentorChoice?.chosen && mentorChoice.current.id !== characterId;
+      setMentorChoice(m);
+      setPicking(false);
+      // レセプトを開いている途中で替えたら、新しいメンターから声をかける（会話はセッションごと新しくなる）
+      if (changed && q) {
+        setChat([]);
+        void mentor(OPENING, "通常", q.id, true);
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
   async function sendProxy() {
     if (!q) return;
     setBusy(true);
@@ -61,31 +114,45 @@ export default function Work() {
       setBusy(false);
     }
   }
-  const loadCross = (claimId: string) => api<Cross>(`/api/crosscheck?claimId=${claimId}`).then(setCross).catch(() => setCross(null));
+  const loadCross = (claimId: string, asOf?: string) => api<Cross>(`/api/crosscheck?claimId=${claimId}&clerkId=${CLERK}${asOf ? `&asOf=${asOf}` : ""}`).then(setCross).catch(() => setCross(null));
 
   useEffect(() => {
+    if (!CLERK) return;
     api<ClaimContext[]>("/api/cases").then(setCases).catch((e) => setErr(e.message));
     api<Master>("/api/master").then(setMaster).catch(() => {});
+    loadVisits();
+    api<MentorChoice>(`/api/character?clerkId=${CLERK}`).then(setMentorChoice).catch((e) => setErr(e.message));
+    api<{ imported: boolean; receipts: { claimId: string }[] }[]>(`/api/uke?clerkId=${CLERK}`)
+      .then((us) => setUkeClaims(us.filter((u) => u.imported).flatMap((u) => u.receipts.map((r) => r.claimId))))
+      .catch(() => setUkeClaims([]));
     refreshStatus();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [CLERK]);
   const refreshStatus = () => api<Status>(`/api/me?clerkId=${CLERK}`).then(setStatus).catch(() => {});
+  /** 防いだ額は本人が開いたときだけ取りにいく（FR-57） */
+  async function togglePrevented() {
+    const next = !showPrevented;
+    setShowPrevented(next);
+    if (next) setPrevented(await api<{ prevented: Prevented }>(`/api/me?clerkId=${CLERK}&optIn=1`).then((d) => d.prevented).catch(() => null));
+  }
 
   const ctx = useMemo(() => cases.find((c) => c.claimId === q?.claimId) ?? null, [cases, q]);
   const nameOf = (k: string) => master.find((m) => m.kubun === k)?.name ?? k;
   const pointsOf = (k: string) => master.find((m) => m.kubun === k)?.points ?? null;
 
-  async function begin(claimId: string) {
+  /** visit があれば訪問の時点（レセコンに入れる前）の問題。なければ月末の UKE の問題 */
+  async function begin(claimId: string, visit?: Visit) {
     setErr("");
-    const nq = await api<Question>("/api/questions", { clerkId: CLERK, claimId, mode: choiceMode ? "選択" : "通常" });
+    const nq = await api<Question>("/api/questions", { clerkId: CLERK, claimId, mode: !visit && choiceMode ? "選択" : "通常", asOf: visit?.date });
     setQ(nq);
     setQuiz([]);
-    if (choiceMode) {
+    if (!visit && choiceMode) {
       const items = await api<ChoiceItem[]>(`/api/questions/${nq.id}/choices`);
       setQuiz(items.map((item) => ({ item, wrong: [], reason: "", state: "未回答" })));
     }
-    setLines(cases.find((c) => c.claimId === claimId)!.lines.map((l) => ({ ...l, dates: [...l.dates] })));
+    setLines((visit?.lines ?? cases.find((c) => c.claimId === claimId)!.lines).map((l) => ({ ...l, dates: [...l.dates] })));
     setChat([]);
-    loadCross(claimId);
+    loadCross(claimId, visit?.date);
     // メンターから先に声をかける（聞かれるのを待たない）。下書きの記録は作らない（防いだ額に数えない）
     void mentor(OPENING, "通常", nq.id, true);
   }
@@ -127,11 +194,11 @@ export default function Work() {
   async function sendQuery(ruleId: string) {
     if (!q) return;
     try {
-      await api("/api/crosscheck", { claimId: q.claimId, ruleId });
+      await api("/api/crosscheck", { claimId: q.claimId, ruleId, asOf: q.asOf, clerkId: CLERK });
     } catch (e) {
       setErr((e as Error).message);
     }
-    loadCross(q.claimId);
+    loadCross(q.claimId, q.asOf);
   }
 
   /** silent=true はメンターから話しかける場面（本人の発言として画面に出さない） */
@@ -142,7 +209,7 @@ export default function Work() {
     if (!silent) setChat((c) => [...c, { from: "me", text: message }]);
     try {
       const r = await api<{ output: MentorOutput; choices: { ruleId: string; about: string }[] }>("/api/mentor", { clerkId: CLERK, questionId, message, situation, skipCrosscheck });
-      setChat((c) => [...c, { from: "mentor", text: r.output.body, expression: r.output.expression }]);
+      setChat((c) => [...c, { from: "mentor", text: r.output.body, expression: r.output.expression, face: faceFor(situation, r.output.topic) }]);
       if (r.choices?.length) {
         setChoices(r.choices);
         setPendingAsk(message);
@@ -188,28 +255,102 @@ export default function Work() {
     await api<Question>(`/api/questions/${q.id}/done`, {});
     setQ(null);
     refreshStatus();
+    loadVisits();
   }
 
   const findings: Finding[] = q?.confirmed?.result.findings ?? [];
   const total = lines.reduce((s, l) => s + (pointsOf(l.kubun) ?? 0) * l.count, 0);
   const lastMentorBubble = [...chat].reverse().find((b) => b.from === "mentor");
-  const lastExpression = lastMentorBubble?.expression ?? "通常";
+  const lastFace: Face = lastMentorBubble?.face ?? "通常";
   const lastMentor = lastMentorBubble?.text ?? null;
+  const me = mentorChoice?.current ?? null;
+  const mentorName = me?.name ?? "メンター";
+  useEffect(() => {
+    if (!pendingVisit || q || !mentorChoice?.chosen || cases.length === 0) return;
+    const [claimId, date] = pendingVisit.split("|");
+    const v = visits.find((x) => x.claimId === claimId && x.date === date);
+    if (!v) return;
+    setPendingVisit(null);
+    window.history.replaceState(null, "", "/work");
+    void begin(claimId, v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingVisit, visits, mentorChoice, cases, q]);
+  const visitOf = q?.asOf ? visits.find((v) => v.claimId === q.claimId && v.date === q.asOf) ?? null : null;
+  const showChooser = mentorChoice !== null && (!mentorChoice.chosen || picking);
+
+  if (!ready) return <main className="shell"><TopBar /></main>;
+  if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
 
   return (
     <main className="shell">
       <TopBar right={status && <span className="level">Lv.{status.level}・{status.count} 件・連続 {status.streak}</span>} />
       {err && <div className="notice warn">{err}</div>}
-      {!q && (
+      {showChooser && mentorChoice && (
         <div className="panel">
-          <h2 style={{ marginTop: 0 }}>今日のレセプト</h2>
+          <h2 style={{ marginTop: 0 }}>{mentorChoice.chosen ? "メンターを変える" : "一緒に働くメンターを選んでください"}</h2>
+          <p className="muted">あとから変えられます。変えると、メンターとの会話は新しく始まります。</p>
+          <div className="chooser">
+            {mentorChoice.characters.map((c) => (
+              <button key={c.id} className={`chooser-card${mentorChoice.chosen && c.id === mentorChoice.current.id ? " current" : ""}`} onClick={() => pickMentor(c.id)}>
+                {c.image && <img src={selectImage(c.image)} alt="" />}
+                <strong>{c.name}</strong>
+                <span className="muted">{c.tone}</span>
+                {c.examples?.opening && <span className="bubble">{c.examples.opening}</span>}
+              </button>
+            ))}
+          </div>
+          {mentorChoice.chosen && <p><button onClick={() => setPicking(false)}>変えずに戻る</button></p>}
+        </div>
+      )}
+      {!q && mentorChoice?.chosen && !picking && (
+        <div className="panel">
+          <p className="muted">
+            メンター：{mentorName}　<button onClick={() => setPicking(true)}>メンターを変える</button>
+          </p>
+          <p className="muted">
+            <button onClick={togglePrevented} aria-expanded={showPrevented}>{showPrevented ? "防いだ額を閉じる" : "防いだ額を見る"}</button>　既定では出しません。開いたときだけ表示します
+          </p>
+          {showPrevented && prevented?.visible && (
+            <div className="notice ok">
+              <div>取りこぼしを防いだ（算定漏れ）：{prevented.summary.取りこぼし.count} 件・{prevented.summary.取りこぼし.yen.toLocaleString()} 円</div>
+              <div>差し戻しを防いだ（返戻・査定のおそれ）：{prevented.summary.差し戻し.count} 件・{prevented.summary.差し戻し.yen.toLocaleString()} 円</div>
+              <div>うち医師の記載が原因で、医師確認で解決：{prevented.summary.医師記載起因.count} 件・{prevented.summary.医師記載起因.yen.toLocaleString()} 円</div>
+              <div className="muted">{prevented.summary.label}。提出前に指摘され、提出までに直した項目だけを数えています（点数×10 円）</div>
+            </div>
+          )}
+          <p className="muted">
+            話し方の好み（任意）：
+            <select value={mentorChoice.style?.preference ?? ""} onChange={(e) => pickStyle({ ...mentorChoice.style, preference: (e.target.value || undefined) as Style["preference"] })}>
+              <option value="">指定しない</option>
+              {PREFERENCES.map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+            　16 タイプ（任意・自己申告）：
+            <select value={mentorChoice.style?.type16 ?? ""} onChange={(e) => pickStyle({ ...mentorChoice.style, type16: (e.target.value || undefined) as Style["type16"] })}>
+              <option value="">指定しない</option>
+              {TYPES16.map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </p>
+          <h2>訪問の記録（レセコンに入れる前）</h2>
+          <p className="muted">訪問のあった日に、その日のカルテとその日までの実施を見直します。在医総管の区分など月末に決まるものは、見込みだけ出します。件数・レベルには数えません。</p>
+          <div className="chips">
+            {visits.filter((v) => v.open).length === 0 && <span className="muted">今日までの訪問はまだありません（時計を進めると増えます）。</span>}
+            {visits.filter((v) => v.open).map((v) => (
+              <button key={v.claimId + v.date} onClick={() => begin(v.claimId, v)}>
+                {Number(v.date.slice(5, 7))}/{Number(v.date.slice(8))} {v.claimId.split("-")[0]}（{v.mainDisease ?? "主病不明"}・{v.type === "oushin" ? "往診" : "訪問診療"}{v.written ? "・書いたカルテ" : ""}）
+              </button>
+            ))}
+          </div>
+          <h2>月末の点検（UKE・提出前）</h2>
           <p>
             <label>
               <input type="checkbox" checked={choiceMode} onChange={(e) => setChoiceMode(e.target.checked)} /> 選択モード（急いでいるとき。区分を選択肢から選ぶ。レベルの上がり方は小さめ）
             </label>
           </p>
+          {ukeClaims !== null && ukeClaims.length === 0 && (
+            <p className="muted">まだ UKE を取り込んでいません。<a href="/uke">UKE を取り込む</a>と、ここに並びます。</p>
+          )}
           <div className="chips">
-            {cases.map((c) => (
+            {cases.filter((c) => ukeClaims?.includes(c.claimId)).map((c) => (
               <button key={c.claimId} onClick={() => begin(c.claimId)}>
                 {c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
               </button>
@@ -221,8 +362,15 @@ export default function Work() {
         <div className={`work${showLog ? " with-log" : ""}`}>
           <section className="panel">
             <h2 style={{ marginTop: 0 }}>
-              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}</span>
+              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}{q.asOf ? `・${Number(q.asOf.slice(8))} 日の訪問（レセコンに入れる前）` : ""}</span>
             </h2>
+            {visitOf && (
+              <div className="notice">
+                <strong>カルテ（{visitOf.date}）</strong>
+                {visitOf.chart ? <div>S：{visitOf.chart.s}　A：{visitOf.chart.a}　P：{visitOf.chart.p}</div> : <div className="muted">この日のカルテはありません</div>}
+                <div className="muted">見込み：{visitOf.outlook}</div>
+              </div>
+            )}
             {q.mode === "選択" && q.phase === "ヒント" && (
               <div className="quiz">
                 {quiz.length === 0 && <div className="notice ok">このレセプトには選択式で出せる箇所がありません。いつもどおり表を見直してください。</div>}
@@ -296,7 +444,7 @@ export default function Work() {
                     傷病名「{m.disease}」と処方が合っていません。{m.draft.question}
                     <div style={{ marginTop: 6 }}>
                       {m.query ? (
-                        <span>医師確認を送りました（{m.query.status}）。<button onClick={() => loadCross(q.claimId)}>状態を見る</button></span>
+                        <span>医師確認を送りました（{m.query.status}）。<button onClick={() => loadCross(q.claimId, q.asOf)}>状態を見る</button></span>
                       ) : (
                         <button onClick={() => sendQuery(m.ruleId)}>医師確認を送る</button>
                       )}
@@ -335,13 +483,13 @@ export default function Work() {
           </section>
           {/* 吹き出しの欄（画面の下）：左にキャラ、右に最新のひと言と入力欄。会話の履歴は右の窓で開く */}
           <div className="dock" role="region" aria-label="メンター">
-            <div className="portrait" aria-label={`メンターの表情：${lastExpression}`}>
-              <div className="portrait-figure">メンター</div>
-              <div className="muted">{lastExpression}</div>
+            <div className="portrait" aria-label={`${mentorName}の表情：${lastFace}`}>
+              <div className="portrait-figure">{me?.image ? <img src={faceImage(me.image, lastFace)} alt="" /> : mentorName}</div>
+              <div><strong>{mentorName}</strong> <span className="muted">{lastFace}</span></div>
             </div>
             <div className="dialog">
               <div className="dialog-line">
-                {busy ? <span className="muted">メンターが目を通しています…</span> : (lastMentor ?? "今日もよろしく。気になるところがあったら声をかけてね。")}
+                {busy ? <span className="muted">{mentorName}が目を通しています…</span> : (lastMentor ?? me?.examples?.opening ?? "今日もよろしく。気になるところがあったら声をかけてね。")}
               </div>
               {choices.length > 0 && (
                 <div className="dialog-actions" role="group" aria-label="医師に聞くことを選ぶ">
@@ -356,11 +504,12 @@ export default function Work() {
               <div className="dialog-actions">
                 {q.phase === "ヒント" && (
                   <>
-                    <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="メンターに聞く（空なら「ヒントをください」）" onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !busy) { hint(ask.trim() || "ヒントをください。"); setAsk(""); } }} />
+                    <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder={`${mentorName}に聞く（空なら「ヒントをください」）`} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !busy) { hint(ask.trim() || "ヒントをください。"); setAsk(""); } }} />
                     <button disabled={busy} onClick={() => { hint(ask.trim() || "ヒントをください。"); setAsk(""); }}>聞く</button>
                   </>
                 )}
                 <button onClick={() => setShowLog(!showLog)} aria-expanded={showLog}>会話の履歴（{chat.length}）</button>
+                <button disabled={busy} onClick={() => setPicking(true)}>メンターを変える</button>
               </div>
             </div>
           </div>
@@ -373,7 +522,7 @@ export default function Work() {
               {chat.length === 0 && <div className="muted">まだ会話はありません。</div>}
               {chat.map((b, i) => (
                 <div key={i} className={`log-item from-${b.from}`}>
-                  <div className="muted">{b.from === "me" ? "あなた" : `メンター・${b.expression ?? "通常"}`}</div>
+                  <div className="muted">{b.from === "me" ? "あなた" : `${mentorName}・${b.face ?? "通常"}`}</div>
                   <div className="bubble">{b.text}</div>
                 </div>
               ))}

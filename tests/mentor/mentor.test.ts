@@ -341,3 +341,16 @@ describe("愚痴（数えずに聞く）", () => {
     expect(p).not.toMatch(/教育|学習|学ぶ|教える/);
   });
 });
+
+describe("伝え方のタイプ（FR-20。本人の申告）", () => {
+  it("申告した好みと 16 タイプを、守ることの後に入れ、申告がなければ入れない", async () => {
+    const { buildSystemPrompt } = await import("../../src/mentor/prompt");
+    const { validateStyle } = await import("../../src/mentor/style");
+    const c = { id: "a", name: "マッキー", firstPerson: "ぼく", tone: "静かに優しい" };
+    const p = buildSystemPrompt(c, 1, undefined, true, { preference: "結論から短く", type16: "INFP" });
+    expect(p.indexOf("話し方の好み：結論から短く")).toBeGreaterThan(p.indexOf("守ること："));
+    expect(p).toContain("INFP");
+    expect(buildSystemPrompt(c, 1)).not.toContain("伝え方の好み");
+    expect(() => validateStyle({ type16: "ABCD" as never })).toThrow();
+  });
+});

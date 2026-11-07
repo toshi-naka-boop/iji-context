@@ -180,3 +180,93 @@ describe("選択モード", () => {
     expect(() => app.choices(app.start("new1", k1.claimId).id)).toThrow(/選択モードの問題ではない/);
   });
 });
+
+describe("メンターを選ぶ（FR-19）", () => {
+  it("選ぶとキャラが替わってセッションが作り直しになり、起動し直しても選んだキャラが残る", () => {
+    expect(app.characterChosen("new1")).toBe(false);
+    app.setSession("new1", "s-old");
+    app.chooseCharacter("new1", "c");
+    expect(app.clerk("new1")).toMatchObject({ character_id: "c", session_id: null });
+    expect(app.characterChosen("new1")).toBe(true);
+    app.upsertClerk({ id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" });
+    expect(app.clerk("new1").character_id).toBe("c");
+  });
+});
+
+describe("訪問の記録（レセコンに入れる前。FR-68）", () => {
+  it("今日までの訪問だけ開けて、その日のカルテとその日までの実施が付く", () => {
+    app.advanceClock("2025-03-11T18:00:00+09:00");
+    const k4 = app.visits().filter((v) => v.claimId === "K4-2025-03");
+    expect(k4.map((v) => [v.date, v.open])).toEqual([["2025-03-11", true], ["2025-03-25", false]]);
+    expect(k4[0].chart?.a).toBe("AF");
+    expect(k4[0].lines.map((l) => [l.kubun, l.count])).toEqual([["C001_1I", 1]]);
+    expect(() => app.start("new1", "K4-2025-03", "通常", "2025-03-25")).toThrow();
+  });
+  it("確定しても提出にならず、件数・防いだ額に数えない。照合はその日までのカルテで出る", () => {
+    app.advanceClock("2025-03-11T18:00:00+09:00");
+    const q = app.start("new1", "K4-2025-03", "通常", "2025-03-11");
+    const lines = app.caseFor(q).lines;
+    app.draft(q.id, [...lines, { kubun: "C002_2RO1", count: 1, dates: ["2025-03-11"] }]);
+    const c = app.confirm(q.id, lines);
+    expect(c.correct).toBe(true);
+    app.done(app.explain(q.id).id);
+    expect(app.status("new1").count).toBe(0);
+    expect(app.crosscheckOf("K4-2025-03", "2025-03-11").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
+    expect(app.outlookOf(q)).toContain("ここまで 1 回");
+  });
+});
+
+describe("訪問カルテを書く（FR-69）", () => {
+  const note = { s: "変わりなし", o: "", a: "AF", p: "DOAC 継続", rx: "" };
+  it("書いて確かめた訪問が、その日の訪問の記録になり、訪問の時点の問題で判定できる", () => {
+    app.advanceClock("2025-03-18T15:00:00+09:00");
+    expect(app.patients().map((p) => p.claimId)).toEqual(["K1-2025-03", "K2-2025-03", "K3-2025-03", "K4-2025-03", "K5-2025-03"]);
+    const s = app.saveNote("K4-2025-03", "new1", "訪問診療", note);
+    expect(s.date).toBe("2025-03-18");
+    expect(app.visits("new1").some((v) => v.claimId === "K4-2025-03" && v.date === "2025-03-18")).toBe(false);
+    app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
+    const v = app.visits("new1").find((x) => x.claimId === "K4-2025-03" && x.date === "2025-03-18");
+    // ほかの利用者には、この人が書いたカルテは重ならない
+    const other = app.createClerk("審査員A");
+    expect(app.visits(other.id).some((x) => x.claimId === "K4-2025-03" && x.date === "2025-03-18")).toBe(false);
+    expect(v).toMatchObject({ open: true, written: true, chart: { a: "AF" } });
+    const q = app.start("new1", "K4-2025-03", "通常", "2025-03-18");
+    expect(app.caseFor(q).lines.find((l) => l.kubun === "C001_1I")?.count).toBe(2);
+    expect(app.crosscheckOf("K4-2025-03", "2025-03-18", "new1").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
+  });
+  it("カルテにない言葉の事実では確定できない。診療月の外の日には書けない", () => {
+    app.advanceClock("2025-03-18T15:00:00+09:00");
+    const s = app.saveNote("K4-2025-03", "new1", "訪問診療", note);
+    expect(() => app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
+    app.advanceClock("2025-04-02T09:00:00+09:00");
+    expect(() => app.saveNote("K4-2025-03", "new1", "訪問診療", note)).toThrow();
+  });
+});
+
+describe("伝え方のタイプ（FR-20）", () => {
+  it("保存するとセッションが作り直しになり、あとで読める", () => {
+    app.setSession("new1", "s-old");
+    app.setStyle("new1", { preference: "順を追って丁寧に" });
+    expect(app.styleOf("new1")).toEqual({ preference: "順を追って丁寧に" });
+    expect(app.clerk("new1").session_id).toBeNull();
+  });
+});
+
+describe("利用者ごとに使う・UKE を取り込む", () => {
+  it("名前を入れると利用者ができ、キャラは利用者ごとに選べる", () => {
+    const a = app.createClerk("審査員A");
+    const b = app.createClerk("審査員B");
+    expect([a.id, b.id]).toEqual(["u0001", "u0002"]);
+    app.chooseCharacter(a.id, "c");
+    expect([app.clerk(a.id).character_id, app.characterChosen(b.id)]).toEqual(["c", false]);
+    expect(() => app.createClerk("  ")).toThrow();
+  });
+  it("UKE は利用者ごとに取り込み、取り込んだレセプトだけが月末の点検の対象になる", () => {
+    const a = app.createClerk("審査員A");
+    expect(app.importedClaims(a.id)).toEqual([]);
+    app.importUke(a.id, "shiharaikikin.UKE");
+    expect(app.importedClaims(a.id)).toEqual(["K6-2025-03"]);
+    expect(app.ukeList(a.id).map((u) => [u.name, u.payer, u.imported])).toEqual([["kokuhoren.UKE", "国保連", false], ["shiharaikikin.UKE", "支払基金", true]]);
+    expect(() => app.importUke(a.id, "other.UKE")).toThrow();
+  });
+});

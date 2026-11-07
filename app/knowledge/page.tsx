@@ -1,4 +1,5 @@
 "use client";
+import { LocalRuleHistoryMock } from "./history-mock";
 // 知識の画面：ベテランへの質問（F6）、検証キュー（F5）、改善の提案と共感（F11）
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
@@ -80,6 +81,7 @@ export default function Knowledge() {
         <button className="primary" onClick={() => run(post("/api/knowledge", { action: "propose", ...prop }).then(() => setProp({ summary: "", body: "" })))}>提案する</button>
         <p className="muted">提案は院内の知識の候補になり、すぐ全員に見えます（未検証）。院内の知識は新人への助言には使いません。</p>
       </section>
+      <LocalRuleHistoryMock />
     </main>
   );
 }

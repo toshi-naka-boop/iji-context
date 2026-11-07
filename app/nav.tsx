@@ -7,9 +7,15 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
   const [now, setNow] = useState<string>("");
   const [input, setInput] = useState("");
   const [msg, setMsg] = useState("");
+  const [who, setWho] = useState("");
   useEffect(() => {
-    fetch("/api/clock").then((r) => r.json()).then((d) => { setNow(d.now); setInput(d.now); });
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setNow(d.now); setInput(d.now); } });
+    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u) => setWho(u?.name ?? "")).catch(() => {});
   }, []);
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/login";
+  }
   async function advance() {
     const r = await fetch("/api/clock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ now: input }) });
     const d = await r.json();
@@ -21,7 +27,9 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
     <div className="top">
       <nav>
         <strong>レセメン</strong>
+        <Link href="/chart">カルテを書く</Link>
         <Link href="/work">算定</Link>
+        <Link href="/uke">UKE 取り込み</Link>
         <Link href="/doctor">医師確認</Link>
         <Link href="/meeting">レセメン会議</Link>
         <Link href="/knowledge">知識</Link>
@@ -32,6 +40,7 @@ export function TopBar({ right }: { right?: React.ReactNode }) {
         <input value={input} onChange={(e) => setInput(e.target.value)} style={{ width: 230 }} aria-label="時計を進める" />
         <button onClick={advance}>時計を進める</button>
         {msg && <span className="muted">{msg}</span>}
+        {who && <span className="muted">{who}さん <button onClick={logout}>ログアウト</button></span>}
         {right}
       </div>
     </div>

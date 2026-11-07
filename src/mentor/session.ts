@@ -6,6 +6,7 @@ import type { ClaimContext, EngineResult } from "../engine/types";
 import { ANSWER_FALLBACK, leakedTerms, MENTOR_OUTPUT_SCHEMA, parseMentorOutput, type MentorOutput, type Situation } from "./output";
 import { modelOptions, type ModelChoice } from "./models";
 import { buildSystemPrompt, turnContext, type Character } from "./prompt";
+import type { Style } from "./style";
 import { runOnce, type RunStats } from "./run";
 import { askMissingTool, askPeerThenHuman, markCited, queryHistory, type CrossItem, type MentorDeps } from "./tools";
 import { skillGuard } from "./workspace";
@@ -109,6 +110,8 @@ export type MentorTurn = {
   clerkId: string;
   sessionId: string | null;
   character: Character;
+  /** 本人が申告した伝え方のタイプ（FR-20。任意） */
+  style?: Style;
   level: number;
   ctx: ClaimContext;
   engine: EngineResult;
@@ -124,6 +127,8 @@ export type MentorTurn = {
   smalltalkStreak?: number;
   /** この問いで、直前まで愚痴が続いた回数（決まった規則で数える） */
   ventStreak?: number;
+  /** 訪問の時点の問題に添える見込み（指摘ではない。FR-68） */
+  note?: string;
 };
 
 /**
@@ -137,7 +142,7 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
   /** 本人に選んでもらう照合の不一致（メンターが医師確認を作ろうとしたときに出る） */
   const choices = new Map<string, { ruleId: string; about: string }>();
   const options = {
-    systemPrompt: buildSystemPrompt(t.character, t.level),
+    systemPrompt: buildSystemPrompt(t.character, t.level, undefined, true, t.style),
     cwd: t.workspace.cwd,
     settingSources: ["project" as const],
     tools: ["Skill"],
@@ -149,7 +154,7 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
     maxTurns: 8,
     ...modelOptions(t.model),
   };
-  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
+  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0, t.note)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
   const stats = [r.stats];
   let sessionId = r.sessionId || (t.sessionId ?? "");
   let output = parseMentorOutput(r.structured, t.situation);

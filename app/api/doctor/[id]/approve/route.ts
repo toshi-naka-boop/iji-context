@@ -1,8 +1,8 @@
 // API Route（薄い入口。処理は src/server/app.ts）
-import { body, handle } from "../../../../../src/server/http";
+import { body, authed } from "../../../../../src/server/http";
 import { getApp } from "../../../../../src/server/instance";
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  return handle(async () => getApp().approveDoctor((await ctx.params).id, (await body<{ approver: string }>(req)).approver));
+  return authed(req, async () => getApp().approveDoctor((await ctx.params).id, (await body<{ approver: string }>(req)).approver));
 }
 
 export const runtime = "nodejs";

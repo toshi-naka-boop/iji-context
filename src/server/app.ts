@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { CREATE_SQL } from "../db/schema";
-import { ruleKubun } from "../engine";
+import { evaluate, ruleKubun } from "../engine";
 import type { ClaimContext, ClaimLine, Facility } from "../engine/types";
 import { importResult, type SubmissionResult } from "../lifecycle/applications";
 import type { Calendar } from "../lifecycle/calendar";
@@ -26,6 +26,10 @@ import type { UkePatient } from "../uke/types";
 import { askMissing } from "../query/doctor-query";
 import { existsSync } from "node:fs";
 import { parseUke } from "../uke/uke";
+import { validateStyle, type Style } from "../mentor/style";
+import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../visit/as-of";
+import { validateFacts, type ChartNote, type ExtractedFact } from "../chart/extract";
+import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../chart/notes";
 import { applyPatientFacts, isExpired, patientKeyOf, validatePatientFact, type PatientFact, type PatientFactInput } from "../patient/facts";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
@@ -44,6 +48,7 @@ const APP_SQL = `
 CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS clerks (id TEXT PRIMARY KEY, name TEXT NOT NULL, call_name TEXT NOT NULL, character_id TEXT NOT NULL, role TEXT NOT NULL, session_id TEXT);
 CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, clerk_id TEXT NOT NULL, claim_id TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS chart_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL, note TEXT NOT NULL, facts TEXT, clerk_id TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS patient_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_key TEXT NOT NULL, fact_key TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, valid_until TEXT, checked_at TEXT NOT NULL, checked_by TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS peer_questions (id TEXT PRIMARY KEY, from_clerk TEXT NOT NULL, question TEXT NOT NULL, status TEXT NOT NULL, answer TEXT, answered_by TEXT, knowledge_id TEXT, created_at TEXT NOT NULL, answered_at TEXT);
 `;
@@ -78,7 +83,27 @@ export function openApp(paths: AppPaths) {
   // -------------------------------------------------------------------------
   // 症例（合成 UKE ＋ 合成カルテ側の事実）
 
-  const ukeFiles = () => ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"].map((f) => parseUke(readFileSync(path.join(paths.root, f))));
+  const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
+  const ukeFiles = () => UKE_FILES.map((f) => parseUke(readFileSync(path.join(paths.root, f))));
+  /** UKE の取り込み（利用者ごとに記録。今回はデモ用の 2 本を選んで取り込むだけ） */
+  const importedUke = (clerkId: string): string[] => JSON.parse(setting(`uke:${clerkId}`) ?? "[]") as string[];
+  function ukeList(clerkId: string) {
+    const done = importedUke(clerkId);
+    return UKE_FILES.map((f, i) => {
+      const u = ukeFiles()[i];
+      const name = path.basename(f);
+      return { name, payer: u.payer, prefecture: u.prefecture, billingMonth: u.billingMonth, receipts: u.receipts.map((x) => ({ claimId: x.claimId, patient: x.patient.name })), imported: done.includes(name) };
+    });
+  }
+  function importUke(clerkId: string, name: string) {
+    clerk(clerkId);
+    if (!UKE_FILES.some((f) => path.basename(f) === name)) throw new Error(`取り込める UKE ではない: ${name}`);
+    const done = importedUke(clerkId);
+    if (!done.includes(name)) setSetting(`uke:${clerkId}`, JSON.stringify([...done, name]));
+    return ukeList(clerkId);
+  }
+  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象） */
+  const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.map((x) => x.claimId));
   function patientOf(claimId: string): UkePatient {
     const r = ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
     if (!r) throw new Error(`UKE にないレセプト: ${claimId}`);
@@ -133,10 +158,103 @@ export function openApp(paths: AppPaths) {
     if (!c) throw new Error(`症例がない: ${claimId}`);
     return c;
   };
-  const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>): ClaimContext => {
-    const c = caseOf(claimId);
+  /** 問題の請求：訪問の時点の問題なら、その日までの実施と記録だけにする（FR-68） */
+  const caseAt = (claimId: string, asOf?: string, clerkId?: string): ClaimContext => (asOf ? contextAsOf(monthOf(claimId, clerkId), asOf) : caseOf(claimId));
+  const caseFor = (q: Question) => caseAt(q.claimId, q.asOf, q.clerkId);
+  /** 訪問の時点では、月末まで決まらないルールを指摘にしない */
+  const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(evaluate(c)) : evaluate);
+  const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>, asOf?: string, clerkId?: string): ClaimContext => {
+    const c = caseAt(claimId, asOf, clerkId);
     return { ...c, lines, facts: { ...c.facts, ...(facts ?? {}) } };
   };
+
+  // -------------------------------------------------------------------------
+  // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
+
+  function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
+    clerk(clerkId);
+    const c = caseOf(claimId);
+    if (kind !== "訪問診療" && kind !== "往診") throw new Error(`訪問の種類が不正: ${kind}`);
+    const date = now().slice(0, 10);
+    if (!date.startsWith(c.yearMonth)) throw new Error(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
+    const r = sqlite
+      .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
+      .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
+    return { id: Number(r.lastInsertRowid), date };
+  }
+  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
+  function noteRow(id: number): NoteRow {
+    const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
+    if (!r) throw new Error(`カルテがない: ${id}`);
+    return r;
+  }
+  const noteOf = (id: number) => JSON.parse(noteRow(id).note) as ChartNote;
+  /** 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない */
+  function confirmNote(id: number, facts: ExtractedFact[]) {
+    const r = noteRow(id);
+    if (r.facts !== null) throw new Error(`もう確かめてある: ${id}`);
+    const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
+    if (v.dropped.length) throw new Error(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
+    return { claimId: r.claim_id, date: r.date };
+  }
+  /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
+  function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
+    if (!clerkId) return [];
+    return (sqlite.prepare("SELECT * FROM chart_notes WHERE claim_id = ? AND clerk_id = ? AND facts IS NOT NULL ORDER BY id").all(claimId, clerkId) as NoteRow[]).map((r) => ({
+      date: r.date,
+      kind: r.kind as VisitKind,
+      note: JSON.parse(r.note) as ChartNote,
+      facts: JSON.parse(r.facts!) as ExtractedFact[],
+    }));
+  }
+  /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
+  const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
+  /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
+  function patients() {
+    return cases()
+      .filter((c) => visitDays(c).length > 0)
+      .map((c) => {
+        const p = patientOf(c.claimId);
+        const f = c.facts;
+        const v = <T,>(x: { known: boolean; value?: T }) => (x.known ? (x as { value: T }).value : null);
+        return {
+          claimId: c.claimId,
+          name: p.name,
+          sex: p.sex === 1 ? "男" : "女",
+          age: v(f.age),
+          insurance: v(f.insurance),
+          mainDisease: v(f.mainDisease),
+          diseases: p.diseases.map((d) => d.name),
+          careLevel: v(f.careLevel),
+          table7: v(f.table7),
+          table8_2: v(f.table8_2),
+          homeOxygen: v(f.homeOxygen),
+        };
+      });
+  }
+
+  /** 訪問の記録（レセコンに入れる前）：その月の訪問日と、その日のカルテ。今日より先の日は open=false */
+  function visits(clerkId?: string) {
+    const today = now().slice(0, 10);
+    return cases().map((c) => monthOf(c.claimId, clerkId)).flatMap((c) =>
+      visitDays(c).map((d) => ({
+        claimId: c.claimId,
+        date: d.date,
+        type: d.type,
+        mainDisease: c.facts.mainDisease.known ? c.facts.mainDisease.value : null,
+        chart: chartOf(c.claimId, clerkId)?.entries.find((e) => e.date === d.date) ?? null,
+        /** その日までの実施（レセコンに入れる前の下書きの元） */
+        lines: contextAsOf(c, d.date).lines,
+        outlook: outlook(c, d.date),
+        /** 本人が書いた訪問か */
+        written: confirmedNotes(c.claimId, clerkId).some((n) => n.date === d.date),
+        open: d.date <= today,
+      })),
+    ).sort((a, b) => (a.date === b.date ? (a.claimId < b.claimId ? -1 : 1) : a.date < b.date ? -1 : 1));
+  }
+  /** 訪問の時点の問題に添える見込み（指摘ではない） */
+  const outlookOf = (q: Question) => (q.asOf ? outlook(monthOf(q.claimId, q.clerkId), q.asOf) : null);
 
   // -------------------------------------------------------------------------
   // 時計（デモでは「時計を進める」で動く）
@@ -160,8 +278,17 @@ export function openApp(paths: AppPaths) {
 
   function upsertClerk(c: { id: string; name: string; callName: string; characterId: string; role: "clerk" | "veteran" }) {
     sqlite
-      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, call_name = excluded.call_name, character_id = excluded.character_id, role = excluded.role")
+      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, call_name = excluded.call_name, role = excluded.role")
       .run(c.id, c.name, c.callName, c.characterId, c.role);
+  }
+  /** 審査員などが自分の利用者を作る（名前は呼び方に使う）。キャラは選ぶまで仮の a */
+  function createClerk(name: string) {
+    const n = name.trim();
+    if (n.length < 1 || n.length > 20) throw new Error("名前は 1〜20 文字");
+    const count = (sqlite.prepare("SELECT COUNT(*) AS n FROM clerks WHERE id LIKE 'u%'").get() as { n: number }).n;
+    const id = `u${String(count + 1).padStart(4, "0")}`;
+    upsertClerk({ id, name: n, callName: "さん", characterId: "a", role: "clerk" });
+    return clerk(id);
   }
   function clerk(id: string) {
     const r = sqlite.prepare("SELECT * FROM clerks WHERE id = ?").get(id) as { id: string; name: string; call_name: string; character_id: string; role: string; session_id: string | null } | undefined;
@@ -169,6 +296,20 @@ export function openApp(paths: AppPaths) {
     return r;
   }
   const setSession = (id: string, sessionId: string) => sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
+  /** 本人がメンターを選ぶ（FR-19）。指示はセッションの初めに渡すので、キャラを変えたらセッションを作り直す */
+  function chooseCharacter(id: string, characterId: string) {
+    clerk(id);
+    sqlite.prepare("UPDATE clerks SET character_id = ?, session_id = NULL WHERE id = ?").run(characterId, id);
+    setSetting(`character_chosen:${id}`, "1");
+  }
+  const characterChosen = (id: string) => setting(`character_chosen:${id}`) === "1";
+  /** 伝え方のタイプ（FR-20。本人の申告、任意）。指示はセッションの初めに渡すので、変えたらセッションを作り直す */
+  function setStyle(id: string, style: Style) {
+    clerk(id);
+    setSetting(`style:${id}`, JSON.stringify(validateStyle(style)));
+    sqlite.prepare("UPDATE clerks SET session_id = NULL WHERE id = ?").run(id);
+  }
+  const styleOf = (id: string): Style => JSON.parse(setting(`style:${id}`) ?? "{}") as Style;
 
   // -------------------------------------------------------------------------
   // 処理体験（1 件＝1 問）
@@ -182,25 +323,35 @@ export function openApp(paths: AppPaths) {
   };
   const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
 
-  function start(clerkId: string, claimId: string, mode: Mode = "通常"): Question {
+  function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
-    caseOf(claimId);
+    const c = monthOf(claimId, clerkId);
+    if (asOf) {
+      if (mode !== "通常") throw new Error("訪問の時点の問題は通常モードだけ");
+      if (!visitDays(c).some((d) => d.date === asOf)) throw new Error(`この日の訪問はない: ${claimId} ${asOf}`);
+      if (asOf > now().slice(0, 10)) throw new Error(`まだ来ていない日: ${asOf}`);
+    }
     const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode);
+    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode, asOf);
     saveQ(q);
     return q;
   }
   function draft(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
-    const r = checkDraft(q, withLines(q.claimId, lines, facts), now());
+    const r = checkDraft(q, withLines(q.claimId, lines, facts, q.asOf, q.clerkId), now(), judgeFor(q));
     saveQ(r.question);
     return r;
   }
   /** 確定：エンジンが判定し、提出として適用記録を書く（ライフサイクルの submit） */
   function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
-    const ctx = withLines(q.claimId, lines, facts);
-    const next = confirm(q, ctx, now());
+    const ctx = withLines(q.claimId, lines, facts, q.asOf, q.clerkId);
+    const next = confirm(q, ctx, now(), judgeFor(q));
+    // 訪問の時点の確定は提出ではない（レセコンに入れる前）。適用記録は月末の UKE の問題でだけ書く
+    if (q.asOf) {
+      saveQ(next);
+      return next;
+    }
     submit(deps, {
       submissionId: id,
       final: { ctx, applied: next.confirmed!.result.applied },
@@ -234,7 +385,9 @@ export function openApp(paths: AppPaths) {
     saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
     return r;
   }
-  const status = (clerkId: string) => myStatus(allQ(), clerkId, levels, levelCfg.choiceWeight ?? 1);
+  // 件数・レベル・防いだ額は月末の UKE の問題（提出）だけで数える。訪問の時点の問題は数えない（FR-68）
+  const submitted = () => allQ().filter((q) => !q.asOf);
+  const status = (clerkId: string) => myStatus(submitted(), clerkId, levels, levelCfg.choiceWeight ?? 1);
   const questionsOf = (clerkId: string) => allQ().filter((q) => q.clerkId === clerkId);
 
   // -------------------------------------------------------------------------
@@ -339,13 +492,16 @@ export function openApp(paths: AppPaths) {
       .map((q) => (q.answer!.option === "その他" ? q.answer!.freeText ?? "" : q.answer!.option))
       .filter((n) => n && n !== "判定不能");
   }
-  function chartOf(claimId: string): Chart | null {
+  /** 照合用のカルテ：合成カルテに、本人が書いて確かめた訪問カルテを重ねる（FR-69） */
+  function chartOf(claimId: string, clerkId?: string): Chart | null {
     const f = path.join(paths.root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
-    return existsSync(f) ? json<Chart>(f) : null;
+    return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
   /** 確認してほしい点（照合）。同じ項目の医師確認がすでにあれば、その状態も返す */
-  function crosscheckOf(claimId: string) {
-    const chart = chartOf(claimId);
+  function crosscheckOf(claimId: string, asOf?: string, clerkId?: string) {
+    const whole = chartOf(claimId, clerkId);
+    // 訪問の時点では、その日までのカルテと処方だけで照合する
+    const chart = whole && asOf ? { ...whole, entries: whole.entries.filter((e) => e.date <= asOf), prescriptions: whole.prescriptions.filter((p) => p.date <= asOf) } : whole;
     if (!chart) return { mismatches: [], confirmed: confirmedDiseases(claimId) };
     const qs = doctorQueries().filter((q) => q.claimId === claimId);
     return {
@@ -354,8 +510,8 @@ export function openApp(paths: AppPaths) {
     };
   }
   /** 照合の不一致から医師確認を送る（ask_missing の宛先＝医師） */
-  function sendCrosscheck(claimId: string, ruleId: string) {
-    const m = crosscheckOf(claimId).mismatches.find((x) => x.ruleId === ruleId);
+  function sendCrosscheck(claimId: string, ruleId: string, asOf?: string, clerkId?: string) {
+    const m = crosscheckOf(claimId, asOf, clerkId).mismatches.find((x) => x.ruleId === ruleId);
     if (!m) throw new Error(`不一致がない: ${claimId} ${ruleId}`);
     if (m.query) throw new Error(`医師確認はもう送ってある: ${m.query.id}`);
     return askMissing(queryLog, { target: "doctor", ...m.draft }, now());
@@ -367,7 +523,7 @@ export function openApp(paths: AppPaths) {
       .map((q) => q.field.replace(/^fact:/, ""));
   }
   const preventedItems = (clerkId?: string) =>
-    allQ()
+    submitted()
       .filter((q) => !clerkId || q.clerkId === clerkId)
       .flatMap((q) => preventedOf(q, resolvedFields(q.claimId)));
   const personal = (clerkId: string, optIn: boolean) => personalView(preventedItems(clerkId), optIn);
@@ -381,13 +537,29 @@ export function openApp(paths: AppPaths) {
     close: () => sqlite.close(),
     cases,
     caseOf,
+    caseFor,
+    judgeFor,
+    visits,
+    saveNote,
+    noteOf,
+    confirmNote,
+    patients,
+    outlookOf,
     patientFacts,
     savePatientFact,
     now,
     advanceClock,
     upsertClerk,
+    createClerk,
+    ukeList,
+    importUke,
+    importedClaims,
     clerk,
     setSession,
+    chooseCharacter,
+    characterChosen,
+    setStyle,
+    styleOf,
     start,
     choices,
     pick,

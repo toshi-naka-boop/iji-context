@@ -1,9 +1,9 @@
 // API Route：知識の一覧・検証キュー・検証・共感・提案（F5・F11）
-import { body, handle } from "../../../src/server/http";
+import { body, authed } from "../../../src/server/http";
 import { getApp } from "../../../src/server/instance";
 
 export async function GET(req: Request) {
-  return handle(() => (new URL(req.url).searchParams.get("view") === "queue" ? getApp().queue() : getApp().knowledgeList()));
+  return authed(req, () => (new URL(req.url).searchParams.get("view") === "queue" ? getApp().queue() : getApp().knowledgeList()));
 }
 
 type Action =
@@ -12,7 +12,7 @@ type Action =
   | { action: "propose"; summary: string; body: string; relatesTo?: string | null };
 
 export async function POST(req: Request) {
-  return handle(async () => {
+  return authed(req, async () => {
     const b = await body<Action>(req);
     const a = getApp();
     if (b.action === "verify") return a.verify(b.id, b.approve, b.reason);

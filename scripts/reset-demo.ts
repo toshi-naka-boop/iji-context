@@ -20,6 +20,9 @@ export function targets(): string[] {
   if (existsSync(log)) for (const f of readdirSync(log)) out.push(path.join(log, f));
   const k = path.join(root, "knowledge");
   if (existsSync(k)) for (const layer of readdirSync(k)) out.push(path.join(k, layer));
+  // ログインした人ごとのクリニック（FR-73）。利用者（auth.db）は残し、次に開いたときに作り直す
+  const tenants = path.join(root, "data", "tenants");
+  if (existsSync(tenants)) out.push(tenants);
   const ws = workspaceRoot();
   if (existsSync(ws)) out.push(ws);
   return out;
