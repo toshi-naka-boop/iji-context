@@ -8,6 +8,17 @@
 
 Built with Claude: Japan 2026 提出作品です。この README は、デモ動画（約 3 分）と同じ順に並べています。
 
+## 触ってみる（公開版）
+
+**https://34-85-108-51.sslip.io**
+
+ログイン ID とパスワードを登録すれば、すぐに使えます。インストールは要りません。
+
+- 登録した人ごとに専用のクリニック（DB・知識・医師確認の記録・デモの時計）を持つので、ほかの人の操作とは混ざりません。
+- データはすべて合成データです。実在の患者データ・個人情報は入っていません。
+- Google Cloud の VM で Docker Compose で動かし、Caddy で https にしています。パスワードは scrypt のハッシュだけを保存し、セッションは httpOnly の cookie で渡します。
+- Claude の API キーは **Secret Manager** に置き、VM は起動のたびに自分のサービスアカウントの権限で読み出します。キーは git・Docker のイメージ・VM のファイルのどれにも書きません。手順は [docs/deploy-gcp.md](docs/deploy-gcp.md) です。
+
 | 動画の流れ | README の節 |
 |---|---|
 | 医療事務って大変（冒頭） | [1. 課題](#1-課題医療事務って大変) |
@@ -218,17 +229,26 @@ flowchart LR
 - データは合成データだけ。実在の患者データ・個人情報は使わない。AI は病名・施行事実を作り足さない
 - 知識の状態（承認・降格など）は決まった規則だけで動き、AI（LLM）には決めさせない
 
-## 動かし方
+## 手元で動かす（開発者向け）
+
+公開版を使えば、手元で動かす必要はありません。コードから動かしたいときだけ、次を開いてください。
+
+<details>
+<summary>手元で動かす手順</summary>
+
+必ず要るのは、次の 3 つだけです。DB の表は起動時に作られ、承認済みの知識の Skill への同期も自動です。
 
 ```bash
 npm install
 ```
 
-`.env.local` に `ANTHROPIC_API_KEY` を置いてから起動します（キーはコードに書きません）。メンターの声を使うときは、`ELEVENLABS_API_KEY` も置きます（見本は `env.local.example`）。
+`.env.local` に `ANTHROPIC_API_KEY` を置きます（キーはコードに書きません）。メンターの声を使うときだけ、`ELEVENLABS_API_KEY` も置きます（見本は `env.local.example`）。
 
 ```bash
 npm run dev
 ```
+
+ここから下は、作り直すときだけ使います。作り済みのものはリポジトリに入っています。
 
 デモの状態に戻すときは次を実行し、開発サーバーを起動し直します。デモの時計は 2025-03-10 から始まります。
 
@@ -254,13 +274,7 @@ npx tsx scripts/gen-notice.ts
 npx tsx scripts/gen-uke.ts
 ```
 
-### 公開（本番）
-
-公開版は Google Cloud の VM で Docker Compose で動かし、Caddy で https にしています。手順は [docs/deploy-gcp.md](docs/deploy-gcp.md) です。
-
-- 使う人はログイン ID とパスワードで登録・ログインします。パスワードは scrypt のハッシュだけを保存し、セッションは httpOnly の cookie で渡します。
-- ログインした人ごとに専用のクリニック（DB・知識・医師確認の記録・デモの時計）を持つので、人どうしの操作は混ざりません。
-- Claude の API キーは **Secret Manager** に置き、VM は自分のサービスアカウントの権限で起動のたびに読み出します。キーは git・Docker のイメージ・VM のファイルのどれにも書きません。
+</details>
 
 ## 構成とテスト
 
