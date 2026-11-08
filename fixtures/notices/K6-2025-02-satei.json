@@ -1,0 +1,8 @@
+{
+  "_note": "K6-2025-02-satei.html / .pdf（合成の増減点連絡書）を読み取った結果。新しいクリニックに最初から入れておく地域ルールの元（spec FR-79）。読み取りは本来 Claude が行い、本人が確かめてから登録する。ここでは確かめ済みの結果を置く",
+  "documentType": "増減点連絡書",
+  "prefecture": "東京都",
+  "items": [
+    { "yearMonth": "2025-02", "patientName": "架空 六郎", "insurerNumber": "01139999", "itemName": "BNP", "outcome": "査定", "reason": "長期にわたり漫然と実施されているものと認められるため" }
+  ]
+}

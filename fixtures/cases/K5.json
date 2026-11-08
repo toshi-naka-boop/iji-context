@@ -1,0 +1,107 @@
+{
+  "claimId": "K5-2025-03",
+  "yearMonth": "2025-03",
+  "payer": "国保連",
+  "prefecture": "東京都",
+  "facts": {
+    "age": {
+      "known": true,
+      "value": 88
+    },
+    "insurance": {
+      "known": true,
+      "value": "後期高齢者"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.1
+    },
+    "careLevel": {
+      "known": false
+    },
+    "table7": {
+      "known": true,
+      "value": true
+    },
+    "table8_2": {
+      "known": true,
+      "value": true
+    },
+    "mainDisease": {
+      "known": true,
+      "value": "末期悪性腫瘍"
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": "在宅"
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    }
+  },
+  "events": [
+    {
+      "type": "visit",
+      "date": "2025-03-10",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-17",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "oushin",
+      "date": "2025-03-20",
+      "kind": "normal"
+    },
+    {
+      "type": "death",
+      "date": "2025-03-20"
+    }
+  ],
+  "lines": [
+    {
+      "kubun": "C001_1I",
+      "count": 2,
+      "dates": [
+        "2025-03-10",
+        "2025-03-17"
+      ]
+    },
+    {
+      "kubun": "C000",
+      "count": 1,
+      "dates": [
+        "2025-03-20"
+      ]
+    },
+    {
+      "kubun": "C001_N6_TERMINAL",
+      "count": 1,
+      "dates": [
+        "2025-03-20"
+      ]
+    },
+    {
+      "kubun": "C001_N7_MITORI",
+      "count": 1,
+      "dates": [
+        "2025-03-20"
+      ]
+    }
+  ]
+}

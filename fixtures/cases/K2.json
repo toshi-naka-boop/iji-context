@@ -1,0 +1,164 @@
+{
+  "claimId": "K2-2025-03",
+  "yearMonth": "2025-03",
+  "payer": "国保連",
+  "prefecture": "東京都",
+  "facts": {
+    "age": {
+      "known": true,
+      "value": 80
+    },
+    "insurance": {
+      "known": true,
+      "value": "後期高齢者"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.1
+    },
+    "careLevel": {
+      "known": true,
+      "value": 3
+    },
+    "table7": {
+      "known": true,
+      "value": false
+    },
+    "table8_2": {
+      "known": true,
+      "value": false
+    },
+    "mainDisease": {
+      "known": true,
+      "value": "2型糖尿病"
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": null
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    }
+  },
+  "events": [
+    {
+      "type": "discharge",
+      "date": "2024-12-20"
+    },
+    {
+      "type": "kanriStart",
+      "month": "2025-01"
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-12",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2025-03-26",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "test",
+      "date": "2025-03-12",
+      "items": [
+        "末梢血液一般",
+        "HbA1c",
+        "血液化学10項目以上"
+      ]
+    },
+    {
+      "type": "prescription",
+      "date": "2025-03-26",
+      "oralKinds": 5,
+      "days": 28
+    }
+  ],
+  "lines": [
+    {
+      "kubun": "C001_1I",
+      "count": 2,
+      "dates": [
+        "2025-03-12",
+        "2025-03-26"
+      ]
+    },
+    {
+      "kubun": "C002_2RO1",
+      "count": 1,
+      "dates": [
+        "2025-03-26"
+      ]
+    },
+    {
+      "kubun": "C002_N4_IKOU",
+      "count": 1,
+      "dates": [
+        "2025-03-26"
+      ]
+    },
+    {
+      "kubun": "C002_N10_HOKATSU",
+      "count": 1,
+      "dates": [
+        "2025-03-26"
+      ]
+    },
+    {
+      "kubun": "D400_1",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D005_5",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D005_9",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D007_10",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D026_3",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D026_4",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    }
+  ]
+}

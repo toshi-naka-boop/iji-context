@@ -1,0 +1,11 @@
+{
+  "_note": "画面11の背景に出す米国の役職の階段。出典を確認中の仮の値。確認が取れなかった段は include を false にすると外れる（段の幅は残りの段数で割り直す）。source に確認した出典 URL を書く。",
+  "regionLabel": "米国",
+  "steps": [
+    { "title": "Medical Coder", "sub": "CPC / CCS", "include": true, "source": null },
+    { "title": "Coding Auditor", "sub": "", "include": true, "source": null },
+    { "title": "CDI Specialist", "sub": "", "include": true, "source": null },
+    { "title": "HIM Manager", "sub": "", "include": true, "source": null },
+    { "title": "HIM Director", "sub": "", "include": true, "source": null }
+  ]
+}

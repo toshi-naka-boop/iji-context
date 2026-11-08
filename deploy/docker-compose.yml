@@ -1,0 +1,31 @@
+# GCP の VM で動かす構成（docs/deploy-gcp.md）。起動は deploy/start.sh から。Caddy が https の証明書を自動で取り、アプリへ渡す
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    # API キーは deploy/start.sh が Secret Manager から読み出して渡す（ファイルに書かない）
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?start.sh から起動してください}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+    volumes:
+      - resemen-data:/data
+    expose:
+      - "3000"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - RESEMEN_DOMAIN=${RESEMEN_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+volumes:
+  resemen-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,47 @@
+Bob expression image prompts
+Mode: built-in image_gen
+
+=== bob-normal-prompt ===
+Use case: identity-preserve / compositing.
+Create ONE polished anime character illustration, normal expression, PNG, portrait exactly 1024x1536 pixels, with a REAL fully transparent alpha background. No background pixels, no backdrop, no glow, no shadow, no checkerboard and no floating graphics.
+
+REFERENCE ROLES:
+Input image 1 (suit.png / Haru) is ONLY a strict composition, body orientation, head placement, camera and crop reference. Do not copy her identity, face, hairstyle, earrings, expression or crossed arms.
+Input image 2 (bob.png) is the sole character identity and uniform reference. Draw THIS bob-haired young adult woman. Preserve exactly her soft oval face and jaw, large brown eyes, brown straight chin-length rounded bob with fine separated bangs over the forehead, natural skin tone, modest glossy lips, and absence of earrings. Her hair must stay short, not become Haru's long side-parted hair.
+
+COMPOSITION:
+Match input 1's 1024x1536 framing exactly: waist-up portrait cropped at the same lower-torso height, top of head nearly touching the top edge, head and face the same size and same position in the canvas. Reference approximate anchors: hair crown y=5, eye line y=375-415, chin y=665, shoulders y=800-860; face center x=490. Preserve this tight portrait scale. Do not zoom out or center a small character with large top margin. Turn the torso at the same slight three-quarter angle toward the same side as input 1, with the same gentle head angle and eyes looking directly at the viewer. Keep bob's own face, eyes, bangs and bob hair silhouette as she takes this camera angle.
+ARMS: both arms hang relaxed and lowered naturally at her sides, upper arms alongside the torso, forearms continue downward and hands mostly beyond the bottom crop. No arms across torso, no crossed arms, no raised hand, no waving. Anatomically natural relaxed posture.
+
+UNIFORM:
+Keep input 2's white zip-up technical jacket with cyan piping and navy side/sleeve panels, light-blue collared button-up shirt over a dark navy turtleneck, dark-blue lanyard with cyan details, hanging rectangular ID badge, round cyan/navy AI emblem with SUPPORT below on the viewer-right chest, small AI collar emblem. Render all text cleanly and exactly: badge top line "AI SUPPORT", lower label "STAFF"; chest round emblem "AI", word under it "SUPPORT". Preserve uniform construction and polished anime linework, glossy hair highlights and clean softly shaded fabric.
+
+NORMAL EXPRESSION:
+Calm, flat and composed, subtly neutral eyes and eyebrows, closed relaxed mouth with a nearly straight line. No smile, frown, surprise or parted mouth. This will be the master for two expression edits, so make a restrained neutral mouth.
+
+Return only this single finished character cutout. Real alpha transparency with clean antialiased hair and clothing edges. Exact canvas 1024x1536.
+
+=== bob-normal-refine-prompt ===
+Use case: identity-preserve. Refine ONLY the head orientation and placement of input image 1, the new bob normal portrait. Input image 2 (Haru suit portrait) is strictly the composition reference.
+The new bob portrait is slightly too straight-on in its head. Match the reference's gentle three-quarter head angle and slight tilt more closely: viewer-left eye a little higher, viewer-right eye a little lower, looking directly at the viewer. Reference eye positions are approximately left (405,380), right (594,415), chin near (500,670) on a 1024x1536 canvas. Keep the bob character's OWN face shape, brown eyes, brown rounded chin-length bob, wispy straight bangs, skin tone and neutral composed expression. Keep the top of her hair very near y=5. Do not copy Haru's face, hair or earrings.
+Keep the existing image 1 body, relaxed lowered arms, three-quarter torso, clothing, lanyard, badge and all text EXACTLY as they are. No crossed arms. No changes to body pose, scale, canvas, uniform, logos, lighting, style or badge spelling.
+Output one 1024x1536 PNG with real fully transparent background and clean antialiased edges. Preserve the existing alpha cutout, no background, shadow, glow or floating elements. Mouth remains nearly straight, closed and neutral.
+
+=== bob-joy-prompt ===
+Use case: precise-object-edit / identity-preserve.
+Edit the supplied bob-normal.png master image into bob-joy.png. This is a TINY LOCAL MOUTH-CORNER EDIT, not a new drawing.
+Keep every pixel outside the mouth-corner region identical to the master. Same exact 1024x1536 PNG canvas and same real alpha transparency. Same head, face shape, hair, position, scale, camera angle, gaze, eyebrows, eyes, nose, cheeks, ears, neck, clothing, lanyard, badge, logos, text, lighting, shading, torso and relaxed lowered arms.
+ONLY CHANGE: lift the two corners of the existing CLOSED neutral mouth by approximately 2-3 pixels to create the faintest possible hint of a smile. The mouth is approximately within x=465..575, y=565..615 on the 1024x1536 canvas. Preserve the center, length, angle, lip volume, color, highlights and line weight of the existing mouth. Do not broaden the smile, open the mouth, add teeth, raise cheeks, alter eyes or eyebrows, add blush, tilt or move the head. Her calm flat personality means the result should be almost indistinguishable from the master until looking closely at the tiny upward mouth corners.
+Preserve all other image content EXACTLY, including the full alpha cutout and antialiased edges. No background, no shadow, no glow, no additional graphics. Badge text stays exactly "AI SUPPORT" and "STAFF", chest text "AI" and "SUPPORT".
+
+=== bob-down-prompt ===
+Use case: precise-object-edit / identity-preserve.
+Edit the supplied bob-normal.png master image into bob-down.png. This is a TINY LOCAL MOUTH-CORNER EDIT, not a new drawing. Start from NORMAL, not a smiling variant.
+Keep every pixel outside the mouth-corner region identical to the master. Same exact 1024x1536 PNG canvas and same real alpha transparency. Same head, face shape, hair, position, scale, camera angle, gaze, eyebrows, eyes, nose, cheeks, ears, neck, clothing, lanyard, badge, logos, text, lighting, shading, torso and relaxed lowered arms.
+ONLY CHANGE: lower the two corners of the existing CLOSED neutral mouth by approximately 2-3 pixels, creating an almost imperceptible downturn. The mouth is approximately within x=465..575, y=565..615 on the 1024x1536 canvas. Preserve the center, length, angle, lip volume, color, highlights and line weight of the existing mouth. No pronounced frown, pouting, sadness, distress, tears or trembling lips. Do not open the mouth, change eyes or eyebrows, add blush, raise inner brows, tilt or move the head. Her calm flat personality means the result should be almost indistinguishable from the master until looking closely at the tiny downward mouth corners. Eyes and eyebrows must remain exactly neutral and unchanged.
+Preserve all other image content EXACTLY, including the full alpha cutout and antialiased edges. No background, no shadow, no glow, no additional graphics. Badge text stays exactly "AI SUPPORT" and "STAFF", chest text "AI" and "SUPPORT".
+
+=== bob-down-alpha-prompt ===
+Use case: background-extraction.
+Fix only the alpha transparency of this exact bob-down character PNG. The input has an unwanted diffuse dark brown / grey backdrop and translucent background residues. Completely REMOVE all background outside the character silhouette: every exterior background pixel must have alpha=0. There must be no haze, halo, dark gradient, shadow or floor. Make the character itself opaque with clean antialiased silhouette edges. Real alpha transparency, not black or white paint and not a checkerboard.
+Preserve the pictured character unchanged: same neutral eyes and eyebrows, nearly straight closed mouth with VERY subtly downturned corners, same face, hair, gaze, tilted head, same 1024x1536 framing and scale, same relaxed arms lowered at her sides, same uniform and identical text "AI SUPPORT", "STAFF", "AI", "SUPPORT". Do not redraw, recompose, relight or change the mouth expression. Return exactly one 1024x1536 RGBA PNG cutout with fully transparent empty background.

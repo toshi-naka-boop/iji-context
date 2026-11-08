@@ -1,0 +1,38 @@
+{
+  "id": "system/r09",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R09：死亡診断加算と看取り加算は併算定できない。在宅ターミナルケア加算は死亡日前 14 日以内に 2 回以上の訪問が要る",
+  "rev": "04720bfb124e",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R09",
+    "at": "2025-03-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2025-03-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2025-03-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "match": {
+    "ruleId": "R09"
+  },
+  "history": [
+    {
+      "at": "2025-03-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

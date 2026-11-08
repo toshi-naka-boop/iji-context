@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+node_modules/
+.next/
+*.db
+query-log/*.json
+
+# TypeScript のビルド情報
+tsconfig.tsbuildinfo
+
+# 本番のデータと、秘密の値を書いたファイル（API キーは Secret Manager に置く。誤ってファイルに書いたときの保険）
+data/tenants/
+deploy/app-settings
+*.db-shm
+*.db-wal

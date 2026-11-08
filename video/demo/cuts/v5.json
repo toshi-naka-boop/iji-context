@@ -1,0 +1,816 @@
+{
+ "title": "素案5「締め切りまでの1か月」（右上の日付が進み、10日の提出まで業務の流れで見せる）",
+ "theme": "split",
+ "duck": 0.3,
+ "bgm": [
+  {
+   "file": "bgm/intro-cold.wav",
+   "at": 0,
+   "dur": 9.6,
+   "vol": 0.9,
+   "fadeIn": 0.3,
+   "fadeOut": 1
+  },
+  {
+   "file": "bgm/funk-a.wav",
+   "cut": 4,
+   "at": 0,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-b.wav",
+   "cut": 4,
+   "at": 32.3,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-a.wav",
+   "cut": 4,
+   "at": 64.6,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-b.wav",
+   "cut": 4,
+   "at": 96.9,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 2
+  }
+ ],
+ "cuts": [
+  {
+   "dur": 3.4,
+   "card": "yusti",
+   "flash": false,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.2,
+     "text": "AIの進化により、",
+     "x": 560,
+     "y": 300,
+     "size": 96,
+     "shadow": "#c7a46a",
+     "plate": true
+    },
+    {
+     "style": "slam",
+     "t": 1.2,
+     "text": "人の手による\nレセプト算定は",
+     "x": 560,
+     "y": 600,
+     "size": 112,
+     "shadow": "#c7a46a",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "type",
+     "t": 0.1,
+     "text": "なくなる……",
+     "size": 150,
+     "rot": 0,
+     "cps": 6
+    }
+   ]
+  },
+  {
+   "dur": 0.8,
+   "card": "text",
+   "bg": "black",
+   "flash": false
+  },
+  {
+   "dur": 2.6,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "cut",
+     "t": 0,
+     "text": "……ことは、",
+     "size": 130,
+     "x": 760,
+     "y": 470,
+     "rot": -6
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "rays",
+   "shake": true,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "なかった。",
+     "size": 260,
+     "rot": -8
+    }
+   ]
+  },
+  {
+   "dur": 2.6,
+   "card": "problem",
+   "still": "scene-09",
+   "breakAt": 1.2,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 1.3,
+     "text": "締め切りは、毎月10日。",
+     "size": 120,
+     "y": 540
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "10日まで、隣で。",
+     "size": 210,
+     "color": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2,
+   "card": "select",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "DAY 0　相棒を選ぶ",
+     "size": 46
+    }
+   ]
+  },
+  {
+   "dur": 2.6,
+   "card": "char",
+   "char": "makki",
+   "line": "静かに優しい",
+   "voice": {
+    "file": "voice/a-intro.mp3",
+    "at": 0.2,
+    "from": 0,
+    "dur": 1.7,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2.6,
+   "card": "char",
+   "char": "natsu",
+   "line": "明るくはきはき",
+   "c1": "#7ec1ff",
+   "c2": "#0e5cc6",
+   "voice": {
+    "file": "voice/b-intro.mp3",
+    "at": 0.15,
+    "from": 0,
+    "dur": 2.4,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2,
+   "card": "char",
+   "char": "yuki",
+   "line": "冷静で平坦",
+   "voice": {
+    "file": "voice/c-intro.mp3",
+    "at": 0.15,
+    "from": 0,
+    "dur": 1.65,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2,
+   "card": "char",
+   "char": "haru",
+   "line": "強く引っ張る",
+   "c1": "#7ec1ff",
+   "c2": "#0e5cc6",
+   "voice": {
+    "file": "voice/d-intro.mp3",
+    "at": 0.15,
+    "from": 0,
+    "dur": 1.6,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 3.2,
+   "clip": {
+    "id": "01",
+    "from": 36,
+    "speed": 2.2,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "DAY 0　相棒を選ぶ",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "初回のあいさつ",
+     "text": "声で名乗って、呼び方を聞く。"
+    }
+   ]
+  },
+  {
+   "dur": 1.8,
+   "card": "text",
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "3月　訪問のたびに",
+     "size": 190
+    }
+   ]
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "05b",
+    "from": 0.5,
+    "speed": 1.6,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3月　カルテが届く",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "書き写し｜Claude Sonnet",
+     "text": "電子カルテの画面を撮れば、書いてあるまま。"
+    }
+   ]
+  },
+  {
+   "dur": 3,
+   "clip": {
+    "id": "05b",
+    "from": 12,
+    "speed": 2,
+    "rect": [
+     500,
+     60,
+     1400
+    ],
+    "rect2": [
+     600,
+     100,
+     1300
+    ]
+   },
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3月　カルテが届く",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "SOAP への振り分け｜Claude Haiku",
+     "text": "推定はしない。足りない項目は聞く。"
+    }
+   ]
+  },
+  {
+   "dur": 4,
+   "clip": {
+    "id": "02b",
+    "from": 3.5,
+    "speed": 1.2,
+    "rect": [
+     230,
+     20,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3/12　訪問の日に算定",
+     "size": 46
+    },
+    {
+     "style": "tag",
+     "t": 1.6,
+     "box": [
+      90,
+      110,
+      1810,
+      430
+     ],
+     "text": "ローカルルール",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "メンター｜Claude Sonnet",
+     "text": "レセコンに入れる前に、メンターと確かめる。"
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "算定の画面を、",
+     "size": 110,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "一緒に見る。",
+     "size": 190,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "clip": {
+    "id": "03",
+    "from": 6,
+    "speed": 1,
+    "rect": [
+     0,
+     0,
+     1920
+    ],
+    "rect2": [
+     200,
+     100,
+     1400
+    ]
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.6,
+     "alpha": 0.5
+    },
+    {
+     "style": "bubble",
+     "t": 0.6,
+     "char": "makki",
+     "cps": 20,
+     "text": "見本さん、練習問題ですね。ユスティが気にしているのは C002 の行です。患者さんの状態が別表第八の二に当たるかどうか、カルテの記載をまず見てください。"
+    },
+    {
+     "style": "telop",
+     "t": 0.3,
+     "label": "メンター｜Claude Sonnet",
+     "text": "答えは言わない。見る場所と理由を言う。"
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "03",
+    "from": 24,
+    "speed": 1.5,
+    "rect": [
+     0,
+     200,
+     1920
+    ],
+    "rect2": [
+     140,
+     520,
+     1000
+    ]
+   },
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3/12　訪問の日に算定",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "ユスティの判定 → メンターの解説",
+     "text": "答えは言わない。確定してから、理由を話す。"
+    }
+   ]
+  },
+  {
+   "dur": 4,
+   "clip": {
+    "id": "04",
+    "from": 18,
+    "speed": 1.3,
+    "rect": [
+     240,
+     300,
+     1100
+    ]
+   },
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3月　医師に確認",
+     "size": 46
+    },
+    {
+     "style": "tag",
+     "t": 1.5,
+     "box": [
+      70,
+      415,
+      1400,
+      125
+     ],
+     "text": "「その他」「判定不能」も同じ大きさ"
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "医師確認",
+     "text": "点数・金額は出さない。医師は選ぶだけ。"
+    }
+   ]
+  },
+  {
+   "dur": 4.4,
+   "card": "flow",
+   "flow": "veteran",
+   "revealSpan": 2.4,
+   "hot": [
+    "mentor>vet"
+   ],
+   "hotNodes": [
+    "vet"
+   ],
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "3月　分からないとき",
+     "size": 46
+    }
+   ]
+  },
+  {
+   "dur": 1.8,
+   "card": "text",
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "4月1日　月末の点検",
+     "size": 180
+    }
+   ]
+  },
+  {
+   "dur": 3.2,
+   "clip": {
+    "id": "06",
+    "from": 0.5,
+    "speed": 2,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "4/1　UKE 取り込み",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "UKE 取り込み",
+     "text": "請求データを取り込んで、まとめて点検。"
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "06",
+    "from": 14.5,
+    "speed": 1,
+    "rect": [
+     200,
+     60,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "4/1　月末の点検",
+     "size": 46
+    },
+    {
+     "style": "tag",
+     "t": 1.3,
+     "box": [
+      150,
+      180,
+      1760,
+      80
+     ],
+     "text": "地域ルール：東京都・支払基金",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "地域のローカルルール",
+     "text": "その県・その請求先のレセプトだけに反応する。"
+    }
+   ]
+  },
+  {
+   "dur": 2.6,
+   "card": "text",
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "4/10　提出",
+     "size": 46,
+     "bgc": "#fff"
+    },
+    {
+     "style": "stamp",
+     "t": 0.15,
+     "text": "提出",
+     "size": 220,
+     "color": "#0b0e12",
+     "rot": -10
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "party",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.2,
+     "text": "今月も、終わった。",
+     "size": 150,
+     "y": 540,
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 1.8,
+   "card": "text",
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "翌週　レセメン会議",
+     "size": 180
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "07",
+    "from": 8,
+    "speed": 1.6,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "翌週　査定の通知が届く",
+     "size": 46
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "通知の読み取り｜Claude Sonnet",
+     "text": "査定・返戻の通知 PDF を読み、議題にする。"
+    }
+   ]
+  },
+  {
+   "dur": 6.4,
+   "card": "flow",
+   "flow": "local",
+   "revealSpan": 3.8,
+   "hot": [
+    "meet>ok",
+    "ok>hooks",
+    "hooks>mentor"
+   ],
+   "hotNodes": [
+    "ok"
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "flow",
+   "flow": "expire",
+   "revealSpan": 2.6,
+   "hot": [
+    "t1>r",
+    "t2>r",
+    "t3>r"
+   ],
+   "hotNodes": [
+    "r"
+   ]
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "08",
+    "from": 9.5,
+    "speed": 1.6,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "知識",
+     "text": "未検証 → 承認済み。履歴は git log に残る。"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "来月は、",
+     "size": 120,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.6,
+     "text": "もう少し、楽に。",
+     "size": 170,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 5.6,
+   "card": "models"
+  },
+  {
+   "dur": 1.4,
+   "card": "text",
+   "bg": "black",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "COMING SOON",
+     "en": true,
+     "size": 300,
+     "color": "#7ec1ff"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "全体の数字の動きがわかる",
+     "size": 96,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "経営機能モード",
+     "size": 170,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "あなたが責任者に！",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "責任者算定試験モード",
+     "size": 150,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "logo",
+   "sub": "医療事務一人ひとりに、隣で働く AI メンターを。",
+   "fadeOut": 1
+  }
+ ]
+}

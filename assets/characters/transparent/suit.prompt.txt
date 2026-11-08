@@ -1,0 +1,14 @@
+Mode: built-in imagegen
+transparent_background: true
+
+Use case: identity-preserve edit.
+Edit target: Image 1 (/Users/toshixa/Documents/iji-context/assets/characters/source/suit.png), the brown-haired woman in a navy blazer with folded arms.
+Outfit reference only: Image 2 (makki-ref.png), the male AI SUPPORT staff character. Do not copy his face, expression, anatomy, pose, hair, or background.
+
+Make a precise edit of Image 1. Keep the woman's face, facial proportions, expression, brown eye color, gaze, makeup, skin tone, brown hair color, side part, gold hoop earrings, polished anime illustration style, head angle, body proportions, crossed arms, hands and fingers EXACTLY the same. Keep the same portrait upper-body framing and composition as Image 1, approximately 1024x1536 with the arms in the same positions and the lower edge cropped similarly.
+
+Change ONLY the hair length and clothing, plus remove the background:
+1. Extend her existing smooth brown side-parted bob to SHOULDER LENGTH. The tips must just touch the shoulders, following the same hairstyle and brown color, with natural tapering ends. Preserve the existing crown, side part, front locks, and volume around the face.
+2. Replace her navy blazer and white blouse with EXACTLY the outfit design from Image 2, fitted naturally to her existing crossed-arms pose: white technical zip-up jacket worn open at the front with the same tall structured collar, vivid cyan/turquoise piping along shoulders, zipper edges and seams, dark navy side panels and cuffs; underneath, the same light-blue collared button-up shirt over a dark charcoal/navy turtleneck. No blazer lapels. A dark-blue lanyard with small cyan markings and a silver clip supports a blue-and-white ID badge on her front chest. The ID badge must clearly read "AI SUPPORT" on its blue header and "STAFF" below, spelled exactly. On her left chest (viewer right), copy the round navy-and-cyan connected-dot "AI" emblem with "SUPPORT" directly beneath as in Image 2. Keep it visible above the crossed arms as the pose permits. Match all uniform colors, shapes, piping, layers and materials to Image 2, rendered in Image 1's art style.
+
+Background: actual fully transparent PNG alpha, with clean antialiased hair and clothing edges. No white background, no colored backdrop, no shadow on a background, no checkerboard pixels, no environment or floating graphics. Only the edited woman. Preserve opaque white jacket fabric while making all surrounding space fully transparent.

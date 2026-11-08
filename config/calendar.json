@@ -1,0 +1,7 @@
+{
+  "revision": { "parity": "even", "monthDay": "06-01" },
+  "shiharaiKikin": { "parity": "odd", "monthDay": "06-01" },
+  "kokuhoren": {
+    "東京都": null
+  }
+}

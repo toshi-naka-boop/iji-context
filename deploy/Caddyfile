@@ -1,0 +1,11 @@
+# RESEMEN_DOMAIN（例：34-84-12-34.sslip.io、または自分のドメイン）で https を受けて、アプリへ渡す
+{$RESEMEN_DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+	}
+}

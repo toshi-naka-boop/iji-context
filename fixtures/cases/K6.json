@@ -1,0 +1,97 @@
+{
+  "claimId": "K6-2025-03",
+  "yearMonth": "2025-03",
+  "payer": "支払基金",
+  "prefecture": "東京都",
+  "facts": {
+    "age": {
+      "known": true,
+      "value": 70
+    },
+    "insurance": {
+      "known": true,
+      "value": "協会けんぽ"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.2
+    },
+    "careLevel": {
+      "known": false
+    },
+    "table7": {
+      "known": true,
+      "value": false
+    },
+    "table8_2": {
+      "known": true,
+      "value": false
+    },
+    "mainDisease": {
+      "known": true,
+      "value": "慢性心不全"
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": null
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    }
+  },
+  "events": [
+    {
+      "type": "test",
+      "date": "2025-03-12",
+      "items": [
+        "BNP"
+      ]
+    }
+  ],
+  "lines": [
+    {
+      "kubun": "D008_18",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    },
+    {
+      "kubun": "D026_5",
+      "count": 1,
+      "dates": [
+        "2025-03-12"
+      ]
+    }
+  ],
+  "comments": [],
+  "history": [
+    {
+      "yearMonth": "2025-01",
+      "kubun": [
+        "D008_18",
+        "D026_5"
+      ]
+    },
+    {
+      "yearMonth": "2025-02",
+      "kubun": [
+        "D008_18",
+        "D026_5"
+      ]
+    }
+  ]
+}

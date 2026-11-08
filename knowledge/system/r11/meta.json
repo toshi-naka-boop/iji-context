@@ -1,0 +1,38 @@
+{
+  "id": "system/r11",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R11：検体検査判断料は区分ごとに月 1 回。BNP は生化学的検査(Ⅱ)判断料。外来迅速検体検査加算は訪問診療では算定しない",
+  "rev": "8590dbd6adfa",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R11",
+    "at": "2025-03-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2025-03-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2025-03-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "match": {
+    "ruleId": "R11"
+  },
+  "history": [
+    {
+      "at": "2025-03-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

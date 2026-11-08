@@ -1,0 +1,772 @@
+{
+ "title": "素案2「課題撃破」（冒頭の課題を1枚ずつ割り、解決とClaudeの役割を添える）",
+ "theme": "halftone",
+ "duck": 0.3,
+ "bgm": [
+  {
+   "file": "bgm/intro-cold.wav",
+   "at": 0,
+   "dur": 9.6,
+   "vol": 0.9,
+   "fadeIn": 0.3,
+   "fadeOut": 1
+  },
+  {
+   "file": "bgm/funk-b.wav",
+   "cut": 4,
+   "at": 0,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-a.wav",
+   "cut": 4,
+   "at": 32.3,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-b.wav",
+   "cut": 4,
+   "at": 64.6,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/funk-a.wav",
+   "cut": 4,
+   "at": 96.9,
+   "dur": 32.8,
+   "vol": 0.8,
+   "fadeIn": 0.4,
+   "fadeOut": 2
+  }
+ ],
+ "cuts": [
+  {
+   "dur": 3.4,
+   "card": "yusti",
+   "flash": false,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.2,
+     "text": "AIの進化により、",
+     "x": 560,
+     "y": 300,
+     "size": 96,
+     "shadow": "#c7a46a",
+     "plate": true
+    },
+    {
+     "style": "slam",
+     "t": 1.2,
+     "text": "人の手による\nレセプト算定は",
+     "x": 560,
+     "y": 600,
+     "size": 112,
+     "shadow": "#c7a46a",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "type",
+     "t": 0.1,
+     "text": "なくなる……",
+     "size": 150,
+     "rot": 0,
+     "cps": 6
+    }
+   ]
+  },
+  {
+   "dur": 0.8,
+   "card": "text",
+   "bg": "black",
+   "flash": false
+  },
+  {
+   "dur": 2.6,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "cut",
+     "t": 0,
+     "text": "……ことは、",
+     "size": 130,
+     "x": 760,
+     "y": 470,
+     "rot": -6
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "rays",
+   "shake": true,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "なかった。",
+     "size": 260,
+     "rot": -8
+    }
+   ]
+  },
+  {
+   "dur": 3,
+   "card": "party",
+   "layers": [
+    {
+     "style": "tape",
+     "t": 0,
+     "text": "レセメン　隣で働く AI メンター",
+     "y": 990,
+     "rot": -3,
+     "h": 90
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "4人の仲間と、",
+     "size": 130,
+     "y": 300,
+     "shadow": "#0b0e12",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-08",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 1",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "select",
+   "focus": "makki",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "隣に、メンター。",
+     "size": 150,
+     "y": 520,
+     "shadow": "#0b0e12",
+     "plate": true
+    }
+   ],
+   "voice": {
+    "file": "voice/a-intro.mp3",
+    "at": 0.3,
+    "from": 0,
+    "dur": 1.7,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 3.2,
+   "clip": {
+    "id": "01",
+    "from": 15,
+    "speed": 2.2,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "4人から本人が選ぶ",
+     "text": "選んだメンターが、声で名乗る。"
+    }
+   ],
+   "voice": {
+    "file": "voice/b-intro.mp3",
+    "at": 0.3,
+    "from": 0,
+    "dur": 3.4,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "02b",
+    "from": 3.5,
+    "speed": 1.2,
+    "rect": [
+     0,
+     0,
+     1920
+    ],
+    "rect2": [
+     230,
+     20,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "メンター｜Claude Sonnet",
+     "text": "開いた瞬間、メンターから声をかける。"
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "算定の画面を、",
+     "size": 110,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "一緒に見る。",
+     "size": 190,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "clip": {
+    "id": "03",
+    "from": 6,
+    "speed": 1,
+    "rect": [
+     0,
+     0,
+     1920
+    ],
+    "rect2": [
+     200,
+     100,
+     1400
+    ]
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.6,
+     "alpha": 0.5
+    },
+    {
+     "style": "bubble",
+     "t": 0.6,
+     "char": "makki",
+     "cps": 20,
+     "text": "見本さん、練習問題ですね。ユスティが気にしているのは C002 の行です。患者さんの状態が別表第八の二に当たるかどうか、カルテの記載をまず見てください。"
+    },
+    {
+     "style": "telop",
+     "t": 0.3,
+     "label": "メンター｜Claude Sonnet",
+     "text": "答えは言わない。見る場所と理由を言う。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-04",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 2",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "raysGold",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "正否は、ユスティ。",
+     "size": 150,
+     "y": 420,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.7,
+     "text": "理由は、メンター。",
+     "size": 150,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 4,
+   "clip": {
+    "id": "03",
+    "from": 24,
+    "speed": 1.5,
+    "rect": [
+     0,
+     200,
+     1920
+    ],
+    "rect2": [
+     140,
+     520,
+     1000
+    ]
+   },
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "ユスティ（決まった規則）→ メンター（Claude）",
+     "text": "答えは言わない。確定してから、理由を話す。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-10",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 3",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "地域のローカルルールを、",
+     "size": 110,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.6,
+     "text": "知識として集約。",
+     "size": 170,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "07",
+    "from": 8,
+    "speed": 1.6,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "通知の読み取り｜Claude Sonnet",
+     "text": "査定通知 PDF → 対応づけは決まった規則で。"
+    }
+   ]
+  },
+  {
+   "dur": 6,
+   "card": "flow",
+   "flow": "local",
+   "revealSpan": 3.6,
+   "hot": [
+    "meet>ok",
+    "ok>hooks",
+    "hooks>mentor"
+   ],
+   "hotNodes": [
+    "ok"
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "06",
+    "from": 14.5,
+    "speed": 1,
+    "rect": [
+     200,
+     60,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.3,
+     "box": [
+      150,
+      180,
+      1760,
+      80
+     ],
+     "text": "地域ルール：東京都・支払基金",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "月末の点検",
+     "text": "その県・その請求先のレセプトだけに反応する。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-07",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 4",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "05b",
+    "from": 0.5,
+    "speed": 1.4,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "書き写し｜Claude Sonnet",
+     "text": "電子カルテの画面を撮れば、書いてあるまま。"
+    }
+   ]
+  },
+  {
+   "dur": 3,
+   "clip": {
+    "id": "05b",
+    "from": 12,
+    "speed": 2,
+    "rect": [
+     500,
+     60,
+     1400
+    ],
+    "rect2": [
+     600,
+     100,
+     1300
+    ]
+   },
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "SOAP への振り分け｜Claude Haiku",
+     "text": "推定はしない。足りない項目は聞く。"
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "04",
+    "from": 18,
+    "speed": 1.3,
+    "rect": [
+     240,
+     300,
+     1100
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.5,
+     "box": [
+      70,
+      415,
+      1400,
+      125
+     ],
+     "text": "「その他」「判定不能」も同じ大きさ"
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "医師確認｜7要件の検証つき",
+     "text": "点数・金額は出さない。医師は選ぶだけ。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-05",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 5",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "flow",
+   "flow": "veteran",
+   "revealSpan": 2.4,
+   "hot": [
+    "mentor>vet"
+   ],
+   "hotNodes": [
+    "vet"
+   ],
+   "layers": [
+    {
+     "style": "telop",
+     "t": 2.6,
+     "label": "ひとりで抱えない",
+     "text": "メンター同士で解く。解けた問いは知識の候補に。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-09",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "ROUND 6",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "06",
+    "from": 0.5,
+    "speed": 2,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "UKE 取り込み・月末の点検",
+     "text": "締め切り前に、まとめて一度に見直す。"
+    }
+   ]
+  },
+  {
+   "dur": 1.7,
+   "card": "problem",
+   "still": "scene-11",
+   "breakAt": 0.9,
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "FINAL ROUND",
+     "size": 44
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "flow",
+   "flow": "expire",
+   "revealSpan": 2.6,
+   "hot": [
+    "u>a"
+   ],
+   "hotNodes": [
+    "a"
+   ],
+   "title": "確かめた知識は、チームの共有知に。"
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "08",
+    "from": 9.5,
+    "speed": 1.6,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "知識",
+     "text": "未検証 → 承認済み。履歴は git log に残る。"
+    }
+   ]
+  },
+  {
+   "dur": 3,
+   "card": "text",
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "stamp",
+     "t": 0.1,
+     "text": "ALL CLEAR",
+     "size": 180,
+     "color": "#0b0e12",
+     "rot": -10
+    }
+   ]
+  },
+  {
+   "dur": 5.6,
+   "card": "models"
+  },
+  {
+   "dur": 1.4,
+   "card": "text",
+   "bg": "black",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "COMING SOON",
+     "en": true,
+     "size": 300,
+     "color": "#7ec1ff"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "全体の数字の動きがわかる",
+     "size": 96,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "経営機能モード",
+     "size": 170,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "あなたが責任者に！",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "責任者算定試験モード",
+     "size": 150,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "logo",
+   "sub": "医療事務一人ひとりに、隣で働く AI メンターを。",
+   "fadeOut": 1
+  }
+ ]
+}

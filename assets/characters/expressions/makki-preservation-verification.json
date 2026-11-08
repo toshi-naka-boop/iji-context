@@ -1,0 +1,78 @@
+{
+  "canvas": [
+    1024,
+    1536
+  ],
+  "format": "RGBA PNG",
+  "source": "transparent/makki.png",
+  "source_size": [
+    1342,
+    2000
+  ],
+  "single_resize": [
+    1050,
+    1564
+  ],
+  "placement": [
+    -26,
+    8
+  ],
+  "method": "Built-in image_gen arm/mouth edits, local PIL/numpy source restoration",
+  "files": {
+    "joy": {
+      "path": "/Users/toshixa/Documents/iji-context/assets/characters/expressions/makki-joy.png",
+      "sha256": "5fb7c92fa2d495cb93f3dab7802ca25eb3833e4f8ee00f80202ccf841b556bb6",
+      "transparent_pixels": 441842,
+      "partial_alpha_pixels": 1130778,
+      "corner_alpha": [
+        0,
+        0
+      ],
+      "eyes_and_nose_pixel_differences_from_original": 0
+    },
+    "normal": {
+      "path": "/Users/toshixa/Documents/iji-context/assets/characters/expressions/makki-normal.png",
+      "sha256": "729f7d4f34fa2ff4b79671fc1cf9efaffba276c5f7012f8b33c49e96cfc0c26c",
+      "transparent_pixels": 427656,
+      "partial_alpha_pixels": 1144964,
+      "corner_alpha": [
+        0,
+        0
+      ],
+      "eyes_and_nose_pixel_differences_from_original": 0
+    },
+    "down": {
+      "path": "/Users/toshixa/Documents/iji-context/assets/characters/expressions/makki-down.png",
+      "sha256": "41fe2bdece95e07b86aa29712b42dec882a541ef0c678785422027f48f94956e",
+      "transparent_pixels": 411629,
+      "partial_alpha_pixels": 1160810,
+      "corner_alpha": [
+        0,
+        0
+      ],
+      "eyes_and_nose_pixel_differences_from_original": 0
+    }
+  },
+  "checks": {
+    "joy_entire_locked_head_vs_scaled_original_different_pixels": 0,
+    "normal_locked_head_outside_mouth_vs_joy_different_pixels": 0,
+    "down_locked_head_neck_outside_mouth_brows_vs_normal_different_pixels": 0,
+    "neck_core_pixels_checked": 4689,
+    "neck_core_pixel_differences_across_three": {
+      "joy": 0,
+      "normal": 0,
+      "down": 0
+    },
+    "new_hand_pixels_in_previously_transparent_contact_area": 12896,
+    "intentional_hand_contact_edge_blending_pixels": 1377,
+    "hand_contact_blending_bbox": [
+      285,
+      470,
+      417,
+      729
+    ],
+    "head_transform_identical_across_all_outputs": true,
+    "expression_edits": "Normal: mouth only. Down: mouth and local 2px eyebrow shift. Eyes and nose exactly restored.",
+    "contact_edge_note": "Down uses source-alpha compositing only where the neck-rubbing hand overlaps formerly transparent hair/ear edges. Those contact RGBA pixels differ; all remaining locked head/neck pixels are exact."
+  }
+}
