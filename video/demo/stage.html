@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>レセメン デモ動画</title>
+<!--
+  デモ動画の 1 コマを描く。renderAt(t) が t 秒時点を描き、録画（<video>）の位置合わせまで待ってから返す。
+  ?v=<案の名前>（cuts/<名前>.json）で台本を選ぶ。?t=秒 でその時点に止まる（確認用）。
+  色はレセメンの画面の色（app/globals.css）を使う。文字の動きは、傾けた極太の文字・斜めの帯・切り抜き・放射線・白い閃光。
+-->
+<style>
+  :root {
+    --ink: #0b0e12; --accent: #0e5cc6; --sky: #7ec1ff; --paper: #f6f8fa; --gold: #c7a46a; --line: #2a323d;
+    --jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    --en: "Avenir Next Condensed", "Helvetica Neue", sans-serif;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); transform-origin: 0 0; font-family: var(--jp); }
+  .layer { position: absolute; inset: 0; }
+  video { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; display: none; }
+  .win { position: absolute; overflow: hidden; background: #fff; }
+  .abs { position: absolute; }
+  .jp9 { font-family: var(--jp); font-weight: 900; }
+  .en { font-family: var(--en); font-weight: 800; font-style: italic; letter-spacing: -1px; }
+  .node { position: absolute; transform: translate(-50%, -50%); padding: 18px 26px; border: 4px solid var(--sky); background: var(--ink); color: #fff; font-weight: 800; font-size: 34px; white-space: nowrap; text-align: center; line-height: 1.25; }
+  .node small { display: block; font-size: 22px; font-weight: 600; color: var(--sky); margin-top: 4px; }
+  .node.claude { border-color: #fff; background: var(--accent); }
+  .node.claude small { color: #fff; }
+  .node.rule { border-color: var(--gold); }
+  .node.rule small { color: var(--gold); }
+  .node.human { border-radius: 60px; border-color: #fff; background: #fff; color: var(--ink); }
+  .node.human small { color: var(--accent); }
+  .node.store { border-style: double; border-width: 8px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg" class="layer"></div>
+  <div id="vids" class="layer"></div>
+  <div id="fg" class="layer"></div>
+  <div id="fx" class="layer"></div>
+</div>
+<script>
+const Q = new URLSearchParams(location.search);
+const W = 1920, H = 1080;
+const stage = document.getElementById('stage');
+const $bg = document.getElementById('bg'), $vids = document.getElementById('vids'), $fg = document.getElementById('fg'), $fx = document.getElementById('fx');
+
+// 画面の大きさに合わせて 1920×1080 の舞台を縮める（書き出しは 1280×720）
+function fit() { const s = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${s})`; }
+addEventListener('resize', fit); fit();
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeOut = (k) => 1 - Math.pow(1 - clamp(k), 3);
+const easeInOut = (k) => { k = clamp(k); return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const back = (k) => { k = clamp(k); const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+// 決まった乱数（同じ t なら同じ絵）
+const rnd = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const CLIPS = {
+  '01': '01-初回のあいさつ.mp4', '02': '02-算定の一覧.mp4', '02b': '02b-レセコンに入れる前の算定.mp4', '03': '03-練習問題を解く.mp4',
+  '04': '04-医師確認の練習.mp4', '05': '05-カルテを書く.mp4', '05b': '05b-電子カルテの画像から取り込む.mp4',
+  '06': '06-UKE取り込みと月末の点検.mp4', '07': '07-レセメン会議.mp4', '08': '08-知識.mp4', '09': '09-設定.mp4',
+};
+const CHARS = {
+  makki: { name: 'マッキー', en: 'MAKKI', img: '/assets/characters/select/makki.png', tone: '静かに優しい' },
+  natsu: { name: 'ナツ', en: 'NATSU', img: '/assets/characters/select/black-hair.png', tone: '明るくはきはき' },
+  yuki: { name: 'ユキ', en: 'YUKI', img: '/assets/characters/select/bob.png', tone: '冷静で平坦' },
+  haru: { name: 'ハル', en: 'HARU', img: '/assets/characters/select/suit.png', tone: '強く引っ張る' },
+};
+const YUSTI = '/assets/characters/yusti/yusti-draft-1.png';
+const CLERK = '/assets/characters/clerk/clerk-joy.png';
+
+// ---- 構成図（README「Claude の使い方」と config/models.json に合わせる） ----
+const FLOWS = {
+  core: {
+    title: '算定の土台はユスティ。話すのはメンター。',
+    nodes: [
+      { id: 'clerk', x: 230, y: 560, label: '医療事務', kind: 'human' },
+      { id: 'yusti', x: 700, y: 360, label: 'ユスティ', sub: 'ルールエンジン R01〜R14', kind: 'rule' },
+      { id: 'know', x: 700, y: 780, label: '承認済みの知識', sub: '制度・地域・ベテランの判断', kind: 'store' },
+      { id: 'mentor', x: 1250, y: 560, label: 'メンター', sub: 'Claude Sonnet（Lv.6 から Opus）', kind: 'claude' },
+      { id: 'hint', x: 1690, y: 560, label: '答えは言わない', sub: '見る場所と理由だけ' },
+    ],
+    edges: [['clerk', 'yusti', '明細'], ['yusti', 'mentor', '判定'], ['know', 'mentor', 'Skill'], ['mentor', 'hint', '']],
+  },
+  local: {
+    title: '地域のローカルルールを、知識として集約。',
+    nodes: [
+      { id: 'pdf', x: 220, y: 330, label: '査定・返戻の通知', sub: 'PDF' },
+      { id: 'notice', x: 640, y: 330, label: '読み取り', sub: 'Claude Sonnet', kind: 'claude' },
+      { id: 'map', x: 1080, y: 330, label: '対応づけ', sub: '決まった規則', kind: 'rule' },
+      { id: 'cand', x: 1520, y: 330, label: '知識の候補', sub: '状態：未検証' },
+      { id: 'meet', x: 1520, y: 740, label: 'レセメン会議', sub: '人が確かめる', kind: 'human' },
+      { id: 'ok', x: 1040, y: 740, label: '承認済みの知識', sub: '地域・審査支払機関ごと', kind: 'store' },
+      { id: 'hooks', x: 600, y: 740, label: 'Hooks', sub: '読む直前に状態を確かめる', kind: 'rule' },
+      { id: 'mentor', x: 220, y: 740, label: 'メンター', sub: 'Skill として読む', kind: 'claude' },
+    ],
+    edges: [['pdf', 'notice', ''], ['notice', 'map', ''], ['map', 'cand', ''], ['cand', 'meet', ''], ['meet', 'ok', '承認'], ['ok', 'hooks', ''], ['hooks', 'mentor', '']],
+  },
+  expire: {
+    title: 'ローカルルールには、見直しが要る。',
+    nodes: [
+      { id: 'u', x: 260, y: 420, label: '未検証' },
+      { id: 'a', x: 760, y: 420, label: '承認済み', kind: 'store' },
+      { id: 'r', x: 1260, y: 420, label: '要再検証' },
+      { id: 's', x: 1680, y: 420, label: '停止→保管' },
+      { id: 't1', x: 760, y: 780, label: '診療報酬の改定', sub: '偶数年 6 月', kind: 'rule' },
+      { id: 't2', x: 1260, y: 780, label: '審査委員の改選', sub: '奇数年 6 月', kind: 'rule' },
+      { id: 't3', x: 1680, y: 780, label: '180 日 使われない', kind: 'rule' },
+    ],
+    edges: [['u', 'a', 'ベテランが承認'], ['a', 'r', ''], ['r', 's', '会議で判断'], ['t1', 'r', ''], ['t2', 'r', ''], ['t3', 'r', '']],
+  },
+  doctor: {
+    title: '医師への確認は、選ぶだけの質問で。',
+    nodes: [
+      { id: 'cross', x: 260, y: 400, label: 'カルテとの照合', sub: '決まった規則', kind: 'rule' },
+      { id: 'mentor', x: 760, y: 400, label: 'メンター', sub: 'Claude Sonnet', kind: 'claude' },
+      { id: 'check', x: 1260, y: 400, label: '7 要件の検証', sub: 'AHIMA/ACDIS 2026', kind: 'rule' },
+      { id: 'doc', x: 1680, y: 400, label: '医師', sub: '選択肢で答える', kind: 'human' },
+      { id: 'opt', x: 1260, y: 780, label: '点数・金額は出さない', sub: '「その他」「判定不能」も同じ大きさ' },
+      { id: 'sy', x: 1680, y: 780, label: '医師の承認で', sub: '傷病名が決まる', kind: 'store' },
+    ],
+    edges: [['cross', 'mentor', '不一致'], ['mentor', 'check', 'ask_doctor'], ['check', 'doc', ''], ['check', 'opt', ''], ['doc', 'sy', '']],
+  },
+  chart: {
+    title: 'カルテは、書いてあるまま。',
+    nodes: [
+      { id: 'img', x: 230, y: 470, label: '電子カルテの画面', sub: '撮った画像' },
+      { id: 'read', x: 640, y: 470, label: '書き写す', sub: 'Claude Sonnet', kind: 'claude' },
+      { id: 'soap', x: 1050, y: 470, label: 'SOAP に振り分け', sub: 'Claude Haiku', kind: 'claude' },
+      { id: 'fact', x: 1460, y: 470, label: '事実の読み取り', sub: 'Claude Sonnet', kind: 'claude' },
+      { id: 'me', x: 1460, y: 820, label: '本人が確かめる', kind: 'human' },
+      { id: 'match', x: 1050, y: 820, label: '処方と病名の照合', sub: '決まった規則', kind: 'rule' },
+    ],
+    edges: [['img', 'read', ''], ['read', 'soap', ''], ['soap', 'fact', ''], ['fact', 'me', ''], ['me', 'match', '']],
+  },
+  veteran: {
+    title: '答えられない問いは、ベテランへ。',
+    nodes: [
+      { id: 'me', x: 230, y: 540, label: '新人', kind: 'human' },
+      { id: 'mentor', x: 650, y: 540, label: 'メンター', sub: 'Claude Sonnet', kind: 'claude' },
+      { id: 'vet', x: 1110, y: 540, label: 'ベテランのメンター', sub: 'Claude Opus・深く考える', kind: 'claude' },
+      { id: 'human', x: 1600, y: 540, label: 'ベテラン本人', sub: '根拠がないときだけ', kind: 'human' },
+      { id: 'know', x: 1110, y: 870, label: '知識の候補', sub: '次からはメンターで止まる', kind: 'store' },
+    ],
+    edges: [['me', 'mentor', ''], ['mentor', 'vet', '答えられない'], ['vet', 'human', ''], ['human', 'know', '解決']],
+  },
+  // 全体の構成（README「Claude の使い方」の図をそのまま並べ直したもの）
+  arch: {
+    title: '全体の構成｜Claude は、読む・話す・整える。',
+    legend: true,
+    nodes: [
+      { id: 'clerk', x: 170, y: 480, label: '医療事務', kind: 'human' },
+      { id: 'ui', x: 520, y: 480, label: '算定画面' },
+      { id: 'engine', x: 520, y: 250, label: 'ユスティ', sub: 'R01〜R14・決まった規則', kind: 'rule' },
+      { id: 'hooks', x: 520, y: 720, label: 'Hooks', sub: '読む直前に状態を確かめる', kind: 'rule' },
+      { id: 'memo', x: 930, y: 250, label: '本人の CLAUDE.md', sub: '記録から生成', kind: 'store' },
+      { id: 'mentor', x: 930, y: 480, label: 'メンター', sub: 'Sonnet・Lv.6 から Opus', kind: 'claude' },
+      { id: 'skills', x: 930, y: 720, label: '承認済みの知識', sub: '.claude/skills', kind: 'store' },
+      { id: 'vet', x: 1330, y: 250, label: 'ベテランのメンター', sub: 'Opus・深く考える', kind: 'claude' },
+      { id: 'human', x: 1730, y: 250, label: 'ベテラン本人', kind: 'human' },
+      { id: 'check', x: 1330, y: 480, label: '7 要件の検証', sub: '決まった規則', kind: 'rule' },
+      { id: 'doctor', x: 1730, y: 480, label: '医師', kind: 'human' },
+      { id: 'scribe', x: 1330, y: 720, label: '代行入力の整文', sub: 'Haiku', kind: 'claude' },
+      { id: 'pdf', x: 520, y: 950, label: '査定・返戻の通知', sub: 'PDF' },
+      { id: 'notice', x: 930, y: 950, label: '通知の読み取り', sub: 'Sonnet', kind: 'claude' },
+      { id: 'map', x: 1330, y: 950, label: '対応づけ', sub: '決まった規則', kind: 'rule' },
+      { id: 'cand', x: 1730, y: 950, label: '知識の候補', sub: '本人が確かめる', kind: 'store' },
+    ],
+    edges: [['clerk', 'ui', ''], ['ui', 'engine', ''], ['engine', 'mentor', 'いまの判定'], ['memo', 'mentor', ''], ['mentor', 'skills', 'Skill'], ['hooks', 'skills', ''],
+      ['mentor', 'vet', '答えられない'], ['vet', 'human', ''], ['mentor', 'check', ''], ['scribe', 'check', ''], ['check', 'doctor', ''],
+      ['pdf', 'notice', ''], ['notice', 'map', ''], ['map', 'cand', '']],
+  },
+};
+
+let DOC = null; let CUTS = []; let TOTAL = 0;
+const videos = {};
+
+async function load() {
+  const name = Q.get('v') ?? 'v1';
+  DOC = await (await fetch(`/video/demo/cuts/${name}.json`)).json();
+  let t = 0;
+  CUTS = DOC.cuts.map((c) => { const o = { ...c, start: t }; t += c.dur; return o; });
+  TOTAL = t;
+  const need = [...new Set(CUTS.filter((c) => c.clip).map((c) => c.clip.id))];
+  await Promise.all(need.map(async (id) => {
+    const blob = await (await fetch(`/design/demo-video/${encodeURIComponent(CLIPS[id])}`)).blob();
+    const v = document.createElement('video');
+    v.muted = true; v.preload = 'auto'; v.src = URL.createObjectURL(blob);
+    await new Promise((r) => v.addEventListener('loadeddata', r, { once: true }));
+    $vids.appendChild(v); videos[id] = v;
+  }));
+  const imgs = [...Object.values(CHARS).map((c) => c.img), YUSTI, CLERK, ...CUTS.filter((c) => c.img).map((c) => c.img), ...CUTS.filter((c) => c.still).map((c) => `/video/opening/out/stills/${c.still}.png`)];
+  await Promise.all(imgs.map((src) => new Promise((r) => { const i = new Image(); i.onload = r; i.onerror = r; i.src = src; })));
+  await document.fonts.ready;
+}
+
+function seek(v, time) {
+  time = clamp(time, 0, v.duration - 0.04);
+  if (Math.abs(v.currentTime - time) < 0.004) return Promise.resolve();
+  return new Promise((r) => { v.addEventListener('seeked', () => requestAnimationFrame(() => r()), { once: true }); v.currentTime = time; });
+}
+
+// ---- 背景 ----
+// 背景の演出（台本の theme で選ぶ）。集中線はやめ、5 種類から選ぶ
+// slash：斜めの色面が切り込む / halftone：網点 / textwall：文字の壁 / bands：横に走る太い帯 / split：斜めの二分割
+function bgRays(lt, c1 = '#0e5cc6', c2 = '#0b0e12') {
+  const theme = DOC?.theme ?? 'slash';
+  let h = `<div class="abs" style="inset:0;background:${c2}"></div>`;
+  if (theme === 'slash') {
+    [0, 1, 2].forEach((i) => {
+      const k = easeOut((lt - i * 0.06) / 0.3);
+      const x = 520 + i * 520 + (1 - k) * 1400 - lt * 30 * (i + 1);
+      const w = [380, 240, 520][i];
+      h += `<div class="abs" style="left:${x}px;top:-300px;width:${w}px;height:1700px;background:${i === 1 ? '#fff' : c1};opacity:${i === 1 ? 0.12 : 0.9};transform:rotate(18deg)"></div>`;
+      h += `<div class="abs" style="left:${x - 40}px;top:-300px;width:10px;height:1700px;background:${c1};opacity:.6;transform:rotate(18deg)"></div>`;
+    });
+  } else if (theme === 'halftone') {
+    const o = lt * 40;
+    h += `<div class="abs" style="inset:0;background-image:radial-gradient(circle, ${c1} 42%, transparent 46%);background-size:44px 44px;background-position:${o}px ${o * 0.5}px;-webkit-mask-image:linear-gradient(115deg, transparent 15%, #000 85%);opacity:.95"></div>`;
+    h += `<div class="abs" style="inset:0;background-image:radial-gradient(circle, ${c1} 30%, transparent 34%);background-size:22px 22px;background-position:${-o}px 0;-webkit-mask-image:linear-gradient(295deg, transparent 55%, #000 100%);opacity:.6"></div>`;
+  } else if (theme === 'textwall') {
+    for (let r = 0; r < 7; r++) {
+      const dir = r % 2 ? 1 : -1;
+      const x = -800 + ((lt * 160 * dir + r * 300) % 800);
+      h += `<div class="abs en" style="left:${x}px;top:${-120 + r * 190}px;font-size:200px;line-height:1;white-space:nowrap;color:transparent;-webkit-text-stroke:3px ${c1};opacity:${r % 3 === 1 ? 0.9 : 0.45};transform:rotate(-8deg)">RESEMEN RESEMEN RESEMEN RESEMEN</div>`;
+    }
+  } else if (theme === 'bands') {
+    [[120, 140, 1.0], [330, 60, -1.6], [520, 220, 0.7], [800, 90, -1.2], [960, 40, 2.0]].forEach(([y, hh, sp], i) => {
+      const x = -600 + ((lt * 400 * sp) % 600);
+      h += `<div class="abs" style="left:${x}px;top:${y}px;width:3200px;height:${hh}px;background:repeating-linear-gradient(90deg, ${c1} 0 ${700 + i * 90}px, transparent ${700 + i * 90}px ${760 + i * 90}px);transform:skewX(-20deg);opacity:${i % 2 ? 0.55 : 0.9}"></div>`;
+    });
+  } else if (theme === 'split') {
+    const p = 46 + Math.sin(lt * 1.2) * 3;
+    h += `<div class="abs" style="inset:0;background:${c1};clip-path:polygon(${p + 12}% 0, 100% 0, 100% 100%, ${p - 12}% 100%)"></div>`;
+    h += `<div class="abs" style="inset:0;background:#fff;clip-path:polygon(${p + 12}% 0, ${p + 12.6}% 0, ${p - 11.4}% 100%, ${p - 12}% 100%)"></div>`;
+  }
+  return h;
+}
+function bgRings(lt, c1 = '#0b0e12', c2 = '#132033') {
+  const s = 1 + (lt % 2) * 0.05;
+  return `<div class="abs" style="inset:-30%;transform:scale(${s});background:repeating-radial-gradient(circle at 50% 50%, ${c1} 0 60px, ${c2} 60px 120px)"></div>`;
+}
+function bgStripes(lt, c1 = '#0b0e12', c2 = '#101826') {
+  const o = (lt * 120) % 160;
+  return `<div class="abs" style="inset:-20%;background:repeating-linear-gradient(-30deg, ${c1} ${o}px, ${c1} ${o + 80}px, ${c2} ${o + 80}px, ${c2} ${o + 160}px)"></div>`;
+}
+function bgGrid() {
+  return `<div class="abs" style="inset:0;background:linear-gradient(#0b0e12,#0d1a2e);"></div><div class="abs" style="inset:0;background-image:linear-gradient(#1b2a40 1px,transparent 1px),linear-gradient(90deg,#1b2a40 1px,transparent 1px);background-size:60px 60px;opacity:.6"></div>`;
+}
+function bgOf(c, lt) {
+  switch (c.bg) {
+    case 'rays': return bgRays(lt);
+    case 'raysSky': return bgRays(lt, '#7ec1ff', '#0e5cc6');
+    case 'raysGold': return bgRays(lt, '#c7a46a', '#0b0e12');
+    case 'rings': return bgRings(lt);
+    case 'stripes': return bgStripes(lt);
+    case 'sky': return `<div class="abs" style="inset:0;background:#7ec1ff"></div>`;
+    case 'accent': return `<div class="abs" style="inset:0;background:#0e5cc6"></div>`;
+    case 'paper': return `<div class="abs" style="inset:0;background:#f6f8fa"></div>`;
+    case 'black': return `<div class="abs" style="inset:0;background:#000"></div>`;
+    default: return bgGrid();
+  }
+}
+
+// ---- 文字 ----
+// 種類：slam（大きく叩きつける）/ cut（パッと出る・ちらつく）/ slide（斜めに滑り込む）/ type（打ち込む）/ huge（画面からはみ出す特大）
+//      tape（斜めの帯に流れる文字）/ telop（下の説明。label に Claude の役割など）/ tag（画面の一部を囲む）/ stamp（判子）
+function textLayer(L, lt, cut) {
+  const t0 = L.t ?? 0, t1 = L.end ?? cut.dur;
+  if (lt < t0 || lt > t1) return '';
+  const k = lt - t0, out = t1 - lt;
+  const size = L.size ?? 120, color = L.color ?? '#fff', rot = L.rot ?? -6;
+  const x = L.x ?? 960, y = L.y ?? 540;
+  const align = L.align ?? 'center';
+  const tx = align === 'center' ? '-50%' : align === 'right' ? '-100%' : '0';
+  const shadow = L.shadow ?? '#0e5cc6';
+  const txt = esc(L.text).replace(/\n/g, '<br>');
+  const font = L.en ? 'en' : 'jp9';
+  const exitK = clamp(out / 0.08);
+  // plate：文字の下に濃い帯を敷く（背景が騒がしい場面用）
+  const plate = L.plate ? `background:rgba(11,14,18,.9);padding:${size*0.12}px ${size*0.3}px;` : "";
+  switch (L.style) {
+    case 'slam': {
+      const s = lerp(L.from ?? 2.4, 1, back(k / 0.16));
+      const blur = clamp(1 - k / 0.1) * 6;
+      return `<div class="abs ${font}" style="left:${x}px;top:${y}px;transform:translate(${tx},-50%) rotate(${rot}deg) skewX(-8deg) scale(${s});font-size:${size}px;color:${color};line-height:1.08;white-space:nowrap;text-align:${align};filter:blur(${blur}px);opacity:${exitK};${plate}text-shadow:${size * 0.06}px ${size * 0.06}px 0 ${shadow}">${txt}</div>`;
+    }
+    case 'cut': {
+      const vis = k < 0.12 ? (Math.floor(k * 30) % 2 === 0 ? 1 : 0.2) : 1;
+      return `<div class="abs ${font}" style="left:${x}px;top:${y}px;transform:translate(${tx},-50%) rotate(${rot}deg) skewX(-8deg);font-size:${size}px;color:${color};line-height:1.1;white-space:nowrap;text-align:${align};opacity:${vis * exitK};text-shadow:${size * 0.05}px ${size * 0.05}px 0 ${shadow}">${txt}</div>`;
+    }
+    case 'slide': {
+      const dx = lerp(L.dx ?? -900, 0, easeOut(k / 0.22));
+      return `<div class="abs ${font}" style="left:${x + dx}px;top:${y}px;transform:translate(${tx},-50%) rotate(${rot}deg) skewX(-12deg);font-size:${size}px;color:${color};line-height:1.1;white-space:nowrap;text-align:${align};opacity:${exitK};text-shadow:${size * 0.05}px ${size * 0.05}px 0 ${shadow}">${txt}</div>`;
+    }
+    case 'type': {
+      const chars = [...L.text];
+      const n = Math.floor(k * (L.cps ?? 24));
+      const shown = esc(chars.slice(0, n).join('')).replace(/\n/g, '<br>');
+      const caret = n < chars.length && Math.floor(k * 4) % 2 === 0 ? '▍' : '';
+      return `<div class="abs ${font}" style="left:${x}px;top:${y}px;transform:translate(${tx},-50%) rotate(${rot}deg);font-size:${size}px;color:${color};line-height:1.25;white-space:nowrap;text-align:${align};opacity:${exitK}">${shown}${caret}</div>`;
+    }
+    case 'huge': {
+      const drift = (L.drift ?? -60) * k;
+      const s = lerp(1.15, 1, easeOut(k / 0.2));
+      return `<div class="abs ${font}" style="left:${x + drift}px;top:${y}px;transform:translate(${tx},-50%) rotate(${rot}deg) skewX(-10deg) scale(${s});font-size:${size}px;color:${color};line-height:.95;white-space:nowrap;opacity:${(L.alpha ?? 1) * exitK};letter-spacing:-0.04em">${txt}</div>`;
+    }
+    case 'tape': {
+      const h = L.h ?? 90;
+      const sp = (L.speed ?? 500) * k * (L.dir ?? 1);
+      const rep = (esc(L.text) + '　／　').repeat(14);
+      const grow = easeOut(k / 0.15);
+      return `<div class="abs" style="left:-400px;top:${y}px;width:2720px;height:${h}px;transform:translateY(-50%) rotate(${rot}deg) scaleY(${grow});background:${L.bgc ?? '#7ec1ff'};overflow:hidden;opacity:${exitK}"><div class="jp9" style="position:absolute;left:${-1200 + (sp % 1200)}px;top:50%;transform:translateY(-50%);font-size:${h * 0.55}px;color:${color === '#fff' ? '#0b0e12' : color};white-space:nowrap">${rep}</div></div>`;
+    }
+    case 'telop': {
+      const dx = lerp(-80, 0, easeOut(k / 0.2));
+      const op = clamp(k / 0.15) * clamp(out / 0.15);
+      const label = L.label ? `<div class="jp9" style="display:inline-block;background:${L.labelColor ?? '#7ec1ff'};color:#0b0e12;font-size:30px;padding:6px 16px;margin-bottom:10px;transform:skewX(-10deg)">${esc(L.label)}</div><br>` : '';
+      return `<div class="abs" style="left:${(L.x ?? 90) + dx}px;bottom:${L.bottom ?? 80}px;opacity:${op}">${label}<div class="jp9" style="display:inline-block;background:rgba(11,14,18,.92);border-left:12px solid #7ec1ff;color:#fff;font-size:${L.size ?? 48}px;padding:16px 30px;line-height:1.35">${txt}</div></div>`;
+    }
+    case 'tag': {
+      const [bx, by, bw, bh] = L.box;
+      const g = easeOut(k / 0.2);
+      const op = clamp(out / 0.15);
+      return `<div class="abs" style="left:${bx}px;top:${by}px;width:${bw}px;height:${bh}px;border:8px solid ${L.color ?? '#7ec1ff'};box-shadow:0 0 0 6px rgba(11,14,18,.7);transform:scale(${lerp(1.3, 1, g)});opacity:${g * op}"></div>
+        <div class="jp9 abs" style="left:${bx}px;top:${L.below ? by + bh + 14 : by - 74}px;background:${L.color ?? '#7ec1ff'};color:#0b0e12;font-size:40px;padding:6px 18px;transform:skewX(-10deg);opacity:${g * op};white-space:nowrap">${txt}</div>`;
+    }
+    case 'bubble': {
+      // メンターが話す大きな吹き出し（アプリの吹き出しの文をそのまま打ち込む）
+      const ch = CHARS[L.char ?? 'makki'];
+      const enter = easeOut(k / 0.25);
+      const chars = [...L.text];
+      const n = Math.floor(Math.max(0, k - 0.3) * (L.cps ?? 22));
+      const shown = esc(chars.slice(0, n).join(''));
+      return `<img src="${ch.img}" style="position:absolute;left:${300 - (1 - enter) * 500}px;top:${L.top ?? 300}px;height:${L.h ?? 900}px;transform:translateX(-50%);filter:drop-shadow(18px 18px 0 #0e5cc6)">
+        <div class="abs" style="left:${620 + (1 - enter) * 300}px;top:${L.y ?? 470}px;width:1180px;background:#fff;border:8px solid #0b0e12;box-shadow:18px 18px 0 #0e5cc6;padding:34px 44px 40px;opacity:${enter * exitK};transform:skewX(-3deg)">
+          <div class="jp9" style="position:absolute;left:-8px;top:-58px;background:#7ec1ff;color:#0b0e12;font-size:36px;padding:4px 22px;transform:skewX(-10deg)">${esc(ch.name)}</div>
+          <div class="jp9" style="font-size:${L.size ?? 48}px;line-height:1.5;color:#0b0e12;min-height:${(L.size ?? 48) * 3}px">${shown}</div></div>`;
+    }
+    case 'dim': {
+      return `<div class="abs" style="inset:0;background:rgba(11,14,18,${(L.alpha ?? 0.55) * easeOut(k / 0.3)})"></div>`;
+    }
+    case 'badge': {
+      // 右上に出し続ける札（日付のカウンターなど）
+      const g = easeOut(k / 0.2);
+      return `<div class="abs jp9" style="right:${70 - (1 - g) * 400}px;top:60px;background:${L.bgc ?? '#7ec1ff'};color:#0b0e12;font-size:${size}px;padding:10px 34px;transform:skewX(-12deg) rotate(${rot}deg);box-shadow:12px 12px 0 #0b0e12;white-space:nowrap">${txt}</div>`;
+    }
+    case 'mini': {
+      // 画面の横に構成図を小さく重ねる（画面と中身を同時に見せる）
+      const g = easeOut(k / 0.2);
+      const sc = L.scale ?? 0.42;
+      const inner = cardFlow({ ...L, bare: true, dur: cut.dur, revealAt: L.revealAt ?? 0.15, revealSpan: L.revealSpan ?? 1.2 }, k);
+      const pw = 1920 * sc, ph = 1080 * sc;
+      return `<div class="abs" style="left:${x + (1 - g) * 700}px;top:${y}px;width:${pw}px;height:${ph + 64}px;background:rgba(11,14,18,.94);border:6px solid #7ec1ff;box-shadow:16px 16px 0 #0e5cc6;transform:rotate(${L.rot ?? 2}deg);overflow:hidden">
+        <div class="jp9" style="position:absolute;left:0;top:0;right:0;height:64px;background:#7ec1ff;color:#0b0e12;font-size:34px;line-height:64px;padding-left:22px;white-space:nowrap">中身｜${esc(L.title ?? FLOWS[L.flow].title)}</div>
+        <div style="position:absolute;left:0;top:64px;width:1920px;height:1080px;transform:scale(${sc});transform-origin:0 0">${inner}</div></div>`;
+    }
+    case 'hp': {
+      // 左上の「残りの課題」ゲージ。from から to へ、t で 1 つ減る
+      const total = L.total ?? 7, from = L.from ?? total, to = L.to ?? from;
+      const n = k < 0.25 ? from : to;
+      const hit = k >= 0.25 && k < 0.5 && to < from;
+      let seg = '';
+      for (let i = 0; i < total; i++) seg += `<div style="display:inline-block;width:46px;height:34px;margin-right:8px;transform:skewX(-14deg);background:${i < n ? '#7ec1ff' : 'rgba(126,193,255,.15)'};${hit && i === to ? 'background:#fff;box-shadow:0 0 24px #fff;' : ''}"></div>`;
+      const sh = hit ? (rnd(Math.floor(k * 60)) - 0.5) * 14 : 0;
+      return `<div class="abs" style="right:${60 + sh}px;top:44px;background:rgba(11,14,18,.9);padding:14px 22px;transform:skewX(-8deg);border-left:10px solid #7ec1ff">
+        <div class="jp9" style="font-size:30px;color:#fff;margin-bottom:8px;white-space:nowrap">のこりの課題　<span class="en" style="font-size:44px;color:#7ec1ff">${n}</span> / ${total}</div>${seg}</div>`;
+    }
+    case 'src': {
+      // 数字の出典（右下に小さく）
+      return `<div class="abs jp9" style="right:60px;bottom:40px;font-size:${L.size ?? 26}px;color:#aab2bd;background:rgba(11,14,18,.85);padding:6px 16px;opacity:${clamp(k / 0.15) * exitK};white-space:nowrap">${txt}</div>`;
+    }
+    case 'stamp': {
+      const s = lerp(3, 1, back(k / 0.14));
+      return `<div class="abs jp9" style="left:${x}px;top:${y}px;transform:translate(-50%,-50%) rotate(${rot}deg) scale(${s});font-size:${size}px;color:${color};border:${size * 0.08}px solid ${color};padding:${size * 0.1}px ${size * 0.25}px;opacity:${clamp(k / 0.05) * exitK};white-space:nowrap">${txt}</div>`;
+    }
+  }
+  return '';
+}
+
+// ---- 録画 ----
+// rect：録画（1920×1080）のどこを映すか [x, y, w]（高さは 16:9）。rect2 があれば cut の間にそこへ寄る
+// frame：full（全面）/ tilt（傾けた窓。背景が見える）/ split（右半分）
+function placeClip(c, lt) {
+  const cl = c.clip; const v = videos[cl.id];
+  for (const id in videos) videos[id].style.display = id === cl.id ? 'block' : 'none';
+  const r1 = cl.rect ?? [0, 0, 1920], r2 = cl.rect2 ?? r1;
+  const e = easeInOut(lt / c.dur);
+  const rx = lerp(r1[0], r2[0], e), ry = lerp(r1[1], r2[1], e), rw = lerp(r1[2], r2[2], e);
+  const frame = cl.frame ?? 'full';
+  let box = { x: 0, y: 0, w: 1920, h: 1080, rot: 0 };
+  if (frame === 'tilt') box = { x: 170, y: 120, w: 1580, h: 889, rot: cl.rot ?? -3 };
+  if (frame === 'right') box = { x: 840, y: 150, w: 1000, h: 563, rot: cl.rot ?? 3 };
+  if (frame === 'left') box = { x: 80, y: 150, w: 1000, h: 563, rot: cl.rot ?? -3 };
+  const s = box.w / rw;
+  const enter = cl.enter === false ? 1 : easeOut(lt / 0.18);
+  const ex = (1 - enter) * (cl.fromRight ? 600 : -600);
+  $vids.style.cssText = frame === 'full' ? '' : `left:${box.x + ex}px;top:${box.y}px;width:${box.w}px;height:${box.h}px;right:auto;bottom:auto;overflow:hidden;transform:rotate(${box.rot}deg);box-shadow:24px 24px 0 #0e5cc6, 0 0 0 10px #fff;background:#fff`;
+  if (frame === 'full') $vids.style.cssText = 'overflow:hidden';
+  v.style.transform = `scale(${s}) translate(${-rx}px, ${-ry}px)`;
+  const speed = cl.speed ?? 1;
+  return seek(v, (cl.from ?? 0) + lt * speed);
+}
+function hideClips() { for (const id in videos) videos[id].style.display = 'none'; $vids.style.cssText = ''; }
+
+// ---- 画面の部品 ----
+function charImg(key, x, y, h, extra = '') {
+  const c = CHARS[key];
+  return `<img src="${c.img}" style="position:absolute;left:${x}px;top:${y}px;height:${h}px;transform:translateX(-50%);${extra}">`;
+}
+// 切り抜きの後ろに、単色の影を斜めにずらして置く
+function cutout(src, x, y, h, color = '#0e5cc6', off = 30, extra = '') {
+  return `<img src="${src}" style="position:absolute;left:${x}px;top:${y}px;height:${h}px;transform:translateX(-50%);filter:drop-shadow(${off}px ${off}px 0 ${color});${extra}">`;
+}
+
+function cardYusti(c, lt) {
+  // ユスティが明細を次々に片付ける。✓ の判子が流れ、速くなる
+  let h = bgRays(lt * 2, '#16202e', '#0b0e12', 70, 50);
+  const speed = 1 + lt * 0.9;
+  let rows = '';
+  for (let i = 0; i < 14; i++) {
+    const yy = ((i * 150 - lt * 260 * speed) % 2100 + 2100) % 2100 - 300;
+    const done = yy < 520;
+    rows += `<div class="abs" style="left:150px;top:${yy}px;width:820px;height:120px;background:${done ? '#eaf3ff' : '#fff'};border-left:14px solid ${done ? '#c7a46a' : '#7ec1ff'};transform:skewX(-6deg);box-shadow:10px 10px 0 rgba(0,0,0,.4)">
+      <div class="jp9" style="position:absolute;left:30px;top:18px;font-size:34px;color:#0b0e12">K${(i % 6) + 1}-2025-03</div>
+      <div style="position:absolute;left:30px;top:66px;font-size:24px;color:#4a5563;font-weight:600">在宅患者訪問診療料・在医総管・処方箋料…</div>
+      ${done ? `<div class="jp9" style="position:absolute;right:30px;top:20px;font-size:62px;color:#c7a46a;transform:rotate(-12deg)">✓</div>` : ''}</div>`;
+  }
+  h += `<div class="abs" style="inset:0;overflow:hidden">${rows}</div>`;
+  h += `<div class="abs" style="left:0;top:520px;width:1100px;height:6px;background:#c7a46a;box-shadow:0 0 30px #c7a46a"></div>`;
+  h += cutout(YUSTI, 1450, 40, 1200, '#c7a46a', 26);
+  return h;
+}
+
+function cardSelect(c, lt) {
+  // 4 人が順に並ぶ。focus の人に光が当たる
+  let h = bgRays(lt, '#7ec1ff', '#0e5cc6');
+  const keys = ['makki', 'natsu', 'yuki', 'haru'];
+  keys.forEach((k, i) => {
+    const appear = easeOut((lt - i * 0.12) / 0.25);
+    const x = 300 + i * 440, focus = c.focus === k;
+    const dim = c.focus && !focus ? 'filter:grayscale(.6) brightness(.55);' : '';
+    h += `<div class="abs" style="left:${x - 200}px;top:${120 + (1 - appear) * 900}px;width:400px;height:860px;background:${focus ? '#0b0e12' : 'rgba(11,14,18,.75)'};transform:skewX(-8deg);border:6px solid ${focus ? '#fff' : '#0b0e12'}"></div>`;
+    h += charImg(k, x, 150 + (1 - appear) * 900, 820, dim);
+    h += `<div class="abs en" style="left:${x}px;top:${930 + (1 - appear) * 300}px;transform:translateX(-50%) skewX(-10deg);font-size:76px;color:${focus ? '#7ec1ff' : '#fff'};text-shadow:6px 6px 0 #0b0e12">${CHARS[k].en}</div>`;
+  });
+  return h;
+}
+
+function cardChar(c, lt) {
+  // 1 人を大きく。名前の特大文字を後ろに流し、口調を添える
+  const ch = CHARS[c.char];
+  let h = bgRays(lt, c.c1 ?? '#0e5cc6', c.c2 ?? '#0b0e12', 65, 55);
+  h += `<div class="abs en" style="left:${-200 - lt * 80}px;top:120px;font-size:520px;color:rgba(126,193,255,.22);white-space:nowrap;transform:skewX(-10deg)">${ch.en} ${ch.en}</div>`;
+  const ex = lerp(500, 0, easeOut(lt / 0.25));
+  h += cutout(ch.img, 1380 + ex, 60, 1260, '#7ec1ff', 30);
+  h += `<div class="abs jp9" style="left:${110 - ex}px;top:640px;font-size:150px;color:#fff;transform:skewX(-8deg) rotate(-4deg);text-shadow:10px 10px 0 #0e5cc6;white-space:nowrap">${ch.name}</div>`;
+  h += `<div class="abs jp9" style="left:${130 - ex}px;top:840px;background:#7ec1ff;color:#0b0e12;font-size:44px;padding:8px 24px;transform:skewX(-10deg) rotate(-4deg)">${esc(c.line ?? ch.tone)}</div>`;
+  // 声の波形
+  let bars = '';
+  for (let i = 0; i < 28; i++) { const a = 10 + Math.abs(Math.sin(lt * 9 + i * 0.7)) * 70 * rnd(i + Math.floor(lt * 12)); bars += `<div style="width:12px;height:${a}px;background:#fff;margin:0 4px;display:inline-block;vertical-align:middle"></div>`; }
+  h += `<div class="abs" style="left:${130 - ex}px;top:540px;height:100px;display:flex;align-items:center;opacity:${c.voice === false ? 0 : 1}">${bars}</div>`;
+  return h;
+}
+
+function cardFlow(c, lt) {
+  const f = FLOWS[c.flow];
+  // bare：背景と見出しなしで図だけ描く（画面の横に小さく重ねる mini 用）
+  let h = c.bare ? '' : bgGrid();
+  const n = f.nodes.length;
+  const span = c.revealSpan ?? Math.min(c.dur * 0.6, n * 0.45);
+  const at = (i) => (c.revealAt ?? 0.3) + (i * span) / n;
+  const pos = Object.fromEntries(f.nodes.map((nd, i) => [nd.id, { ...nd, i }]));
+  // 線
+  let svg = `<svg class="abs" width="1920" height="1080" style="left:0;top:0">`;
+  f.edges.forEach(([a, b, label], ei) => {
+    const A = pos[a], B = pos[b];
+    const k = easeOut((lt - Math.max(at(A.i), at(B.i))) / 0.3);
+    if (k <= 0) return;
+    const x2 = lerp(A.x, B.x, k), y2 = lerp(A.y, B.y, k);
+    const hot = (c.hot ?? []).includes(`${a}>${b}`);
+    svg += `<line x1="${A.x}" y1="${A.y}" x2="${x2}" y2="${y2}" stroke="${hot ? '#7ec1ff' : '#4d6688'}" stroke-width="${hot ? 10 : 6}" />`;
+    // 流れる点
+    const p = ((lt * 0.8 + ei * 0.37) % 1);
+    if (k >= 1) svg += `<circle cx="${lerp(A.x, B.x, p)}" cy="${lerp(A.y, B.y, p)}" r="${hot ? 14 : 9}" fill="${hot ? '#fff' : '#7ec1ff'}" />`;
+    if (label && k >= 1) svg += `<text x="${(A.x + B.x) / 2}" y="${(A.y + B.y) / 2 - 22}" fill="#7ec1ff" font-size="28" font-weight="800" text-anchor="middle" font-family="Hiragino Sans">${esc(label)}</text>`;
+  });
+  svg += '</svg>';
+  h += svg;
+  f.nodes.forEach((nd, i) => {
+    const k = (lt - at(i)) / 0.25;
+    if (k <= 0) return;
+    const s = lerp(1.6, 1, back(k));
+    const hot = (c.hotNodes ?? []).includes(nd.id);
+    h += `<div class="node ${nd.kind ?? ''}" style="left:${nd.x}px;top:${nd.y}px;transform:translate(-50%,-50%) scale(${s}) ${hot ? 'rotate(-2deg)' : ''};opacity:${clamp(k * 3)};${hot ? 'box-shadow:0 0 0 8px #7ec1ff, 14px 14px 0 8px #0e5cc6;' : ''}">${esc(nd.label)}${nd.sub ? `<small>${esc(nd.sub)}</small>` : ''}</div>`;
+  });
+  if (f.legend && !c.bare) {
+    const sw = (bg, bd, r, t) => `<span style="display:inline-block;width:34px;height:24px;background:${bg};border:4px solid ${bd};border-radius:${r}px;vertical-align:middle;margin:0 10px 0 28px"></span>${t}`;
+    h += `<div class="abs jp9" style="right:60px;top:${1080 - 70}px;font-size:26px;color:#fff;opacity:${clamp((lt - 0.5) / 0.3)}">${sw('#0e5cc6', '#fff', 0, 'Claude（Agent SDK）')}${sw('#0b0e12', '#c7a46a', 0, '決まった規則')}${sw('#fff', '#fff', 14, '人')}</div>`;
+  }
+  if (c.showTitle !== false && !c.bare) h += `<div class="abs jp9" style="left:90px;top:${70 + lerp(-200, 0, easeOut(lt / 0.25))}px;font-size:64px;color:#fff;transform:skewX(-8deg);text-shadow:6px 6px 0 #0e5cc6">${esc(c.title ?? f.title)}</div>`;
+  return h;
+}
+
+function cardProblem(c, lt) {
+  // 冒頭の課題画面（静止画）にひびが入り、割れて飛び散る
+  const src = `/video/opening/out/stills/${c.still}.png`;
+  const br = c.breakAt ?? 0.9;
+  if (lt < br) {
+    const shake = lt > br - 0.25 ? (rnd(Math.floor(lt * 60)) - 0.5) * 18 : 0;
+    let crack = '';
+    if (lt > br - 0.3) {
+      crack = `<svg class="abs" width="1920" height="1080" style="left:0;top:0">`;
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2 + rnd(i); const len = 300 + rnd(i + 5) * 900; crack += `<polyline points="960,540 ${960 + Math.cos(a) * len * 0.4 + rnd(i + 9) * 60},${540 + Math.sin(a) * len * 0.4} ${960 + Math.cos(a) * len},${540 + Math.sin(a) * len}" stroke="#fff" stroke-width="5" fill="none"/>`; }
+      crack += '</svg>';
+    }
+    return `<img src="${src}" style="position:absolute;left:${shake}px;top:0;width:1920px;height:1080px">${crack}`;
+  }
+  const k = lt - br;
+  let h = bgRays(k, '#7ec1ff', '#0e5cc6');
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const a2 = ((i + 1) / 16) * Math.PI * 2;
+    const p = `50% 50%, ${50 + Math.cos(a) * 120}% ${50 + Math.sin(a) * 120}%, ${50 + Math.cos(a2) * 120}% ${50 + Math.sin(a2) * 120}%`;
+    const d = k * (900 + rnd(i) * 900);
+    const rr = (rnd(i + 3) - 0.5) * 120 * k;
+    h += `<img src="${src}" style="position:absolute;left:0;top:0;width:1920px;height:1080px;clip-path:polygon(${p});transform:translate(${Math.cos((a + a2) / 2) * d}px, ${Math.sin((a + a2) / 2) * d + k * k * 900}px) rotate(${rr}deg);opacity:${clamp(1 - k / 0.9)}">`;
+  }
+  return h;
+}
+
+function cardLogo(c, lt) {
+  let h = bgRays(lt, '#0e5cc6', '#0b0e12');
+  const keys = ['makki', 'natsu', 'yuki', 'haru'];
+  // ユスティを真ん中の後ろに置き、4 人を左右対称に並べる
+  h += `<img src="${YUSTI}" style="position:absolute;left:960px;top:${180 + (1 - easeOut(lt / 0.4)) * 900}px;height:900px;transform:translateX(-50%);opacity:.95">`;
+  const xs = [260, 620, 1300, 1660];
+  keys.forEach((k, i) => { const ap = easeOut((lt - 0.1 - i * 0.08) / 0.3); h += charImg(k, xs[i], 330 + (1 - ap) * 800, 760); });
+  const s = lerp(2.5, 1, back((lt - 0.3) / 0.2));
+  if (lt > 0.3) h += `<div class="abs jp9" style="left:960px;top:780px;transform:translate(-50%,-50%) rotate(-5deg) skewX(-8deg) scale(${s});font-size:230px;color:#fff;text-shadow:16px 16px 0 #0e5cc6, -4px -4px 0 #0b0e12;white-space:nowrap">レセメン</div>`;
+  if (c.sub && lt > 0.8) h += `<div class="abs jp9" style="left:960px;top:${900}px;transform:translateX(-50%) rotate(-5deg) skewX(-10deg);background:#7ec1ff;color:#0b0e12;font-size:50px;padding:10px 34px;white-space:nowrap;opacity:${clamp((lt - 0.8) / 0.2)}">${esc(c.sub)}</div>`;
+  return h;
+}
+
+function cardModels(c, lt) {
+  let h = bgStripes(lt);
+  const items = c.items ?? [
+    { m: 'Sonnet', r: 'メンター・カルテの書き写し・通知の読み取り' },
+    { m: 'Opus', r: 'ベテランのメンター・Lv.6 からのメンター' },
+    { m: 'Haiku', r: 'SOAP への振り分け・代行入力の整文' },
+    { m: 'Agent SDK', r: 'メンター 1 人 1 セッション・Skill・Hooks' },
+  ];
+  h += `<div class="abs jp9" style="left:90px;top:70px;font-size:64px;color:#fff;transform:skewX(-8deg);text-shadow:6px 6px 0 #0e5cc6">${esc(c.title ?? 'Claude は、役割ごとに。')}</div>`;
+  items.forEach((it, i) => {
+    const k = easeOut((lt - 0.2 - i * 0.18) / 0.25);
+    h += `<div class="abs" style="left:${140 + (1 - k) * -1200}px;top:${230 + i * 190}px;width:1640px;height:160px;background:${i % 2 ? '#0e5cc6' : '#7ec1ff'};transform:skewX(-12deg)">
+      <div class="en" style="position:absolute;left:50px;top:12px;font-size:110px;color:${i % 2 ? '#fff' : '#0b0e12'}">${esc(it.m)}</div>
+      <div class="jp9" style="position:absolute;left:620px;top:52px;font-size:46px;color:${i % 2 ? '#fff' : '#0b0e12'};white-space:nowrap">${esc(it.r)}</div></div>`;
+  });
+  return h;
+}
+
+function cardText(c, lt) { return bgOf(c, lt); }
+function cardImage(c, lt) {
+  const s = 1 + 0.06 * (lt / c.dur);
+  return `<img src="${c.img}" style="position:absolute;left:0;top:0;width:1920px;height:1080px;object-fit:cover;transform:scale(${s});opacity:${c.alpha ?? 1}">`;
+}
+function cardChars2(c, lt) {
+  // 4 人が横一列で走り込む（集合）
+  let h = bgRays(lt, '#7ec1ff', '#0e5cc6');
+  ['makki', 'natsu', 'yuki', 'haru'].forEach((k, i) => { const ap = easeOut((lt - i * 0.1) / 0.3); h += cutout(CHARS[k].img, 300 + i * 440, 200 + (1 - ap) * 900, 900, '#0b0e12', 22); });
+  return h;
+}
+
+function cardBoss(c, lt) {
+  // ボス登場：課題の静止画を暗く沈め、上下に WARNING の帯を流す
+  const src = `/video/opening/out/stills/${c.still ?? 'scene-10'}.png`;
+  const s = 1.08 + lt * 0.02;
+  let h = `<div class="abs" style="inset:0;background:#000"></div>`;
+  h += `<img src="${src}" style="position:absolute;left:0;top:0;width:1920px;height:1080px;transform:scale(${s});filter:grayscale(1) brightness(.12) contrast(1.2) blur(12px)">`;
+  h += `<div class="abs" style="inset:0;background:radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(0,0,0,.85) 100%)"></div>`;
+  const band = (y, dir, rot) => {
+    const o = ((lt * 520 * dir) % 900 + 900) % 900;
+    return `<div class="abs" style="left:-300px;top:${y}px;width:2520px;height:70px;background:#c7a46a;transform:rotate(${rot}deg);overflow:hidden"><div class="en" style="position:absolute;left:${-900 + o}px;top:2px;font-size:58px;line-height:66px;color:#0b0e12;white-space:nowrap">${'WARNING ▲ '.repeat(30)}</div></div>`;
+  };
+  h += band(30, 1, -2) + band(985, -1, -2);
+  return h;
+}
+
+function cardEngine(c, lt) {
+  // ユスティ（ルールエンジン）の動き。背景にユスティ、左に順番に処理を見せる（design.md §2 の実際の動き）
+  const steps = c.steps ?? [0, 1.3, 3.0, 4.4, 5.8];
+  const st = steps.filter((x) => lt >= x).length - 1;
+  let h = `<div class="abs" style="inset:0;background:linear-gradient(110deg,#0b0e12 40%,#2a2414 100%)"></div>`;
+  h += cutout(YUSTI, 1480, 30 + Math.sin(lt * 1.5) * 8, 1250, '#c7a46a', 26, 'opacity:.9');
+  h += `<div class="abs" style="left:0;top:0;width:1250px;height:1080px;background:linear-gradient(90deg,rgba(11,14,18,.96) 70%,transparent)"></div>`;
+  h += `<div class="abs jp9" style="left:80px;top:50px;background:#c7a46a;color:#0b0e12;font-size:40px;padding:6px 24px;transform:skewX(-10deg)">ユスティ｜ルールエンジン（決まった規則）</div>`;
+  const label = ['① レセプトの行と事実を受け取る', '② R01〜R14：当てはまるか → 確かめる', '③ わからない事実は、推測しない', '④ 指摘があっても、合計は変えない', '⑤ 同じ入力なら、毎回同じ答え'][st];
+  const lk = easeOut((lt - steps[st]) / 0.18);
+  h += `<div class="abs jp9" style="left:${80 - (1 - lk) * 300}px;top:140px;font-size:66px;color:#fff;white-space:nowrap;transform:skewX(-8deg);text-shadow:6px 6px 0 #0e5cc6;opacity:${lk}">${esc(label)}</div>`;
+  const y0 = 300;
+  if (st === 0) {
+    const rows = [['C001', '在宅患者訪問診療料'], ['C002', '在医総管'], ['D008', 'BNP'], ['事実', '要介護度・別表第八の二・別表第七']];
+    rows.forEach(([a, b], i) => {
+      const k = easeOut((lt - 0.15 - i * 0.18) / 0.25);
+      h += `<div class="abs" style="left:${100 - (1 - k) * 800}px;top:${y0 + i * 150}px;width:1000px;height:120px;background:${i === 3 ? '#16202e' : '#fff'};border-left:14px solid ${i === 3 ? '#7ec1ff' : '#c7a46a'};transform:skewX(-6deg)">
+        <div class="en" style="position:absolute;left:30px;top:22px;font-size:62px;color:${i === 3 ? '#7ec1ff' : '#0b0e12'}">${esc(a)}</div>
+        <div class="jp9" style="position:absolute;left:250px;top:36px;font-size:44px;color:${i === 3 ? '#fff' : '#0b0e12'};white-space:nowrap">${esc(b)}</div></div>`;
+    });
+  } else {
+    // R01〜R14 のタイル。② で順に光り、③ で 1 枚が「情報不足」になる
+    for (let i = 0; i < 14; i++) {
+      const col = i % 7, row = Math.floor(i / 7);
+      const sweep = st === 1 ? (lt - steps[1]) / 1.4 : 1;
+      const on = sweep * 14 > i;
+      const unknown = st >= 2 && i === 2;
+      const x = 100 + col * 150, y = y0 + row * 170;
+      const bgc = unknown ? '#7ec1ff' : on ? '#c7a46a' : '#16202e';
+      h += `<div class="abs" style="left:${x}px;top:${y}px;width:130px;height:140px;background:${bgc};transform:skewX(-8deg);${unknown && st === 2 ? 'box-shadow:0 0 0 8px #fff;' : ''}">
+        <div class="en" style="position:absolute;left:0;right:0;top:14px;text-align:center;font-size:48px;color:${on || unknown ? '#0b0e12' : '#4d6688'}">R${String(i + 1).padStart(2, '0')}</div>
+        <div class="jp9" style="position:absolute;left:0;right:0;top:78px;text-align:center;font-size:${unknown ? 24 : 40}px;color:#0b0e12">${unknown ? '情報不足' : on ? '✓' : ''}</div></div>`;
+    }
+    const by = y0 + 380;
+    if (st === 2) h += `<div class="abs jp9" style="left:100px;top:${by}px;font-size:46px;color:#7ec1ff;white-space:nowrap">R03：要介護度が不明 → 判定せず「情報不足」を返す</div>`;
+    if (st === 3) {
+      const k = easeOut((lt - steps[3]) / 0.2);
+      h += `<div class="abs" style="left:100px;top:${by}px;width:1000px;height:130px;background:#fff;transform:skewX(-6deg)"><div class="jp9" style="position:absolute;left:30px;top:30px;font-size:58px;color:#0b0e12">合計</div><div class="jp9" style="position:absolute;right:40px;top:30px;font-size:58px;color:#0b0e12">そのまま</div></div>`;
+      h += `<div class="abs jp9" style="left:1130px;top:${by - 20}px;font-size:110px;transform:rotate(-12deg) scale(${lerp(2.5, 1, back(k))});color:#c7a46a;opacity:${k}">🔒</div>`;
+    }
+    if (st === 4) {
+      for (let j = 0; j < 3; j++) {
+        const k = easeOut((lt - steps[4] - j * 0.15) / 0.2);
+        h += `<div class="abs jp9" style="left:${100 + j * 340}px;top:${by}px;width:310px;height:130px;background:#c7a46a;color:#0b0e12;font-size:44px;line-height:130px;text-align:center;transform:skewX(-8deg) translateY(${(1 - k) * 200}px);opacity:${k}">同じ答え</div>`;
+      }
+    }
+  }
+  return h;
+}
+
+function cardCover(c, lt) {
+  // ユスティとローカルルールを並べる（K6）。判定はユスティ、地域のクセはローカルルールの欄に出て、メンターが補う
+  let h = bgGrid();
+  const k1 = easeOut(lt / 0.25), k2 = easeOut((lt - 0.9) / 0.25);
+  h += `<div class="abs jp9" style="left:90px;top:60px;font-size:60px;color:#fff;transform:skewX(-8deg);text-shadow:6px 6px 0 #0e5cc6">同じレセプトを、2 つの目で。</div>`;
+  h += `<div class="abs" style="left:${90 - (1 - k1) * 900}px;top:200px;width:820px;height:560px;background:#0b0e12;border:6px solid #c7a46a;transform:skewX(-4deg)">
+    <div class="jp9" style="background:#c7a46a;color:#0b0e12;font-size:38px;padding:10px 24px">ユスティ｜全国共通の決まり</div>
+    <div class="jp9" style="font-size:40px;color:#fff;padding:36px 30px 0">R11　検体検査判断料は区分ごとに月 1 回</div>
+    <div class="jp9" style="font-size:40px;color:#fff;padding:20px 30px 0">D008　BNP（生化学的検査(Ⅱ)判断料）</div></div>`;
+  if (lt > 0.45) { const s = lerp(3, 1, back((lt - 0.45) / 0.14)); h += `<div class="abs jp9" style="left:480px;top:620px;transform:translate(-50%,-50%) rotate(-8deg) scale(${s});font-size:96px;color:#c7a46a;border:8px solid #c7a46a;padding:4px 30px;background:#0b0e12;white-space:nowrap">誤りなし</div>`; }
+  const glow = lt > 1.2 ? 0.5 + 0.5 * Math.sin((lt - 1.2) * 8) : 0;
+  h += `<div class="abs" style="left:${1010 + (1 - k2) * 900}px;top:200px;width:820px;height:560px;background:#0b0e12;border:6px solid #7ec1ff;transform:skewX(-4deg);box-shadow:0 0 ${30 + glow * 50}px rgba(126,193,255,${0.3 + glow * 0.5});opacity:${clamp(k2 * 2)}">
+    <div class="jp9" style="background:#7ec1ff;color:#0b0e12;font-size:38px;padding:10px 24px">ローカルルール｜地域・承認済み</div>
+    <div class="jp9" style="font-size:40px;color:#fff;padding:36px 30px 0;line-height:1.45">東京都・支払基金：<br>BNP が査定された（2025-02 診療分）</div>
+    <div class="jp9" style="font-size:32px;color:#aab2bd;padding:20px 30px 0;line-height:1.5">理由「長期にわたり漫然と実施されている<br>ものと認められるため」</div></div>`;
+  h += `<div class="abs jp9" style="left:1010px;top:800px;font-size:34px;color:#aab2bd;opacity:${clamp(k2 * 2)}">判定には混ぜない。メンターが読んで、本人に伝える。</div>`;
+  return h;
+}
+
+function cardJoy(c, lt) {
+  // 楽しく働いてキャリアアップ：真ん中は喜ぶ医療事務の女性。メンターたちが両脇で一緒に喜ぶ
+  let h = bgRays(lt, '#7ec1ff', '#0e5cc6');
+  // 紙吹雪（製品の色だけ）
+  for (let i = 0; i < 40; i++) {
+    const x = rnd(i) * 1920, y = ((rnd(i + 50) * 1200 + lt * (220 + rnd(i + 9) * 200)) % 1200) - 100;
+    const col = ['#fff', '#c7a46a', '#0b0e12', '#7ec1ff'][i % 4];
+    h += `<div class="abs" style="left:${x}px;top:${y}px;width:18px;height:30px;background:${col};transform:rotate(${lt * 200 + i * 37}deg);opacity:.85"></div>`;
+  }
+  const xs = { makki: 230, natsu: 520, yuki: 1400, haru: 1690 };
+  Object.entries(xs).forEach(([k, x], i) => {
+    const ap = easeOut((lt - 0.15 - i * 0.07) / 0.3);
+    h += cutout(CHARS[k].img, x, 470 + (1 - ap) * 800, 660, '#0b0e12', 18, 'filter:drop-shadow(18px 18px 0 #0b0e12) brightness(.95)');
+  });
+  const pk = easeOut(lt / 0.3);
+  h += `<div class="abs" style="left:560px;top:${330 + (1 - pk) * 700}px;width:800px;height:800px;border-radius:50%;background:radial-gradient(circle,#fff 0%,rgba(255,255,255,.55) 35%,transparent 70%)"></div>`;
+  // 真ん中は喜ぶ医療事務の女性（assets/characters/clerk/clerk-joy.png）。小さく跳ねる
+  const jump = Math.abs(Math.sin(lt * 5)) * 18;
+  h += cutout(CLERK, 960, 360 - jump + (1 - pk) * 700, 1080, '#0b0e12', 22);
+  return h;
+}
+
+const CARDS = { joy: cardJoy, boss: cardBoss, engine: cardEngine, cover: cardCover, yusti: cardYusti, select: cardSelect, char: cardChar, flow: cardFlow, problem: cardProblem, logo: cardLogo, models: cardModels, text: cardText, image: cardImage, party: cardChars2 };
+
+async function renderAt(t) {
+  t = clamp(t, 0, TOTAL - 1e-6);
+  const c = CUTS.find((x) => t >= x.start && t < x.start + x.dur) ?? CUTS[CUTS.length - 1];
+  const lt = t - c.start;
+  let wait = Promise.resolve();
+  if (c.clip) {
+    $bg.innerHTML = c.clip.frame && c.clip.frame !== 'full' ? bgOf({ bg: c.bg ?? 'rays' }, lt) : '';
+    wait = placeClip(c, lt);
+  } else {
+    hideClips();
+    $bg.innerHTML = (CARDS[c.card] ?? cardText)(c, lt);
+  }
+  $fg.innerHTML = (c.layers ?? []).map((L) => textLayer(L, lt, c)).join('');
+  // 切り替わりの白い閃光と揺れ
+  const flash = c.flash === false ? 0 : clamp(1 - lt / 0.09);
+  const shakeAmt = c.shake ? clamp(1 - lt / 0.35) * 26 : 0;
+  stage.style.transform = stage.style.transform.replace(/ translate\([^)]*\)/, '') + (shakeAmt ? ` translate(${(rnd(t * 97) - 0.5) * shakeAmt}px, ${(rnd(t * 53) - 0.5) * shakeAmt}px)` : '');
+  $fx.innerHTML = flash > 0 ? `<div class="abs" style="inset:0;background:#fff;opacity:${flash * 0.85}"></div>` : '';
+  // 終わりの暗転
+  if (c.fadeOut && lt > c.dur - c.fadeOut) $fx.innerHTML += `<div class="abs" style="inset:0;background:#000;opacity:${clamp((lt - (c.dur - c.fadeOut)) / c.fadeOut)}"></div>`;
+  await wait;
+}
+
+window.ready = load().then(async () => {
+  window.TOTAL = TOTAL;
+  if (!Q.get('render')) {
+    if (Q.get('t')) { await renderAt(Number(Q.get('t'))); return; }
+    const t0 = performance.now();
+    const loop = async () => { await renderAt(((performance.now() - t0) / 1000) % TOTAL); requestAnimationFrame(loop); };
+    loop();
+  }
+});
+</script>
+</body>
+</html>

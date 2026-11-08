@@ -1,0 +1,1241 @@
+{
+ "title": "仕上げ案3「仕上げ案2＋全体の構成図」",
+ "theme": "bands",
+ "duck": 0.35,
+ "bgm": [
+  {
+   "file": "bgm/intro-cold.wav",
+   "at": 0,
+   "dur": 7.4,
+   "vol": 0.9,
+   "fadeIn": 0.2,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-a.wav",
+   "cut": 4,
+   "at": 0,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-b.wav",
+   "cut": 4,
+   "at": 32.3,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-a.wav",
+   "cut": 4,
+   "at": 64.6,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-b.wav",
+   "cut": 4,
+   "at": 96.9,
+   "dur": 29,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 2
+  }
+ ],
+ "cuts": [
+  {
+   "dur": 2.4,
+   "card": "yusti",
+   "flash": false,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "AIの進化により、",
+     "x": 560,
+     "y": 420,
+     "size": 110,
+     "shadow": "#c7a46a",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 1.8,
+   "card": "yusti",
+   "flash": false,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "レセプト算定は\nなくなる……",
+     "x": 560,
+     "y": 520,
+     "size": 120,
+     "shadow": "#c7a46a",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 0.6,
+   "card": "text",
+   "bg": "black",
+   "flash": false
+  },
+  {
+   "dur": 1.8,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "cut",
+     "t": 0,
+     "text": "……ことは、",
+     "size": 130,
+     "x": 760,
+     "y": 470,
+     "rot": -6
+    }
+   ]
+  },
+  {
+   "dur": 1.4,
+   "card": "text",
+   "bg": "rays",
+   "shake": true,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "なかった。",
+     "size": 280,
+     "rot": -8
+    }
+   ]
+  },
+  {
+   "dur": 1.2,
+   "card": "text",
+   "bg": "black",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "WARNING",
+     "en": true,
+     "size": 330,
+     "color": "#c7a46a"
+    }
+   ],
+   "shake": true
+  },
+  {
+   "dur": 6.4,
+   "card": "boss",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "レセプト算定が、なくならない理由。",
+     "size": 72,
+     "y": 190,
+     "plate": true,
+     "rot": -4
+    },
+    {
+     "style": "slam",
+     "t": 0.35,
+     "text": "都道府県ごとの審査基準　支払基金 約33,000件／国保連 約18,000件",
+     "size": 48,
+     "x": 120,
+     "align": "left",
+     "y": 360,
+     "color": "#c7a46a",
+     "shadow": "#0b0e12",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "slam",
+     "t": 0.75,
+     "text": "審査する人は、2 年ごとに替わる。",
+     "size": 66,
+     "x": 120,
+     "align": "left",
+     "y": 500,
+     "color": "#c7a46a",
+     "shadow": "#0b0e12",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "slam",
+     "t": 1.15,
+     "text": "正しかったかは、査定が届くまでわからない。",
+     "size": 66,
+     "x": 120,
+     "align": "left",
+     "y": 640,
+     "color": "#c7a46a",
+     "shadow": "#0b0e12",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "slam",
+     "t": 2.2,
+     "text": "全国共通の決まりはユスティ。地域のクセは、現場の知識の中。",
+     "size": 64,
+     "y": 820,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12",
+     "plate": true,
+     "rot": -4
+    },
+    {
+     "style": "src",
+     "t": 0.35,
+     "text": "審査基準の件数：2021年3月時点・厚生労働省資料（2024年4月までに統一の検討が一巡）。審査委員の任期は 2 年"
+    }
+   ]
+  },
+  {
+   "dur": 2,
+   "card": "select",
+   "layers": [
+    {
+     "style": "tape",
+     "t": 0.1,
+     "text": "CHOOSE YOUR MENTOR　4人から、本人が選ぶ",
+     "y": 1010,
+     "rot": -3,
+     "h": 90
+    }
+   ]
+  },
+  {
+   "dur": 3,
+   "card": "char",
+   "char": "makki",
+   "line": "静かに優しい",
+   "voice": {
+    "file": "voice/a-intro.mp3",
+    "at": 0.25,
+    "from": 0,
+    "dur": 1.7,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2.9,
+   "card": "char",
+   "char": "natsu",
+   "line": "明るくはきはき",
+   "c1": "#7ec1ff",
+   "c2": "#0e5cc6",
+   "voice": {
+    "file": "voice/b-intro.mp3",
+    "at": 0.2,
+    "from": 0,
+    "dur": 3.4,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2.1,
+   "card": "char",
+   "char": "yuki",
+   "line": "冷静で平坦",
+   "voice": {
+    "file": "voice/c-intro.mp3",
+    "at": 0.2,
+    "from": 0,
+    "dur": 1.65,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 2.1,
+   "card": "char",
+   "char": "haru",
+   "line": "強く引っ張る",
+   "c1": "#7ec1ff",
+   "c2": "#0e5cc6",
+   "voice": {
+    "file": "voice/d-intro.mp3",
+    "at": 0.2,
+    "from": 0,
+    "dur": 1.6,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "01",
+    "from": 15,
+    "speed": 2.2,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "初回のあいさつ",
+     "text": "選んだメンターが、声で名乗って呼び方を聞く。"
+    }
+   ],
+   "voice": {
+    "file": "voice/a-intro.mp3",
+    "at": 0.6,
+    "from": 2.3,
+    "dur": 3.2,
+    "vol": 1.1
+   }
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "02b",
+    "from": 3.5,
+    "speed": 1.2,
+    "rect": [
+     230,
+     20,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.6,
+     "box": [
+      90,
+      110,
+      1810,
+      430
+     ],
+     "text": "ローカルルール",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "メンター｜Claude Sonnet",
+     "text": "訪問の記録を開くと、メンターから声をかける。"
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-08",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 7,
+     "to": 6,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 7,
+     "to": 7,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "算定の画面を、",
+     "size": 110,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "一緒に見る。",
+     "size": 190,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 6,
+     "to": 6,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "clip": {
+    "id": "03",
+    "from": 6,
+    "speed": 1,
+    "rect": [
+     0,
+     0,
+     1920
+    ],
+    "rect2": [
+     200,
+     100,
+     1400
+    ]
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.6,
+     "alpha": 0.5
+    },
+    {
+     "style": "bubble",
+     "t": 0.6,
+     "char": "makki",
+     "cps": 20,
+     "text": "見本さん、練習問題ですね。ユスティが気にしているのは C002 の行です。患者さんの状態が別表第八の二に当たるかどうか、カルテの記載をまず見てください。"
+    },
+    {
+     "style": "telop",
+     "t": 0.3,
+     "label": "メンター｜Claude Sonnet",
+     "text": "答えは言わない。見る場所と理由を言う。"
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 6,
+     "to": 6,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "03",
+    "from": 26,
+    "speed": 2,
+    "frame": "full"
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.55,
+     "alpha": 0.45
+    },
+    {
+     "style": "mini",
+     "t": 0.6,
+     "flow": "veteran",
+     "x": 640,
+     "y": 150,
+     "scale": 0.64,
+     "rot": 1.5,
+     "revealSpan": 1.4
+    },
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "答えられない問いは、ベテランへ。",
+     "size": 88,
+     "x": 960,
+     "y": 985,
+     "plate": true,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.15,
+     "text": "ベテランのメンター｜Claude Opus",
+     "size": 52,
+     "x": 70,
+     "y": 90,
+     "align": "left",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 6,
+     "to": 6,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-04",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 6,
+     "to": 5,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 6,
+     "to": 6,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "raysGold",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "JUDGE",
+     "en": true,
+     "size": 420,
+     "color": "#fff",
+     "alpha": 0.95
+    },
+    {
+     "style": "slam",
+     "t": 0.3,
+     "text": "正否はユスティ。",
+     "size": 140,
+     "y": 820,
+     "shadow": "#0b0e12",
+     "plate": true
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 5,
+     "to": 5,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 7.2,
+   "card": "engine",
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 5,
+     "to": 5,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-10",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 5,
+     "to": 4,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 5,
+     "to": 5,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "clip": {
+    "id": "07",
+    "from": 9,
+    "speed": 2.5,
+    "frame": "full"
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.55,
+     "alpha": 0.45
+    },
+    {
+     "style": "mini",
+     "t": 0.6,
+     "flow": "local",
+     "x": 640,
+     "y": 150,
+     "scale": 0.64,
+     "rot": 1.5,
+     "revealSpan": 1.4
+    },
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "地域のルールを、知識に。",
+     "size": 88,
+     "x": 960,
+     "y": 985,
+     "plate": true,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.15,
+     "text": "査定通知を読む｜Claude Sonnet",
+     "size": 52,
+     "x": 70,
+     "y": 90,
+     "align": "left",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 2.6,
+   "clip": {
+    "id": "06",
+    "from": 16,
+    "speed": 1,
+    "rect": [
+     200,
+     60,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 0.5,
+     "box": [
+      150,
+      180,
+      1760,
+      80
+     ],
+     "text": "地域ルール",
+     "below": true
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 6.6,
+   "card": "cover",
+   "layers": [
+    {
+     "style": "dim",
+     "t": 2.1,
+     "alpha": 0.55
+    },
+    {
+     "style": "bubble",
+     "t": 2.1,
+     "char": "makki",
+     "cps": 22,
+     "size": 46,
+     "text": "ユスティの判定では、誤りはありません。ただ、この請求先では 2 月分の BNP が査定されています。今月のカルテと摘要を、もう一度見てください。"
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "全国の決まりは、ユスティ。",
+     "size": 110,
+     "y": 420,
+     "color": "#c7a46a",
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.45,
+     "text": "地域のクセは、メンター。",
+     "size": 150,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "08",
+    "from": 11,
+    "speed": 2.5,
+    "frame": "full"
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.55,
+     "alpha": 0.45
+    },
+    {
+     "style": "mini",
+     "t": 0.6,
+     "flow": "expire",
+     "x": 640,
+     "y": 150,
+     "scale": 0.64,
+     "rot": 1.5,
+     "revealSpan": 1.4
+    },
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "ローカルルールには、見直しが要る。",
+     "size": 88,
+     "x": 960,
+     "y": 985,
+     "plate": true,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.15,
+     "text": "改定・改選・180 日 → 要再検証",
+     "size": 52,
+     "x": 70,
+     "y": 90,
+     "align": "left",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-07",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 4,
+     "to": 3,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 4,
+     "to": 4,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 4.4,
+   "clip": {
+    "id": "05b",
+    "from": 0.5,
+    "speed": 2.4,
+    "frame": "full"
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.55,
+     "alpha": 0.45
+    },
+    {
+     "style": "mini",
+     "t": 0.6,
+     "flow": "chart",
+     "x": 640,
+     "y": 150,
+     "scale": 0.64,
+     "rot": 1.5,
+     "revealSpan": 1.4
+    },
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "撮れば、書き写す。",
+     "size": 88,
+     "x": 960,
+     "y": 985,
+     "plate": true,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.15,
+     "text": "書き写す Sonnet・振り分け Haiku",
+     "size": 52,
+     "x": 70,
+     "y": 90,
+     "align": "left",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 3,
+     "to": 3,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-05",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 3,
+     "to": 2,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 3,
+     "to": 3,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 4.4,
+   "clip": {
+    "id": "04",
+    "from": 19,
+    "speed": 1.6,
+    "frame": "full"
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.55,
+     "alpha": 0.45
+    },
+    {
+     "style": "mini",
+     "t": 0.6,
+     "flow": "doctor",
+     "x": 640,
+     "y": 150,
+     "scale": 0.64,
+     "rot": 1.5,
+     "revealSpan": 1.4
+    },
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "医師には、選ぶだけの質問。",
+     "size": 88,
+     "x": 960,
+     "y": 985,
+     "plate": true,
+     "shadow": "#0b0e12"
+    },
+    {
+     "style": "slam",
+     "t": 0.15,
+     "text": "点数・金額は出さない",
+     "size": 52,
+     "x": 70,
+     "y": 90,
+     "align": "left",
+     "plate": true,
+     "rot": -3,
+     "from": 1.6
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 2,
+     "to": 2,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-09",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 2,
+     "to": 1,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 2,
+     "to": 2,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "clip": {
+    "id": "06",
+    "from": 1,
+    "speed": 2.8,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.1,
+     "text": "月末は、まとめて点検。",
+     "size": 110,
+     "x": 1250,
+     "y": 920,
+     "shadow": "#0b0e12",
+     "plate": true
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 1,
+     "to": 1,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "card": "flow",
+   "flow": "arch",
+   "revealAt": 0.1,
+   "revealSpan": 3.2,
+   "hot": [
+    "engine>mentor",
+    "mentor>skills",
+    "hooks>skills"
+   ],
+   "hotNodes": [
+    "mentor"
+   ],
+   "layers": []
+  },
+  {
+   "dur": 3.6,
+   "card": "models",
+   "title": "役割ごとに、モデルを使い分ける。",
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 1,
+     "to": 1,
+     "total": 7
+    }
+   ]
+  },
+  {
+   "dur": 1.5,
+   "card": "problem",
+   "still": "scene-11",
+   "breakAt": 0.75,
+   "layers": [
+    {
+     "style": "hp",
+     "t": 0.5,
+     "from": 1,
+     "to": 0,
+     "total": 7
+    },
+    {
+     "style": "hp",
+     "t": 0,
+     "from": 1,
+     "to": 1,
+     "total": 7,
+     "end": 0.5
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "party",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.2,
+     "text": "ひとりで、抱えない。",
+     "size": 170,
+     "y": 540,
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 1.9,
+   "card": "text",
+   "bg": "sky",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "解くほど、",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.4,
+     "text": "Lv が上がる。",
+     "size": 200,
+     "y": 640,
+     "color": "#0b0e12",
+     "shadow": "#fff"
+    }
+   ]
+  },
+  {
+   "dur": 3.2,
+   "card": "joy",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.3,
+     "text": "楽しく働いて、",
+     "size": 110,
+     "y": 150,
+     "shadow": "#0b0e12",
+     "plate": true
+    },
+    {
+     "style": "slam",
+     "t": 0.7,
+     "text": "キャリアアップ！",
+     "size": 150,
+     "y": 310,
+     "color": "#fff",
+     "shadow": "#0e5cc6",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "次は、",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.4,
+     "text": "あなたが責任者に。",
+     "size": 170,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 1.4,
+   "card": "text",
+   "bg": "black",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "COMING SOON",
+     "en": true,
+     "size": 300,
+     "color": "#7ec1ff"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "全体の数字の動きがわかる",
+     "size": 96,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "経営機能モード",
+     "size": 170,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "患者さんへの請求書・メール対応も",
+     "size": 90,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "事務作業補助モード！",
+     "size": 150,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "あなたが責任者に！",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "責任者算定試験モード",
+     "size": 150,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "card": "logo",
+   "sub": "医療事務一人ひとりに、隣で働く AI メンターを。",
+   "fadeOut": 1
+  }
+ ]
+}

@@ -1,0 +1,13 @@
+image_generation ツールで次の画像を 1 枚生成してください（transparent background を使う。ファイルのコピーや追加作業は不要）。
+
+Create ONE polished anime character PNG with a fully transparent background. Input image 1 is ONLY the rendering-style and framing reference (same highly polished detailed anime illustration, crisp line art, softly shaded skin, glossy eyes). Do NOT copy the person or the uniform in image 1.
+
+CHARACTER: a Japanese woman in her late 20s who works as a medical office clerk at a small home-care clinic. Plain, modest, approachable look (素朴): simple black-rimmed round glasses, little makeup, dark brown hair in a simple low ponytail with a few loose strands. Kind face.
+
+OUTFIT: a typical Japanese clinic office uniform: white blouse with a small bow at the collar, plain navy vest, a small plain ID card on a navy strap with NO text on it.
+
+POSE AND EXPRESSION: she is overjoyed: both arms raised high in a celebratory banzai / cheering pose, fists or open hands above shoulder level, big happy open-mouth smile with eyes slightly closed in joy, tiny sparkle of excitement. Waist-up, facing the viewer, centered, the whole raised hands visible inside the canvas.
+
+CANVAS: portrait, about 1342 x 2000 pixels. Head and hands in the upper half, cropped at the waist at the bottom edge.
+
+No text, no letters, no logos anywhere. Transparent background only, no shadow box, no frame.

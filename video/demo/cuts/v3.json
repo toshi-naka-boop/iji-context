@@ -1,0 +1,664 @@
+{
+ "title": "素案3「中身を全部見せる」（構成図が主役。図が光る → その画面、をくり返す）",
+ "theme": "textwall",
+ "duck": 0.3,
+ "bgm": [
+  {
+   "file": "bgm/intro-cold.wav",
+   "at": 0,
+   "dur": 9.6,
+   "vol": 0.9,
+   "fadeIn": 0.3,
+   "fadeOut": 1
+  },
+  {
+   "file": "bgm/jazz-a.wav",
+   "cut": 4,
+   "at": 0,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-b.wav",
+   "cut": 4,
+   "at": 32.3,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-a.wav",
+   "cut": 4,
+   "at": 64.6,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 0.8
+  },
+  {
+   "file": "bgm/jazz-b.wav",
+   "cut": 4,
+   "at": 96.9,
+   "dur": 32.8,
+   "vol": 0.75,
+   "fadeIn": 0.4,
+   "fadeOut": 2
+  }
+ ],
+ "cuts": [
+  {
+   "dur": 3.4,
+   "card": "yusti",
+   "flash": false,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.2,
+     "text": "AIの進化により、",
+     "x": 560,
+     "y": 300,
+     "size": 96,
+     "shadow": "#c7a46a",
+     "plate": true
+    },
+    {
+     "style": "slam",
+     "t": 1.2,
+     "text": "人の手による\nレセプト算定は",
+     "x": 560,
+     "y": 600,
+     "size": 112,
+     "shadow": "#c7a46a",
+     "plate": true
+    }
+   ]
+  },
+  {
+   "dur": 2.2,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "type",
+     "t": 0.1,
+     "text": "なくなる……",
+     "size": 150,
+     "rot": 0,
+     "cps": 6
+    }
+   ]
+  },
+  {
+   "dur": 0.8,
+   "card": "text",
+   "bg": "black",
+   "flash": false
+  },
+  {
+   "dur": 2.6,
+   "card": "text",
+   "bg": "black",
+   "flash": false,
+   "layers": [
+    {
+     "style": "cut",
+     "t": 0,
+     "text": "……ことは、",
+     "size": 130,
+     "x": 760,
+     "y": 470,
+     "rot": -6
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "rays",
+   "shake": true,
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0,
+     "text": "なかった。",
+     "size": 260,
+     "rot": -8
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "AI に任せるのは、",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.7,
+     "text": "読む・話す・整える。",
+     "size": 140,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "card": "flow",
+   "flow": "core",
+   "revealSpan": 3.4,
+   "hot": [
+    "yusti>mentor",
+    "know>mentor"
+   ],
+   "hotNodes": [
+    "yusti",
+    "mentor"
+   ],
+   "layers": [
+    {
+     "style": "telop",
+     "t": 4,
+     "label": "AI は正否を決めない",
+     "text": "正否はユスティ（決まった規則）。判断は人。"
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "select",
+   "focus": "makki",
+   "voice": {
+    "file": "voice/a-intro.mp3",
+    "at": 0.1,
+    "from": 0,
+    "dur": 1.6,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 1.6,
+   "card": "select",
+   "focus": "natsu",
+   "flash": false,
+   "voice": {
+    "file": "voice/b-intro.mp3",
+    "at": 0.05,
+    "from": 0,
+    "dur": 1.5,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 1.6,
+   "card": "select",
+   "focus": "yuki",
+   "flash": false,
+   "voice": {
+    "file": "voice/c-intro.mp3",
+    "at": 0.05,
+    "from": 0,
+    "dur": 1.6,
+    "vol": 1.2
+   }
+  },
+  {
+   "dur": 1.8,
+   "card": "select",
+   "focus": "haru",
+   "flash": false,
+   "voice": {
+    "file": "voice/d-intro.mp3",
+    "at": 0.05,
+    "from": 0,
+    "dur": 1.6,
+    "vol": 1.2
+   },
+   "layers": [
+    {
+     "style": "tape",
+     "t": 0,
+     "text": "メンター 1 人 1 セッション（Agent SDK）",
+     "y": 1010,
+     "rot": -3,
+     "h": 90
+    }
+   ]
+  },
+  {
+   "dur": 4,
+   "clip": {
+    "id": "02b",
+    "from": 3.5,
+    "speed": 1.2,
+    "rect": [
+     230,
+     20,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.5,
+     "box": [
+      90,
+      110,
+      1810,
+      430
+     ],
+     "text": "ローカルルール",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "メンター｜Claude Sonnet",
+     "text": "訪問の記録を開くと、メンターから声をかける。"
+    }
+   ]
+  },
+  {
+   "dur": 1.6,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "算定の画面を、",
+     "size": 110,
+     "y": 420
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "一緒に見る。",
+     "size": 190,
+     "y": 650,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 7,
+   "clip": {
+    "id": "03",
+    "from": 6,
+    "speed": 1,
+    "rect": [
+     0,
+     0,
+     1920
+    ],
+    "rect2": [
+     200,
+     100,
+     1400
+    ]
+   },
+   "layers": [
+    {
+     "style": "dim",
+     "t": 0.6,
+     "alpha": 0.5
+    },
+    {
+     "style": "bubble",
+     "t": 0.6,
+     "char": "makki",
+     "cps": 20,
+     "text": "見本さん、練習問題ですね。ユスティが気にしているのは C002 の行です。患者さんの状態が別表第八の二に当たるかどうか、カルテの記載をまず見てください。"
+    },
+    {
+     "style": "telop",
+     "t": 0.3,
+     "label": "メンター｜Claude Sonnet",
+     "text": "答えは言わない。見る場所と理由を言う。"
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "03",
+    "from": 24,
+    "speed": 1.5,
+    "rect": [
+     0,
+     200,
+     1920
+    ],
+    "rect2": [
+     140,
+     520,
+     1000
+    ]
+   },
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "確定する前は、答えを渡さない",
+     "text": "判定のルールと行だけ。点数と指摘の中身は渡さない。"
+    }
+   ]
+  },
+  {
+   "dur": 8,
+   "card": "flow",
+   "flow": "local",
+   "revealSpan": 4.6,
+   "hot": [
+    "notice>map",
+    "meet>ok",
+    "ok>hooks",
+    "hooks>mentor"
+   ],
+   "hotNodes": [
+    "ok",
+    "hooks"
+   ],
+   "layers": [
+    {
+     "style": "telop",
+     "t": 5,
+     "label": "地域のローカルルール",
+     "text": "審査支払機関・都道府県ごとの知識として集約。"
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "07",
+    "from": 8,
+    "speed": 1.6,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "通知の読み取り｜Claude Sonnet",
+     "text": "査定・返戻の通知 PDF を読む。"
+    }
+   ]
+  },
+  {
+   "dur": 4.2,
+   "clip": {
+    "id": "06",
+    "from": 14.5,
+    "speed": 1,
+    "rect": [
+     200,
+     60,
+     1150
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.3,
+     "box": [
+      150,
+      180,
+      1760,
+      80
+     ],
+     "text": "地域ルール：東京都・支払基金",
+     "below": true
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "月末の点検",
+     "text": "その県・その請求先のレセプトだけに反応する。"
+    }
+   ]
+  },
+  {
+   "dur": 6,
+   "card": "flow",
+   "flow": "expire",
+   "revealSpan": 3.4,
+   "hot": [
+    "t1>r",
+    "t2>r",
+    "t3>r"
+   ],
+   "hotNodes": [
+    "r"
+   ],
+   "layers": [
+    {
+     "style": "telop",
+     "t": 3.8,
+     "label": "状態を動かすのは規則と人",
+     "text": "AI は知識の状態を決めない。"
+    }
+   ]
+  },
+  {
+   "dur": 3.6,
+   "clip": {
+    "id": "08",
+    "from": 9.5,
+    "speed": 1.6,
+    "frame": "tilt"
+   },
+   "bg": "rays",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "知識",
+     "text": "承認済みだけを Skill として読む。履歴は git log。"
+    }
+   ]
+  },
+  {
+   "dur": 6,
+   "card": "flow",
+   "flow": "chart",
+   "revealSpan": 3.2,
+   "hot": [
+    "img>read",
+    "read>soap",
+    "soap>fact"
+   ],
+   "hotNodes": [
+    "read",
+    "soap"
+   ]
+  },
+  {
+   "dur": 3.4,
+   "clip": {
+    "id": "05b",
+    "from": 0.5,
+    "speed": 1.4,
+    "frame": "tilt",
+    "fromRight": true
+   },
+   "bg": "raysSky",
+   "layers": [
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "書き写し｜Claude Sonnet",
+     "text": "電子カルテの画面を撮れば、書いてあるまま。"
+    }
+   ]
+  },
+  {
+   "dur": 6,
+   "card": "flow",
+   "flow": "doctor",
+   "revealSpan": 3.2,
+   "hot": [
+    "mentor>check",
+    "check>doc"
+   ],
+   "hotNodes": [
+    "check"
+   ]
+  },
+  {
+   "dur": 4,
+   "clip": {
+    "id": "04",
+    "from": 18,
+    "speed": 1.3,
+    "rect": [
+     240,
+     300,
+     1100
+    ]
+   },
+   "layers": [
+    {
+     "style": "tag",
+     "t": 1.5,
+     "box": [
+      70,
+      415,
+      1400,
+      125
+     ],
+     "text": "「その他」「判定不能」も同じ大きさ"
+    },
+    {
+     "style": "telop",
+     "t": 0.2,
+     "label": "医師確認",
+     "text": "点数・金額は出さない。医師は選ぶだけ。"
+    }
+   ]
+  },
+  {
+   "dur": 5.6,
+   "card": "flow",
+   "flow": "veteran",
+   "revealSpan": 3,
+   "hot": [
+    "mentor>vet",
+    "human>know"
+   ],
+   "hotNodes": [
+    "vet"
+   ]
+  },
+  {
+   "dur": 6,
+   "card": "models"
+  },
+  {
+   "dur": 2.6,
+   "card": "party",
+   "layers": [
+    {
+     "style": "slam",
+     "t": 0.3,
+     "text": "ひとりで、抱えない。",
+     "size": 170,
+     "y": 540,
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 1.4,
+   "card": "text",
+   "bg": "black",
+   "layers": [
+    {
+     "style": "huge",
+     "t": 0,
+     "text": "COMING SOON",
+     "en": true,
+     "size": 300,
+     "color": "#7ec1ff"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "全体の数字の動きがわかる",
+     "size": 96,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "経営機能モード",
+     "size": 170,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 2.4,
+   "card": "text",
+   "bg": "stripes",
+   "layers": [
+    {
+     "style": "badge",
+     "t": 0,
+     "text": "COMING SOON",
+     "size": 44
+    },
+    {
+     "style": "slam",
+     "t": 0.05,
+     "text": "あなたが責任者に！",
+     "size": 110,
+     "y": 400
+    },
+    {
+     "style": "slam",
+     "t": 0.5,
+     "text": "責任者算定試験モード",
+     "size": 150,
+     "y": 640,
+     "color": "#7ec1ff",
+     "shadow": "#0b0e12"
+    }
+   ]
+  },
+  {
+   "dur": 4.6,
+   "card": "logo",
+   "sub": "医療事務一人ひとりに、隣で働く AI メンターを。",
+   "fadeOut": 1
+  }
+ ]
+}

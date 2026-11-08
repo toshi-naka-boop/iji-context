@@ -1,0 +1,69 @@
+<title>レセメン デモ動画 素案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* 単一の暗い画面（レセメンの HUD の色）。素案を縦に並べ、1 本ずつ見比べる */
+  :root {
+    --bg: #0b0e12; --panel: #141a22; --line: #2a323d; --fg: #f2f5fa; --muted: #aab2bd; --accent: #7ec1ff; --deep: #0e5cc6;
+    --jp: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--jp); line-height: 1.7; }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+  header h1 { font-size: clamp(28px, 6vw, 44px); font-weight: 900; margin: 0; transform: skewX(-8deg); text-shadow: 4px 4px 0 var(--deep); text-wrap: balance; }
+  header p { color: var(--muted); margin: 8px 0 0; max-width: 65ch; }
+  section { display: grid; gap: 12px; scroll-margin-top: 16px; }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); font-weight: 900; padding: 2px 14px; transform: skewX(-10deg); width: max-content; }
+  h2 { margin: 0; font-size: clamp(20px, 4.5vw, 28px); font-weight: 900; text-wrap: balance; }
+  .meta { color: var(--muted); margin: 0; }
+  video, .pending { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line); display: block; }
+  .pending { display: grid; place-items: center; color: var(--muted); }
+  ul { margin: 0; padding-left: 1.2em; color: var(--muted); }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>レセメン デモ動画 素案</h1>
+    <p>いちばん上が最終版（冒頭＋仕上げ案3）です。その下に仕上げ案と、以前の素案を残しています。</p>
+    <p>冒頭 37 秒のあとに続く本編（140 秒以内）の素案です。720p の確認用で、背景の演出は素案ごとに変えています。どの素案も、ロゴの前に「COMING SOON：経営機能モード／責任者算定試験モード」を入れています。改訂版では、メンターが算定画面を見てアドバイスする場面を足し、曲を参考動画寄りに差し替え、最後の全員の並びを直しました。</p>
+  </header>
+  <div id="list"></div>
+</div>
+
+<script>
+  // 動画は Artifact の asset store に置いた mp4。url が空の素案は「書き出し中」と出す
+  const DRAFTS = [
+    { id: 'final', name: '最終版「冒頭＋仕上げ案3」', bg: '冒頭 37 秒 → 本編 133 秒（ページは 720p の確認用。提出用の 1080p は手元の video/demo/out/resemen-demo-final.mp4）', len: '2 分 49 秒（上限 3 分）', url: '/_blob/749ea20cf3d6d21766b80ad059b1824d', points: ['冒頭「医療事務って大変」のあと、そのまま本編につなぐ', '本編は仕上げ案3と同じ'] },
+    { id: 'f3', name: '仕上げ案3「仕上げ案2＋全体の構成図」', bg: '横に走る太い帯・曲：アシッドジャズ（素案3と同じ並び）', len: '133 秒', url: '/_blob/9a159a7d55012b1aa11192f97bf866ae', points: ['構成は仕上げ案2（のこりの課題ゲージ）。操作画面に、大きな中身の図が被さってくる', 'COMING SOON に「事務作業補助モード！（患者さんへの請求書・メール対応も）」', 'JUDGE の文字を白に', 'ボスの演出をやめ、WARNING のあとに理由を 1 画面で', 'メンター紹介は素案1（4 人それぞれの声をフルで）', 'モデルの使い分けの前に、全体の構成図（README の図を並べ直したもの）', '「賞味期限」→「ローカルルールには、見直しが要る」', '最後は、メガネの医療事務の女性が両手を上げて喜び、メンターたちと一緒に「楽しく働いて、キャリアアップ！」'] },
+    { id: 'f1', name: '仕上げ案1「ROUND 制・画面と中身を交互に」', bg: '横に走る太い帯・曲：アシッドジャズ（1 曲を繰り返し）', len: '135 秒', url: '/_blob/62cde9b03793422ba65834045251f8cd', points: ['素案4の速さ。メンター紹介も素案4', '「……なかった。」のあとにボス登場：地域で違う決まり（審査基準の件数・2 年ごとの改選・査定が届くまでわからない）', '課題の画面を ROUND 1〜FINAL で割り、そのたびに実際の画面 → 中身の図', 'ユスティの場面は、ユスティを背景にルールエンジンの動きを 5 段で', 'K6 で「ユスティは誤りなし／ローカルルールの欄が光る／メンターが補う」を並べて見せる', '最後は「解くほど Lv が上がる → 笑って働ける → 次は、あなたが責任者に」から COMING SOON'] },
+    { id: 'f2', name: '仕上げ案2「のこりの課題ゲージ・画面と中身を同時に」', bg: '横に走る太い帯・曲：アシッドジャズ（1 曲を繰り返し）', len: '116 秒', url: '/_blob/da836754a18056816445fc8e1adc26a4', points: ['ボス・メンター紹介・ユスティ・K6 の場面は仕上げ案1と同じ', '右上の「のこりの課題 7/7」が、課題の画面を割るたびに 1 つ減る', '画面を左に、中身の図を右に同時に出す。Claude の役割は画面の下の札に', '1 より 20 秒ほど短く、勢いが強い'] },
+    { id: 'opening', name: '冒頭「医療事務って大変」（課題）', bg: '紺の背景に白い文字・1080p', len: '37 秒（確定版・コミット済み）', url: '/_blob/d67c366158c98b5b139fe5e6c8081a81', points: ['本編の前に流す課題の部分', '素案のどれを選んでも、このあとにつなぐ'] },
+    { id: 'v1', name: '素案1「……ことは、なかった。」', bg: '斜めの色面・曲：ギターロック寄り', len: '140 秒（改訂版）', url: '/_blob/8d9045fc776deddf977c1b943a4f8570', points: ['ユスティが算定を片付ける →「なくなる……ことは、なかった。」', '4 人のメンターを声つきで 1 人ずつ紹介', '地域のローカルルールが知識になる流れを、画面と構成図で交互に', '残りの機能は課題の画面を割って解決'] },
+    { id: 'v2', name: '素案2「課題撃破」', bg: '網点・曲：明るいファンク', len: '112 秒（改訂版）', url: '/_blob/cdb447bdae6951f4e3b0923a964842dc', points: ['冒頭の課題画面を ROUND 1〜FINAL で 1 枚ずつ割る', '割るたびに解決の画面と Claude の役割を添える', '最後に ALL CLEAR → モデルの使い分け'] },
+    { id: 'v3', name: '素案3「中身を全部見せる」', bg: 'RESEMEN の文字の壁・曲：アシッドジャズ', len: '113 秒（改訂版）', url: '/_blob/5415aa8ba7b48d483622362547736b5f', points: ['構成図が主役。図が光る → その画面、をくり返す', 'Agent SDK・Skill・Hooks・モデルの使い分けを一番詳しく見せる'] },
+    { id: 'v4', name: '素案4「超高速」', bg: '横に走る太い帯・曲：ギターロック寄り', len: '92 秒（改訂版）', url: '/_blob/622e7e54a0982632a0aa4f78b40ba657', points: ['1 カット 1〜3 秒。説明は最小限で勢いを見せる', 'Sonnet / Opus / Haiku / Agent SDK を特大文字で連打'] },
+    { id: 'v5', name: '素案5「締め切りまでの1か月」', bg: '斜めの二分割・曲：明るいファンク', len: '115 秒', url: '/_blob/5c1d1697269726e266317ffde58b5f49', points: ['右上の日付が DAY 0 → 3 月 → 4/1 → 4/10 提出 → 翌週と進む', '実際の業務の流れどおりに機能が出てくる'] },
+  ];
+  const list = document.getElementById('list');
+  list.style.cssText = 'display:grid;gap:56px';
+  for (const d of DRAFTS) {
+    const s = document.createElement('section');
+    s.id = d.id;
+    s.innerHTML = `<span class="tag">${d.id.toUpperCase()}</span><h2></h2><p class="meta"></p>`;
+    s.querySelector('h2').textContent = d.name;
+    s.querySelector('.meta').textContent = `${d.len}・背景：${d.bg}`;
+    if (d.url) {
+      const v = document.createElement('video');
+      v.controls = true; v.preload = 'metadata'; v.playsInline = true; v.src = d.url;
+      s.appendChild(v);
+    } else {
+      const p = document.createElement('div'); p.className = 'pending'; p.textContent = '書き出し中'; s.appendChild(p);
+    }
+    const ul = document.createElement('ul');
+    for (const t of d.points) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+    s.appendChild(ul);
+    list.appendChild(s);
+  }
+  if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+</script>
