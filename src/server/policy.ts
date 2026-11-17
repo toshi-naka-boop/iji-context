@@ -59,6 +59,8 @@ export const POLICY = {
   // カルテ・患者情報・UKE
   "POST /api/chart": WORK,
   "POST /api/chart/[id]": WORK,
+  // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
+  "GET /api/chart/[id]/claim": WORK,
   "POST /api/chart/image": WORK,
   "POST /api/chart/soap": WORK,
   "GET /api/patients": WORK,

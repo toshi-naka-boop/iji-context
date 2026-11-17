@@ -62,6 +62,7 @@ describe("ログイン", () => {
     const res = await Promise.all([
       (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }, null)),
       (await import("../../app/api/chart/[id]/route")).POST(post("/api/chart/1", { facts: [] }, null), params({ id: "1" })),
+      (await import("../../app/api/chart/[id]/claim/route")).GET(get("/api/chart/1/claim", null), params({ id: "1" })),
       (await import("../../app/api/chart/image/route")).POST(post("/api/chart/image", { imageBase64: PNG.toString("base64") }, null)),
       (await import("../../app/api/chart/soap/route")).POST(post("/api/chart/soap", { text: "AF" }, null)),
       (await import("../../app/api/patients/route")).GET(get("/api/patients", null)),
@@ -184,6 +185,43 @@ describe("訪問カルテ", () => {
     const ok = await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }, mateCookie), params({ id: String(w.id) }));
     expect(ok.status).toBe(200);
     expect(auditRows().at(-1)).toMatchObject({ action: "POST /api/chart/[id]", target: String(w.id), result: "ok", userId: mate.id, role: "veteran" });
+  });
+
+  it("確定したカルテの算定プレビュー：その日までの出来事から導出した行・根拠・見込みの合計・指摘を返す。確かめる前は 409、形の違う choices は 400", async () => {
+    const chart = (await import("../../app/api/chart/route")).POST;
+    const confirm = (await import("../../app/api/chart/[id]/route")).POST;
+    const claim = (await import("../../app/api/chart/[id]/claim/route")).GET;
+    llm.runOnce.mockResolvedValue({ structured: { facts: [] }, sessionId: "", stats: {} });
+    const w = (await (await chart(post("/api/chart", { claimId: claimId("K1"), kind: "訪問診療", note: NOTE }))).json()) as { id: number };
+    const at = params({ id: String(w.id) });
+    expect((await claim(get(`/api/chart/${w.id}/claim`), at)).status).toBe(409);
+    expect((await confirm(post(`/api/chart/${w.id}`, { facts: [] }), at)).status).toBe(200);
+    const before = auditRows().length;
+
+    const res = await claim(get(`/api/chart/${w.id}/claim`), at);
+    expect(res.status).toBe(200);
+    const c = (await res.json()) as { claimId: string; date: string; totalStatus: string; total: number | null; lines: { kubun: string; count: number; dates: string[]; subtotal: number; basis: { tentative: boolean; events: string[] } | null }[]; pending: unknown[]; findings: unknown[]; patientFindings: unknown[] };
+    // 時計の初期値（基準月の 13 日）の訪問 1 回：訪問診療料と届出の加算、管理料は月 1 回の区分（見込み）と包括的支援加算
+    expect(c).toMatchObject({ claimId: claimId("K1"), date: day(13), totalStatus: "tentative", pending: [], findings: [] });
+    expect(c.lines.map((l) => [l.kubun, l.count, l.dates])).toEqual([
+      ["C001_1I", 1, [day(13)]],
+      ["C002_2NI1", 1, [day(13)]],
+      ["C002_N10_HOKATSU", 1, [day(13)]],
+      ["C001_N13_DX", 1, [day(13)]],
+      ["O001_3I", 1, [day(13)]],
+      ["O100_1HA", 1, [day(13)]],
+    ]);
+    expect(c.lines.filter((l) => l.basis?.tentative).map((l) => l.kubun)).toEqual(["C002_2NI1", "C002_N10_HOKATSU"]);
+    for (const l of c.lines) expect(l.basis?.events.length).toBeGreaterThan(0);
+    expect(c.total).toBe(c.lines.reduce((s, l) => s + l.subtotal, 0));
+    expect(Array.isArray(c.patientFindings)).toBe(true);
+
+    expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("[1]")}`), at)).status).toBe(400);
+    expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("{")}`), at)).status).toBe(400);
+    // 今の保留にない答えは無視する（落とさない）
+    expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent(JSON.stringify({ "D11-mitori:x": "mitori" }))}`), at)).status).toBe(200);
+    // 読むだけなので、監査ログには残らない
+    expect(auditRows(before)).toEqual([]);
   });
 
   it("SOAP に整える：空・4000 字超は 400。整えた欄を返す", async () => {

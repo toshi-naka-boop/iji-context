@@ -2,11 +2,16 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/extract";
-import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
+import { claimPreviewOf } from "../../chart/claim";
+import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
+import { evaluate } from "../../engine";
+import { deriveLines, manualLinesOf } from "../../engine/derive";
+import { resolveRevision } from "../../engine/revisions";
 import type { ClaimContext } from "../../engine/types";
+import { monthRange } from "../../patient/profile";
 import type { Chart } from "../../uke/crosscheck";
 import { badRequest, conflict, notFound } from "../errors";
-import { contextAsOf, outlook, visitDays } from "../../visit/as-of";
+import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
 import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
@@ -31,7 +36,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
     return { id: Number(r.lastInsertRowid), date };
   }
-  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
+  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null; clerk_id: string };
   function noteRow(id: number): NoteRow {
     const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
     if (!r) throw notFound(`カルテがない: ${id}`);
@@ -59,6 +64,22 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
+  /**
+   * 確定したカルテの算定プレビュー（FR-94〜102）：その日までの出来事に、書いた人の確定済みのカルテを重ね、算定行をコードで導出して検証に通す。
+   * 月の途中は見込み（月末まで決まらないルールは指摘にしない）。読むだけで、適用記録・件数には数えない。choices は要選択への答え（保存しない）
+   */
+  function claimOfNote(id: number, choices: Record<string, string>) {
+    const r = noteRow(id);
+    if (r.facts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const base = caseOf(r.claim_id);
+    const rev = resolveRevision(base.yearMonth);
+    const midMonth = r.date < monthRange(base.yearMonth).end;
+    const upTo = midMonth ? contextAsOf(base, r.date) : base;
+    const { events, facts } = eventsFromNotes(upTo.events, upTo.facts, confirmedNotes(r.claim_id, r.clerk_id).filter((n) => n.date <= r.date));
+    const derived = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual: manualLinesOf(upTo.lines, rev), choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    const result = evaluate({ ...upTo, events, facts, lines: derived.lines });
+    return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
+  }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
   function patients() {
     return cases()
@@ -106,7 +127,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;
