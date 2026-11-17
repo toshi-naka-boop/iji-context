@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
+import { claimId, dateIn } from "../helpers/period";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -30,7 +31,7 @@ const post = (url: string, cookie: string | null, body?: unknown) =>
 const params = (claimId: string) => ({ params: Promise.resolve({ claimId }) });
 const switchTo = async (cookie: string, role: Role) => (await import("../../app/api/auth/role/route")).POST(post("/api/auth/role", cookie, { role }));
 
-const CLAIM = "K3-2025-03";
+const CLAIM = claimId("K3");
 const profileUrl = `/api/patients/${CLAIM}/profile`;
 const coverageUrl = `/api/patients/${CLAIM}/coverages`;
 
@@ -61,8 +62,8 @@ describe("患者情報チェックのルート", () => {
     const cookie = cookieOf(owner);
     const before = (await (await GET(get(profileUrl, cookie), params(CLAIM))).json()) as { coverages: { coverageId: string; kind: string }[]; findings: { messageKey: string; coverageId?: string }[] };
     const med = before.coverages[0];
-    expect(before.findings.filter((f) => f.coverageId === med.coverageId).map((f) => f.messageKey)).toEqual(["P01.insurer_check_digit", "P06.no_period_insurance"]);
-    const coverage = { coverageId: med.coverageId, source: "オンライン資格確認", payerNumber: "39139993", burdenRatio: 0.1, validFrom: null, validUntil: "2025-07-31" };
+    expect(before.findings.filter((f) => f.coverageId === med.coverageId).map((f) => f.messageKey)).toEqual(["P06.no_period_insurance"]);
+    const coverage = { coverageId: med.coverageId, source: "オンライン資格確認", payerNumber: "39139993", burdenRatio: 0.1, validFrom: null, validUntil: dateIn(9, 31) };
 
     // 確かめた人の名前を送っても受け取らない／根拠が選択肢にない／日付の形が違う
     const named = await POST(post(coverageUrl, cookie, { coverage: { ...coverage, checkedBy: "院長" } }), params(CLAIM));
@@ -95,6 +96,6 @@ describe("患者情報チェックのルート", () => {
       ["POST /api/auth/role", "doctor", "ok"],
       ["POST /api/patients/[claimId]/coverages", CLAIM, "denied"],
     ]);
-    expect(JSON.stringify(rows)).not.toMatch(/39139993|39139999|54139999|架空|さとう|2025-07-31/);
+    expect(JSON.stringify(rows)).not.toMatch(/39139993|39139999|54139999|架空|さとう|-07-31/);
   });
 });

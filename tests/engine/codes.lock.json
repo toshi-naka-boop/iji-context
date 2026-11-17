@@ -39,5 +39,19 @@
   { "kubun": "O100_SAISHIN", "code": "990000038" },
   { "kubun": "B000", "code": "990000039" },
   { "kubun": "A_IRYOJOHO", "code": "990000040" },
-  { "kubun": "A_DXSUISHIN", "code": "990000041" }
+  { "kubun": "A_DXSUISHIN", "code": "990000041" },
+  { "kubun": "D008_19", "code": "990000042" },
+  { "kubun": "O001_3I", "code": "990000043" },
+  { "kubun": "O001_3RO", "code": "990000044" },
+  { "kubun": "O001_2", "code": "990000045" },
+  { "kubun": "O001_1", "code": "990000046" },
+  { "kubun": "O100_1HA", "code": "990000047" },
+  { "kubun": "O100_1RO", "code": "990000048" },
+  { "kubun": "O100_1I", "code": "990000049" },
+  { "kubun": "C001_N13_DX2", "code": "990000050" },
+  { "kubun": "A_DENSHI_RENKEI", "code": "990000051" },
+  { "kubun": "C002-2_2I1", "code": "990000052" },
+  { "kubun": "C002-2_2RO1", "code": "990000053" },
+  { "kubun": "C002-2_2NI1", "code": "990000054" },
+  { "kubun": "A001", "code": "990000055" }
 ]

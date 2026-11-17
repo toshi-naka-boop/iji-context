@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
+import { claimId, dateIn, day, month, YM } from "../helpers/period";
 
 const llm = vi.hoisted(() => ({ runOnce: vi.fn() }));
 vi.mock("../../src/mentor/run", () => llm);
@@ -59,17 +60,17 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 describe("ログイン", () => {
   it("未ログインは、どのルートも 401", async () => {
     const res = await Promise.all([
-      (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: "K4-2025-03", kind: "訪問診療", note: NOTE }, null)),
+      (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }, null)),
       (await import("../../app/api/chart/[id]/route")).POST(post("/api/chart/1", { facts: [] }, null), params({ id: "1" })),
       (await import("../../app/api/chart/image/route")).POST(post("/api/chart/image", { imageBase64: PNG.toString("base64") }, null)),
       (await import("../../app/api/chart/soap/route")).POST(post("/api/chart/soap", { text: "AF" }, null)),
       (await import("../../app/api/patients/route")).GET(get("/api/patients", null)),
-      (await import("../../app/api/patients/[claimId]/facts/route")).GET(get("/api/patients/K1-2025-03/facts", null), params({ claimId: "K1-2025-03" })),
-      (await import("../../app/api/patients/[claimId]/facts/route")).POST(post("/api/patients/K1-2025-03/facts", {}, null), params({ claimId: "K1-2025-03" })),
+      (await import("../../app/api/patients/[claimId]/facts/route")).GET(get(`/api/patients/${claimId("K1")}/facts`, null), params({ claimId: claimId("K1") })),
+      (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, {}, null), params({ claimId: claimId("K1") })),
       (await import("../../app/api/visits/route")).GET(get("/api/visits", null)),
       (await import("../../app/api/cases/route")).GET(get("/api/cases", null)),
-      (await import("../../app/api/crosscheck/route")).GET(get("/api/crosscheck?claimId=K4-2025-03", null)),
-      (await import("../../app/api/crosscheck/route")).POST(post("/api/crosscheck", { claimId: "K4-2025-03", ruleId: "M01" }, null)),
+      (await import("../../app/api/crosscheck/route")).GET(get(`/api/crosscheck?claimId=${claimId("K4")}`, null)),
+      (await import("../../app/api/crosscheck/route")).POST(post("/api/crosscheck", { claimId: claimId("K4"), ruleId: "M01" }, null)),
       (await import("../../app/api/uke/route")).GET(get("/api/uke", null)),
       (await import("../../app/api/uke/route")).POST(post("/api/uke", { name: "kokuhoren.UKE" }, null)),
       (await import("../../app/api/master/route")).GET(get("/api/master", null)),
@@ -87,7 +88,7 @@ describe("請求 id の形", () => {
     // クリニックの DB の用意（初回だけ症例を読む）を先に済ませておく
     instance.runAs(user, () => instance.getApp().cases());
     const chart = (await import("../../app/api/chart/route")).POST;
-    for (const bad of ["../../secret", "K1/../../secret", "K1-2025-03/x", "..", "K1-2025-03.json", "K1-2025-13", " K1-2025-03"]) {
+    for (const bad of ["../../secret", "K1/../../secret", `${claimId("K1")}/x`, "..", `${claimId("K1")}.json`, `K1-${YM.slice(0, 4)}-13`, ` ${claimId("K1")}`]) {
       fsCalls.paths.length = 0;
       const q = await cross.GET(get(`/api/crosscheck?claimId=${encodeURIComponent(bad)}`));
       expect(q.status).toBe(400);
@@ -101,7 +102,7 @@ describe("請求 id の形", () => {
     }
     expect(llm.runOnce).not.toHaveBeenCalled();
     // 診療年月が変わっても、同じ形なら通る（症例がなければ 404）
-    const later = await facts.GET(get("/api/patients/K7-2026-10/facts"), params({ claimId: "K7-2026-10" }));
+    const later = await facts.GET(get(`/api/patients/K7-${month(12)}/facts`), params({ claimId: `K7-${month(12)}` }));
     expect(later.status).toBe(404);
   });
 });
@@ -109,7 +110,7 @@ describe("請求 id の形", () => {
 describe("訪問カルテ", () => {
   it("スキーマ違反は 400 と項目名。書いた人を本文で送っても受け取らない", async () => {
     const chart = (await import("../../app/api/chart/route")).POST;
-    const body = { claimId: "K4-2025-03", kind: "訪問診療", note: NOTE };
+    const body = { claimId: claimId("K4"), kind: "訪問診療", note: NOTE };
     expect(await fieldsOf(await chart(post("/api/chart", { ...body, kind: "外来" })))).toEqual(["kind"]);
     expect(await fieldsOf(await chart(post("/api/chart", { ...body, note: { ...NOTE, s: "あ".repeat(4001) } })))).toEqual(["note.s"]);
     expect(await fieldsOf(await chart(post("/api/chart", { ...body, note: { s: "", o: "", a: "", p: "" } })))).toEqual(["note.rx"]);
@@ -127,10 +128,10 @@ describe("訪問カルテ", () => {
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;
     const before = auditRows().length;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }, { kind: "病名の記載", value: "心不全", quote: "カルテにない言葉" }] }, sessionId: "", stats: {} });
-    const written = await chart(post("/api/chart", { claimId: "K4-2025-03", kind: "訪問診療", note: NOTE }));
+    const written = await chart(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }));
     expect(written.status).toBe(200);
     const w = (await written.json()) as { id: number; date: string; facts: unknown[]; dropped: unknown[] };
-    expect(w).toMatchObject({ date: "2025-03-10", facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] });
+    expect(w).toMatchObject({ date: day(13), facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] });
     expect(w.dropped).toHaveLength(1);
     expect(llm.runOnce).toHaveBeenCalledOnce();
 
@@ -141,16 +142,16 @@ describe("訪問カルテ", () => {
     expect((await confirm(post("/api/chart/9999", { facts: [] }), params({ id: "9999" }))).status).toBe(404);
     const ok = await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }), params({ id: String(w.id) }));
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ claimId: "K4-2025-03", date: "2025-03-10" });
+    expect(await ok.json()).toEqual({ claimId: claimId("K4"), date: day(13) });
     expect((await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }), params({ id: String(w.id) }))).status).toBe(409);
 
     // 書いた訪問が、本人の訪問の記録に出る
     const visits = (await (await (await import("../../app/api/visits/route")).GET(get("/api/visits"))).json()) as { claimId: string; date: string; written: boolean }[];
-    expect(visits.find((v) => v.claimId === "K4-2025-03" && v.date === "2025-03-10")).toMatchObject({ written: true });
+    expect(visits.find((v) => v.claimId === claimId("K4") && v.date === day(13))).toMatchObject({ written: true });
 
     // 監査ログ：対象は請求 id・カルテの id だけ
     expect(auditRows(before).map((r) => [r.action, r.target, r.result])).toEqual([
-      ["POST /api/chart", "K4-2025-03", "ok"],
+      ["POST /api/chart", claimId("K4"), "ok"],
       ["POST /api/chart/[id]", String(w.id), "rejected"],
       ["POST /api/chart/[id]", "9999", "rejected"],
       ["POST /api/chart/[id]", String(w.id), "ok"],
@@ -165,9 +166,9 @@ describe("訪問カルテ", () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const full = "あ".repeat(4000);
     // 症例のない請求 id にして、LLM を呼ぶ前（請求を確かめるところ）で止める
-    const r = await chart(post("/api/chart", { claimId: "K9-2025-03", kind: "訪問診療", note: { s: full, o: full, a: full, p: full, rx: full } }));
+    const r = await chart(post("/api/chart", { claimId: claimId("K9"), kind: "訪問診療", note: { s: full, o: full, a: full, p: full, rx: full } }));
     expect(r.status).toBe(404);
-    expect((await r.json()).error).toBe("症例がない: K9-2025-03");
+    expect((await r.json()).error).toBe(`症例がない: ${claimId("K9")}`);
     expect(llm.runOnce).not.toHaveBeenCalled();
   });
 
@@ -175,7 +176,7 @@ describe("訪問カルテ", () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] }, sessionId: "", stats: {} });
-    const w = (await (await chart(post("/api/chart", { claimId: "K5-2025-03", kind: "訪問診療", note: NOTE }))).json()) as { id: number; facts: unknown[] };
+    const w = (await (await chart(post("/api/chart", { claimId: claimId("K5"), kind: "訪問診療", note: NOTE }))).json()) as { id: number; facts: unknown[] };
     // 招待で同じクリニックに入ったベテランが確かめる
     const { code } = instance.getAuth().createInvite(user, "veteran");
     const mate = instance.getAuth().registerWithInvite("chart_mate", "どうりょう", "password123", code);
@@ -246,9 +247,9 @@ describe("カルテの画像", () => {
 describe("患者ごとに確かめた情報", () => {
   it("保存と一覧が今までどおり動く。確かめた人はセッションの本人で、項目の決まりに合わない入力は 400 と文言", async () => {
     const facts = await import("../../app/api/patients/[claimId]/facts/route");
-    const p = params({ claimId: "K1-2025-03" });
+    const p = params({ claimId: claimId("K1") });
     const before = auditRows().length;
-    const save = (fact: unknown, extra: Record<string, unknown> = {}) => facts.POST(post("/api/patients/K1-2025-03/facts", { fact, ...extra }), p);
+    const save = (fact: unknown, extra: Record<string, unknown> = {}) => facts.POST(post(`/api/patients/${claimId("K1")}/facts`, { fact, ...extra }), p);
 
     const named = await save({ key: "table7", value: true, source: "カルテ", validUntil: null }, { clerkId: "someone" });
     expect(await fieldsOf(named)).toEqual(["clerkId"]);
@@ -257,17 +258,17 @@ describe("患者ごとに確かめた情報", () => {
     const noDate = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: null });
     expect(noDate.status).toBe(400);
     expect((await noDate.json()).error).toBe("要介護度には有効期間の終わりの日が要る");
-    const past = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: "2025-02-28" });
+    const past = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(-1, 28) });
     expect(past.status).toBe(400);
     expect((await past.json()).error).toBe("有効期間の終わりが今日より前になっている");
 
-    const ok = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: "2025-09-30" });
+    const ok = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(6, 30) });
     expect(ok.status).toBe(200);
-    const listed = (await (await facts.GET(get("/api/patients/K1-2025-03/facts"), p)).json()) as { facts: { key: string; value: unknown; checkedBy: string; expired: boolean }[] };
+    const listed = (await (await facts.GET(get(`/api/patients/${claimId("K1")}/facts`), p)).json()) as { facts: { key: string; value: unknown; checkedBy: string; expired: boolean }[] };
     expect(listed.facts).toHaveLength(1);
     expect(listed.facts[0]).toMatchObject({ key: "careLevel", value: 3, expired: false, checkedBy: instance.clerkIdOf(user) });
     expect(auditRows(before).map((r) => [r.action, r.target, r.result])).toEqual([
-      ...["invalid", "invalid", "invalid", "rejected", "rejected", "ok"].map((result) => ["POST /api/patients/[claimId]/facts", "K1-2025-03", result]),
+      ...["invalid", "invalid", "invalid", "rejected", "rejected", "ok"].map((result) => ["POST /api/patients/[claimId]/facts", claimId("K1"), result]),
     ]);
   });
 });
@@ -276,9 +277,9 @@ describe("一覧・照合・UKE", () => {
   it("一覧が今までどおり返る。区分の一覧はどのロールでも、算定の一覧は事務・ベテランだけ", async () => {
     const patients = (await (await (await import("../../app/api/patients/route")).GET(get("/api/patients"))).json()) as { claimId: string }[];
     expect(patients.length).toBeGreaterThan(0);
-    expect(patients.every((x) => /^K\d-2025-03$/.test(x.claimId))).toBe(true);
+    expect(patients.every((x) => new RegExp(`^K\\d-${YM}$`).test(x.claimId))).toBe(true);
     const cases = (await (await (await import("../../app/api/cases/route")).GET(get("/api/cases"))).json()) as { claimId: string }[];
-    expect(cases.map((c) => c.claimId).sort()).toEqual(["K1-2025-03", "K2-2025-03", "K3-2025-03", "K4-2025-03", "K5-2025-03", "K6-2025-03"]);
+    expect(cases.map((c) => c.claimId).sort()).toEqual([claimId("K1"), claimId("K2"), claimId("K3"), claimId("K4"), claimId("K5"), claimId("K6"), claimId("K7")]);
     expect((await (await import("../../app/api/drills/route")).GET(get("/api/drills"))).status).toBe(200);
     const master = (await (await (await import("../../app/api/master/route")).GET(get("/api/master"))).json()) as { kubun: string }[];
     expect(master.length).toBeGreaterThan(0);
@@ -290,30 +291,30 @@ describe("一覧・照合・UKE", () => {
     expect((await (await import("../../app/api/master/route")).GET(get("/api/master", docCookie))).status).toBe(200);
     expect((await (await import("../../app/api/cases/route")).GET(get("/api/cases", docCookie))).status).toBe(403);
     expect((await (await import("../../app/api/uke/route")).POST(post("/api/uke", { name: "kokuhoren.UKE" }, docCookie))).status).toBe(403);
-    expect((await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post("/api/patients/K1-2025-03/facts", { fact: { key: "table7", value: true, source: "カルテ", validUntil: null } }, docCookie), params({ claimId: "K1-2025-03" }))).status).toBe(403);
+    expect((await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, { fact: { key: "table7", value: true, source: "カルテ", validUntil: null } }, docCookie), params({ claimId: claimId("K1") }))).status).toBe(403);
   });
 
   it("照合：本人の id は受け取らない（クエリでも本文でも 400）。日付の形でない asOf は 400", async () => {
     const cross = await import("../../app/api/crosscheck/route");
-    const ok = await cross.GET(get(`/api/crosscheck?claimId=K4-2025-03&asOf=2025-03-10`));
+    const ok = await cross.GET(get(`/api/crosscheck?claimId=${claimId("K4")}&asOf=${day(12)}`));
     expect(ok.status).toBe(200);
     expect(await ok.json()).toHaveProperty("mismatches");
-    expect(await fieldsOf(await cross.GET(get(`/api/crosscheck?claimId=K4-2025-03&clerkId=someone`)))).toEqual(["clerkId"]);
-    expect(await fieldsOf(await cross.POST(post("/api/crosscheck", { claimId: "K4-2025-03", ruleId: "M01", clerkId: "someone" })))).toEqual(["clerkId"]);
+    expect(await fieldsOf(await cross.GET(get(`/api/crosscheck?claimId=${claimId("K4")}&clerkId=someone`)))).toEqual(["clerkId"]);
+    expect(await fieldsOf(await cross.POST(post("/api/crosscheck", { claimId: claimId("K4"), ruleId: "M01", clerkId: "someone" })))).toEqual(["clerkId"]);
     expect(await fieldsOf(await (await import("../../app/api/me/route")).GET(get("/api/me?clerkId=someone")))).toEqual(["clerkId"]);
-    expect(await fieldsOf(await cross.GET(get("/api/crosscheck?claimId=K4-2025-03&asOf=3/10")))).toEqual(["asOf"]);
+    expect(await fieldsOf(await cross.GET(get(`/api/crosscheck?claimId=${claimId("K4")}&asOf=3/10`)))).toEqual(["asOf"]);
     expect(await fieldsOf(await cross.GET(get("/api/crosscheck")))).toEqual(["claimId"]);
-    expect(await fieldsOf(await cross.POST(post("/api/crosscheck", { claimId: "K4-2025-03", ruleId: "../M01" })))).toEqual(["ruleId"]);
+    expect(await fieldsOf(await cross.POST(post("/api/crosscheck", { claimId: claimId("K4"), ruleId: "../M01" })))).toEqual(["ruleId"]);
   });
 
   it("照合から医師確認を送る：不一致がなければ 404、送ってあれば 409（どちらも文言つき）", async () => {
     const cross = await import("../../app/api/crosscheck/route");
-    const none = await cross.POST(post("/api/crosscheck", { claimId: "K4-2025-03", ruleId: "M99" }));
+    const none = await cross.POST(post("/api/crosscheck", { claimId: claimId("K4"), ruleId: "M99" }));
     expect(none.status).toBe(404);
-    expect((await none.json()).error).toBe("不一致がない: K4-2025-03 M99");
-    const { mismatches } = (await (await cross.GET(get("/api/crosscheck?claimId=K4-2025-03"))).json()) as { mismatches: { ruleId: string }[] };
+    expect((await none.json()).error).toBe(`不一致がない: ${claimId("K4")} M99`);
+    const { mismatches } = (await (await cross.GET(get(`/api/crosscheck?claimId=${claimId("K4")}`))).json()) as { mismatches: { ruleId: string }[] };
     expect(mismatches.length).toBeGreaterThan(0);
-    const body = { claimId: "K4-2025-03", ruleId: mismatches[0].ruleId };
+    const body = { claimId: claimId("K4"), ruleId: mismatches[0].ruleId };
     const sent = await cross.POST(post("/api/crosscheck", body));
     expect(sent.status).toBe(200);
     const again = await cross.POST(post("/api/crosscheck", body));

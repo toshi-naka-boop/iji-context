@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
+import { month } from "../helpers/period";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -267,7 +268,7 @@ describe("メンター同士の問い・会議・通知", () => {
     const owner = auth().register("notice_reg", "とうろく", "password123");
     const cookie = cookieOf(owner);
     await switchTo(cookie, "veteran");
-    const item = { yearMonth: "2025-02", patientName: "架空 六郎", insurerNumber: "01139999", itemName: "BNP", outcome: "査定", reason: "長期にわたり漫然と実施されているものと認められるため" };
+    const item = { yearMonth: month(-1), patientName: "架空 六郎", insurerNumber: "01139997", itemName: "BNP", outcome: "査定", reason: "傷病名が「心不全の疑い」のまま、連月で算定されているため" };
     const notice = { documentType: "増減点連絡書", prefecture: "東京都", items: [item, { ...item, itemName: "どの区分にも当たらない項目" }] };
     const send = (index: number, fileName = "a.pdf") => register(post("/api/notice/register", cookie, { notice, index, fileName }));
     // 新しいクリニックには、同じ通知（K6 の査定）から作った地域ルールが最初から入っている → 再登録は 409

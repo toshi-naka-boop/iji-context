@@ -1,0 +1,38 @@
+{
+  "id": "system/r16",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R16：管理料は、居宅の患者は在宅時医学総合管理料、有料老人ホームなどの施設に入居している患者は施設入居時等医学総合管理料で算定する",
+  "rev": "a9507cd685e9",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R16",
+    "at": "2026-10-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2026-10-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2026-10-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "match": {
+    "ruleId": "R16"
+  },
+  "history": [
+    {
+      "at": "2026-10-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

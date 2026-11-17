@@ -1,7 +1,12 @@
-// §7 #12a：改定の版の仕組み（design.md §2-5）。作り物の版で確かめ、EM の採用値は使わない
+// §7 #12a・#12b：改定の版の仕組み（design.md §2-5）。仕組みは作り物の版で確かめ、EM の採用値は使わない。同梱の版は境界と差分を確かめる
 import { describe, expect, it } from "vitest";
 import { evaluate, ruleKubun, rulesOf } from "../../src/engine";
 import { assertRevisions, hasRevision, pointsOf, resolveRevision, REVISIONS } from "../../src/engine/revisions";
+import { r2026 } from "../../src/engine/revisions/r2026";
+import { r2027_06 } from "../../src/engine/revisions/r2027-06";
+import { extendRevision } from "../../src/engine/revisions/extend";
+import { latestRevision, type Calendar } from "../../src/lifecycle/calendar";
+import calendar from "../../config/calendar.json";
 import { makeCtx } from "../lifecycle/helpers";
 import { FAKE_A, FAKE_B, FAKE_REVISIONS, fakeRevision } from "./fake-revisions";
 
@@ -88,5 +93,62 @@ describe("仕組み", () => {
     expect(ruleKubun("F01", "2031-06", FAKE_REVISIONS)).toEqual(["X2"]);
     expect(ruleKubun("F99", "2030-06", FAKE_REVISIONS)).toEqual([]);
     expect(() => ruleKubun("F01", "2032-01", FAKE_REVISIONS)).toThrow(/版がない/);
+  });
+});
+
+describe("同梱の版", () => {
+  it("2027-05 は r2026、2027-06 は r2027-06。開始月 2026-06 と終了月 2028-05 も含む", () => {
+    expect(resolveRevision("2026-06").id).toBe("r2026");
+    expect(resolveRevision("2026-10").id).toBe("r2026");
+    expect(resolveRevision("2027-05").id).toBe("r2026");
+    expect(resolveRevision("2027-06").id).toBe("r2027-06");
+    expect(resolveRevision("2028-05").id).toBe("r2027-06");
+  });
+  it("期間の外は例外（2026-05・2028-06。前の年度の 2025-03 も）。近い版で代用しない", () => {
+    for (const ym of ["2026-05", "2028-06", "2025-03"]) {
+      expect(() => resolveRevision(ym)).toThrow(/版がない/);
+      expect(hasRevision(ym)).toBe(false);
+    }
+  });
+  it("同梱する版は令和8年度改定後の 2 つだけ（前の年度の版は持たない）", () => {
+    expect(REVISIONS.map((r) => [r.id, r.generation, r.kind])).toEqual([
+      ["r2026", "R8", "改定"],
+      ["r2027-06", "R8", "値の変更"],
+    ]);
+  });
+  it("r2027-06 は r2026 と区分の集合・定数・ルールが同じで、点数が違うのは差分に書いた区分だけ（EM §2-3 の N-1〜N-7）", () => {
+    expect(Object.keys(r2027_06.points).sort()).toEqual(Object.keys(r2026.points).sort());
+    expect(r2027_06.consts).toBe(r2026.consts);
+    expect(r2027_06.rules).toBe(r2026.rules);
+    const changed = Object.keys(r2026.points).filter((k) => r2026.points[k].points !== r2027_06.points[k].points);
+    expect(changed.sort()).toEqual(["O001_1", "O001_2", "O001_3I", "O001_3RO", "O100_1HA", "O100_1I", "O100_1RO"]);
+    const pair = (k: string) => [pointsOf(r2026, k), pointsOf(r2027_06, k)];
+    expect(pair("O001_1")).toEqual([17, 34]);
+    expect(pair("O001_2")).toEqual([4, 8]);
+    expect(pair("O001_3I")).toEqual([79, 158]);
+    expect(pair("O001_3RO")).toEqual([19, 38]);
+    expect(pair("O100_1I")).toEqual([2, 4]);
+    expect(pair("O100_1RO")).toEqual([2, 4]);
+    expect(pair("O100_1HA")).toEqual([3, 6]);
+    // 名称・区分番号・出典は変わらない
+    for (const k of changed) expect({ ...r2027_06.points[k], points: 0 }).toEqual({ ...r2026.points[k], points: 0 });
+  });
+  it("差分の版は、直前の版にない区分を足せない。直前の版の点数表は書き換わらない", () => {
+    const diff = { id: "x", label: "x", effectiveFrom: "2027-06", effectiveUntil: "2028-05" };
+    expect(() => extendRevision(r2026, { ...diff, points: { NEW_KUBUN: 1 } })).toThrow(/足せない/);
+    expect(pointsOf(r2026, "O001_3I")).toBe(79);
+  });
+  it("「改定」の版の開始月は、暦の改定日（偶数年 6 月）の月と一致する", () => {
+    for (const rev of REVISIONS.filter((r) => r.kind === "改定")) {
+      const latest = latestRevision(calendar as Calendar, `${rev.effectiveFrom}-15T00:00:00+09:00`);
+      expect(latest.slice(0, 7), rev.id).toBe(rev.effectiveFrom);
+      expect(Number(rev.effectiveFrom.slice(0, 4)) % 2).toBe(0);
+    }
+  });
+  it("どの版でも、点数表の値は EM の採用値（source が EM）で、点数未収載の区分はない", () => {
+    for (const rev of REVISIONS) for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual([k, "EM", "number"]);
+  });
+  it("ルールは R01〜R16 の 16 本", () => {
+    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 16 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
   });
 });

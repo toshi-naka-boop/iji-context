@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
+    "check:dates": "tsx scripts/check-dates.ts",
     "start": "next start"
   },
   "type": "module",

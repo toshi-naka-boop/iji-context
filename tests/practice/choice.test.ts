@@ -4,6 +4,7 @@ import groupsCfg from "../../config/choice-groups.json";
 import { choiceItems, judgePick, UNDECIDABLE, type ChoiceGroup } from "../../src/practice/choice";
 import { score, startQuestion, type Question } from "../../src/practice/practice";
 import { loadCase } from "../engine/helpers";
+import { at, claimId, day } from "../helpers/period";
 
 const groups = groupsCfg.groups as ChoiceGroup[];
 const right = (k: string) => {
@@ -12,8 +13,8 @@ const right = (k: string) => {
 };
 
 describe("選択モードの問題", () => {
-  it("K1〜K6 のどの問題も、正解はちょうど 1 つで、それは UKE の原案の区分。最後は必ず「判定不能」", () => {
-    for (const k of ["K1", "K2", "K3", "K4", "K5", "K6"]) {
+  it("K1〜K7 のどの問題も、正解はちょうど 1 つで、それは UKE の原案の区分。最後は必ず「判定不能」", () => {
+    for (const k of ["K1", "K2", "K3", "K4", "K5", "K6", "K7"]) {
       const c = loadCase(k);
       for (const { it, ok } of right(k)) {
         expect(ok).toEqual([c.lines[it.lineIndex].kubun]);
@@ -23,11 +24,13 @@ describe("選択モードの問題", () => {
     }
   });
 
-  it("問題が作れる箇所：K1・K3・K4 は在医総管の区分、K2 は在医総管の区分と包括的支援加算。K5・K6 はなし", () => {
+  it("問題が作れる箇所：K1・K3 は在医総管の区分、K4 は施設入居時等医学総合管理料の区分、K2・K7 は在医総管の区分と包括的支援加算。K5・K6 はなし", () => {
     const groupsOf = (k: string) => right(k).map((x) => x.it.group);
     expect(groupsOf("K1")).toEqual(["在医総管の区分"]);
     expect(groupsOf("K2")).toEqual(["在医総管の区分", "包括的支援加算"]);
-    expect(groupsOf("K4")).toEqual(["在医総管の区分"]);
+    expect(groupsOf("K3")).toEqual(["在医総管の区分"]);
+    expect(groupsOf("K4")).toEqual(["施設入居時等医学総合管理料の区分"]);
+    expect(groupsOf("K7")).toEqual(["在医総管の区分", "包括的支援加算"]);
     expect(groupsOf("K5")).toEqual([]);
     expect(groupsOf("K6")).toEqual([]);
   });
@@ -46,7 +49,7 @@ describe("選択モードの問題", () => {
 
 describe("選択モードのレベルの数え方", () => {
   it("選択モードで終えた 1 件は choiceWeight 件と数える。件数と連続正解は通常と同じ", () => {
-    const done = (id: string, mode: "通常" | "選択"): Question => ({ ...startQuestion(id, "c1", "K1-2025-03", "2025-03-10T09:00:00+09:00", mode), phase: "完了", correct: true, finishedAt: `2025-03-10T09:0${id.length}:00+09:00` });
+    const done = (id: string, mode: "通常" | "選択"): Question => ({ ...startQuestion(id, "c1", claimId("K1"), at(12), mode), phase: "完了", correct: true, finishedAt: `${day(12)}T09:0${id.length}:00+09:00` });
     expect(score([done("a", "通常"), done("bb", "選択"), done("ccc", "選択")], "c1", 0.5)).toEqual({ count: 3, credit: 2, streak: 3, bestStreak: 3 });
   });
 });

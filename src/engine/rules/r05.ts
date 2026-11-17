@@ -1,18 +1,19 @@
-// R05 在医総管の月に包括される項目を別に立てない。院外処方なら処方箋を交付しない場合の加算は不可。
+// R05 管理料（在医総管・施設総管）の月に包括される項目を別に立てない。院外処方なら処方箋を交付しない場合の加算は不可。
 // 処方箋料とそれに付く加算も投薬の費用として包括される（EM #7-6、疑義解釈 令和8年 その2 問66）
+import { kanriKubun, kanriLines } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { Finding, Rule } from "../types";
 import { eventsOf, finding, has, present } from "./util";
 
 export function makeR05(c: RevisionConsts): Rule {
-  /** 在医総管に包括される項目のうち、区分表にあるもの */
+  /** 管理料に包括される項目のうち、区分表にあるもの */
   const BUNDLED = c.bundled.kubun;
   const NO_RX = c.bundled.noRxAddition;
   return {
     id: "R05",
-    kubun: [...c.kanri.all, ...BUNDLED, NO_RX],
-    reference: "C002 留意事項（所定点数に含まれる項目）・注（処方箋を交付しない場合）",
-    appliesTo: (ctx) => present(ctx, c.kanri.all).length > 0,
+    kubun: [...kanriKubun(c), ...BUNDLED, NO_RX],
+    reference: "C002 注2・注3、留意事項（所定点数に含まれる項目）。C002-2 注5 で準用",
+    appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {
       const out: Finding[] = [];

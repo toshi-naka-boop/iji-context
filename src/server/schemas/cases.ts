@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { id } from "./common";
 
-/** 請求 id（症例の番号-診療年月。例 K1-2025-03）。英数字とハイフンだけで、パスの区切りや . を通さない */
+/** 請求 id（症例の番号-診療年月。例 K1-2026-10）。英数字とハイフンだけで、パスの区切りや . を通さない */
 export const claimId = z.string().regex(/^K[0-9]{1,3}-[0-9]{4}-(0[1-9]|1[0-2])$/);
 /** 日付（YYYY-MM-DD） */
 export const date = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);

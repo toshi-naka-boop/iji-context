@@ -45,6 +45,10 @@ export function makeFacts(over: Partial<Facts> = {}): Facts {
     visitsComplete: known(true),
     acuteExacerbation: known(false),
     emergencyEligible: known(true),
+    residence: known("居宅" as const),
+    contactDocProvided: known(true),
+    sameDaySeparate: known({}),
+    rapidSameDayDocumented: known(false),
     ...over,
   };
 }
@@ -55,7 +59,19 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
   return {
     claimId: "claim-1",
     yearMonth: "2025-03",
-    facility: { zaishishin: true, kyokagata: false, hasBeds: false, prefecture: "東京都", notifications: {} },
+    facility: {
+      zaishishin: true,
+      kyokagata: false,
+      hasBeds: false,
+      prefecture: "東京都",
+      notifications: {},
+      dxTier: known("1" as const),
+      baseUp: known("通常" as const),
+      priceResponse: known(true),
+      note16Met: known(true),
+      revisitBaseUpSameDay: { known: false },
+      revisitPriceSameDay: { known: false },
+    },
     payer: "支払基金",
     prefecture: "東京都",
     facts: makeFacts(),

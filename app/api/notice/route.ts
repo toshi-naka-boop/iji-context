@@ -4,13 +4,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { modelFor } from "../../../src/mentor/models";
 import { readNotice } from "../../../src/notice/notice";
+import { SAMPLE_NOTICE_BASE } from "../../../src/notice/sample";
 import { badRequest } from "../../../src/server/errors";
 import { route } from "../../../src/server/http";
 import { getApp } from "../../../src/server/instance";
 import { allow } from "../../../src/server/policy";
 import { NOTICE_BODY_BYTES, NOTICE_FILE_NAME_MAX, NOTICE_MAX_BYTES, noticeBody } from "../../../src/server/schemas/knowledge";
 
-const SAMPLE = "fixtures/notices/K6-2025-02-satei.pdf";
+const SAMPLE = `${SAMPLE_NOTICE_BASE}.pdf`;
 
 export const POST = route({ roles: allow("POST /api/notice"), body: noticeBody, limit: "llm", maxBytes: NOTICE_BODY_BYTES }, async ({ body: b }) => {
   const pdf = b.sample ? readFileSync(path.join(process.cwd(), SAMPLE)) : Buffer.from(b.pdfBase64 ?? "", "base64");

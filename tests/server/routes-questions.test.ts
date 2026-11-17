@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ClaimContext } from "../../src/engine/types";
 import type { Question } from "../../src/practice/practice";
 import type { User } from "../../src/server/auth";
+import { claimId, day, YM } from "../helpers/period";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -27,7 +28,7 @@ afterAll(() => {
   delete process.env.RESEMEN_WORKSPACES;
 });
 
-const CLAIM = "K1-2025-03";
+const CLAIM = claimId("K1");
 const get = (url: string, c: string | null = cookie) => new Request(`http://localhost${url}`, { headers: c ? { cookie: c } : {} });
 const post = (url: string, body?: unknown, c: string | null = cookie) =>
   new Request(`http://localhost${url}`, { method: "POST", headers: { ...(c ? { cookie: c } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -117,13 +118,13 @@ describe("問題の進行（画面が送る形のまま）", () => {
     expect(noDrill.status).toBe(404);
     expect((await noDrill.json()).error).toBe("練習問題がない: d99");
 
-    const day = instance.runAs(user, () => instance.getApp().visits(instance.clerkIdOf(user)).find((v) => v.claimId === CLAIM)!.date);
-    const visit = await start({ claimId: CLAIM, mode: "通常", asOf: day });
+    const visitDay = instance.runAs(user, () => instance.getApp().visits(instance.clerkIdOf(user)).find((v) => v.claimId === CLAIM)!.date);
+    const visit = await start({ claimId: CLAIM, mode: "通常", asOf: visitDay });
     expect(visit.status).toBe(200);
-    expect(((await visit.json()) as Question).asOf).toBe(day);
-    expect((await start({ claimId: CLAIM, mode: "通常", asOf: "2025-03-01" })).status).toBe(404);
-    expect((await start({ claimId: CLAIM, mode: "選択", asOf: day })).status).toBe(400);
-    expect((await start({ claimId: "K99-2025-03" })).status).toBe(404);
+    expect(((await visit.json()) as Question).asOf).toBe(visitDay);
+    expect((await start({ claimId: CLAIM, mode: "通常", asOf: day(3) })).status).toBe(404);
+    expect((await start({ claimId: CLAIM, mode: "選択", asOf: visitDay })).status).toBe(400);
+    expect((await start({ claimId: claimId("K99") })).status).toBe(404);
   });
 
   it("選択モード：一覧を取り、選ぶ。選択肢にないものは 400、通常モードの問題では 400", async () => {
@@ -160,8 +161,8 @@ describe("入力の検証", () => {
     expect(await fields(await one("../../auth"))).toEqual(["id"]);
     // 明細：行の形、知らない項目（事実は画面から受け取らない）、件数の上限
     expect(await fields(await draft(q.id, {}))).toEqual(["lines"]);
-    expect(await fields(await draft(q.id, { lines: [{ kubun: "c001 1i", count: 1, dates: ["2025-03-12"] }] }))).toEqual(["lines.0.kubun"]);
-    expect(await fields(await confirm(q.id, { lines: [{ kubun: "C001_1I", count: 1.5, dates: ["2025-03-abc"] }] }))).toEqual(["lines.0.count", "lines.0.dates.0"]);
+    expect(await fields(await draft(q.id, { lines: [{ kubun: "c001 1i", count: 1, dates: [day(14)] }] }))).toEqual(["lines.0.kubun"]);
+    expect(await fields(await confirm(q.id, { lines: [{ kubun: "C001_1I", count: 1.5, dates: [`${YM}-abc`] }] }))).toEqual(["lines.0.count", "lines.0.dates.0"]);
     expect(await fields(await confirm(q.id, { lines: [], facts: { careLevel: { known: true, value: 5 } } }))).toEqual(["facts"]);
     expect(await fields(await localRules(q.id, { lines: Array.from({ length: 101 }, () => ({ kubun: "C001_1I", count: 1, dates: [] })) }))).toEqual(["lines"]);
     expect(await fields(await pick(q.id, { lineIndex: -1, option: "" }))).toEqual(["lineIndex", "option"]);
@@ -174,7 +175,7 @@ describe("入力の検証", () => {
 describe("明細の区分", () => {
   it("形は合っているが点数表にない区分は、判定に渡す前に 400 と文言で断る（定型文の 500 にしない）", async () => {
     const q = (await (await start({ claimId: CLAIM })).json()) as Question;
-    const lines = [{ kubun: "ZZZ_9", count: 1, dates: ["2025-03-10"] }];
+    const lines = [{ kubun: "ZZZ_9", count: 1, dates: [day(12)] }];
     for (const r of [await draft(q.id, { lines }), await confirm(q.id, { lines }), await localRules(q.id, { lines })]) {
       expect(r.status).toBe(400);
       expect((await r.json()).error).toBe("未知の区分: ZZZ_9");

@@ -1,0 +1,206 @@
+{
+  "claimId": "K7-2026-10",
+  "yearMonth": "2026-10",
+  "payer": "国保連",
+  "prefecture": "東京都",
+  "facility": {
+    "note16Met": false
+  },
+  "facts": {
+    "age": {
+      "known": true,
+      "value": 80
+    },
+    "insurance": {
+      "known": true,
+      "value": "後期高齢者"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.1
+    },
+    "careLevel": {
+      "known": true,
+      "value": 3
+    },
+    "table7": {
+      "known": true,
+      "value": false
+    },
+    "table8_2": {
+      "known": true,
+      "value": false
+    },
+    "mainDisease": {
+      "known": true,
+      "value": "2型糖尿病"
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": null
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "居宅"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
+    }
+  },
+  "events": [
+    {
+      "type": "discharge",
+      "date": "2026-07-17"
+    },
+    {
+      "type": "kanriStart",
+      "month": "2026-08"
+    },
+    {
+      "type": "visit",
+      "date": "2026-10-14",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2026-10-28",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "test",
+      "date": "2026-10-14",
+      "items": [
+        "末梢血液一般",
+        "HbA1c",
+        "血液化学10項目以上"
+      ]
+    },
+    {
+      "type": "prescription",
+      "date": "2026-10-28",
+      "oralKinds": 5,
+      "days": 28
+    }
+  ],
+  "lines": [
+    {
+      "kubun": "C001_1I",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "O001_3I",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "O100_1HA",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "C001_N13_DX",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "C002_2NI1",
+      "count": 1,
+      "dates": [
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "C002_N4_IKOU",
+      "count": 1,
+      "dates": [
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "C002_N10_HOKATSU",
+      "count": 1,
+      "dates": [
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "D400_1",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "D005_5",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "D005_9",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "D007_10",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "D026_3",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "D026_4",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    }
+  ]
+}

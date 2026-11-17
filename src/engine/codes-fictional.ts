@@ -44,10 +44,28 @@ export const CODE_TABLE: readonly { kubun: string; code: string }[] = [
   { kubun: "B000", code: "990000039" },
   { kubun: "A_IRYOJOHO", code: "990000040" },
   { kubun: "A_DXSUISHIN", code: "990000041" },
+  // 令和8年度改定で足した区分（2026-11）。これより上の行は変えない
+  { kubun: "D008_19", code: "990000042" },
+  { kubun: "O001_3I", code: "990000043" },
+  { kubun: "O001_3RO", code: "990000044" },
+  { kubun: "O001_2", code: "990000045" },
+  { kubun: "O001_1", code: "990000046" },
+  { kubun: "O100_1HA", code: "990000047" },
+  { kubun: "O100_1RO", code: "990000048" },
+  { kubun: "O100_1I", code: "990000049" },
+  { kubun: "C001_N13_DX2", code: "990000050" },
+  { kubun: "A_DENSHI_RENKEI", code: "990000051" },
+  { kubun: "C002-2_2I1", code: "990000052" },
+  { kubun: "C002-2_2RO1", code: "990000053" },
+  { kubun: "C002-2_2NI1", code: "990000054" },
+  { kubun: "A001", code: "990000055" },
 ];
 
 const CODE_OF = new Map(CODE_TABLE.map((r) => [r.kubun, r.code]));
 const KUBUN_OF = new Map(CODE_TABLE.map((r) => [r.code, r.kubun]));
+
+/** 区分が表にあるか（知識の match の区分の検査に使う。design.md §3） */
+export const isKnownKubun = (kubun: string): boolean => CODE_OF.has(kubun);
 
 /** 区分の架空コード。表にない区分は例外 */
 export function fictionalCode(kubun: string): string {

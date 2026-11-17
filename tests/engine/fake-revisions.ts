@@ -23,7 +23,7 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     label: `作り物の版 ${over.id}`,
     generation: over.id,
     kind: "改定",
-    points: { [kubun]: { name: `作り物の区分 ${kubun}`, points: unitPoints, source: "未収載" } },
+    points: { [kubun]: { name: `作り物の区分 ${kubun}`, no: kubun, points: unitPoints, source: "未収載" } },
     consts: {} as RevisionConsts,
     rules: [fakeRule(kubun, maxCount)],
     ...over,

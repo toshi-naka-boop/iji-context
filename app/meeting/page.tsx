@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
+import { payerLabel } from "../../src/messages";
 import { TopBar } from "../nav";
 
 /** 会議室の絵（public/characters/ にあればそれを使い、なければ全員の絵を並べる。2026-11-08） */
@@ -99,7 +100,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
       <h3 style={{ marginTop: 0 }}>査定・返戻の通知を読む</h3>
       <p className="muted">通知に書かれていることを取り出し、確かめた項目だけを知識の候補にします。</p>
       <p>
-        <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・2 月分の査定）を読む</button>{" "}
+        <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・前の月の査定）を読む</button>{" "}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
       </p>
       {busy && <div className="muted">通知を読んでいます…</div>}
@@ -117,7 +118,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
                 <td>{it.itemName} → {it.kubun ?? "？"}</td>
                 <td>{it.outcome}</td>
                 <td>{it.reason}</td>
-                <td>{it.problems.length === 0 ? `${it.prefecture}・${it.payer}` : <span className="warn">{it.problems.join(" / ")}</span>}</td>
+                <td>{it.problems.length === 0 ? `${it.prefecture}・${payerLabel(it.payer)}` : <span className="warn">{it.problems.join(" / ")}</span>}</td>
                 <td>
                   {it.outcome === "査定" && (
                     <label className="muted"><input type="checkbox" checked={!!reexam[i]} onChange={(e) => setReexam({ ...reexam, [i]: e.target.checked })} /> 再審査を申し出る</label>

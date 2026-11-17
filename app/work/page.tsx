@@ -5,7 +5,7 @@ import type { ClaimContext, ClaimLine, EngineResult, Finding } from "../../src/e
 import type { MentorOutput, Situation } from "../../src/mentor/output";
 import { faceFor, faceImage, type Face } from "../../src/mentor/face";
 import type { Question } from "../../src/practice/practice";
-import { findingText } from "../../src/messages";
+import { findingText, payerLabel } from "../../src/messages";
 import { TopBar } from "../nav";
 import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { unlockAudio, Welcome } from "../welcome";
@@ -370,7 +370,7 @@ export default function Work() {
         <div className={`work${showLog ? " with-log" : ""}`}>
           <section className="panel">
             <h2 style={{ marginTop: 0 }}>
-              {q.claimId}　<span className="muted">{ctx.payer}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}</span>
+              {q.claimId}　<span className="muted">{payerLabel(ctx.payer)}・{ctx.facts.insurance.known ? ctx.facts.insurance.value : ""}・{q.phase}{q.mode === "選択" ? "・選択モード" : ""}</span>
               {/* 訪問の時点（レセコンに入れる前）の算定だと、ひと目で分かる札（2026-11-08 ユーザー判断） */}
               {q.asOf && <span className="badge sky" style={{ marginLeft: 8, fontSize: 14, verticalAlign: "middle" }}>レセコンに入れる前・{Number(q.asOf.slice(5, 7))}/{Number(q.asOf.slice(8))} の訪問</span>}
             </h2>
@@ -456,7 +456,7 @@ export default function Work() {
                         disabled={q.phase !== "ヒント"}
                         style={{ width: 120 }}
                         onChange={(e) => {
-                          const dates = e.target.value.split(",").map((s) => s.trim()).filter(Boolean).map((d) => `2025-03-${d.padStart(2, "0")}`);
+                          const dates = e.target.value.split(",").map((s) => s.trim()).filter(Boolean).map((d) => `${ctx.yearMonth}-${d.padStart(2, "0")}`);
                           setLines(lines.map((x, j) => (j === i ? { ...x, dates, count: dates.length } : x)));
                         }}
                       />
@@ -469,7 +469,7 @@ export default function Work() {
             </table>
             {q.phase === "ヒント" && (
               <p>
-                <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: ["2025-03-10"] }])}>行を足す</button>
+                <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: [`${ctx.yearMonth}-01`] }])}>行を足す</button>
                 <span className="muted">　合計 {quiz.some((x) => x.state === "未回答") ? "？" : total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
               </p>
             )}

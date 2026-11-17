@@ -10,6 +10,7 @@ import type { User } from "../../src/server/auth";
 import { UserError } from "../../src/server/errors";
 import type { Allowed } from "../../src/server/policy";
 import { createDailyCounter, enforceLimit, resetLimits } from "../../src/server/rate-limit";
+import { at, claimId } from "../helpers/period";
 
 let tmp: string;
 let http: typeof import("../../src/server/http");
@@ -173,18 +174,18 @@ describe("監査ログ", () => {
     });
     const GET = http.route({ roles: anyRole("GET /api/test-audit") }, () => ({ ok: true }));
     const before = auditRows().length;
-    await POST(post({ claimId: "K1-2025-03", text: secret }));
+    await POST(post({ claimId: claimId("K1"), text: secret }));
     await POST(post({ claimId: "K9", text: secret }));
-    await POST(post({ claimId: "K1-2025-03", text: secret, extra: 1 }));
+    await POST(post({ claimId: claimId("K1"), text: secret, extra: 1 }));
     await GET(new Request("http://localhost/api/test", { headers: { cookie } }));
     const rows = auditRows().slice(0, auditRows().length - before).reverse();
     expect(rows.map((r) => [r.action, r.target, r.result, r.status])).toEqual([
-      ["POST /api/test-audit", "K1-2025-03", "ok", 200],
+      ["POST /api/test-audit", claimId("K1"), "ok", 200],
       ["POST /api/test-audit", "K9", "rejected", 404],
       ["POST /api/test-audit", null, "invalid", 400],
     ]);
     // 誰が・実時刻・デモの時計は入り、本文と氏名は入らない
-    expect(rows[0]).toMatchObject({ userId: user.id, role: "clerk", demoNow: "2025-03-10T09:00:00+09:00" });
+    expect(rows[0]).toMatchObject({ userId: user.id, role: "clerk", demoNow: at(13) });
     expect(Number.isNaN(Date.parse(rows[0].at))).toBe(false);
     const dump = JSON.stringify(auditRows());
     expect(dump).not.toContain(secret);

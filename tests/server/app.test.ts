@@ -10,6 +10,7 @@ import { seed } from "../../scripts/seed-knowledge";
 import { cleanName, openApp, type App } from "../../src/server/app";
 import { readKnowledge } from "../../src/lifecycle/store";
 import { evaluate } from "../../src/engine";
+import { at, claimId, dateIn, day } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -26,48 +27,48 @@ afterEach(() => {
 });
 
 describe("症例", () => {
-  it("合成 UKE 2 本と合成カルテ側の事実から、K1〜K6 の 6 件が読める", () => {
+  it("合成 UKE 2 本と合成カルテ側の事実から、K1〜K7 の 7 件が読める（K7 は国保連の UKE に入る）", () => {
     expect(app.cases().map((c) => [c.claimId, c.payer])).toEqual([
-      ["K1-2025-03", "国保連"], ["K2-2025-03", "国保連"], ["K3-2025-03", "国保連"], ["K4-2025-03", "国保連"], ["K5-2025-03", "国保連"], ["K6-2025-03", "支払基金"],
+      [claimId("K1"), "国保連"], [claimId("K2"), "国保連"], [claimId("K3"), "国保連"], [claimId("K4"), "国保連"], [claimId("K5"), "国保連"], [claimId("K7"), "国保連"], [claimId("K6"), "支払基金"],
     ]);
   });
 });
 
 describe("患者ごとに確かめた情報", () => {
-  const care = { key: "careLevel" as const, value: 2, source: "介護保険証" as const, validUntil: "2025-05-31" };
+  const care = { key: "careLevel" as const, value: 2, source: "介護保険証" as const, validUntil: dateIn(2, 31) };
 
   it("K4 に要介護度（要介護2）を残すと R03 の情報不足が消え、開き直しても残っている", () => {
-    expect(evaluate(app.caseOf("K4-2025-03")).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
-    app.savePatientFact("K4-2025-03", "new1", care);
-    expect(evaluate(app.caseOf("K4-2025-03")).findings).toEqual([]);
-    expect(app.patientFacts("K4-2025-03").facts).toEqual([expect.objectContaining({ key: "careLevel", value: 2, source: "介護保険証", checkedBy: "new1", expired: false })]);
+    expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
+    app.savePatientFact(claimId("K4"), "new1", care);
+    expect(evaluate(app.caseOf(claimId("K4"))).findings).toEqual([]);
+    expect(app.patientFacts(claimId("K4")).facts).toEqual([expect.objectContaining({ key: "careLevel", value: 2, source: "介護保険証", checkedBy: "new1", expired: false })]);
   });
 
   it("時計を有効期間の終わりの翌日に進めると、要介護度は分からないに戻り R03 の情報不足が戻る", () => {
-    app.savePatientFact("K4-2025-03", "new1", care);
-    app.advanceClock("2025-06-01T09:00:00+09:00");
-    expect(app.caseOf("K4-2025-03").facts.careLevel).toEqual({ known: false });
-    expect(evaluate(app.caseOf("K4-2025-03")).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
-    expect(app.patientFacts("K4-2025-03").facts[0].expired).toBe(true);
+    app.savePatientFact(claimId("K4"), "new1", care);
+    app.advanceClock(`${dateIn(3, 1)}T09:00:00+09:00`);
+    expect(app.caseOf(claimId("K4")).facts.careLevel).toEqual({ known: false });
+    expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
+    expect(app.patientFacts(claimId("K4")).facts[0].expired).toBe(true);
   });
 
   it("K2 で別表第八の二を当たるに直すと、在医総管の区分の指摘（R02）が出る", () => {
-    expect(evaluate(app.caseOf("K2-2025-03")).findings).toEqual([]);
-    app.savePatientFact("K2-2025-03", "new1", { key: "table8_2", value: true, source: "医師に確認", validUntil: null });
-    expect(evaluate(app.caseOf("K2-2025-03")).findings.map((f) => f.ruleId)).toContain("R02");
+    expect(evaluate(app.caseOf(claimId("K2"))).findings).toEqual([]);
+    app.savePatientFact(claimId("K2"), "new1", { key: "table8_2", value: true, source: "医師に確認", validUntil: null });
+    expect(evaluate(app.caseOf(claimId("K2"))).findings.map((f) => f.ruleId)).toContain("R02");
   });
 
   it("要介護度に有効期間の終わりがない・範囲外の値・登録していない医療事務は残せない", () => {
-    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, validUntil: null })).toThrow(/有効期間の終わり/);
-    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, value: 6 })).toThrow(/0〜5/);
-    expect(() => app.savePatientFact("K4-2025-03", "new1", { ...care, validUntil: "2025-03-01" })).toThrow(/今日より前/);
-    expect(() => app.savePatientFact("K4-2025-03", "nobody", care)).toThrow(/登録されていない/);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: null })).toThrow(/有効期間の終わり/);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, value: 6 })).toThrow(/0〜5/);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(3) })).toThrow(/今日より前/);
+    expect(() => app.savePatientFact(claimId("K4"), "nobody", care)).toThrow(/登録されていない/);
   });
 });
 
 describe("1 問の流れ（K2：加算の取り忘れ）", () => {
   it("下書きで取り忘れの指摘 → 足して確定 → 正解、適用記録が書かれ、レベルの件数が増え、防いだ額が数えられる", () => {
-    const k2 = app.caseOf("K2-2025-03");
+    const k2 = app.caseOf(claimId("K2"));
     const q = app.start("new1", k2.claimId);
     const missing = k2.lines.filter((l) => l.kubun !== "C002_N10_HOKATSU" && l.kubun !== "C002_N4_IKOU");
     const d = app.draft(q.id, missing);
@@ -85,19 +86,19 @@ describe("1 問の流れ（K2：加算の取り忘れ）", () => {
   });
 
   it("登録していない医療事務・ない症例では始められない", () => {
-    expect(() => app.start("nobody", "K1-2025-03")).toThrow(/登録されていない/);
-    expect(() => app.start("new1", "K9-2025-03")).toThrow(/症例がない/);
+    expect(() => app.start("nobody", claimId("K1"))).toThrow(/登録されていない/);
+    expect(() => app.start("new1", claimId("K9"))).toThrow(/症例がない/);
   });
 });
 
 describe("時計とレセメン会議", () => {
   it("提出結果の外れを取り込み、土曜を過ぎるまで時計を進めると会議の整理が回り、議題に外れの確認が出る。知識は使い続ける", () => {
-    const k6 = app.caseOf("K6-2025-03");
+    const k6 = app.caseOf(claimId("K6"));
     const q = app.start("new1", k6.claimId);
     app.confirm(q.id, k6.lines);
     // K6 の知識（支払基金の BNP）は地域層なので、制度層の R11 に外れを付ける
-    app.importClaimResult({ resultId: "r1", submissionId: q.id, kind: "原審査", outcome: "査定", kubun: ["D008_18"] });
-    const r = app.advanceClock("2025-03-15T09:00:00+09:00");
+    app.importClaimResult({ resultId: "r1", submissionId: q.id, kind: "原審査", outcome: "査定", kubun: ["D008_19"] });
+    const r = app.advanceClock(at(17));
     expect(r.meeting).not.toBeNull();
     const items = app.agenda().items;
     expect(items.some((i) => i.kind === "miss" && i.knowledgeId === "system/r11")).toBe(true);
@@ -107,20 +108,20 @@ describe("時計とレセメン会議", () => {
 
 describe("K4：照合 → 医師確認 → 承認で病名が確定", () => {
   it("不一致が 1 件出て、医師確認を送り、医師が回答・承認すると傷病名が確定して不一致が消える", () => {
-    const c1 = app.crosscheckOf("K4-2025-03");
+    const c1 = app.crosscheckOf(claimId("K4"));
     expect(c1.mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
-    const r = app.sendCrosscheck("K4-2025-03", "M01");
+    const r = app.sendCrosscheck(claimId("K4"), "M01");
     expect(r.route).toBe("F1");
-    expect(() => app.sendCrosscheck("K4-2025-03", "M01")).toThrow(/もう送ってある/);
+    expect(() => app.sendCrosscheck(claimId("K4"), "M01")).toThrow(/もう送ってある/);
     const id = r.route === "F1" ? r.query.id : "";
     app.answerDoctor(id, { option: "非弁膜症性心房細動", answeredBy: "院長" });
     app.approveDoctor(id, "院長");
-    const c2 = app.crosscheckOf("K4-2025-03");
+    const c2 = app.crosscheckOf(claimId("K4"));
     expect(c2).toEqual({ mismatches: [], confirmed: ["非弁膜症性心房細動"] });
   });
 
   it("カルテのない症例は照合しない", () => {
-    expect(app.crosscheckOf("K1-2025-03").mismatches).toEqual([]);
+    expect(app.crosscheckOf(claimId("K1")).mismatches).toEqual([]);
   });
 });
 
@@ -157,10 +158,10 @@ describe("F3 代行入力", () => {
   it("整えた文は医師確認になり（7 要件を通る）、足りない項目は医師確認の引用と医療事務への確認に分かれる。承認で確定する", async () => {
     const { parseScribe, proxyConfirmDraft } = await import("../../src/mentor/scribe");
     const { validateQuery } = await import("../../src/query/doctor-query");
-    expect(validateQuery(proxyConfirmDraft("K4-2025-03", "AF 継続 DOAC", "心房細動。DOAC を継続する。"))).toEqual([]);
+    expect(validateQuery(proxyConfirmDraft(claimId("K4"), "AF 継続 DOAC", "心房細動。DOAC を継続する。"))).toEqual([]);
     const scribed = parseScribe({ text: "心房細動。DOAC を継続する。", missing: [{ field: "心房細動の病型", why: "記載がない", target: "doctor" }, { field: "次回の訪問日", why: "記載がない", target: "clerk" }, { bad: 1 }] });
     expect(scribed.missing).toHaveLength(2);
-    const r = app.proxySubmit("K4-2025-03", "AF 継続 DOAC", scribed);
+    const r = app.proxySubmit(claimId("K4"), "AF 継続 DOAC", scribed);
     expect(r.query?.field).toBe("代行入力");
     expect(r.query?.indicators.at(-1)).toEqual({ source: "記載が足りない項目", text: "心房細動の病型（記載がない）" });
     expect(r.clerkTasks.map((t) => t.field)).toEqual(["次回の訪問日"]);
@@ -171,7 +172,7 @@ describe("F3 代行入力", () => {
 
 describe("選択モード", () => {
   it("選択モードで始めると、問題が引けて、選んだものが記録される。通常の問題では引けない", () => {
-    const k1 = app.caseOf("K1-2025-03");
+    const k1 = app.caseOf(claimId("K1"));
     const q = app.start("new1", k1.claimId, "選択");
     const items = app.choices(q.id);
     expect(items.map((x) => x.group)).toEqual(["在医総管の区分"]);
@@ -196,23 +197,23 @@ describe("メンターを選ぶ（FR-19）", () => {
 
 describe("訪問の記録（レセコンに入れる前。FR-68）", () => {
   it("時計に関係なく全部の訪問を開けて、その日のカルテとその日までの実施が付く", () => {
-    const k4 = app.visits().filter((v) => v.claimId === "K4-2025-03");
-    expect(k4.map((v) => v.date)).toEqual(["2025-03-11", "2025-03-25"]);
+    const k4 = app.visits().filter((v) => v.claimId === claimId("K4"));
+    expect(k4.map((v) => v.date)).toEqual([day(13), day(27)]);
     expect(k4[0].chart?.a).toBe("AF");
-    expect(k4[0].lines.map((l) => [l.kubun, l.count])).toEqual([["C001_1I", 1]]);
-    expect(app.start("new1", "K4-2025-03", "通常", "2025-03-25").asOf).toBe("2025-03-25");
-    expect(() => app.start("new1", "K4-2025-03", "通常", "2025-03-12")).toThrow();
+    expect(k4[0].lines.map((l) => [l.kubun, l.count])).toEqual([["C001_1I", 1], ["O001_3I", 1], ["O100_1HA", 1], ["C001_N13_DX", 1]]);
+    expect(app.start("new1", claimId("K4"), "通常", day(27)).asOf).toBe(day(27));
+    expect(() => app.start("new1", claimId("K4"), "通常", day(14))).toThrow();
   });
   it("確定しても提出にならず、件数・防いだ額に数えない。照合はその日までのカルテで出る", () => {
-    app.advanceClock("2025-03-11T18:00:00+09:00");
-    const q = app.start("new1", "K4-2025-03", "通常", "2025-03-11");
+    app.advanceClock(at(13, "18:00:00"));
+    const q = app.start("new1", claimId("K4"), "通常", day(13));
     const lines = app.caseFor(q).lines;
-    app.draft(q.id, [...lines, { kubun: "C002_2RO1", count: 1, dates: ["2025-03-11"] }]);
+    app.draft(q.id, [...lines, { kubun: "C002-2_2RO1", count: 1, dates: [day(13)] }]);
     const c = app.confirm(q.id, lines);
     expect(c.correct).toBe(true);
     app.done(app.explain(q.id).id);
     expect(app.status("new1").count).toBe(0);
-    expect(app.crosscheckOf("K4-2025-03", "2025-03-11").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
+    expect(app.crosscheckOf(claimId("K4"), day(13)).mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
     expect(app.outlookOf(q)).toContain("ここまで 1 回");
   });
 });
@@ -220,27 +221,27 @@ describe("訪問の記録（レセコンに入れる前。FR-68）", () => {
 describe("訪問カルテを書く（FR-69）", () => {
   const note = { s: "変わりなし", o: "", a: "AF", p: "DOAC 継続", rx: "" };
   it("書いて確かめた訪問が、その日の訪問の記録になり、訪問の時点の問題で判定できる", () => {
-    app.advanceClock("2025-03-18T15:00:00+09:00");
-    expect(app.patients().map((p) => p.claimId)).toEqual(["K1-2025-03", "K2-2025-03", "K3-2025-03", "K4-2025-03", "K5-2025-03"]);
-    const s = app.saveNote("K4-2025-03", "new1", "訪問診療", note);
-    expect(s.date).toBe("2025-03-18");
-    expect(app.visits("new1").some((v) => v.claimId === "K4-2025-03" && v.date === "2025-03-18")).toBe(false);
+    app.advanceClock(at(20, "15:00:00"));
+    expect(app.patients().map((p) => p.claimId)).toEqual([claimId("K1"), claimId("K2"), claimId("K3"), claimId("K4"), claimId("K5"), claimId("K7")]);
+    const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
+    expect(s.date).toBe(day(20));
+    expect(app.visits("new1").some((v) => v.claimId === claimId("K4") && v.date === day(20))).toBe(false);
     app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
-    const v = app.visits("new1").find((x) => x.claimId === "K4-2025-03" && x.date === "2025-03-18");
+    const v = app.visits("new1").find((x) => x.claimId === claimId("K4") && x.date === day(20));
     // ほかの利用者には、この人が書いたカルテは重ならない
     const other = app.createClerk("審査員A");
-    expect(app.visits(other.id).some((x) => x.claimId === "K4-2025-03" && x.date === "2025-03-18")).toBe(false);
+    expect(app.visits(other.id).some((x) => x.claimId === claimId("K4") && x.date === day(20))).toBe(false);
     expect(v).toMatchObject({ written: true, chart: { a: "AF" } });
-    const q = app.start("new1", "K4-2025-03", "通常", "2025-03-18");
+    const q = app.start("new1", claimId("K4"), "通常", day(20));
     expect(app.caseFor(q).lines.find((l) => l.kubun === "C001_1I")?.count).toBe(2);
-    expect(app.crosscheckOf("K4-2025-03", "2025-03-18", "new1").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
+    expect(app.crosscheckOf(claimId("K4"), day(20), "new1").mismatches.map((m) => m.ruleId)).toEqual(["M01"]);
   });
   it("カルテにない言葉の事実では確定できない。診療月の外の日には書けない", () => {
-    app.advanceClock("2025-03-18T15:00:00+09:00");
-    const s = app.saveNote("K4-2025-03", "new1", "訪問診療", note);
+    app.advanceClock(at(20, "15:00:00"));
+    const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
     expect(() => app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
-    app.advanceClock("2025-04-02T09:00:00+09:00");
-    expect(() => app.saveNote("K4-2025-03", "new1", "訪問診療", note)).toThrow();
+    app.advanceClock(`${dateIn(1, 2)}T09:00:00+09:00`);
+    expect(() => app.saveNote(claimId("K4"), "new1", "訪問診療", note)).toThrow();
   });
 });
 
@@ -266,7 +267,7 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     const a = app.createClerk("審査員A");
     expect(app.importedClaims(a.id)).toEqual([]);
     app.importUke(a.id, "shiharaikikin.UKE");
-    expect(app.importedClaims(a.id)).toEqual(["K6-2025-03"]);
+    expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
     expect(app.ukeList(a.id).map((u) => [u.name, u.payer, u.imported])).toEqual([["kokuhoren.UKE", "国保連", false], ["shiharaikikin.UKE", "支払基金", true]]);
     expect(() => app.importUke(a.id, "other.UKE")).toThrow();
   });
@@ -324,7 +325,7 @@ describe("医師確認の練習問題（FR-76）", () => {
   it("K4 の照合の問題は、病型の医師確認が承認されるまで正解にならない", () => {
     const q = app.startDrill("new1", "m03");
     expect(app.drillState(q.id)).toMatchObject({ crosscheckOpen: true });
-    const sent = app.sendCrosscheck("K4-2025-03", "M01");
+    const sent = app.sendCrosscheck(claimId("K4"), "M01");
     if (sent.route !== "F1") throw new Error("医師確認にならない");
     app.answerDoctor(sent.query.id, { option: "非弁膜症性心房細動", answeredBy: "医師" });
     app.approveDoctor(sent.query.id, "医師");
@@ -338,20 +339,20 @@ describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
     const made = app.seedLocalRules();
     expect(made).toHaveLength(13); // 院内 12 ＋ 地域 1
     expect(app.seedLocalRules()).toHaveLength(0); // 2 回目は入れない
-    const k6 = app.start("new1", "K6-2025-03");
+    const k6 = app.start("new1", claimId("K6"));
     const area = (id: string) => app.localRulesOf(id).filter((r) => r.layer === "地域");
     expect(area(k6.id)).toHaveLength(1);
     expect(area(k6.id)[0]).toMatchObject({ source: "査定", usedByMentor: false });
-    expect(app.localRulesOf(k6.id, app.caseFor(k6).lines.filter((l) => l.kubun !== "D008_18")).filter((r) => r.layer === "地域")).toHaveLength(0);
-    expect(area(app.start("new1", "K1-2025-03").id)).toHaveLength(0);
+    expect(app.localRulesOf(k6.id, app.caseFor(k6).lines.filter((l) => l.kubun !== "D008_19")).filter((r) => r.layer === "地域")).toHaveLength(0);
+    expect(area(app.start("new1", claimId("K1")).id)).toHaveLength(0);
   });
   it("院内ルールは中身を伏せて区分の名前だけを出し、何年も使われていない承認済みのものが積み上がっている", () => {
     app.seedLocalRules();
-    const k1 = app.start("new1", "K1-2025-03");
+    const k1 = app.start("new1", claimId("K1"));
     const inHouse = app.localRulesOf(k1.id).filter((r) => r.layer === "院内");
     expect(inHouse.every((r) => r.summary.endsWith("に関する院内ローカル"))).toBe(true);
     expect(inHouse.find((r) => r.summary.startsWith("在宅時医学総合管理料"))?.stale ?? inHouse.find((r) => r.id === "local/seed-01")?.stale).toBe(true);
-    expect(inHouse.find((r) => r.id === "local/seed-08")).toMatchObject({ stale: false, lastUsed: "2025-02-26" });
+    expect(inHouse.find((r) => r.id === "local/seed-08")).toMatchObject({ stale: false, lastUsed: dateIn(-1, 26) });
     expect(inHouse.some((r) => r.id === "local/seed-10")).toBe(false); // しまわれたものは出さない
     expect(inHouse.every((r) => !r.usedByMentor)).toBe(true); // 院内はメンターの助言に使わない
   });
@@ -423,19 +424,19 @@ describe("時計を進める処理の順序", () => {
     // 医師確認の記録が壊れていると、リマインド・保留の処理が失敗する
     mkdirSync(path.join(tmp, "query-log"), { recursive: true });
     writeFileSync(path.join(tmp, "query-log", "q-broken.json"), "{ 壊れた記録");
-    expect(() => app.advanceClock("2025-03-12T09:00:00+09:00")).toThrow();
-    expect(app.now()).toBe("2025-03-10T09:00:00+09:00");
+    expect(() => app.advanceClock(at(14))).toThrow();
+    expect(app.now()).toBe(at(13));
     rmSync(path.join(tmp, "query-log", "q-broken.json"));
-    expect(app.advanceClock("2025-03-12T09:00:00+09:00").now).toBe("2025-03-12T09:00:00+09:00");
-    expect(app.now()).toBe("2025-03-12T09:00:00+09:00");
+    expect(app.advanceClock(at(14)).now).toBe(at(14));
+    expect(app.now()).toBe(at(14));
   });
 });
 
 describe("代行入力（F3）", () => {
   it("下書きが点数・金額に触れていると、医師確認にせず 400 の文言で断る", () => {
     const scribed = { text: "処方箋料を算定した", missing: [] };
-    expect(() => app.proxySubmit("K1-2025-03", "処方箋料を算定", scribed)).toThrow(expect.objectContaining({ status: 400, message: expect.stringContaining("医師確認の要件を満たさない") }));
+    expect(() => app.proxySubmit(claimId("K1"), "処方箋料を算定", scribed)).toThrow(expect.objectContaining({ status: 400, message: expect.stringContaining("医師確認の要件を満たさない") }));
     expect(app.doctorQueries()).toEqual([]);
-    expect(app.proxySubmit("K1-2025-03", "訪問した。変わりなし", { text: "訪問した。変わりなし。", missing: [] }).query).not.toBeNull();
+    expect(app.proxySubmit(claimId("K1"), "訪問した。変わりなし", { text: "訪問した。変わりなし。", missing: [] }).query).not.toBeNull();
   });
 });

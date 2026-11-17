@@ -6,6 +6,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { evaluate } from "../../../src/engine";
+import { facilityOf } from "../../../src/engine/facility";
 import type { ClaimContext } from "../../../src/engine/types";
 import { askVeteranMentor } from "../../../src/mentor/peer";
 import { modelFor } from "../../../src/mentor/models";
@@ -38,7 +39,7 @@ export const GET = route({ roles: allow("GET /api/mentor-check"), query: checkQu
   try {
     const base = process.cwd();
     const k2 = JSON.parse(readFileSync(path.join(base, "fixtures/cases/K2.json"), "utf8"));
-    const facility = JSON.parse(readFileSync(path.join(base, "config/facility.json"), "utf8"));
+    const facility = facilityOf(JSON.parse(readFileSync(path.join(base, "config/facility.json"), "utf8")));
     const ctx: ClaimContext = { ...k2, facility, lines: k2.lines.filter((l: { kubun: string }) => l.kubun !== "C002_N10_HOKATSU") };
     const engine = evaluate(ctx);
     const deps = {

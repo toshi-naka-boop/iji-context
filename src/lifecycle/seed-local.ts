@@ -3,7 +3,7 @@
 // 区分で当てはめるので、算定画面のローカルルールの欄で「どれが引っかかったか」が分かる。
 // 状態は本物の遷移（作成・承認・使用・トリガー・廃棄提案の承認）を古い日付で順に通して作る。古いまま使われていないものは、
 // レセメン会議（使われない期間＝180 日のトリガー）で要再検証に回る
-import { period } from "../demo/period";
+import { dateFrom, period } from "../demo/period";
 import { resolveRevision } from "../engine/revisions";
 import { applyEvent, createKnowledge, listKnowledge, type StoreOptions } from "./store";
 import type { LifecycleEvent, SourceType } from "./types";
@@ -11,38 +11,40 @@ import type { LifecycleEvent, SourceType } from "./types";
 type Step = { at: string; event: LifecycleEvent };
 type Seed = { slug: string; kubun: string; source: SourceType; created: string; steps: Step[]; empathy?: number };
 
-const t = (d: string) => `${d}T10:00:00+09:00`;
+/** 基準月（config/demo.json）から months か月ずらした月の day 日。固定の年を書かない（spec FR-80） */
+const d = dateFrom;
+const t = (date: string) => `${date}T10:00:00+09:00`;
 const approve = (d: string): Step => ({ at: t(d), event: { type: "VERIFY_APPROVE" } });
 const used = (d: string): Step => ({ at: t(d), event: { type: "USED" } });
 
 export const LOCAL_SEEDS: Seed[] = [
   // 何年も前に作られ、承認されたまま使われていないもの（レセメン会議で要再検証に回る）
-  { slug: "seed-01", kubun: "C002_2I1", source: "返戻", created: "2015-06-12", steps: [approve("2015-06-19")] },
-  { slug: "seed-02", kubun: "C000", source: "手動", created: "2016-05-09", steps: [approve("2016-05-16"), used("2016-06-21")] },
-  { slug: "seed-03", kubun: "C103_2", source: "返戻", created: "2016-02-15", steps: [approve("2016-02-22"), used("2016-09-12")] },
-  { slug: "seed-04", kubun: "C002_N4_IKOU", source: "返戻", created: "2017-01-17", steps: [approve("2017-01-24")] },
-  { slug: "seed-05", kubun: "C157_1", source: "手動", created: "2017-04-03", steps: [approve("2017-04-10")] },
-  { slug: "seed-06", kubun: "D008_18", source: "返戻", created: "2018-11-20", steps: [approve("2018-11-27"), used("2019-03-11")] },
-  { slug: "seed-07", kubun: "D400_1", source: "手動", created: "2019-07-01", steps: [approve("2019-07-08")] },
+  { slug: "seed-01", kubun: "C002_2I1", source: "返戻", created: d(-117, 12), steps: [approve(d(-117, 19))] },
+  { slug: "seed-02", kubun: "C000", source: "手動", created: d(-106, 9), steps: [approve(d(-106, 16)), used(d(-105, 21))] },
+  { slug: "seed-03", kubun: "C103_2", source: "返戻", created: d(-109, 15), steps: [approve(d(-109, 22)), used(d(-102, 12))] },
+  { slug: "seed-04", kubun: "C002_N4_IKOU", source: "返戻", created: d(-98, 17), steps: [approve(d(-98, 24))] },
+  { slug: "seed-05", kubun: "C157_1", source: "手動", created: d(-95, 3), steps: [approve(d(-95, 10))] },
+  { slug: "seed-06", kubun: "D008_19", source: "返戻", created: d(-76, 20), steps: [approve(d(-76, 27)), used(d(-72, 11))] },
+  { slug: "seed-07", kubun: "D400_1", source: "手動", created: d(-68, 1), steps: [approve(d(-68, 8))] },
   // 使われ続けているもの
-  { slug: "seed-08", kubun: "C001_N13_DX", source: "提案", created: "2022-10-03", steps: [approve("2022-10-11"), used("2024-12-25"), used("2025-02-26")] },
-  { slug: "seed-09", kubun: "O100_3I", source: "提案", created: "2024-07-01", steps: [approve("2024-07-08"), used("2025-02-26")] },
+  { slug: "seed-08", kubun: "C001_N13_DX", source: "提案", created: d(-29, 3), steps: [approve(d(-29, 11)), used(d(-3, 25)), used(d(-1, 26))] },
+  { slug: "seed-09", kubun: "O001_3I", source: "提案", created: d(-8, 1), steps: [approve(d(-8, 8)), used(d(-1, 26))] },
   // 使われなくなって、すでにしまわれたもの（廃棄提案をベテランが承認）
   {
     slug: "seed-10",
     kubun: "C002_N10_HOKATSU",
     source: "返戻",
-    created: "2020-03-09",
+    created: d(-60, 9),
     steps: [
-      approve("2020-03-16"),
-      { at: t("2020-09-14"), event: { type: "TRIGGER", trigger: "idle" } },
-      { at: t("2021-03-15"), event: { type: "IDLE_EXPIRED" } },
-      { at: t("2021-04-12"), event: { type: "DISPOSAL_APPROVE", reason: "使われなくなったため（レセメン会議で確認）" } },
+      approve(d(-60, 16)),
+      { at: t(d(-54, 14)), event: { type: "TRIGGER", trigger: "idle" } },
+      { at: t(d(-48, 15)), event: { type: "IDLE_EXPIRED" } },
+      { at: t(d(-47, 12)), event: { type: "DISPOSAL_APPROVE", reason: "使われなくなったため（レセメン会議で確認）" } },
     ],
   },
   // 最近の提案で、まだ確かめていないもの
-  { slug: "seed-11", kubun: "C001_N7_MITORI", source: "提案", created: "2025-02-20", steps: [], empathy: 2 },
-  { slug: "seed-12", kubun: "D026_4", source: "提案", created: "2025-03-03", steps: [] },
+  { slug: "seed-11", kubun: "C001_N7_MITORI", source: "提案", created: d(-1, 20), steps: [], empathy: 2 },
+  { slug: "seed-12", kubun: "D026_4", source: "提案", created: d(0, 3), steps: [] },
 ];
 
 /** 区分の名前は基準月の版の点数表から取る */

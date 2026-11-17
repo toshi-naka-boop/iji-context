@@ -3,6 +3,7 @@ import calendarJson from "../../config/calendar.json";
 import type { Calendar } from "../../src/lifecycle/calendar";
 import { transition } from "../../src/lifecycle/machine";
 import { evaluateTriggers } from "../../src/lifecycle/triggers";
+import { at, dateIn, YM } from "../helpers/period";
 import { makeMeta } from "./helpers";
 
 const cal = calendarJson as Calendar;
@@ -129,5 +130,44 @@ describe("v21：修正版は元の知識の層の改定・改選を引き継ぐ�
     expect(fired.find((f) => f.knowledgeId === "veteran/fix-sys")?.event).toEqual({ type: "TRIGGER", trigger: "revision" });
     expect(evaluateTriggers([reg, fixReg], "2027-06-02T00:00:00+09:00", cal).find((f) => f.knowledgeId === "veteran/fix-reg")?.event).toEqual({ type: "TRIGGER", trigger: "reappointment" });
     expect(fired.find((f) => f.knowledgeId === "veteran/plain")).toBeUndefined();
+  });
+});
+
+// design.md §4-7・§7 #4：K6 の地域知識（支払基金）の降格の筋書き。日付は基準月（config/demo.json）から作る
+describe("K6 の地域知識：改選と、使われない期間", () => {
+  /** 基準月の 14 日に承認した、支払基金・東京都の地域知識（近似なので、提出結果では last_hit_at が動かない） */
+  const k6 = () =>
+    makeMeta({
+      id: "regional/k6-bnp",
+      layer: "地域",
+      polarity: "avoid",
+      matchApprox: true,
+      conditionNote: "通知の理由：（合成）",
+      match: { kubunAll: ["D008_19"], payer: "支払基金", prefecture: "東京都" },
+      status_since: at(14),
+      valid_from: at(14),
+    });
+  const june5 = `${dateIn(8, 5)}T09:00:00+09:00`;
+  const april17 = `${dateIn(6, 17)}T09:00:00+09:00`;
+
+  it("前提：基準月の翌年の 6 月 1 日が、支払基金の次の改選日（奇数年）。そこまで 180 日を超える", () => {
+    expect(dateIn(8, 1).slice(0, 4)).toBe(String(Number(YM.slice(0, 4)) + 1));
+    expect(Number(dateIn(8, 1).slice(0, 4)) % 2).toBe(1);
+    expect(dateIn(8, 1).slice(5)).toBe(cal.shiharaiKikin.monthDay);
+    expect((Date.parse(`${dateIn(8, 1)}T00:00:00+09:00`) - Date.parse(at(14))) / 86_400_000).toBeGreaterThan(180);
+  });
+  it("時計を改選日の後（翌年 6 月 5 日）へ 1 回で進めると、改選と使われない期間の両方が当たるが、出るのは改選の 1 件だけ", () => {
+    expect(evaluateTriggers([k6()], june5, cal)).toEqual([{ knowledgeId: "regional/k6-bnp", event: { type: "TRIGGER", trigger: "reappointment" } }]);
+  });
+  it("改選日より前（翌年 4 月 17 日）の整理では、使われない期間（180 日）が先に当たる", () => {
+    expect(evaluateTriggers([k6()], april17, cal)).toEqual([{ knowledgeId: "regional/k6-bnp", event: { type: "TRIGGER", trigger: "idle" } }]);
+  });
+  it("承認から 180 日たつ前は、何も出ない。未承認のまま時計を進めても、何も出ない", () => {
+    expect(evaluateTriggers([k6()], `${dateIn(5, 31)}T09:00:00+09:00`, cal)).toEqual([]);
+    expect(evaluateTriggers([{ ...k6(), status: "未検証" }], june5, cal)).toEqual([]);
+  });
+  it("同じ整理で、種の日付（基準月の初日）で入った制度層の知識は動かない（次の改定は偶数年の 6 月 1 日）", () => {
+    const sys = makeMeta({ id: "system/r01", layer: "制度", match: { ruleId: "R01" }, status_since: `${YM}-01T00:00:00+09:00` });
+    expect(evaluateTriggers([sys, k6()], june5, cal).map((e) => e.knowledgeId)).toEqual(["regional/k6-bnp"]);
   });
 });

@@ -22,6 +22,8 @@ export type StoreOptions = {
   knowledgeDir: string;
   /** 同期先（.claude/skills/）。テストでは一時ディレクトリ */
   skillsDir: string;
+  /** 区分のキーの検査（任意）。渡されたときだけ、match の区分をすべて確かめ、偽なら書き込みを拒否する。本番の配線が渡す（design.md §3） */
+  knownKubun?: (kubun: string) => boolean;
 };
 
 export type CreateInput = {
@@ -81,7 +83,13 @@ function writeAtomic(file: string, content: string): void {
   renameSync(tmp, file);
 }
 
-function validate(input: CreateInput): void {
+function validate(input: CreateInput, knownKubun?: (kubun: string) => boolean): void {
+  if (knownKubun) {
+    const m = input.match;
+    const all = [...(m.kubunAll ?? []), ...(m.commentOn ?? []).map((c) => c.kubun), ...(m.consecutiveMonths ? [m.consecutiveMonths.kubun] : [])];
+    const bad = all.find((k) => !knownKubun(k));
+    if (bad !== undefined) throw new Error(`match の区分が区分の表にない: ${bad}`);
+  }
   if (!SLUG_RE.test(input.slug)) throw new Error(`slug は英小文字・数字・ハイフンのみ: ${input.slug}`);
   const name = `iji-${LAYER_SLUG[input.layer]}-${input.slug}`;
   if (name.length > 64) throw new Error(`Skill 名が 64 文字を超える: ${name}`);
@@ -102,7 +110,7 @@ function validate(input: CreateInput): void {
 export function createKnowledge(opts: StoreOptions, input: CreateInput, now: string): KnowledgeMeta {
   assertTime(now, "now");
   const status = initialStatus(input.layer, input.source.type, { reexamFiled: input.reexamFiled });
-  validate(input);
+  validate(input, opts.knownKubun);
   const id = `${LAYER_SLUG[input.layer]}/${input.slug}`;
   const dir = dirOf(opts, id);
   if (existsSync(path.join(dir, "meta.json"))) throw new Error(`既に存在する知識: ${id}`);
@@ -245,8 +253,9 @@ function runEffect(opts: StoreOptions, effect: Effect, now: string): void {
       body: `この項目は再審査で認められた。\n\n元の知識:\n\n${body}`,
       source: { type: "再審査", ref: src.id },
       polarity: "allow",
-      matchApprox: src.matchApprox,
-      conditionNote: src.conditionNote,
+      // 近似にしない（元の知識から引き継がない）。この知識の条件は「この区分を、この審査支払機関・都道府県が再審査で認めた」そのもの（design.md §3）
+      matchApprox: false,
+      conditionNote: null,
       relates_to: src.id,
       match: src.match,
     },

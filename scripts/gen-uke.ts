@@ -1,5 +1,5 @@
 // 合成 UKE 2 本を fixtures/uke/ に書き出す（spec FR-05）。`npx tsx scripts/gen-uke.ts`
-// 入力は fixtures/cases/K1〜K6.json と fixtures/uke/patients.json。出力は入力だけで決まる
+// 入力は fixtures/cases/K1〜K7.json と fixtures/uke/patients.json。出力は入力だけで決まる
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,8 @@ import { buildUkeFiles, type UkeSources } from "../src/uke/cases";
 import { writeUke } from "../src/uke/uke";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const CASES = ["K1", "K2", "K3", "K4", "K5", "K6"];
+/** K7 は後期高齢者なので、国保連用の UKE に入る（保険者番号で決まる。design.md §1） */
+export const CASES = ["K1", "K2", "K3", "K4", "K5", "K6", "K7"];
 export const UKE_FILES = { 国保連: "fixtures/uke/kokuhoren.UKE", 支払基金: "fixtures/uke/shiharaikikin.UKE" } as const;
 /** 請求年月（基準月の診療分を翌月に請求。config/demo.json） */
 export const BILLING_MONTH = period.billingMonth;

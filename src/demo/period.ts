@@ -10,4 +10,23 @@ export const period = {
   clockStart: demo.clockStart,
   /** 種の日付（SEED_AT）：基準月の初日 */
   seedAt: `${demo.yearMonth}-01T00:00:00+09:00`,
+  /** データの版の印。データの置き場（SQLite と knowledge/ の組）に、作ったときの印を残す（design.md §10 段 2） */
+  dataset: demo.dataset,
 } as const;
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** 基準月の n 日（"YYYY-MM-DD"） */
+export const dayOf = (n: number): string => `${demo.yearMonth}-${pad(n)}`;
+/** 基準月の n 日を、画面の文に出す形で（例 "10/14"） */
+export const mdOf = (n: number): string => `${Number(demo.yearMonth.slice(5))}/${n}`;
+/** 基準月の症例の請求 id（例 claimIdOf("K1")） */
+export const claimIdOf = (caseNo: string): string => `${caseNo}-${demo.yearMonth}`;
+/** 基準月から months か月ずらした月（"YYYY-MM"。負なら前の月） */
+export function monthFrom(months: number): string {
+  const [y, m] = demo.yearMonth.split("-").map(Number);
+  const i = y * 12 + (m - 1) + months;
+  return `${Math.floor(i / 12)}-${pad((i % 12) + 1)}`;
+}
+/** 基準月から months か月ずらした月の n 日（"YYYY-MM-DD"） */
+export const dateFrom = (months: number, day: number): string => `${monthFrom(months)}-${pad(day)}`;

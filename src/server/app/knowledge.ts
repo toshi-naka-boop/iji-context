@@ -8,6 +8,7 @@ import { verificationQueue } from "../../lifecycle/queue";
 import { seedLocalRules as seedInHouse } from "../../lifecycle/seed-local";
 import { applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../lifecycle/store";
 import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
+import { SAMPLE_NOTICE_BASE, SAMPLE_NOTICE_PDF } from "../../notice/sample";
 import type { UkeSources } from "../../uke/cases";
 import { badRequest, conflict, notFound } from "../errors";
 import type { Cases } from "./cases";
@@ -69,12 +70,12 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   function seedLocalRules() {
     // 院内ルールの種（中身は伏せ、何の区分に関するものかだけ出す。何年も積み上がった様子を見せる。FR-80）
     const inHouse = seedInHouse(store);
-    const n = json<Notice>(path.join(paths.root, "fixtures", "notices", "K6-2025-02-satei.json"));
+    const n = json<Notice>(path.join(paths.root, `${SAMPLE_NOTICE_BASE}.json`));
     const items = resolveNoticeItems(n);
     return [...inHouse.map((id) => ({ id })), ...items.flatMap((item, i) => {
-      const cand = candidateOf(item, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" });
+      const cand = candidateOf(item, { reexamFiled: false, fileName: SAMPLE_NOTICE_PDF });
       if (listKnowledge(store).some((m) => m.id.endsWith(`/${cand.slug}`))) return [];
-      return [registerNotice(n, i, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" })];
+      return [registerNotice(n, i, { reexamFiled: false, fileName: SAMPLE_NOTICE_PDF })];
     })];
   }
   /**

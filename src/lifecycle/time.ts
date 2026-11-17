@@ -6,7 +6,7 @@ const ISO_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:
 /** タイムゾーン付きの ISO 8601 でなければ例外 */
 export function assertTime(s: unknown, label = "時刻"): asserts s is string {
   if (typeof s !== "string" || !ISO_TZ.test(s) || Number.isNaN(Date.parse(s))) {
-    throw new Error(`${label}はタイムゾーン付きの ISO 8601 に限る（例 2025-03-10T10:00:00+09:00）: ${String(s)}`);
+    throw new Error(`${label}はタイムゾーン付きの ISO 8601 に限る（日付・時刻・+09:00 などのタイムゾーン）: ${String(s)}`);
   }
 }
 
