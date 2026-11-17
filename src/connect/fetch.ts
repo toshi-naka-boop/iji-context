@@ -3,15 +3,17 @@
 // - 許可リスト RESEMEN_CONNECT_ALLOW（host:port の完全一致）にない接続先には出ない。既定は空
 // - https だけ。http は「本番でない・ループバック・許可リストにある」の 3 つがそろったときだけ（同梱の模擬サーバー用）
 // - リダイレクトに従わない。タイムアウト、応答サイズの上限、content-type の検査を持つ
-// - 本番では、名前解決した IP がプライベート・リンクローカル・ループバックなら出ない
+// - 名前解決は 1 回だけ行い、その結果の IP にそのまま接続する（検査と接続のあいだに DNS の答えを差し替えられても届かない）。
+//   本番では、その IP がプライベート・リンクローカル・ループバックなどの内部アドレスなら出ない
 // - 認証情報と応答の本文を、エラー・ログに出さない（このファイルはログを書かない）
 //
-// 残る危険（DNS リバインディング）：名前解決の結果を検査したあと、fetch がもう一度名前解決して接続する。
-// この 2 回のあいだに相手が DNS の答えを変えると、検査を通った名前で内部の IP に届きうる。
-// 検査した IP に固定して接続するには fetch の下の接続処理を差し替える必要があり（依存の追加が要る）、いまは入れていない。
-// 許可リストに載せるのは、DNS を自分で管理している名前か、IP の直書きに限ること（docs/connectors.md）
+// 接続には node:https（本番でないループバックだけ node:http）の request を使い、検査済みの IP を返す lookup を渡す。
+// 接続先のホスト名は元のまま渡すので、TLS の証明書の検証・SNI・Host ヘッダは元のホスト名で働く。
+// グローバルの fetch は使わない（接続先の IP を固定するには undici の Agent が要るが、Node 同梱の undici は import できず、依存の追加になるため）
 import { lookup } from "node:dns/promises";
-import { BlockList, isIP } from "node:net";
+import http from "node:http";
+import https from "node:https";
+import { BlockList, isIP, type LookupFunction } from "node:net";
 
 export type ConnectErrorKind =
   /** 設定がない・読めない（環境変数） */
@@ -115,17 +117,27 @@ export function resolveTarget(id: string, base: URL, target: string): URL {
 const internal = new BlockList();
 internal.addSubnet("0.0.0.0", 8);
 internal.addSubnet("10.0.0.0", 8);
+// キャリアグレード NAT
+internal.addSubnet("100.64.0.0", 10);
 internal.addSubnet("127.0.0.0", 8);
 // クラウドのメタデータ（169.254.169.254）を含む
 internal.addSubnet("169.254.0.0", 16);
 internal.addSubnet("172.16.0.0", 12);
 internal.addSubnet("192.168.0.0", 16);
+// ネットワーク機器の試験用
+internal.addSubnet("198.18.0.0", 15);
+// マルチキャスト・予約済み
+internal.addSubnet("224.0.0.0", 4);
+internal.addSubnet("240.0.0.0", 4);
 internal.addAddress("::", "ipv6");
 internal.addAddress("::1", "ipv6");
+// IPv4 を埋め込む NAT64（宛先の IPv4 を検査できないので、まとめて通さない）
+internal.addSubnet("64:ff9b::", 96, "ipv6");
 internal.addSubnet("fc00::", 7, "ipv6");
 internal.addSubnet("fe80::", 10, "ipv6");
+internal.addSubnet("ff00::", 8, "ipv6");
 
-/** プライベート・リンクローカル・ループバックの IP か（IPv4 を埋め込んだ IPv6 ::ffff:a.b.c.d も IPv4 として見る） */
+/** プライベート・リンクローカル・ループバック・マルチキャスト・予約済みの IP か（IPv4 を埋め込んだ IPv6 ::ffff:a.b.c.d も IPv4 として見る） */
 export function isInternalAddress(address: string): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
   const ip = mapped ? mapped[1] : address;
@@ -134,8 +146,16 @@ export function isInternalAddress(address: string): boolean {
   return internal.check(ip, family === 6 ? "ipv6" : "ipv4");
 }
 
-/** 接続してよい URL かを確かめる。だめなら not_allowed */
-export async function assertAllowed(id: string, url: URL): Promise<void> {
+/** 名前解決（テストで差し替えられるように、オブジェクトの口にしてある）。ホスト名 → IP の一覧 */
+export const dnsResolver = {
+  resolve: async (host: string): Promise<string[]> => (await lookup(host, { all: true })).map((a) => a.address),
+};
+
+/**
+ * 接続してよい URL かを確かめ、接続する IP を 1 つ返す。だめなら not_allowed。
+ * 名前解決はここで 1 回だけ行う。返した IP にそのまま接続するので、このあとで DNS の答えが変わっても接続先は変わらない
+ */
+export async function assertAllowed(id: string, url: URL): Promise<string> {
   const host = bareHost(url);
   const key = `${url.hostname.toLowerCase()}:${portOf(url)}`;
   if (!allowList().includes(key)) throw new ConnectError(id, "not_allowed", "接続先が許可リスト（RESEMEN_CONNECT_ALLOW）にない");
@@ -143,18 +163,29 @@ export async function assertAllowed(id: string, url: URL): Promise<void> {
     const loopbackHttp = url.protocol === "http:" && !isProduction() && LOOPBACK_HOSTS.has(host);
     if (!loopbackHttp) throw new ConnectError(id, "not_allowed", "https 以外の接続先には接続しない");
   }
-  if (!isProduction()) return;
   let addresses: string[];
   try {
-    addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address);
+    addresses = isIP(host) ? [host] : await dnsResolver.resolve(host);
   } catch {
     throw new ConnectError(id, "network", "接続先の名前を解決できない");
   }
-  if (addresses.length === 0 || addresses.some(isInternalAddress)) throw new ConnectError(id, "not_allowed", "内部のアドレス宛てには接続しない");
+  if (addresses.length === 0 || addresses.some((a) => isIP(a) === 0)) throw new ConnectError(id, "network", "接続先の名前を解決できない");
+  // 答えのどれか 1 つでも内部アドレスなら出ない（どれに接続するかを相手に選ばせない）
+  if (isProduction() && addresses.some(isInternalAddress)) throw new ConnectError(id, "not_allowed", "内部のアドレス宛てには接続しない");
+  return addresses[0];
+}
+
+/** 何を聞かれても、検査済みの IP だけを返す lookup（node:http・node:https の request に渡す） */
+export function pinnedLookup(address: string): LookupFunction {
+  const family = isIP(address);
+  return (_hostname, options, callback) => {
+    if (options.all) callback(null, [{ address, family }]);
+    else callback(null, address, family);
+  };
 }
 
 export type ConnectRequest = {
-  /** 読み取りだけ。POST は、取得に POST を使う API（日レセの診療行為の取得）のためにある */
+  /** 読み取りだけ。POST は、取得に POST を使う API のためにある */
   method?: "GET" | "POST";
   /** POST の本文（JSON にして送る） */
   body?: unknown;
@@ -169,65 +200,68 @@ export type ConnectRequest = {
 export async function connectJson(id: string, target: string, req: ConnectRequest = {}): Promise<unknown> {
   const { base, auth } = connectorConfig(id);
   const url = resolveTarget(id, base, target);
-  await assertAllowed(id, url);
+  const address = await assertAllowed(id, url);
 
   const accept = req.accept ?? ["application/json"];
   const timeoutMs = positiveInt("RESEMEN_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
   const maxBytes = positiveInt("RESEMEN_CONNECT_MAX_BYTES", DEFAULT_MAX_BYTES);
-  const headers: Record<string, string> = { accept: accept.join(", ") };
+  const body = req.body === undefined ? null : Buffer.from(JSON.stringify(req.body), "utf8");
+  const headers: Record<string, string | number> = { accept: accept.join(", ") };
   if (auth?.type === "basic") headers.authorization = `Basic ${Buffer.from(`${auth.user}:${auth.password}`, "utf8").toString("base64")}`;
   if (auth?.type === "bearer") headers.authorization = `Bearer ${auth.token}`;
-  if (req.body !== undefined) headers["content-type"] = "application/json";
+  if (body) Object.assign(headers, { "content-type": "application/json", "content-length": body.byteLength });
 
-  // タイムアウトは、応答のヘッダが来るまでと本文を読み終えるまでの全体にかける
+  // タイムアウトは、接続・応答のヘッダ・本文を読み終えるまでの全体にかける
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      method: req.method ?? "GET",
-      headers,
-      body: req.body === undefined ? undefined : JSON.stringify(req.body),
-      redirect: "error",
-      cache: "no-store",
-      signal: ac.signal,
+    const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      // hostname は元のホスト名のまま（証明書の検証・SNI・Host ヘッダに使われる）。接続する IP だけを lookup で固定する。
+      // agent: false で毎回新しい接続にする（別の IP に張られた接続を使い回さない）。リダイレクトには従わない（request は従わない）
+      const r = (url.protocol === "https:" ? https : http).request({
+        protocol: url.protocol,
+        hostname: bareHost(url),
+        port: portOf(url),
+        path: url.pathname + url.search,
+        method: req.method ?? "GET",
+        headers,
+        lookup: pinnedLookup(address),
+        agent: false,
+        signal: ac.signal,
+      });
+      r.once("response", resolve).once("error", reject);
+      r.end(body ?? undefined);
     });
+    const status = res.statusCode ?? 0;
     const fail = (kind: ConnectErrorKind, detail: string) => {
-      void res.body?.cancel().catch(() => {});
-      return new ConnectError(id, kind, detail, res.status);
+      res.destroy();
+      return new ConnectError(id, kind, detail, status);
     };
-    if (res.status === 401 || res.status === 403) throw fail("auth", `認証に失敗した（HTTP ${res.status}）`);
-    if (res.status === 404) throw fail("not_found", "相手に見つからない（HTTP 404）");
-    if (!res.ok) throw fail("upstream", `相手がエラーを返した（HTTP ${res.status}）`);
-    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    if (status >= 300 && status < 400) throw fail("redirect", "相手がリダイレクトを返した（従わない）");
+    if (status === 401 || status === 403) throw fail("auth", `認証に失敗した（HTTP ${status}）`);
+    if (status === 404) throw fail("not_found", "相手に見つからない（HTTP 404）");
+    if (status < 200 || status >= 300) throw fail("upstream", `相手がエラーを返した（HTTP ${status}）`);
+    const type = String(res.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
     if (!accept.includes(type)) throw fail("format", "応答の content-type が想定と違う");
-    const declared = Number(res.headers.get("content-length") ?? "0");
-    if (declared > maxBytes) throw fail("too_large", "応答が上限より大きい");
+    if (Number(res.headers["content-length"] ?? "0") > maxBytes) throw fail("too_large", "応答が上限より大きい");
 
     // content-length は相手の申告なので、実際に読んだ量でも数える
-    const chunks: Uint8Array[] = [];
+    const chunks: Buffer[] = [];
     let size = 0;
-    const reader = res.body?.getReader();
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) {
-        void reader.cancel().catch(() => {});
-        throw new ConnectError(id, "too_large", "応答が上限より大きい", res.status);
-      }
-      chunks.push(value);
+    for await (const chunk of res as AsyncIterable<Buffer>) {
+      size += chunk.byteLength;
+      if (size > maxBytes) throw fail("too_large", "応答が上限より大きい");
+      chunks.push(chunk);
     }
     try {
       return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)));
     } catch {
-      throw new ConnectError(id, "format", "応答が JSON として読めない", res.status);
+      throw new ConnectError(id, "format", "応答が JSON として読めない", status);
     }
   } catch (e) {
     if (e instanceof ConnectError) throw e;
-    // 元の例外は付けない（cause や message に URL や相手の応答が入りうる）
+    // 元の例外は付けない（cause や message に接続先や相手の応答が入りうる）
     if (ac.signal.aborted) throw new ConnectError(id, "timeout", "時間内に応答がなかった");
-    const why = String((e as { cause?: { message?: unknown } } | null)?.cause?.message ?? "");
-    if (/redirect/i.test(why)) throw new ConnectError(id, "redirect", "相手がリダイレクトを返した（従わない）");
     throw new ConnectError(id, "network", "接続できなかった");
   } finally {
     clearTimeout(timer);
