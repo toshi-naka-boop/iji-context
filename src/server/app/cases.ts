@@ -13,7 +13,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   const { paths, facility } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
-  const { latestPatientFacts, ingest } = patients;
+  const { latestPatientFacts, ingest, masterFacts } = patients;
 
   function cases(): ClaimContext[] {
     const files = ukeFiles();
@@ -22,8 +22,9 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
       for (const r of file.receipts) {
         const k = r.claimId.split("-")[0];
         const c = json<ClaimContext>(path.join(paths.root, "fixtures", "cases", `${k}.json`));
+        // 年齢・保険種別・負担割合は、症例の JSON の値ではなく患者マスタから出す（design.md §6）
         const patientId = ingest(r.patient);
-        const facts = applyPatientFacts(c.facts, latestPatientFacts(patientId), now());
+        const facts = applyPatientFacts({ ...c.facts, ...masterFacts(patientId, r.yearMonth) }, latestPatientFacts(patientId), now());
         out.push(toClaimContext(file, r.claimId, { facility, facts, events: c.events, history: c.history }));
       }
     }
