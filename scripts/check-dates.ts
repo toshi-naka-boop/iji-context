@@ -1,5 +1,5 @@
 // 年月の直書きの検査（design.md §7-1。spec FR-91）。`npm run check:dates`
-// 対象：git が追跡する src/・app/・scripts/ の下の .ts・.tsx。版のファイル（src/engine/revisions/）は見ない（適用開始・終了の年月を持つのが仕様）。
+// 対象：git が追跡する src/・app/・scripts/ と fixtures/connect/（模擬サーバー）の下の .ts・.tsx。版のファイル（src/engine/revisions/）は見ない（適用開始・終了の年月を持つのが仕様）。
 // 見る場所：文字列リテラル・テンプレートリテラルの文字の部分・正規表現リテラル・JSX のテキスト。コメントは見ない。
 // 一致が 1 件でもあれば「ファイル:行:桁: 文字列」を出して終了コード 1。例外を許す印は設けない。
 //
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export const TARGET_DIRS = ["src/", "app/", "scripts/"];
+export const TARGET_DIRS = ["src/", "app/", "scripts/", "fixtures/connect/"];
 export const EXCLUDED_DIRS = ["src/engine/revisions/"];
 
 /** YYYY-MM（YYYY-MM-DD の頭も当たる） */

@@ -69,6 +69,9 @@ export const POLICY = {
   "POST /api/patients/[claimId]/coverages": WORK,
   "GET /api/uke": WORK,
   "POST /api/uke": WORK,
+  // UKE のアップロード（FR-106〜109）と、見本の UKE のダウンロード
+  "GET /api/uke/sample": WORK,
+  "POST /api/uke/upload": WORK,
 
   // 知識：閲覧・投稿・共感は全員。検証（action=verify）はベテランだけ（ハンドラの中で分ける）
   "GET /api/knowledge": ALL,

@@ -30,7 +30,7 @@
 
 - EM 5-1 の症例と §5-2 の合計を新しい版の値で作り直し、承認を取ります
 - `config/demo.json`（診療年月・請求月・時計の初期値・データの版の印）、`config/business-days.json`（祝日）、`config/facility.json`（施設の設定）を直します
-- `fixtures/cases/`・`fixtures/charts/`・`fixtures/uke/patients.json`・`fixtures/notices/` を直し、`npx tsx scripts/gen-uke.ts`・`npx tsx scripts/gen-notice.ts`・`npx tsx scripts/seed-knowledge.ts` で作り直します
+- `fixtures/cases/`・`fixtures/charts/`・`fixtures/uke/patients.json`・`fixtures/notices/` を直し、`npx tsx scripts/gen-uke.ts`・`npx tsx scripts/gen-connect.ts`（連携の模擬データ。gen-uke のあと）・`npx tsx scripts/gen-notice.ts`・`npx tsx scripts/seed-knowledge.ts` で作り直します
 - 練習問題（`src/practice/`）が、新しいルールでも「違反を探す」題材になっているかを確かめます
 - すでに動いている環境のデータは、印が違う置き場の一覧を出して承認を取ってから退避します（`npx tsx scripts/reset-demo.ts --retire-stale`。消しません）
 
@@ -44,6 +44,7 @@
 ```bash
 npm run typecheck && npm test && npm run check:dates && npm run build
 npx tsx scripts/gen-uke.ts && git diff --exit-code fixtures/uke
+npx tsx scripts/gen-connect.ts && git diff --exit-code fixtures/connect
 ```
 
 - ルールごとの合格・不合格の最小例（`tests/engine/rules/`）、症例の合計（`tests/engine/totals.test.ts`）、版の境界（`tests/engine/revisions.test.ts`）を新しい版に合わせます

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createFixtureConnector } from "../../src/connect/fixture";
 import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
 import { evaluate } from "../../src/engine";
 import type { ClaimContext } from "../../src/engine/types";
@@ -12,6 +13,7 @@ import { createClerks } from "../../src/server/app/clerks";
 import { createClock } from "../../src/server/app/clock";
 import { json, openContext } from "../../src/server/app/context";
 import { createPatients } from "../../src/server/app/patients";
+import type { PatientRecord } from "../../src/patient/profile";
 import type { Uke } from "../../src/server/app/uke";
 import type { UkeFile, UkePatient } from "../../src/uke/types";
 import { claimId, dateIn, day, month } from "../helpers/period";
@@ -176,5 +178,54 @@ describe("既存の合成データ（K1〜K6）", () => {
     // 画面に返す内容に、氏名と生年月日は入れない
     expect(JSON.stringify(k3)).not.toMatch(/架空|1946/);
     app.close();
+  });
+});
+
+describe("連携のコネクタで読んだ患者（FR-123）", () => {
+  it("フィクスチャ コネクタの患者は、UKE から入った同じ人に重なり、同じ患者情報チェックにかかる。何度読んでも増えない", async () => {
+    const app = openApp(paths());
+    const ym = claimId("K3").slice(-7);
+    const fromUke = app.patientProfile(claimId("K3"));
+    const k3 = await createFixtureConnector(repo).patient!.getPatient("K3");
+    const got = app.checkConnectorPatient(k3, ym);
+    expect(got.patientId).toBe(fromUke.patientId);
+    expect(got.coverages.map((c) => [c.coverageId, c.kind, c.payerNumber])).toEqual(fromUke.coverages.map((c) => [c.coverageId, c.kind, c.payerNumber]));
+    // コネクタが持ってきた負担割合は、患者マスタの履歴に足される（出所は「連携」）
+    expect(got.coverages[0]).toMatchObject({ burdenRatio: 0.1, source: "連携", checkedBy: null });
+    expect(got.findings.every((f) => /^P0[1-8]$/.test(f.checkId))).toBe(true);
+    // 有効期間は合成データにないので、情報不足のまま
+    expect(got.findings.filter((f) => f.checkId === "P06").map((f) => f.messageKey)).toEqual(["P06.no_period_insurance", "P06.no_period_kohi"]);
+    const read = new Database(paths().dbFile, { readonly: true });
+    const rows = count(read, "patient_coverages");
+    app.checkConnectorPatient(k3, ym);
+    expect(count(read, "patient_coverages")).toBe(rows);
+    read.close();
+    app.close();
+  });
+
+  it("記号・番号の全角は、患者マスタに入れる時点で半角にそろう。有効期間が来れば情報不足は消え、確かめた記録は上書きしない", () => {
+    const { ctx, patients } = setup(() => []);
+    const ym = claimId("K17").slice(-7);
+    const record = (validUntil: string | null, wide = true): PatientRecord => ({
+      name: "架空　七郎",
+      sex: 1,
+      birth: "19540401",
+      coverages: [
+        { kind: "医保", payerNumber: wide ? "０１１３９９９７" : "01139997", symbol: wide ? "ＡＢ－１" : "AB-1", memberNo: wide ? "０００００００７" : "00000007", burdenRatio: 0.3, validFrom: null, validUntil },
+      ],
+    });
+    const first = patients.checkConnectorPatient(record(null), ym);
+    expect(first.coverages.map((c) => [c.payerNumber, c.symbol, c.memberNo, c.source])).toEqual([["01139997", "AB-1", "00000007", "連携"]]);
+    expect(first.findings.map((f) => f.messageKey)).toEqual(["P06.no_period_insurance"]);
+    // 半角で来た同じ人は、同じ患者・同じ加入情報。有効期間が入ると、情報不足が消える
+    const second = patients.checkConnectorPatient(record(dateIn(5, 31), false), ym);
+    expect([second.patientId, second.coverages.length, second.coverages[0].coverageId]).toEqual([first.patientId, 1, first.coverages[0].coverageId]);
+    expect(second.coverages[0].validUntil).toBe(dateIn(5, 31));
+    expect(second.findings.map((f) => f.messageKey)).not.toContain("P06.no_period_insurance");
+    expect(count(ctx.sqlite, "patients")).toBe(1);
+    // 医療事務が確かめた記録は、コネクタの値で上書きしない
+    ctx.sqlite.prepare("UPDATE patient_coverages SET checked_by = 'new1', checked_at = ? WHERE id = (SELECT MAX(id) FROM patient_coverages)").run(`${day(13)}T09:00:00+09:00`);
+    expect(patients.checkConnectorPatient(record(dateIn(8, 30)), ym).coverages[0].validUntil).toBe(dateIn(5, 31));
+    ctx.sqlite.close();
   });
 });

@@ -1,6 +1,7 @@
 // 患者マスタのプロフィール（患者と、その保険・公費の加入情報）の型と、そこからエンジンの Facts を出す関数（spec FR-121、design.md §6）
 // ここは純関数だけ。DB の読み書きは src/server/app/patients.ts
 import type { Facts } from "../engine/types";
+import type { UkePatient } from "../uke/types";
 
 export const COVERAGE_KINDS = ["医保", "公費"] as const;
 export type CoverageKind = (typeof COVERAGE_KINDS)[number];
@@ -12,30 +13,62 @@ export type CoverageSource = (typeof COVERAGE_SOURCES)[number];
 /** 負担割合として入力できる値（EM §2-5 P-9・P-10 に出てくる割合） */
 export const BURDEN_RATIOS = [0.1, 0.2, 0.3] as const;
 
-/** 加入情報 1 件（履歴のうち最新の 1 行） */
-export type Coverage = {
-  /** 加入情報の id（番号を直しても変わらない） */
-  coverageId: string;
+/** 加入情報の中身。出所（UKE・連携のコネクタ・確認入力）を問わず、この形で持つ */
+export type CoverageInfo = {
   kind: CoverageKind;
-  /** 並び順。医保は 0、公費は 1 から（第 1 公費＝1） */
-  position: number;
   /** 保険者番号（医保）または公費負担者番号（公費） */
   payerNumber: string;
   /** 記号（医保だけ。公費は空） */
   symbol: string;
   /** 番号（医保）または受給者番号（公費） */
   memberNo: string;
-  /** 負担割合（0.1 など）。分からないときは null */
+  /** 負担割合（0.1 など）。分からないとき・公費は null */
   burdenRatio: number | null;
   /** 有効期間 YYYY-MM-DD。分からない・定めがないときは null */
   validFrom: string | null;
   validUntil: string | null;
-  /** 出所（"UKE"・"移行"、または確かめた根拠） */
+};
+
+/** 加入情報 1 件（履歴のうち最新の 1 行） */
+export type Coverage = CoverageInfo & {
+  /** 加入情報の id（番号を直しても変わらない） */
+  coverageId: string;
+  /** 並び順。医保は 0、公費は 1 から（第 1 公費＝1） */
+  position: number;
+  /** 出所（"UKE"・"連携"・"移行"、または確かめた根拠） */
   source: string;
   /** 医療事務が確かめた記録。取り込んだだけの行は null */
   checkedBy: string | null;
   checkedAt: string | null;
 };
+
+/** 患者マスタに取り込む患者 1 人分。UKE から来ても、連携のコネクタから来ても同じ形（spec FR-123） */
+export type PatientRecord = {
+  name: string;
+  /** 1 男、2 女。出所が「不明・その他」を返したときは null */
+  sex: 1 | 2 | null;
+  /** YYYYMMDD */
+  birth: string;
+  /** 医保を先に、公費は順位の順に並べる */
+  coverages: CoverageInfo[];
+};
+
+/** UKE の患者を、患者マスタに取り込む形にする（UKE は負担割合と有効期間を持たない） */
+export function recordOfUke(p: UkePatient): PatientRecord {
+  const blank = { burdenRatio: null, validFrom: null, validUntil: null };
+  return {
+    name: p.name,
+    sex: p.sex,
+    birth: p.birth,
+    coverages: [
+      { ...blank, kind: "医保", payerNumber: p.insurer.number, symbol: p.insurer.symbol, memberNo: p.insurer.no },
+      ...p.kohi.map((k) => ({ ...blank, kind: "公費" as const, payerNumber: k.payerNo, symbol: "", memberNo: k.recipientNo })),
+    ],
+  };
+}
+
+/** 全角の英数字・記号と全角の空白を半角にする（記号・番号は、患者マスタに入れる時点で半角にそろえる） */
+export const toHalfWidth = (s: string): string => s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/　/g, " ");
 
 export type PatientProfile = {
   patientId: string;

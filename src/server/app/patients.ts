@@ -2,7 +2,7 @@
 // 患者情報チェック（P01〜P08）もここから呼ぶ。氏名・番号・生年月日は、例外の文言とログに出さない
 import { checkPatient, type PatientFinding } from "../../patient/checks";
 import { isExpired, validatePatientFact, type PatientFact, type PatientFactInput } from "../../patient/facts";
-import { BURDEN_RATIOS, COVERAGE_SOURCES, factsFromPatient, type Coverage, type CoverageSource, type PatientProfile } from "../../patient/profile";
+import { BURDEN_RATIOS, COVERAGE_SOURCES, factsFromPatient, recordOfUke, toHalfWidth, type Coverage, type CoverageInfo, type CoverageSource, type PatientProfile, type PatientRecord } from "../../patient/profile";
 import { patientFindingText } from "../../messages";
 import type { UkePatient, UkeReceipt } from "../../uke/types";
 import { badRequest, notFound } from "../errors";
@@ -79,33 +79,42 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   }
 
   /** 新しい加入情報を 1 件足す（coverage_id は最初の行の番号から作る） */
-  function addCoverage(patientId: string, kind: Coverage["kind"], position: number, payerNumber: string, symbol: string, memberNo: string) {
+  function addCoverage(patientId: string, c: CoverageInfo, position: number, source: string) {
     const info = sqlite
-      .prepare("INSERT INTO patient_coverages (coverage_id, patient_id, kind, position, payer_number, symbol, member_no, source, created_at) VALUES ('', ?, ?, ?, ?, ?, ?, 'UKE', ?)")
-      .run(patientId, kind, position, payerNumber, symbol, memberNo, now());
+      .prepare("INSERT INTO patient_coverages (coverage_id, patient_id, kind, position, payer_number, symbol, member_no, burden_ratio, valid_from, valid_until, source, created_at) VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(patientId, c.kind, position, c.payerNumber, c.symbol, c.memberNo, c.burdenRatio, c.validFrom, c.validUntil, source, now());
     sqlite.prepare("UPDATE patient_coverages SET coverage_id = 'C' || id WHERE id = ?").run(info.lastInsertRowid);
   }
 
   /**
-   * UKE の患者を患者マスタに取り込み、患者 id を返す。同じ人を二重に作らない鍵は次の順：
+   * 患者 1 人分（UKE から、または連携のコネクタから）を患者マスタに取り込み、患者 id を返す。同じ人を二重に作らない鍵は次の順：
    * ① 医保の保険者番号と番号が、その人の加入情報の履歴のどれかと同じで、生年月日と性別も同じ（移行で作った氏名のない患者は番号だけで同じ人とみなす）
    * ② 氏名（空白を除く）・生年月日・性別が同じ（保険が変わっても同じ人として続く）
-   * どちらにも当たらなければ新しい患者を作る。加入情報は、履歴にない番号のものだけを足す（確かめて直した番号を、UKE の読み直しで増やさない）
+   * どちらにも当たらなければ新しい患者を作る。加入情報は、履歴にない番号のものだけを足す（確かめて直した番号を、読み直しで増やさない）。
+   * 記号・番号は、ここで半角にそろえてから比べ、入れる。
+   * すでにある加入情報に、出所が負担割合・有効期間を持ってきたときは、医療事務がまだ確かめていない行に限って履歴に 1 行足す（確かめた記録は上書きしない）
    */
-  function ingest(p: UkePatient): string {
+  function ingestRecord(record: PatientRecord, source: string): string {
+    const p = { ...record, coverages: record.coverages.map((c) => ({ ...c, payerNumber: toHalfWidth(c.payerNumber), symbol: toHalfWidth(c.symbol), memberNo: toHalfWidth(c.memberNo) })) };
+    const medical = p.coverages.find((c) => c.kind === "医保");
     const find = (): PatientRow | undefined => {
-      const byNumber = sqlite
-        .prepare("SELECT DISTINCT p.id, p.name, p.sex, p.birth FROM patient_coverages c JOIN patients p ON p.id = c.patient_id WHERE c.kind = '医保' AND c.payer_number = ? AND c.member_no = ? ORDER BY p.id")
-        .all(p.insurer.number, p.insurer.no) as PatientRow[];
+      const byNumber = medical
+        ? (sqlite
+            .prepare("SELECT DISTINCT p.id, p.name, p.sex, p.birth FROM patient_coverages c JOIN patients p ON p.id = c.patient_id WHERE c.kind = '医保' AND c.payer_number = ? AND c.member_no = ? ORDER BY p.id")
+            .all(medical.payerNumber, medical.memberNo) as PatientRow[])
+        : [];
       const hit = byNumber.find((x) => x.name === null || (x.birth === p.birth && x.sex === p.sex));
       if (hit) return hit;
-      const sameBirth = sqlite.prepare("SELECT id, name, sex, birth FROM patients WHERE birth = ? AND sex = ? ORDER BY id").all(p.birth, p.sex) as PatientRow[];
+      const sameBirth = sqlite.prepare("SELECT id, name, sex, birth FROM patients WHERE birth = ? AND sex IS ? ORDER BY id").all(p.birth, p.sex) as PatientRow[];
       return sameBirth.find((x) => nameKey(x.name) !== "" && nameKey(x.name) === nameKey(p.name));
     };
-    const known = sqlite.prepare("SELECT 1 FROM patient_coverages WHERE patient_id = ? AND kind = ? AND payer_number = ? AND member_no = ? LIMIT 1");
+    const known = sqlite.prepare("SELECT coverage_id FROM patient_coverages WHERE patient_id = ? AND kind = ? AND payer_number = ? AND member_no = ? LIMIT 1");
+    const isKnown = (id: string, c: CoverageInfo) => known.get(id, c.kind, c.payerNumber, c.memberNo) as { coverage_id: string } | undefined;
+    /** 負担割合・有効期間を持たない出所（UKE）か */
+    const plain = p.coverages.every((c) => c.burdenRatio === null && c.validFrom === null && c.validUntil === null);
     // すでに取り込んである患者は、読むだけで返す（画面を開くたびに書き込みのロックを取らない）
     const seen = find();
-    if (seen && seen.name !== null && known.get(seen.id, "医保", p.insurer.number, p.insurer.no) && p.kohi.every((k) => known.get(seen.id, "公費", k.payerNo, k.recipientNo))) return seen.id;
+    if (plain && seen && seen.name !== null && p.coverages.every((c) => isKnown(seen.id, c))) return seen.id;
     return sqlite
       .transaction(() => {
         const found = find();
@@ -113,20 +122,34 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
         if (!found) {
           const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM patients").get() as { n: number }).n + 1;
           id = `P${String(n).padStart(4, "0")}`;
-          sqlite.prepare("INSERT INTO patients (id, name, sex, birth, source, updated_at) VALUES (?, ?, ?, ?, 'UKE', ?)").run(id, p.name, p.sex, p.birth, now());
+          sqlite.prepare("INSERT INTO patients (id, name, sex, birth, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, p.name, p.sex, p.birth, source, now());
         } else {
           id = found.id;
-          // 移行で作った患者（氏名なし）は、最初に読んだ UKE で埋める
-          if (found.name === null) sqlite.prepare("UPDATE patients SET name = ?, sex = ?, birth = ?, source = 'UKE', updated_at = ? WHERE id = ?").run(p.name, p.sex, p.birth, now(), id);
+          // 移行で作った患者（氏名なし）は、最初に読んだ記録で埋める
+          if (found.name === null) sqlite.prepare("UPDATE patients SET name = ?, sex = ?, birth = ?, source = ?, updated_at = ? WHERE id = ?").run(p.name, p.sex, p.birth, source, now(), id);
         }
-        if (!known.get(id, "医保", p.insurer.number, p.insurer.no)) addCoverage(id, "医保", 0, p.insurer.number, p.insurer.symbol, p.insurer.no);
-        p.kohi.forEach((k, i) => {
-          if (!known.get(id, "公費", k.payerNo, k.recipientNo)) addCoverage(id, "公費", i + 1, k.payerNo, "", k.recipientNo);
-        });
+        let kohi = 0;
+        for (const c of p.coverages) {
+          const position = c.kind === "医保" ? 0 : ++kohi;
+          const hit = isKnown(id, c);
+          if (!hit) {
+            addCoverage(id, c, position, source);
+            continue;
+          }
+          const cur = coveragesOf(id).find((x) => x.coverageId === hit.coverage_id);
+          if (!cur || cur.checkedAt) continue;
+          const next = { burdenRatio: c.burdenRatio ?? cur.burdenRatio, validFrom: c.validFrom ?? cur.validFrom, validUntil: c.validUntil ?? cur.validUntil };
+          if (next.burdenRatio === cur.burdenRatio && next.validFrom === cur.validFrom && next.validUntil === cur.validUntil) continue;
+          sqlite
+            .prepare("INSERT INTO patient_coverages (coverage_id, patient_id, kind, position, payer_number, symbol, member_no, burden_ratio, valid_from, valid_until, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(cur.coverageId, id, cur.kind, cur.position, cur.payerNumber, cur.symbol, cur.memberNo, next.burdenRatio, next.validFrom, next.validUntil, source, now());
+        }
         return id;
       })
       .immediate();
   }
+  /** UKE の患者を患者マスタに取り込む */
+  const ingest = (p: UkePatient): string => ingestRecord(recordOfUke(p), "UKE");
 
   /** 請求の患者の id（UKE を読んだときに患者マスタへ取り込む） */
   const patientIdOf = (claimId: string): string => ingest(receiptOf(claimId).patient);
@@ -189,8 +212,19 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     const r = receiptOf(claimId);
     const profile = { ...profileOfPatient(ingest(r.patient), r.patient.receiptType), caseBurdenRatio };
     const serviceDates = [...new Set(r.lines.flatMap((l) => l.dates))].sort();
-    const findings: (PatientFinding & { text: string })[] = checkPatient(profile, { yearMonth: r.yearMonth, today: now().slice(0, 10), serviceDates }).map((f) => ({ ...f, text: patientFindingText(f) }));
-    return { patientId: profile.patientId, yearMonth: r.yearMonth, coverages: profile.coverages, caseBurdenRatio, findings };
+    return checked(profile, r.yearMonth, serviceDates);
+  }
+  /** プロフィールを患者情報チェック（P01〜P08）にかけて、画面に返す形にする。UKE から来た患者も、連携から来た患者もここを通る（FR-123） */
+  function checked(profile: PatientProfile, yearMonth: string, serviceDates?: string[]) {
+    const findings: (PatientFinding & { text: string })[] = checkPatient(profile, { yearMonth, today: now().slice(0, 10), serviceDates }).map((f) => ({ ...f, text: patientFindingText(f) }));
+    return { patientId: profile.patientId, yearMonth, coverages: profile.coverages, caseBurdenRatio: profile.caseBurdenRatio ?? null, findings };
+  }
+  /**
+   * 連携のコネクタで読んだ患者基本情報を患者マスタに取り込み、同じ患者情報チェックにかける（FR-123）。
+   * 請求を伴わないので、レセプト種別と診療日は見ない（P03・P04 のレセプト種別の照合は出ず、P06 は月の途中の切替を確かめる側に倒れる）
+   */
+  function checkConnectorPatient(p: PatientRecord, yearMonth: string) {
+    return checked(profileOfPatient(ingestRecord(p, "連携")), yearMonth);
   }
 
   /** 加入情報の確認入力（追記。確かめた人はセッションの本人、時刻はデモの時計） */
@@ -213,7 +247,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     return patientProfile(claimId, caseBurdenRatio);
   }
 
-  return { latestPatientFacts, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage };
+  return { latestPatientFacts, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
 }
 
 export type Patients = ReturnType<typeof createPatients>;

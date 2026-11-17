@@ -1,12 +1,11 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
 import type { ClaimContext } from "../../engine/types";
 import type { Chart } from "../../uke/crosscheck";
 import { badRequest, conflict, notFound } from "../errors";
 import { contextAsOf, outlook, visitDays } from "../../visit/as-of";
+import { chartFileOf } from "./case-files";
 import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
@@ -102,8 +101,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** 照合用のカルテ：合成カルテに、本人が書いて確かめた訪問カルテを重ねる（FR-69） */
   function chartOf(claimId: string, clerkId?: string): Chart | null {
-    const f = path.join(paths.root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
-    return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
+    // 請求 id はパスに使わず、表を引く（合成カルテのない症例・表にない請求 id は null）
+    const f = chartFileOf(paths.root, claimId);
+    return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
   return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, patients, visits, chartOf };
