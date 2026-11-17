@@ -1,0 +1,70 @@
+// 同梱の版の一覧と、診療年月から版を 1 つに決める規則（design.md §2-5）
+// 該当する版がなければ例外にし、近い版で代用しない
+import { r2024Transition } from "./r2024-transition";
+import type { Revision } from "./types";
+
+const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** "YYYY-MM" の翌月 */
+function nextMonth(yearMonth: string): string {
+  const [y, m] = yearMonth.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+const covers = (rev: Revision, yearMonth: string) => rev.effectiveFrom <= yearMonth && yearMonth <= rev.effectiveUntil;
+
+/** 版の一覧の検査。id の重複・期間の重なり・隣り合う版のあいだの空白・点数表にない区分を持つルールなどを拒否する */
+export function assertRevisions(revs: Revision[]): void {
+  const ids = new Set<string>();
+  for (const r of revs) {
+    if (ids.has(r.id)) throw new Error(`版の id が重複: ${r.id}`);
+    ids.add(r.id);
+    if (!YEAR_MONTH.test(r.effectiveFrom) || !YEAR_MONTH.test(r.effectiveUntil)) throw new Error(`版の期間は YYYY-MM: ${r.id}`);
+    if (r.effectiveFrom > r.effectiveUntil) throw new Error(`版の開始月が終了月より後: ${r.id}`);
+    for (const rule of r.rules) {
+      const bad = rule.kubun.find((k) => !Object.hasOwn(r.points, k));
+      if (bad) throw new Error(`ルール ${rule.id} の区分が版 ${r.id} の点数表にない: ${bad}`);
+    }
+  }
+  const sorted = [...revs].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : 0));
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    if (cur.effectiveFrom <= prev.effectiveUntil) throw new Error(`版の期間が重なる: ${prev.id} と ${cur.id}`);
+    if (cur.effectiveFrom !== nextMonth(prev.effectiveUntil)) throw new Error(`版のあいだに空白がある: ${prev.id} と ${cur.id}`);
+  }
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i];
+    if (cur.kind !== "値の変更") continue;
+    const prev = sorted[i - 1];
+    if (!prev || prev.generation !== cur.generation) throw new Error(`値の変更の版に、同じ改定の直前の版がない: ${cur.id}`);
+    const a = Object.keys(prev.points).sort().join("\0");
+    const b = Object.keys(cur.points).sort().join("\0");
+    if (a !== b) throw new Error(`値の変更の版の区分の集合が直前の版と違う: ${cur.id}`);
+  }
+}
+
+/** 同梱の版の一覧。段 1 は移行用の版 1 つ */
+export const REVISIONS: Revision[] = [r2024Transition];
+assertRevisions(REVISIONS);
+
+/** 診療年月に当たる版があるか（形式違いの年月は「ない」） */
+export function hasRevision(yearMonth: string, revs: Revision[] = REVISIONS): boolean {
+  return YEAR_MONTH.test(yearMonth) && revs.some((r) => covers(r, yearMonth));
+}
+
+/** 診療年月から版を 1 つに決める。形式違い・該当なしは例外（近い版で代用しない） */
+export function resolveRevision(yearMonth: string, revs: Revision[] = REVISIONS): Revision {
+  if (!YEAR_MONTH.test(yearMonth)) throw new Error(`診療年月の形式が違う（YYYY-MM）: ${yearMonth}`);
+  const hit = revs.filter((r) => covers(r, yearMonth));
+  if (hit.length === 0) throw new Error(`診療年月に当たる版がない: ${yearMonth}`);
+  if (hit.length > 1) throw new Error(`診療年月に当たる版が複数ある: ${yearMonth}（${hit.map((r) => r.id).join(", ")}）`);
+  return hit[0];
+}
+
+/** その版の区分の点数。その版にない区分は例外（黙って 0 点にしない） */
+export function pointsOf(rev: Revision, kubun: string): number | null {
+  const def = Object.hasOwn(rev.points, kubun) ? rev.points[kubun] : undefined;
+  if (!def) throw new Error(`未知の区分: ${kubun}`);
+  return def.points;
+}

@@ -3,7 +3,7 @@
 // 知識の候補にするのは、本人が画面で確かめてボタンを押したときだけ。状態（未検証／contested）は F5 の規則が決める
 import { createHash } from "node:crypto";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { POINTS } from "../engine/points-2024";
+import { hasRevision, resolveRevision } from "../engine/revisions";
 import type { ClaimContext } from "../engine/types";
 import type { CreateInput } from "../lifecycle/store";
 import { modelOptions, type ModelChoice } from "../mentor/models";
@@ -100,9 +100,15 @@ export function resolveNotice(notice: Notice, src: UkeSources, cases: ClaimConte
     const hit = Object.entries(src.patients).find(([, p]) => norm(p.name) === norm(i.patientName) && p.insurer.number === i.insurerNumber.trim());
     const claimId = hit?.[0] ?? null;
     if (!claimId) problems.push("患者（氏名と保険者番号）が見つからない");
-    const kubuns = Object.entries(POINTS).filter(([, d]) => d.name === i.itemName.trim()).map(([k]) => k);
-    const kubun = kubuns.length === 1 ? kubuns[0] : null;
-    if (!kubun) problems.push(kubuns.length > 1 ? "項目名に当たる区分が複数ある" : "項目名に当たる区分が見つからない");
+    // 区分は、項目の診療年月の版の名称で一致を取る（design.md §2-4）
+    let kubun: string | null = null;
+    if (!hasRevision(i.yearMonth)) {
+      problems.push("診療年月に当たる版がない");
+    } else {
+      const kubuns = Object.entries(resolveRevision(i.yearMonth).points).filter(([, d]) => d.name === i.itemName.trim()).map(([k]) => k);
+      kubun = kubuns.length === 1 ? kubuns[0] : null;
+      if (!kubun) problems.push(kubuns.length > 1 ? "項目名に当たる区分が複数ある" : "項目名に当たる区分が見つからない");
+    }
     let payer: ResolvedItem["payer"] = null;
     try {
       payer = payerOfInsurer(i.insurerNumber.trim());

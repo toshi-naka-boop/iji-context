@@ -66,6 +66,8 @@ export type ClaimContext = {
   comments?: { kubun: string; code: string }[];
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
+  /** 連携で読んだ行のうち、架空コードの表に対応がなかったもの。判定の対象外（FR-111） */
+  excluded?: { code: string; count: number }[];
 };
 
 export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "情報不足";
@@ -81,11 +83,16 @@ export type Finding = {
 
 export type EngineResult = {
   claimId: string;
+  /** 判定に使った版 */
+  revisionId: string;
+  /** 点数未収載の行、または判定の対象外の行（excluded）があれば null */
   total: number | null;
   byLine: { kubun: string; points: number | null }[];
   findings: Finding[];
   /** appliesTo が真だったルール ID（違反の有無によらない。X-3） */
   applied: string[];
+  /** 判定の対象外の行数（FR-111） */
+  excludedCount: number;
 };
 
 export type Rule = {

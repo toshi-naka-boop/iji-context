@@ -9,8 +9,9 @@
 // FR-56「多く取る方向の表示・誘導をしない」の趣旨は、経営の目線を持たせすぎて、取れない算定まで取りにいかせないこと。
 // ここで数えるのはルールエンジンが正しいと判定した確定版との差だけなので、この趣旨に反しない
 // 同じ区分の変化は 1 つの指摘にだけ数える（重なるルールで二重に数えない）
-import { RULES } from "../engine";
-import { pointsOf } from "../engine/points-2024";
+import { period } from "../demo/period";
+import { pointsOf, resolveRevision, REVISIONS } from "../engine/revisions";
+import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine, Finding } from "../engine/types";
 import type { Question } from "../practice/practice";
 
@@ -26,25 +27,33 @@ export type PreventedItem = {
 };
 
 const key = (f: Finding) => `${f.ruleId}|${f.messageKey}`;
-const linePoints = (lines: ClaimLine[], kubun: string) => {
+const linePoints = (rev: Revision, lines: ClaimLine[], kubun: string) => {
   const l = lines.find((x) => x.kubun === kubun);
-  const p = l ? pointsOf(kubun) : null;
+  const p = l ? pointsOf(rev, kubun) : null;
   return l && p !== null ? p * l.count : 0;
+};
+/** 判定に使った版（EngineResult.revisionId）。版の印を持たない古い記録は、基準月の版で数える */
+const revisionOf = (revisionId: string | undefined): Revision => {
+  if (revisionId === undefined) return resolveRevision(period.yearMonth);
+  const rev = REVISIONS.find((r) => r.id === revisionId);
+  if (!rev) throw new Error(`未知の版: ${revisionId}`);
+  return rev;
 };
 
 /** 1 問ぶんの「防いだ」項目。resolvedByDoctor は F1 で解決した不足項目（field） */
 export function preventedOf(q: Question, resolvedByDoctor: string[] = []): PreventedItem[] {
   if (!q.confirmed || q.drafts.length === 0) return [];
   const final = q.confirmed;
+  const rev = revisionOf(final.result.revisionId);
   const finalKeys = new Set(final.result.findings.map(key));
   const seen = new Set<string>();
   const counted = new Set<string>();
   const out: PreventedItem[] = [];
   /** そのルールの対象区分のうち、まだ数えていないものの点数の変化（確定版 − 下書き） */
   const delta = (draft: ClaimLine[], ruleId: string): number => {
-    const kubun = (RULES.find((r) => r.id === ruleId)?.kubun ?? []).filter((k) => !counted.has(k));
-    const d = kubun.reduce((sum, k) => sum + linePoints(final.lines, k) - linePoints(draft, k), 0);
-    if (d !== 0) for (const k of kubun) if (linePoints(final.lines, k) !== linePoints(draft, k)) counted.add(k);
+    const kubun = (rev.rules.find((r) => r.id === ruleId)?.kubun ?? []).filter((k) => !counted.has(k));
+    const d = kubun.reduce((sum, k) => sum + linePoints(rev, final.lines, k) - linePoints(rev, draft, k), 0);
+    if (d !== 0) for (const k of kubun) if (linePoints(rev, final.lines, k) !== linePoints(rev, draft, k)) counted.add(k);
     return d;
   };
   for (const d of q.drafts) {
@@ -94,6 +103,8 @@ export function personalView(items: PreventedItem[], optIn: boolean): { visible:
 
 /** 事務長向け：月次の集計だけ。見逃した額（返戻・査定になった行の点数）もここにだけ出す（FR-58）。個人別には分けない */
 export function managerReport(items: PreventedItem[], missed: { claimId: string; kubun: string[]; lines: ClaimLine[] }[]): PreventedSummary & { 見逃し: { count: number; yen: number } } {
-  const missedPoints = missed.reduce((s, m) => s + m.kubun.reduce((t, k) => t + linePoints(m.lines, k), 0), 0);
+  // 見逃した行は診療年月を持たないので、基準月の版の点数で数える
+  const rev = resolveRevision(period.yearMonth);
+  const missedPoints = missed.reduce((s, m) => s + m.kubun.reduce((t, k) => t + linePoints(rev, m.lines, k), 0), 0);
   return { ...summarize(items), 見逃し: { count: missed.length, yen: missedPoints * YEN_PER_POINT } };
 }

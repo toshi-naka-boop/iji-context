@@ -105,8 +105,8 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   }
   const localRulesOf = (questionId: string, lines?: ClaimLine[]) => {
     const q = loadQ(questionId);
-    if (lines) checkLines(lines);
     const c = caseFor(q);
+    if (lines) checkLines(lines, c.yearMonth);
     return localRulesFor(lines ? { ...c, lines } : c);
   };
   /** 知識の一覧（状態ごとの数を見せる用） */

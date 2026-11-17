@@ -1,10 +1,24 @@
-// 区分→点数（2024 年度改定後、2025 年 3 月時点）。design.md §2-4
-// 出典は 2 つに限る：report-A 項目21 の点数セット表（A21）／EM §5・§5-1（EM5）
+// 移行用の版（design.md §10 段 1）：2024 年度改定後の点数表とルールの値を、そのまま版の形にしたもの。段 2 で消す
+// 点数の出典は 2 つに限る：report-A 項目21 の点数セット表（A21）／EM §5・§5-1（EM5）
 // 点数未収載（null）の区分に点数を付けるときは、先に EM に行を足す
+import { makeR01 } from "../rules/r01";
+import { makeR02 } from "../rules/r02";
+import { makeR03 } from "../rules/r03";
+import { makeR04 } from "../rules/r04";
+import { makeR05 } from "../rules/r05";
+import { makeR06 } from "../rules/r06";
+import { makeR07 } from "../rules/r07";
+import { makeR08 } from "../rules/r08";
+import { makeR09 } from "../rules/r09";
+import { makeR10 } from "../rules/r10";
+import { makeR11 } from "../rules/r11";
+import { makeR12 } from "../rules/r12";
+import { makeR13 } from "../rules/r13";
+import { makeR14 } from "../rules/r14";
+import { C001_VISIT, C002_KANRI } from "../rules/util";
+import type { KubunDef, Revision, RevisionConsts } from "./types";
 
-export type KubunDef = { name: string; points: number | null; source: "A21" | "EM5" | "未収載" };
-
-export const POINTS: Record<string, KubunDef> = {
+const points: Record<string, KubunDef> = {
   // C001 在宅患者訪問診療料(Ⅰ)
   C001_1I: { name: "在宅患者訪問診療料(Ⅰ)1イ 同一建物居住者以外", points: 888, source: "A21" },
   C001_1RO: { name: "在宅患者訪問診療料(Ⅰ)1ロ 同一建物居住者", points: 213, source: "A21" },
@@ -56,9 +70,32 @@ export const POINTS: Record<string, KubunDef> = {
   A_DXSUISHIN: { name: "医療DX推進体制整備加算", points: null, source: "未収載" },
 };
 
-/** 区分の点数。未知の区分は例外（黙って 0 点にしない） */
-export function pointsOf(kubun: string): number | null {
-  const def = POINTS[kubun];
-  if (!def) throw new Error(`未知の区分: ${kubun}`);
-  return def.points;
-}
+const consts: RevisionConsts = {
+  visitKubun: C001_VISIT,
+  kanri: { all: C002_KANRI, severe: "C002_2I1", twice: "C002_2RO1", once: "C002_2NI1" },
+  hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3 },
+  shidoKanriKubun: ["C101_2I", "C103_2"],
+  bundled: { kubun: ["B000", "F400_3", "F400_2", "F400_N4", "F400_N6_1"], noRxAddition: "C002_N2" },
+  // 2024 年改定で対象から外れた主病（report-A 項目11 c-2）
+  tokutei: { kubun: "F400_N4", excludedDiseases: ["糖尿病", "高血圧", "脂質異常症"], minDays: 28 },
+  rx: { oralKindsThreshold: 7, many: "F400_2", other: "F400_3" },
+  baseUp: { visit: ["O100_3I", "O100_3RO"], revisit: "O100_SAISHIN" },
+  terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: "C001_N6_TERMINAL", days: 14, minVisits: 2 },
+  oushin: { kubun: "C000", kinkyu: "C000_N1_KINKYU" },
+  tests: { judgement: ["D026_3", "D026_4", "D026_5"], bnp: "D008_18", bnpJudgement: "D026_5", rapid: "D_GAIRAI_JINSOKU" },
+  dx: { kubun: "C001_N13_DX", conflicts: ["A_IRYOJOHO", "A_DXSUISHIN"] },
+  weeklyVisitLimit: 3,
+  ikou: { kubun: "C002_N4_IKOU", months: 3, daysFromDischarge: 365 },
+};
+
+export const r2024Transition: Revision = {
+  id: "r2024-transition",
+  label: "令和6年度改定（移行用。2024年6月〜2026年5月）",
+  generation: "R6",
+  kind: "改定",
+  effectiveFrom: "2024-06",
+  effectiveUntil: "2026-05",
+  points,
+  consts,
+  rules: [makeR01, makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14].map((make) => make(consts)),
+};
