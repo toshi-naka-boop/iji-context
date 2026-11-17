@@ -1,5 +1,6 @@
-// API Route から使うアプリの実体。ログインした人ごとに 1 クリニック（tenant）を持つ（spec FR-73）。
-// tenant のデータは <RESEMEN_DATA>/tenants/<利用者 id>/ に置く（DB・知識・同期した Skill・医師確認の記録）。
+// API Route から使うアプリの実体。利用者はクリニック（tenant）に属する（spec FR-73・FR-132）。
+// tenant のデータは <RESEMEN_DATA>/tenants/<tenant id>/ に置く（DB・知識・同期した Skill・医師確認の記録）。
+// tenant id は、そのクリニックを 1 人で始めた利用者の id（招待で入った利用者は、招待した側の tenant に属する）。
 // ログインしていない呼び出し（テスト・スクリプト・開発用の確認）は従来どおり data/resemen.db の 1 つを使う
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -20,6 +21,7 @@ import { defaultPaths, openApp, type App, type AppPaths } from "./app";
 import { openAuth, type Auth, type User } from "./auth";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
+import { notFound } from "./errors";
 
 let app: App | null = null;
 
@@ -34,20 +36,71 @@ export function getAuth(): Auth {
 
 /** いまの呼び出しが、どの利用者（tenant）のものか */
 const current = new AsyncLocalStorage<User>();
-export const runAs = <T>(user: User, fn: () => T): T => current.run(user, fn);
+/** その利用者として fn を動かす。fn が Promise を返すときは、終わるまでを「実行中」と数える（その間はクリニックの DB を閉じない） */
+export function runAs<T>(user: User, fn: () => T): T {
+  const id = user.tenantId;
+  const leave = () => {
+    const n = (active.get(id) ?? 1) - 1;
+    if (n > 0) active.set(id, n);
+    else active.delete(id);
+  };
+  active.set(id, (active.get(id) ?? 0) + 1);
+  let out: T;
+  try {
+    out = current.run(user, fn);
+  } catch (e) {
+    leave();
+    throw e;
+  }
+  if (out instanceof Promise) return out.finally(leave) as T;
+  leave();
+  return out;
+}
 export const currentUser = (): User | null => current.getStore() ?? null;
-/** tenant の中で、ログインした本人の医療事務 id（ベテラン役は vet1） */
-export const ME = "new1";
+/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は vet1 */
+const OWNER_CLERK = "new1";
+/**
+ * tenant の中での、その利用者の医療事務 id（clerks の行）。
+ * 持ち主は、ロールを入れる前からある new1 の行をそのまま使う（既存のクリニックの問題・記録・メンターの会話を引き継ぐ）。
+ * 招待で入った利用者は、自分の利用者 id の行を持つ
+ */
+export const clerkIdOf = (user: User): string => (user.id === user.tenantId ? OWNER_CLERK : user.id);
 
+/**
+ * 開いているクリニックの DB ハンドル。開いたままにする数に上限を置き、使われていない順に閉じる（LRU）。
+ * Map は入れた順に並ぶので、使うたびに入れ直して、先頭を「いちばん長く使われていないもの」にする。
+ * 処理は呼び出しのたびに getApp() で取り直すので、閉じたものは次に使うときに開き直る。
+ * LLM の応答を待つ間ハンドルを持ち続ける処理（talkToMentor）があるので、実行中の呼び出しがあるクリニックは閉じない
+ */
+let maxOpenTenants = 50;
+/** テスト用：開いたままにする数の上限を変える */
+export const setMaxOpenTenants = (n: number) => {
+  maxOpenTenants = n;
+};
 const tenants = new Map<string, App>();
+/** クリニックごとの、実行中の呼び出しの数（runAs の中にいる間） */
+const active = new Map<string, number>();
+function touchTenant(id: string, a: App) {
+  tenants.delete(id);
+  tenants.set(id, a);
+  if (tenants.size <= maxOpenTenants) return;
+  for (const [old, t] of tenants) {
+    if (tenants.size <= maxOpenTenants) break;
+    if (old === id || (active.get(old) ?? 0) > 0) continue;
+    tenants.delete(old);
+    t.close();
+  }
+}
+/** 開いているクリニックの数（テスト用） */
+export const openTenantCount = () => tenants.size;
 export function tenantPaths(id: string): AppPaths {
   if (!/^t[0-9a-f]{12}$/.test(id)) throw new Error(`利用者 id が不正: ${id}`);
   const dir = path.join(dataDir(), "tenants", id);
   return { root: process.cwd(), dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: path.join(dir, "query-log") };
 }
-/** 利用者のクリニックを開く。はじめての利用者には、制度層の知識を入れて Skill を同期してから開く */
-function openTenant(user: User): App {
-  const paths = tenantPaths(user.id);
+/** クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く */
+function openTenant(tenantId: string): App {
+  const paths = tenantPaths(tenantId);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
   const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
   const fresh = !existsSync(paths.knowledgeDir);
@@ -58,9 +111,15 @@ function openTenant(user: User): App {
   const a = openApp(paths);
   // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
   a.seedLocalRules();
-  a.upsertClerk({ id: ME, name: user.name, callName: "さん", characterId: "a", role: "clerk" });
   a.upsertClerk(DEMO_CLERKS[1]);
   return a;
+}
+/** 利用者の医療事務の行を用意する（プロセスの中で、利用者ごとに 1 回） */
+const ensured = new Set<string>();
+function ensureClerk(a: App, user: User) {
+  if (ensured.has(user.id)) return;
+  a.upsertClerk({ id: clerkIdOf(user), name: user.name, callName: "さん", characterId: "a", role: user.id !== user.tenantId && user.role === "veteran" ? "veteran" : "clerk" });
+  ensured.add(user.id);
 }
 
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
@@ -72,11 +131,9 @@ const DEMO_CLERKS = [
 export function getApp(): App {
   const u = currentUser();
   if (u) {
-    let t = tenants.get(u.id);
-    if (!t) {
-      t = openTenant(u);
-      tenants.set(u.id, t);
-    }
+    const t = tenants.get(u.tenantId) ?? openTenant(u.tenantId);
+    touchTenant(u.tenantId, t);
+    ensureClerk(t, u);
     return t;
   }
   if (app) return app;
@@ -93,7 +150,7 @@ export function characters(): Character[] {
 
 export function characterOf(id: string): Character {
   const c = characters().find((x) => x.id === id);
-  if (!c) throw new Error(`キャラがない: ${id}`);
+  if (!c) throw notFound(`キャラがない: ${id}`);
   return c;
 }
 
@@ -127,8 +184,8 @@ function prepare(a: App, clerkId: string): { workspace: { cwd: string; skills: s
   const c = a.clerk(clerkId);
   const s = a.status(clerkId);
   const memo = clerkMemo({ name: c.name, callName: c.call_name, role: c.role, level: s.level, count: s.count, streak: s.streak }, a.questionsOf(clerkId));
-  // 作業場所も利用者（tenant）ごとに分ける（医療事務の id は tenant ごとに同じ new1 になるため）
-  const cwd = ensureWorkspace(path.join(workspaceRoot(), currentUser()?.id ?? "default"), clerkId, a.store.skillsDir, memo, crosscheckSkills());
+  // 作業場所も tenant ごとに分ける（持ち主の医療事務の id は tenant ごとに同じ new1 になるため）
+  const cwd = ensureWorkspace(path.join(workspaceRoot(), currentUser()?.tenantId ?? "default"), clerkId, a.store.skillsDir, memo, crosscheckSkills());
   const generation = skillsGeneration(a.store.skillsDir);
   const same = a.setting(`session_gen:${clerkId}`) === generation;
   return { workspace: { cwd, skills: workspaceSkillNames(cwd) }, sessionId: same ? c.session_id : null, generation };

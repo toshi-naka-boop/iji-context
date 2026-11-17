@@ -1,11 +1,16 @@
-// API Route：いまログインしている人（していなければ 401）
-import { userOf } from "../../../../src/server/http";
+// API Route：いまログインしている人（していなければ 401）。役割と、役割の切替・招待ができるかも返す
+import { route } from "../../../../src/server/http";
+import { getAuth } from "../../../../src/server/instance";
+import { allow } from "../../../../src/server/policy";
 
-export async function GET(req: Request) {
-  const u = userOf(req);
-  if (!u) return Response.json({ error: "ログインしてください" }, { status: 401 });
-  return Response.json({ login: u.login, name: u.name });
-}
+export const GET = route({ roles: allow("GET /api/auth/me") }, ({ user, clerkId }) => ({
+  login: user.login,
+  name: user.name,
+  role: user.role,
+  clerkId,
+  canSwitchRole: getAuth().isSolo(user),
+  canInvite: getAuth().canInvite(user),
+}));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
