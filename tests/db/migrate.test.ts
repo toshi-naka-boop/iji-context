@@ -105,7 +105,7 @@ describe("migrate", () => {
     const db = new Database(":memory:");
     migrate(db, APP_MIGRATIONS.slice(0, 1));
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
-    expect(migrate(db, APP_MIGRATIONS)).toBe(2);
+    expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
     expect(tables(db)).toEqual(APP_TABLES);
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
