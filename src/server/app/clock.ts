@@ -1,11 +1,12 @@
 // 時計（デモでは「時計を進める」で動く）
+import { period } from "../../demo/period";
 import { dueMeeting, meetingReview } from "../../lifecycle/review";
 import { assertTime } from "../../lifecycle/time";
 import { tickQueries } from "../../query/doctor-query";
 import type { AppContext } from "./context";
 
 /** デモの時計の初期値（合成レセプトの診療年月の中） */
-export const DEFAULT_NOW = "2025-03-10T09:00:00+09:00";
+export const DEFAULT_NOW = period.clockStart;
 
 export function createClock(ctx: AppContext) {
   const { sqlite, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
