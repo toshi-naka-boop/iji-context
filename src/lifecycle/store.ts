@@ -138,6 +138,7 @@ export function createKnowledge(opts: StoreOptions, input: CreateInput, now: str
     status_since: now,
     retired_reason: null,
     empathy: input.empathy ?? 0,
+    official_seen: [],
     match: input.match,
     history: [{ at: now, from: "", to: status, event: "CREATE", actor: "system", basis: null }],
   };
@@ -156,7 +157,10 @@ export function createKnowledge(opts: StoreOptions, input: CreateInput, now: str
 
 export function readKnowledge(opts: StoreOptions, id: string): KnowledgeMeta | undefined {
   const file = path.join(dirOf(opts, id), "meta.json");
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as KnowledgeMeta) : undefined;
+  if (!existsSync(file)) return undefined;
+  const meta = JSON.parse(readFileSync(file, "utf8")) as KnowledgeMeta;
+  // official_seen を足す前に書かれた meta.json は、空として読む（design.md §10 段 4）
+  return { ...meta, official_seen: meta.official_seen ?? [] };
 }
 
 /** 全知識の meta（id 昇順） */
