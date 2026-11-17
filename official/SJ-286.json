@@ -1,0 +1,22 @@
+{
+  "id": "SJ-286",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "286",
+  "issuedOn": "2024-09-30",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=118",
+  "scope": {
+    "kubun": [
+      "D008_19"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "BNP と NT-proBNP の取扱いの定め"
+  },
+  "stance": "条件つき",
+  "summary": "BNP と NT-proBNP は同等として取り扱う",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

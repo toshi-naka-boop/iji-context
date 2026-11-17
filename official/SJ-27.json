@@ -1,0 +1,22 @@
+{
+  "id": "SJ-27",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "27",
+  "issuedOn": "2020-07-27",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=403",
+  "scope": {
+    "kubun": [
+      "F400_N4"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "モサプリドを「慢性胃炎に伴う症状の改善」に処方した場合"
+  },
+  "stance": "認める",
+  "summary": "モサプリドの「慢性胃炎に伴う症状の改善」に対する特定疾患処方管理加算",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

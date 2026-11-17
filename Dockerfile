@@ -23,6 +23,7 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/config ./config
 COPY --from=build /app/fixtures ./fixtures
+COPY --from=build /app/official ./official
 COPY --from=build /app/next.config.ts ./
 RUN mkdir -p /data && chown -R node:node /data
 USER node

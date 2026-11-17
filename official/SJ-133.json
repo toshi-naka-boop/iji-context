@@ -1,0 +1,22 @@
+{
+  "id": "SJ-133",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "133",
+  "issuedOn": "2024-04-30",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=52",
+  "scope": {
+    "kubun": [
+      "D008_19"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "傷病名が心不全（確定病名）で、連月で算定する場合"
+  },
+  "stance": "認める",
+  "summary": "心不全の確定病名に対する BNP の連月の算定",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}
