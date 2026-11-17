@@ -3,10 +3,10 @@
   "status": "in_progress",
   "designVersion": "v22",
   "approvedDesignVersion": "v22",
-  "approvedDesignSha256": "5cb8cee2d25a35a02a8990835ed511b05a912ab1f16c6ff5f5ae5879fbc5cd13",
+  "approvedDesignSha256": "f95b873d28a8440d8cd929bd2036d16cdd56dea7941c523d4b6c2938fbac14e7",
   "approvedAt": "2026-11-17T00:00:00+09:00",
-  "approvalEvidence": "質問「設計書 v22（指紋 v22:5cb8cee2d25a）を承認しますか？」への回答：「v22:5cb8cee2d25a を承認」。K6 の条件は「注記で読む形でよい」。R11 の外来迅速検体検査加算は「他の年度でないのかな？」（過去の年度の資料を調べてから決める。R11 のこの部分だけ未決）",
-  "requiredApprovalFingerprint": "v22:5cb8cee2d25a",
+  "approvalEvidence": "v22:5cb8cee2d25a を承認（2026-11-17、回答「v22:5cb8cee2d25a を承認」）。その後の変更は R11 の外来迅速検体検査加算だけで、質問「R11 の…指摘をどうしますか？」への回答「要件の確認に弱める (Recommended)」（2026-11-17）に基づく。変更後の指紋 v22:f95b873d28a8",
+  "requiredApprovalFingerprint": "v22:f95b873d28a8",
   "baseline": "refactor/app-split（main@3a7da13 から分岐、PR #5）",
   "criticRound": 19,
   "openIssueIds": [],
@@ -14,7 +14,7 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "段 1（機構、値は現行）を実装委譲。R11 の外来迅速の根拠を過去年度の資料で調査し、結果で R11 のこの部分だけ改訂して差分の承認を取る",
+  "nextAction": "段 1 の実装（委譲中）。R11 の改訂は段 2 で実装",
   "lastUpdated": "2026-11-17",
   "delegation": {
     "実装": "claude サブエージェント",
