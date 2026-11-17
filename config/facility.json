@@ -3,5 +3,11 @@
   "kyokagata": false,
   "hasBeds": false,
   "prefecture": "東京都",
-  "notifications": {}
+  "notifications": {},
+  "dxTier": "1",
+  "baseUp": "通常",
+  "priceResponse": true,
+  "note16Met": true,
+  "revisitBaseUpSameDay": null,
+  "revisitPriceSameDay": null
 }

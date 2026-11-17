@@ -1,6 +1,7 @@
 // 症例（合成 UKE ＋ 合成カルテ側の事実）
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { facilityOf, type FacilityJson } from "../../engine/facility";
 import type { ClaimContext } from "../../engine/types";
 import { applyPatientFacts } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
@@ -17,7 +18,8 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   const { latestPatientFacts, ingest, masterFacts } = patients;
 
   const fixtureFile = (claimId: string) => path.join(paths.root, "fixtures", "cases", `${claimId.split("-")[0]}.json`);
-  const fixtureOf = (claimId: string) => json<ClaimContext>(fixtureFile(claimId));
+  /** 症例の JSON。facility は、その症例だけの施設の設定の上書き（design.md §2-7） */
+  const fixtureOf = (claimId: string) => json<Omit<ClaimContext, "facility"> & { facility?: Partial<FacilityJson> }>(fixtureFile(claimId));
   /** 症例側が持つ負担割合（症例がない・値がないときは null）。患者マスタに負担割合が入っていないときに使う */
   function caseBurdenRatioOf(claimId: string): number | null {
     if (!existsSync(fixtureFile(claimId))) return null;
@@ -37,7 +39,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
         const master = masterFacts(patientId, r.yearMonth);
         const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
         const facts = applyPatientFacts(merged, latestPatientFacts(patientId), now());
-        out.push(toClaimContext(file, r.claimId, { facility, facts, events: c.events, history: c.history }));
+        out.push(toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, history: c.history }));
       }
     }
     return out;
