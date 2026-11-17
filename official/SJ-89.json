@@ -1,0 +1,22 @@
+{
+  "id": "SJ-89",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "89",
+  "issuedOn": "2024-03-29",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=42",
+  "scope": {
+    "kubun": [
+      "D008_19"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "心不全・心不全の疑い以外の傷病名に対する場合"
+  },
+  "stance": "認めない",
+  "summary": "心不全・心不全の疑い以外の傷病名に対する BNP",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

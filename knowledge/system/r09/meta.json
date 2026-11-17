@@ -22,6 +22,7 @@
   "status_since": "2026-10-01T00:00:00+09:00",
   "retired_reason": null,
   "empathy": 0,
+  "official_seen": [],
   "match": {
     "ruleId": "R09"
   },

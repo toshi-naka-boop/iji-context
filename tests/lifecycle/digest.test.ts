@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { digestItems, reviews } from "../../src/db/schema";
 import { answerItem, buildDigest, dueMeeting, markNotified, pendingNotifications, submit } from "../../src/lifecycle/review";
 import { applyEvent, listKnowledge } from "../../src/lifecycle/store";
+import { docKey } from "../../src/official/match";
+import type { OfficialDoc } from "../../src/official/types";
+import { makeDoc, officialOf } from "../official/helpers";
 import { makeCtx, makeFacts } from "./helpers";
 import { harness } from "./review-helpers";
 
@@ -678,5 +681,132 @@ describe("v21 補足（round-16 C-61・X-61）", () => {
     h.review("2025-03-22T00:00:00+09:00");
     expect(h.get(k).status).toBe("要再検証");
     expect(itemOf("miss", k)?.waitingRecheck).toBe(true);
+  });
+});
+
+describe("v22（公的文書のトリガー④と、議題の理由・snapshot）", () => {
+  /** C001 を条件なしに「認めない」合成の文書（審査支払機関を問わない）。allow の知識と矛盾の恐れになる */
+  const ng = (id = "X-1") => makeDoc({ id, stance: "認めない", scope: { payer: null } });
+  const snapshotOf = (itemId: string) => JSON.parse(h.deps.db.select().from(digestItems).where(eq(digestItems.itemId, itemId)).get()!.snapshot) as Record<string, unknown>;
+
+  /** 承認済みの知識が、矛盾する文書 1 件で要再検証になった状態 */
+  function officialRecheck(docs: OfficialDoc[] = [ng()]) {
+    h.deps.official = officialOf(docs);
+    const k = h.regional("a");
+    h.review("2025-03-08T00:00:00+09:00");
+    return { k, docs };
+  }
+
+  it("④ で要再検証になった知識の recheck の理由に、文書の id・種類・発出者・番号・発出日・URL・要旨が出て、点数・金額の欄がない。停止にはならない", () => {
+    const { k, docs } = officialRecheck();
+    expect(h.get(k).status).toBe("要再検証");
+    expect(h.get(k).history.at(-1)).toMatchObject({ event: "TRIGGER{official}", actor: "system", basis: { trigger: "official", officialIds: [docKey(docs[0])] } });
+    const item = itemOf("recheck", k)!;
+    const d = docs[0];
+    expect(item.reason).toEqual({
+      kind: "recheck",
+      event: "TRIGGER{official}",
+      trigger: "official",
+      official: [{ id: d.id, kind: d.kind, issuer: d.issuer, number: d.number, issuedOn: d.issuedOn, url: d.url, stance: d.stance, summary: d.summary, seen: false }],
+    });
+    expect(JSON.stringify(buildDigest(h.deps))).not.toMatch(/点数|金額|points|amount|price|yen/);
+    expect(item.choices.map((c) => c.label)).toEqual(expect.arrayContaining(["その他", "判定不能"]));
+    expect(itemOf("disposal", k)).toBeUndefined();
+    expect(snapshotOf(item.itemId).officialKeys).toEqual([docKey(d)]);
+  });
+
+  it("回答 1 で承認済みに戻り、項目に載っていた文書の鍵が official_seen に入る。同じ文書では二度と要再検証にならない", () => {
+    const { k, docs } = officialRecheck();
+    expect(answer(itemOf("recheck", k)!.itemId, 1, "2025-03-09T00:00:00+09:00")).toEqual({ status: "applied" });
+    const back = h.get(k);
+    expect([back.status, back.official_seen]).toEqual(["承認済み", [docKey(docs[0])]]);
+    expect(back.history.at(-1)).toMatchObject({ event: "RECHECK_PASS{veteran}", basis: { officialIds: [docKey(docs[0])] } });
+    h.review("2025-03-15T00:00:00+09:00");
+    expect(h.get(k).status).toBe("承認済み");
+    expect(itemOf("recheck", k)).toBeUndefined();
+  });
+
+  it("近似の知識（条件の注記あり）の理由には、知識の条件の注記を添える（C-73）", () => {
+    h.deps.official = officialOf([makeDoc({ stance: "認める", scope: { payer: null } })]);
+    const k = h.regional("approx", { polarity: "avoid", matchApprox: true, conditionNote: "通知の理由：（合成）" });
+    h.review("2025-03-08T00:00:00+09:00");
+    expect(h.get(k).status).toBe("要再検証");
+    expect(itemOf("recheck", k)!.reason).toMatchObject({ trigger: "official", conditionNote: "通知の理由：（合成）", official: [{ id: "X-1", seen: false }] });
+  });
+
+  it("改選で要再検証になった知識に、その後で矛盾する文書が登録されると、次の会議の recheck の理由にその文書が載る（C-64）", () => {
+    h.deps.official = officialOf([]);
+    const k = h.regional("b", { match: { kubunAll: ["C001"], payer: "支払基金", prefecture: "東京都" } });
+    h.review("2025-06-07T00:00:00+09:00");
+    const first = itemOf("recheck", k)!;
+    expect(first.reason).toEqual({ kind: "recheck", event: "TRIGGER{reappointment}", trigger: "reappointment" });
+    h.deps.official.docs.push(ng());
+    h.review("2025-06-14T00:00:00+09:00");
+    const second = itemOf("recheck", k)!;
+    expect(second.itemId).not.toBe(first.itemId);
+    expect(second.reason).toMatchObject({ trigger: "reappointment", official: [{ id: "X-1", url: ng().url, summary: ng().summary, seen: false }] });
+  });
+
+  it("議題を作った後に矛盾する文書が増えると、古い項目への回答 1 は記録だけ（stale）で、次の会議の新しい項目への回答 1 で承認済みに戻り、全部の鍵が official_seen に入る（X-66）", () => {
+    const { k, docs } = officialRecheck();
+    const old = itemOf("recheck", k)!.itemId;
+    const added = ng("X-2");
+    docs.push(added);
+    expect(answer(old, 1, "2025-03-09T00:00:00+09:00")).toEqual({ status: "stale" });
+    expect([h.get(k).status, h.get(k).official_seen]).toEqual(["要再検証", []]);
+    h.review("2025-03-15T00:00:00+09:00");
+    const fresh = itemOf("recheck", k)!;
+    expect(fresh.itemId).not.toBe(old);
+    expect((fresh.reason as { official: { id: string }[] }).official.map((d) => d.id)).toEqual(["X-1", "X-2"]);
+    expect(answer(fresh.itemId, 1, "2025-03-16T00:00:00+09:00")).toEqual({ status: "applied" });
+    expect([h.get(k).status, h.get(k).official_seen]).toEqual(["承認済み", [docKey(docs[0]), docKey(added)].sort()]);
+  });
+
+  it("文書が減っても古い回答になる。確認済みの文書は、次の理由に「確認済み」として載る", () => {
+    const { k, docs } = officialRecheck([ng("X-1"), ng("X-2")]);
+    const old = itemOf("recheck", k)!.itemId;
+    docs.pop();
+    expect(answer(old, 1, "2025-03-09T00:00:00+09:00")).toEqual({ status: "stale" });
+    h.review("2025-03-15T00:00:00+09:00");
+    answer(itemOf("recheck", k)!.itemId, 1, "2025-03-16T00:00:00+09:00");
+    expect(h.get(k).official_seen).toEqual([docKey(docs[0])]);
+    // 別の文書が足されて、もう一度要再検証になる。理由には、確認済みの文書も未確認の文書も載る
+    docs.push(ng("X-3"));
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(h.get(k).history.at(-1)).toMatchObject({ event: "TRIGGER{official}", basis: { officialIds: [docKey(docs[1])] } });
+    expect((itemOf("recheck", k)!.reason as { official: { id: string; seen: boolean }[] }).official.map((d) => [d.id, d.seen])).toEqual([["X-1", true], ["X-3", false]]);
+  });
+
+  it("廃棄提案の理由にも矛盾する文書が載り、回答 2（廃棄しない）で承認済みに戻ると、その鍵が official_seen に入る", () => {
+    const { k, docs } = officialRecheck();
+    answer(itemOf("recheck", k)!.itemId, 2, "2025-03-09T00:00:00+09:00", "条件が足りない");
+    expect(h.get(k).status).toBe("停止");
+    h.review("2025-03-15T00:00:00+09:00");
+    const disposal = itemOf("disposal", k)!;
+    expect(disposal.reason).toMatchObject({ kind: "disposal", event: "RECHECK_FAIL", official: [{ id: "X-1", seen: false }] });
+    answer(disposal.itemId, 2, "2025-03-16T00:00:00+09:00");
+    expect([h.get(k).status, h.get(k).official_seen]).toEqual(["承認済み", [docKey(docs[0])]]);
+    h.review("2025-03-22T00:00:00+09:00");
+    expect(h.get(k).status).toBe("承認済み");
+  });
+
+  it("official を渡さない呼び出しの snapshot と理由は v21 と同じ形（officialKeys・official の欄がない）", () => {
+    const k = toRecheck("plain");
+    const item = itemOf("recheck", k)!;
+    expect(Object.keys(snapshotOf(item.itemId))).toEqual(["status", "status_since", "rev", "basisDate"]);
+    expect(item.reason).toEqual({ kind: "recheck", event: "TRIGGER{idle}" });
+    answer(item.itemId, 1, "2025-03-22T00:00:00+09:00");
+    expect(h.get(k).history.at(-1)!.basis).toEqual({ itemId: item.itemId });
+    expect(h.get(k).official_seen).toEqual([]);
+  });
+
+  it("段 4 より前に作った項目（snapshot に officialKeys がない）への回答は、古い回答（stale）になり、次の会議でもう一度聞く（C-77 (i)）", () => {
+    const k = toRecheck("before");
+    const old = itemOf("recheck", k)!.itemId;
+    h.deps.official = officialOf([]);
+    expect(answer(old, 1, "2025-03-21T00:00:00+09:00")).toEqual({ status: "stale" });
+    h.review("2025-03-27T00:00:00+09:00");
+    expect(answer(itemOf("recheck", k)!.itemId, 1, "2025-03-28T00:00:00+09:00")).toEqual({ status: "applied" });
+    expect(h.get(k).status).toBe("承認済み");
   });
 });

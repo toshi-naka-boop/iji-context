@@ -1,0 +1,22 @@
+{
+  "id": "SJ-154",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "154",
+  "issuedOn": "2024-05-31",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=69",
+  "scope": {
+    "kubun": [
+      "D008_19"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "初回受診時の心不全（疑いを含む）。基礎疾患がない場合、胸部X線・心エコーの算定がない場合"
+  },
+  "stance": "認める",
+  "summary": "初回受診時の心不全（疑いを含む）に対する BNP。基礎疾患がない場合、胸部X線・心エコーの算定がない場合",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}
