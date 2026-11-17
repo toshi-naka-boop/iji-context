@@ -235,8 +235,12 @@ describe("R08・R15 訪問診療時と再診時等", () => {
       expect(tags(withFacility(onlyRevisit, "revisitBaseUpSameDay", v), "R08")).toEqual([]);
     }
   });
-  it("R08：訪問診療料だけの日の再診時等は use_visit（区分誤り）", () => {
-    expect(tags(withLines(K1, line("O001_2", 1, [FIRST])), "R08")).toEqual(["R08:区分誤り:use_visit"]);
+  it("R08：訪問診療料だけの日の再診時等は、訪問診療時の区分がその日になければ use_visit（区分誤り）", () => {
+    expect(tags(setDates(withLines(K1, line("O001_2", 1, [FIRST])), "O001_3I", [SECOND]), "R08")).toEqual(["R08:区分誤り:use_visit"]);
+  });
+  it("R08：その日に訪問診療時の区分がすでにあれば、置き換えではなく背反 duplicate_on_visit_day。その行を外すと 0 件（C-78）", () => {
+    expect(tags(withLines(K1, line("O001_2", 1, [FIRST])), "R08")).toEqual(["R08:背反:duplicate_on_visit_day"]);
+    expect(tags(K1, "R08")).toEqual([]);
   });
   it("R08：訪問の出来事があっても、訪問診療料の行のない日は訪問診療の日に数えない（C-65）", () => {
     // 22 日：訪問の出来事はあるが、算定したのは往診料。再診時等の区分で正しい
@@ -343,6 +347,9 @@ describe("R13 週 3 回（算定した行の日で数える）", () => {
   it("別表第七なら週 4 回でも指摘しない。急性増悪かどうかが不明なら情報不足", () => {
     expect(kinds(withFact(ng, "table7", yes), "R13")).toEqual([]);
     expect(tags(withFact(ng, "acuteExacerbation", unknown), "R13")).toEqual(["R13:情報不足:acuteExacerbation"]);
+  });
+  it("別表第七に当たると分かっていれば、急性増悪が不明でも確認を出さない（C-81）", () => {
+    expect(tags(withFact(withFact(ng, "table7", yes), "acuteExacerbation", unknown), "R13")).toEqual([]);
   });
   it("訪問の出来事があっても、訪問診療料を算定しなかった日は数えない（C-65）", () => {
     const c = withEvents(K1, ...[12, 13, 15].map((n) => ({ type: "visit" as const, date: day(n), sameBuildingCount: 1 })));
