@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS patient_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, 
 CREATE TABLE IF NOT EXISTS peer_questions (id TEXT PRIMARY KEY, from_clerk TEXT NOT NULL, question TEXT NOT NULL, status TEXT NOT NULL, answer TEXT, answered_by TEXT, knowledge_id TEXT, created_at TEXT NOT NULL, answered_at TEXT);
 `,
   },
+  {
+    // 監査ログ（FR-140。本文・氏名は入れない）と、LLM・音声の 1 日の回数（FR-139。再起動で消えないよう DB に持つ）
+    version: 2,
+    sql: `
+CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, demo_now TEXT, user_id TEXT NOT NULL, role TEXT NOT NULL, action TEXT NOT NULL, target TEXT, result TEXT NOT NULL, status INTEGER NOT NULL);
+CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
+`,
+  },
 ];
 
 /** ログインの auth.db */
@@ -29,6 +37,20 @@ export const AUTH_MIGRATIONS: Migration[] = [
     sql: `
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
+`,
+  },
+  {
+    // 利用者はクリニック（tenant）に属し、ロールを 1 つ持つ（FR-132）。それまでの利用者は 1 人 1 クリニックなので、
+    // tenant_id は自分の id、ロールは今までの操作（算定）を続けられる事務にする。
+    // 招待（FR-137。コードはハッシュだけ）と、ログインまわりの監査（FR-140）の表も足す
+    version: 2,
+    sql: `
+ALTER TABLE users ADD COLUMN tenant_id TEXT;
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'clerk';
+UPDATE users SET tenant_id = id WHERE tenant_id IS NULL;
+CREATE INDEX users_tenant ON users (tenant_id);
+CREATE TABLE invites (code_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, role TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT);
+CREATE TABLE auth_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, event TEXT NOT NULL, result TEXT NOT NULL, user_id TEXT, tenant_id TEXT, ip TEXT);
 `,
   },
 ];

@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["app_settings", "applications", "chart_notes", "claim_results", "clerks", "digest_items", "patient_facts", "peer_questions", "questions", "reviews", "submissions"];
+const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_results", "clerks", "digest_items", "patient_facts", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -23,7 +23,7 @@ describe("migrate", () => {
     // auth.db は別の列を持つ
     const auth = new Database(":memory:");
     expect(migrate(auth, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
-    expect(tables(auth)).toEqual(["sessions", "users"]);
+    expect(tables(auth)).toEqual(["auth_events", "invites", "sessions", "users"]);
   });
 
   it("2 回呼んでも変わらない", () => {
@@ -86,6 +86,29 @@ describe("migrate", () => {
     expect(() => migrate(db, [{ version: 1, sql: "CREATE TABLE a (id TEXT PRIMARY KEY);" }])).toThrow("より新しい");
     expect(version(db)).toBe(5);
     expect(tables(db)).toEqual([]);
+  });
+
+  it("バージョン 1 の auth.db を 2 へ上げると、既存の利用者に tenant_id（自分の id）とロール（事務）が入る", () => {
+    const db = new Database(":memory:");
+    migrate(db, AUTH_MIGRATIONS.slice(0, 1));
+    expect(version(db)).toBe(1);
+    db.prepare("INSERT INTO users (id, login, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run("t0123456789ab", "old_user", "まえから", "scrypt$x$x$x", "2026-11-01T00:00:00.000Z");
+    db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('h', 't0123456789ab', '2099-01-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')").run();
+    expect(migrate(db, AUTH_MIGRATIONS)).toBe(2);
+    expect(db.prepare("SELECT id, login, name, tenant_id, role FROM users").all()).toEqual([{ id: "t0123456789ab", login: "old_user", name: "まえから", tenant_id: "t0123456789ab", role: "clerk" }]);
+    // セッションは残り、招待と監査の表ができる
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
+    expect(tables(db)).toEqual(["auth_events", "invites", "sessions", "users"]);
+  });
+
+  it("バージョン 1 の app.db を 2 へ上げると、監査ログと 1 日の回数の表ができ、中身は残る", () => {
+    const db = new Database(":memory:");
+    migrate(db, APP_MIGRATIONS.slice(0, 1));
+    db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
+    expect(migrate(db, APP_MIGRATIONS)).toBe(2);
+    expect(tables(db)).toEqual(APP_TABLES);
+    expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {
