@@ -42,7 +42,7 @@ export function openApp(paths: AppPaths) {
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
   const { ukeList, importUke, importedClaims } = uke;
-  const { patientFacts, savePatientFact } = patientFactsOf;
+  const { patientFacts, savePatientFact, patientProfile, confirmCoverage } = patientFactsOf;
   const { cases, caseOf } = casesOf;
   const { saveNote, noteOf, confirmNote, patients, visits } = notes;
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -77,6 +77,8 @@ export function openApp(paths: AppPaths) {
     outlookOf,
     patientFacts,
     savePatientFact,
+    patientProfile,
+    confirmCoverage,
     now,
     advanceClock,
     upsertClerk,

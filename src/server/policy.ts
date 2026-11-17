@@ -64,6 +64,9 @@ export const POLICY = {
   "GET /api/patients": WORK,
   "GET /api/patients/[claimId]/facts": WORK,
   "POST /api/patients/[claimId]/facts": WORK,
+  // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
+  "GET /api/patients/[claimId]/profile": WORK,
+  "POST /api/patients/[claimId]/coverages": WORK,
   "GET /api/uke": WORK,
   "POST /api/uke": WORK,
 
