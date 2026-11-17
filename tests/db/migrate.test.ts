@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_results", "clerks", "digest_items", "patient_facts", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
+const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_results", "clerks", "digest_items", "patient_coverages", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -106,9 +106,36 @@ describe("migrate", () => {
     migrate(db, APP_MIGRATIONS.slice(0, 1));
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
     expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
-    expect(tables(db)).toEqual(APP_TABLES);
+    // 患者マスタの表は 4 番で足す
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages"));
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
+  });
+
+  it("バージョン 3 の app.db を 4 へ上げると、確かめた患者情報の鍵が患者 id に変わり、それまでの番号は医保の加入情報として残る", () => {
+    const db = new Database(":memory:");
+    migrate(db, APP_MIGRATIONS.slice(0, 3));
+    const ins = db.prepare("INSERT INTO patient_facts (patient_key, fact_key, value, source, valid_until, checked_at, checked_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    ins.run("39139999-00000004", "careLevel", "2", "介護保険証", "2025-05-31", "2025-03-10T09:00:00+09:00", "new1");
+    ins.run("01139999-00000006", "table7", "true", "カルテ", null, "2025-03-11T09:00:00+09:00", "new1");
+    ins.run("39139999-00000004", "homeOxygen", "false", "カルテ", null, "2025-03-12T09:00:00+09:00", "new1");
+    expect(migrate(db, APP_MIGRATIONS.slice(0, 4))).toBe(4);
+    expect(tables(db)).toEqual(APP_TABLES);
+    // 同じ鍵の記録は同じ患者に寄り、ほかの列は変わらない
+    expect(db.prepare("SELECT patient_id, fact_key, value, valid_until, checked_by FROM patient_facts ORDER BY id").all()).toEqual([
+      { patient_id: "P0001", fact_key: "careLevel", value: "2", valid_until: "2025-05-31", checked_by: "new1" },
+      { patient_id: "P0002", fact_key: "table7", value: "true", valid_until: null, checked_by: "new1" },
+      { patient_id: "P0001", fact_key: "homeOxygen", value: "false", valid_until: null, checked_by: "new1" },
+    ]);
+    expect(db.prepare("SELECT id, name, birth, source FROM patients ORDER BY id").all()).toEqual([
+      { id: "P0001", name: null, birth: null, source: "移行" },
+      { id: "P0002", name: null, birth: null, source: "移行" },
+    ]);
+    expect(db.prepare("SELECT coverage_id, patient_id, kind, position, payer_number, member_no, source FROM patient_coverages ORDER BY id").all()).toEqual([
+      { coverage_id: "C1", patient_id: "P0001", kind: "医保", position: 0, payer_number: "39139999", member_no: "00000004", source: "移行" },
+      { coverage_id: "C2", patient_id: "P0002", kind: "医保", position: 0, payer_number: "01139999", member_no: "00000006", source: "移行" },
+    ]);
+    expect(tables(db)).not.toContain("patient_key_map");
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {
