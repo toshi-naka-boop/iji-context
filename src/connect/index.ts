@@ -5,18 +5,15 @@ import { ConnectError } from "./fetch";
 import { createFhirConnector, FHIR_ID } from "./fhir";
 import { createFixtureConnector } from "./fixture";
 import { createOrcaConnector, ORCA_ID } from "./orca";
-import type { ConnectSite, Connector } from "./types";
+import type { Connector } from "./types";
 
-export type { ChartSource, ClaimSource, ConnectSite, Connector, ConnectorChart, ConnectorClaims, ConnectorCoverage, ConnectorPatient, PatientSource, UnmappedLine } from "./types";
+export type { ChartSource, ClaimSource, Connector, ConnectorChart, ConnectorClaims, ConnectorCoverage, ConnectorPatient, PatientSource, UnmappedLine } from "./types";
 export { ConnectError, type ConnectErrorKind } from "./fetch";
 
-const EXTERNAL: Record<string, (site: ConnectSite) => Connector> = {
-  [ORCA_ID]: createOrcaConnector,
-  [FHIR_ID]: () => createFhirConnector(),
-};
+const EXTERNAL: Record<string, () => Connector> = { [ORCA_ID]: createOrcaConnector, [FHIR_ID]: createFhirConnector };
 
 /** 有効なコネクタの一覧。知らない名前が書いてあれば、黙って無視せずに止める */
-export function enabledConnectors(site: ConnectSite, root = process.cwd()): Connector[] {
+export function enabledConnectors(root = process.cwd()): Connector[] {
   const names = (process.env.RESEMEN_CONNECTORS ?? "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
@@ -25,14 +22,14 @@ export function enabledConnectors(site: ConnectSite, root = process.cwd()): Conn
   for (const name of new Set(names)) {
     const make = EXTERNAL[name];
     if (!make) throw new ConnectError("?", "config", "RESEMEN_CONNECTORS に知らないコネクタの名前がある");
-    out.push(make(site));
+    out.push(make());
   }
   return out;
 }
 
 /** id でコネクタを引く。無効なコネクタは「ない」のと同じ */
-export function connectorOf(id: string, site: ConnectSite, root = process.cwd()): Connector {
-  const c = enabledConnectors(site, root).find((x) => x.id === id);
+export function connectorOf(id: string, root = process.cwd()): Connector {
+  const c = enabledConnectors(root).find((x) => x.id === id);
   if (!c) throw new ConnectError("?", "config", "そのコネクタは有効になっていない");
   return c;
 }

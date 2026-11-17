@@ -1,5 +1,5 @@
 {
-  "_note": "模擬サーバー（ORCA API 形式）の応答。合成データ。患者は fixtures/uke/patients.json の K1・K3・K4、診療行為は fixtures/cases/ の算定行を架空コードにしたもの。項目名は src/connect/orca.ts の ORCA_WIRE とスキーマに合わせた仮の形で、公式仕様では未確認。公費の有効期間は架空の仮置き",
+  "_note": "模擬サーバー（ORCA API 形式）の応答。合成データ。患者は fixtures/uke/patients.json の K1・K3・K4、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き",
   "patients": {
     "K1": {
       "patientinfores": {
@@ -11,12 +11,13 @@
           "Sex": "1",
           "HealthInsurance_Information": [
             {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
               "InsuranceProvider_Number": "39139999",
               "HealthInsuredPerson_Symbol": "",
               "HealthInsuredPerson_Number": "00000001",
               "Certificate_StartDate": "",
-              "Certificate_ExpiredDate": "",
-              "PublicInsurance_Information": []
+              "Certificate_ExpiredDate": ""
             }
           ]
         }
@@ -32,6 +33,16 @@
           "Sex": "1",
           "HealthInsurance_Information": [
             {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
+              "InsuranceProvider_Number": "39139999",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000003",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": ""
+            },
+            {
+              "Insurance_Combination_Number": "0002",
               "InsuranceProvider_Number": "39139999",
               "HealthInsuredPerson_Symbol": "",
               "HealthInsuredPerson_Number": "00000003",
@@ -60,190 +71,16 @@
           "Sex": "1",
           "HealthInsurance_Information": [
             {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
               "InsuranceProvider_Number": "39139999",
               "HealthInsuredPerson_Symbol": "",
               "HealthInsuredPerson_Number": "00000004",
               "Certificate_StartDate": "",
-              "Certificate_ExpiredDate": "",
-              "PublicInsurance_Information": []
+              "Certificate_ExpiredDate": ""
             }
           ]
         }
-      }
-    }
-  },
-  "medical": {
-    "K1": {
-      "medicalgetres": {
-        "Api_Result": "00",
-        "Patient_Information": {
-          "Patient_ID": "K1"
-        },
-        "Perform_Month": "2025-03",
-        "Medical_Information": [
-          {
-            "Medication_Code": "990000001",
-            "Perform_Dates": [
-              "2025-03-12",
-              "2025-03-26"
-            ]
-          },
-          {
-            "Medication_Code": "990000036",
-            "Perform_Dates": [
-              "2025-03-12",
-              "2025-03-26"
-            ]
-          },
-          {
-            "Medication_Code": "990000003",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000009",
-            "Perform_Dates": [
-              "2025-03-26"
-            ]
-          },
-          {
-            "Medication_Code": "990000016",
-            "Perform_Dates": [
-              "2025-03-26"
-            ]
-          },
-          {
-            "Medication_Code": "990000020",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000021",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000022",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000019",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000027",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000028",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000029",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000030",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000031",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000032",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000033",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          },
-          {
-            "Medication_Code": "990000034",
-            "Perform_Dates": [
-              "2025-03-12"
-            ]
-          }
-        ]
-      }
-    },
-    "K3": {
-      "medicalgetres": {
-        "Api_Result": "00",
-        "Patient_Information": {
-          "Patient_ID": "K3"
-        },
-        "Perform_Month": "2025-03",
-        "Medical_Information": [
-          {
-            "Medication_Code": "990000001",
-            "Perform_Dates": [
-              "2025-03-03",
-              "2025-03-04",
-              "2025-03-05",
-              "2025-03-06",
-              "2025-03-10",
-              "2025-03-12",
-              "2025-03-14",
-              "2025-03-17",
-              "2025-03-19",
-              "2025-03-21",
-              "2025-03-24",
-              "2025-03-27"
-            ]
-          },
-          {
-            "Medication_Code": "990000009",
-            "Perform_Dates": [
-              "2025-03-27"
-            ]
-          }
-        ]
-      }
-    },
-    "K4": {
-      "medicalgetres": {
-        "Api_Result": "00",
-        "Patient_Information": {
-          "Patient_ID": "K4"
-        },
-        "Perform_Month": "2025-03",
-        "Medical_Information": [
-          {
-            "Medication_Code": "990000001",
-            "Perform_Dates": [
-              "2025-03-11",
-              "2025-03-25"
-            ]
-          },
-          {
-            "Medication_Code": "990000010",
-            "Perform_Dates": [
-              "2025-03-25"
-            ]
-          }
-        ]
       }
     }
   }

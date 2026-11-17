@@ -1,6 +1,6 @@
 // 連携の境界の型（spec FR-104）。外部とのやり取りは、患者基本情報／請求／カルテ記載の 3 つに分ける。
 // 画面と判定はこの型だけに依存し、個別の接続先（ORCA 形式・FHIR 形式・同梱の合成データ）を知らない
-import type { UkeClinic, UkeFile } from "../uke/types";
+import type { UkeFile } from "../uke/types";
 
 /**
  * 保険・公費の加入情報 1 件。
@@ -14,7 +14,7 @@ export type ConnectorCoverage = {
   symbol: string;
   /** 被保険者証の番号（医療保険）または受給者番号（公費） */
   memberNo: string;
-  /** 負担割合（0.1 など）。接続先から取れないときは null */
+  /** 負担割合（0.1 など）。接続先から取れないとき・公費は null */
   burdenRatio: number | null;
   /** 有効期間の始まり YYYY-MM-DD。分からないときは null */
   validFrom: string | null;
@@ -80,9 +80,6 @@ export type Connector = {
   claims?: ClaimSource;
   chart?: ChartSource;
 };
-
-/** 請求を UkeFile の形にするのに要る、自院の情報（接続先からは取らない） */
-export type ConnectSite = { clinic: UkeClinic; prefecture: string };
 
 /** 患者の id・診療年月は URL やファイル名に入るので、文字種を先に確かめる */
 export const PATIENT_ID = /^[A-Za-z0-9]{1,20}$/;

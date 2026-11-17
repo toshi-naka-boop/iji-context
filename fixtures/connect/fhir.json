@@ -1,5 +1,5 @@
 {
-  "_note": "模擬サーバー（FHIR JP Core 形式）が返すリソース。合成データ。患者・保険・公費・傷病名は fixtures/uke/patients.json、訪問日と処方は fixtures/charts/ の K1・K3・K4 から。処方は分類名だけ（薬剤名は作らない）。保険者番号の identifier system は src/connect/fhir.ts の仮の値（公式仕様では未確認）。訪問の時刻と公費の有効期間は架空の仮置き",
+  "_note": "模擬サーバー（FHIR JP Core 形式）が返すリソース。合成データ。患者・保険・公費・傷病名は fixtures/uke/patients.json、訪問日と処方は fixtures/charts/ の K1・K3・K4 から。処方は分類名だけ（薬剤名は作らない）。医療保険の identifier・拡張・氏名の表記の拡張は JP Core V1.2.0 の定義どおり。公費負担者番号の identifier system と受給者番号の置き場所は未確認の仮の形（src/connect/fhir.ts の注）。氏名のカナ・訪問の時刻・公費の有効期間は架空の仮置き",
   "resources": [
     {
       "resourceType": "Patient",
@@ -17,6 +17,21 @@
       ],
       "name": [
         {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　イチロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
           "text": "架空　一郎"
         }
       ],
@@ -31,6 +46,18 @@
           "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
         ]
       },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000001"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139999\",\"\",\"０００００００１\",\"\""
+        }
+      ],
       "status": "active",
       "beneficiary": {
         "reference": "Patient/mock-K1"
@@ -38,15 +65,9 @@
       "payor": [
         {
           "identifier": {
-            "system": "urn:example:resemen:unconfirmed:insurer-number",
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
             "value": "39139999"
           }
-        }
-      ],
-      "extension": [
-        {
-          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
-          "valueString": "00000001"
         }
       ]
     },
@@ -162,6 +183,21 @@
       ],
       "name": [
         {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　サブロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
           "text": "架空　三郎"
         }
       ],
@@ -176,6 +212,18 @@
           "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
         ]
       },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000003"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139999\",\"\",\"０００００００３\",\"\""
+        }
+      ],
       "status": "active",
       "beneficiary": {
         "reference": "Patient/mock-K3"
@@ -183,15 +231,9 @@
       "payor": [
         {
           "identifier": {
-            "system": "urn:example:resemen:unconfirmed:insurer-number",
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
             "value": "39139999"
           }
-        }
-      ],
-      "extension": [
-        {
-          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
-          "valueString": "00000003"
         }
       ]
     },
@@ -219,7 +261,8 @@
       "period": {
         "start": "2024-10-01",
         "end": "2025-09-30"
-      }
+      },
+      "order": 1
     },
     {
       "resourceType": "Encounter",
@@ -461,6 +504,21 @@
       ],
       "name": [
         {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　シロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
           "text": "架空　四郎"
         }
       ],
@@ -475,6 +533,18 @@
           "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
         ]
       },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000004"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139999\",\"\",\"０００００００４\",\"\""
+        }
+      ],
       "status": "active",
       "beneficiary": {
         "reference": "Patient/mock-K4"
@@ -482,15 +552,9 @@
       "payor": [
         {
           "identifier": {
-            "system": "urn:example:resemen:unconfirmed:insurer-number",
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
             "value": "39139999"
           }
-        }
-      ],
-      "extension": [
-        {
-          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
-          "valueString": "00000004"
         }
       ]
     },

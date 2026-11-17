@@ -4,8 +4,8 @@
 //
 // パス：
 //   /orca/api01rv2/patientgetv2?id=K1&format=json（GET・Basic 認証）
-//   /orca/api01rv2/medicalgetv2?class=03&format=json（POST・Basic 認証）
 //   /fhir/Patient?identifier=…｜/fhir/Coverage?beneficiary=…｜/fhir/Encounter｜/fhir/MedicationRequest｜/fhir/Condition（GET・Bearer 認証。1 ページ 1 件）
+// ORCA の診療行為（medicalgetv2）は、公式仕様が xml2 形式だけなので持たない（src/connect/orca.ts の注）
 // 頭に /fault/<種類> を付けると、わざと壊した応答を返す（FAULTS を参照）
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -35,8 +35,6 @@ export const FAULTS = [
   "slow",
   /** ORCA：相手が失敗の結果（Api_Result）を返す */
   "api-error",
-  /** ORCA：対応表にないコードの行を 1 つ混ぜる */
-  "unmapped",
   /** FHIR：next リンクが別のホストを指す */
   "next-other-host",
   /** FHIR：next リンクが同じホストの、接続先の範囲の外を指す */
@@ -48,8 +46,6 @@ export type Fault = (typeof FAULTS)[number];
 
 export const SLOW_MS = 3_000;
 export const HUGE_BYTES = 5 * 1024 * 1024;
-/** 対応表にないコード（実在しない並び） */
-export const UNMAPPED_CODE = "000000000";
 /** 模擬サーバーの患者番号の identifier system（医療機関コードの部分は架空の 10 桁） */
 export const MOCK_PATIENT_SYSTEM = "urn:oid:1.2.392.100495.20.3.51.19999999999";
 
@@ -59,20 +55,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const load = <T>(file: string) => JSON.parse(readFileSync(path.join(here, file), "utf8")) as T;
 
 type Resource = { resourceType: string; id: string; [k: string]: unknown };
-type OrcaData = { patients: Record<string, unknown>; medical: Record<string, Record<string, { Medical_Information: unknown[] }>> };
+type OrcaData = { patients: Record<string, unknown> };
 
 const send = (res: ServerResponse, status: number, body: unknown, type = "application/json") => {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   res.writeHead(status, { "content-type": `${type}; charset=utf-8`, "content-length": Buffer.byteLength(text) });
   res.end(text);
 };
-
-const readBody = (req: IncomingMessage) =>
-  new Promise<string>((resolve) => {
-    let s = "";
-    req.on("data", (c) => (s.length < 100_000 ? (s += c) : undefined));
-    req.on("end", () => resolve(s));
-  });
 
 /** 壊した応答のうち、中身によらないもの。返したら true */
 function commonFault(fault: Fault | null, req: IncomingMessage, res: ServerResponse, rest: string): boolean {
@@ -92,28 +81,14 @@ function commonFault(fault: Fault | null, req: IncomingMessage, res: ServerRespo
   return true;
 }
 
-function orca(data: OrcaData, fault: Fault | null, req: IncomingMessage, res: ServerResponse, url: URL, sub: string, body: string) {
-  const failed = (root: string) => send(res, 200, { [root]: { Api_Result: "10" } });
-  if (sub === ORCA_WIRE.patientPath && req.method === "GET") {
-    const id = url.searchParams.get("id") ?? "";
-    if (fault === "api-error" || !data.patients[id]) return failed(ORCA_WIRE.patientRoot);
-    if (fault === "broken") return send(res, 200, { [ORCA_WIRE.patientRoot]: { Api_Result: "00", Patient_Information: { Patient_ID: id } } });
-    return send(res, 200, data.patients[id]);
-  }
-  if (sub === ORCA_WIRE.medicalPath && req.method === "POST" && url.searchParams.get("class") === ORCA_WIRE.medicalClass) {
-    let id = "";
-    try {
-      id = JSON.parse(body)[ORCA_WIRE.medicalRequestRoot].Patient_ID;
-    } catch {
-      return send(res, 400, { error: "bad request" });
-    }
-    if (fault === "api-error" || !data.medical[id]) return failed(ORCA_WIRE.medicalRoot);
-    if (fault === "broken") return send(res, 200, { [ORCA_WIRE.medicalRoot]: { Api_Result: "00", Medical_Information: [{ Medication_Code: "x" }] } });
-    const out = structuredClone(data.medical[id]);
-    if (fault === "unmapped") out[ORCA_WIRE.medicalRoot].Medical_Information.push({ Medication_Code: UNMAPPED_CODE, Perform_Dates: ["2025-03-12"] });
-    return send(res, 200, out);
-  }
-  send(res, 404, { error: "not found" });
+function orca(data: OrcaData, fault: Fault | null, req: IncomingMessage, res: ServerResponse, url: URL, sub: string) {
+  if (sub !== ORCA_WIRE.patientPath || req.method !== "GET" || url.searchParams.get("format") !== "json") return send(res, 404, { error: "not found" });
+  const id = url.searchParams.get("id") ?? "";
+  const result = (code: string) => send(res, 200, { [ORCA_WIRE.patientRoot]: { Api_Result: code } });
+  if (fault === "api-error") return result("89");
+  if (!data.patients[id]) return result(ORCA_WIRE.notFoundResult);
+  if (fault === "broken") return send(res, 200, { [ORCA_WIRE.patientRoot]: { Api_Result: "00", Patient_Information: { Patient_ID: id } } });
+  send(res, 200, data.patients[id]);
 }
 
 function fhir(resources: Resource[], fault: Fault | null, req: IncomingMessage, res: ServerResponse, url: URL, type: string, prefix: string) {
@@ -122,6 +97,7 @@ function fhir(resources: Resource[], fault: Fault | null, req: IncomingMessage, 
   const p = url.searchParams;
   const s = FHIR_WIRE.search;
   const refOf = (r: Resource, key: string) => (r[key] as { reference?: string } | undefined)?.reference;
+  // 参照の検索は、仕様の例にある 2 つの書き方（Patient/[id] と [id]）のどちらも受ける
   const patientRef = (v: string | null) => (v === null ? null : v.startsWith("Patient/") ? v : `Patient/${v}`);
   const inRange = (value: string, conds: string[]) => conds.every((c) => (c.startsWith("ge") ? value.slice(0, 10) >= c.slice(2) : c.startsWith("le") ? value.slice(0, 10) <= c.slice(2) : true));
   let found = resources.filter((r) => r.resourceType === type);
@@ -168,16 +144,15 @@ export function createMockConnect(auth: MockAuth): Server {
   const bearer = `Bearer ${auth.fhir.token}`;
   const timers = new Set<NodeJS.Timeout>();
 
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://mock.invalid");
     const m = /^(\/fault\/([a-z-]+))?\/(orca|fhir)\/(.+)$/.exec(url.pathname);
     if (!m || (m[2] && !(FAULTS as readonly string[]).includes(m[2]))) return send(res, 404, { error: "not found" });
     const [, prefix = "", faultName, kind, sub] = m;
     const fault = (faultName as Fault | undefined) ?? null;
-    const body = req.method === "POST" ? await readBody(req) : "";
     if (req.headers.authorization !== (kind === "orca" ? basic : bearer)) return send(res, 401, { error: "unauthorized" });
     if (commonFault(fault, req, res, `/${kind}/${sub}${url.search}`)) return;
-    const respond = () => (kind === "orca" ? orca(orcaData, fault, req, res, url, sub, body) : fhir(resources, fault, req, res, url, sub, prefix));
+    const respond = () => (kind === "orca" ? orca(orcaData, fault, req, res, url, sub) : fhir(resources, fault, req, res, url, sub, prefix));
     if (fault !== "slow") return respond();
     const t = setTimeout(() => {
       timers.delete(t);
