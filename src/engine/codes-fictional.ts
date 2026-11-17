@@ -74,6 +74,9 @@ export function fictionalCode(kubun: string): string {
   return code;
 }
 
+/** コードが架空コードの表にあるか（UKE の取り込みで、表にないコードを断るのに使う。spec FR-107） */
+export const isFictionalCode = (code: string): boolean => KUBUN_OF.has(code);
+
 /** 架空コードの区分。表にないコードは例外 */
 export function kubunOfCode(code: string): string {
   const kubun = KUBUN_OF.get(code);

@@ -48,6 +48,10 @@ describe("年月の直書きの検査", () => {
     expect(isTarget("src/engine/revisions/r2026.ts")).toBe(false);
     expect(isTarget("tests/engine/helpers.ts")).toBe(false);
     expect(isTarget("config/demo.json")).toBe(false);
+    // 模擬サーバー（連携）のコードも見る。模擬データの JSON は見ない（症例の JSON と同じく、gen-connect.ts が基準月から作る）
+    expect(isTarget("fixtures/connect/mock-server.ts")).toBe(true);
+    expect(isTarget("fixtures/connect/orca.json")).toBe(false);
+    expect(isTarget("fixtures/cases/K1.json")).toBe(false);
     const files = targetFiles();
     expect(files).toContain("src/engine/index.ts");
     expect(files.some((f) => f.startsWith("src/engine/revisions/"))).toBe(false);

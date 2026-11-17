@@ -1,4 +1,4 @@
-// 回数制限（spec FR-139）：LLM・音声のルートは、利用者ごとの 1 分あたりの回数と、1 日の上限を持つ。上限値は config/limits.json。
+// 回数制限（spec FR-139）：LLM・音声・UKE のアップロードのルートは、利用者ごとの 1 分あたりの回数と、1 日の上限を持つ。上限値は config/limits.json。
 // 1 分あたりはプロセスの中で数え（Throttle）、1 日の数は tenant の app.db（rate_daily）に置いて再起動で消えないようにする。
 // 接続元の IP は、前段の Caddy が付けた値だけを信用する（clientIp）
 import type Database from "better-sqlite3";
@@ -7,7 +7,7 @@ import path from "node:path";
 import { Throttle } from "./auth";
 import { UserError } from "./errors";
 
-export type LimitName = "llm" | "voice";
+export type LimitName = "llm" | "voice" | "upload";
 export type Limits = Record<LimitName, { perMinute: number; perDay: number }> & { jsonBytes: number };
 
 let cached: Limits | null = null;

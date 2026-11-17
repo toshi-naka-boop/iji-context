@@ -1,0 +1,87 @@
+{
+  "_note": "模擬サーバー（ORCA API 形式）の応答。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者は fixtures/uke/patients.json の K1・K3・K4、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き",
+  "patients": {
+    "K1": {
+      "patientinfores": {
+        "Api_Result": "00",
+        "Patient_Information": {
+          "Patient_ID": "K1",
+          "WholeName": "架空　一郎",
+          "BirthDate": "1941-04-01",
+          "Sex": "1",
+          "HealthInsurance_Information": [
+            {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
+              "InsuranceProvider_Number": "39139993",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000001",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": ""
+            }
+          ]
+        }
+      }
+    },
+    "K3": {
+      "patientinfores": {
+        "Api_Result": "00",
+        "Patient_Information": {
+          "Patient_ID": "K3",
+          "WholeName": "架空　三郎",
+          "BirthDate": "1948-04-01",
+          "Sex": "1",
+          "HealthInsurance_Information": [
+            {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
+              "InsuranceProvider_Number": "39139993",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000003",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": ""
+            },
+            {
+              "Insurance_Combination_Number": "0002",
+              "InsuranceProvider_Number": "39139993",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000003",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": "",
+              "PublicInsurance_Information": [
+                {
+                  "PublicInsurer_Number": "54139993",
+                  "PublicInsuredPerson_Number": "9999996",
+                  "Certificate_IssuedDate": "2026-04-01",
+                  "Certificate_ExpiredDate": "2027-03-31"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "K4": {
+      "patientinfores": {
+        "Api_Result": "00",
+        "Patient_Information": {
+          "Patient_ID": "K4",
+          "WholeName": "架空　四郎",
+          "BirthDate": "1950-04-01",
+          "Sex": "1",
+          "HealthInsurance_Information": [
+            {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
+              "InsuranceProvider_Number": "39139993",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000004",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": ""
+            }
+          ]
+        }
+      }
+    }
+  }
+}
