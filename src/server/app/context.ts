@@ -1,16 +1,19 @@
 // 分割した処理が共有するもの：SQLite・知識と記録の置き場所・config/ の設定・app_settings の読み書き
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
+import { isKnownKubun } from "../../engine/codes-fictional";
 import { hasRevision } from "../../engine/revisions";
-import type { Facility } from "../../engine/types";
+import type { FacilityJson } from "../../engine/facility";
 import type { Calendar } from "../../lifecycle/calendar";
 import type { ReviewDeps } from "../../lifecycle/review";
+import type { StoreOptions } from "../../lifecycle/store";
 import type { BusinessDays, QueryLog } from "../../query/doctor-query";
 import type { ChoiceGroup } from "../../practice/choice";
+import { checkDataset } from "../dataset";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -29,13 +32,21 @@ export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar">
   return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
 }
 
+/** 本番の配線が作る StoreOptions。区分のキーの検査（架空コードの表にあるか）を必ず渡す（design.md §3） */
+export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir">): StoreOptions {
+  return { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir, knownKubun: isKnownKubun };
+}
+
 export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
 
 export function openContext(paths: AppPaths) {
+  const fresh = !existsSync(paths.dbFile);
   const sqlite = new Database(paths.dbFile);
   migrate(sqlite, APP_MIGRATIONS);
+  // データの版の印：新しい置き場には今の印を付け、印が違う置き場は警告を記録して開く（止めない・作り直さない）
+  const dataset = checkDataset(sqlite, fresh);
   const db = drizzle(sqlite);
-  const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
+  const store = storeOptionsOf(paths);
   const queryLog: QueryLog = { dir: paths.queryLogDir };
   const cfg = (f: string) => path.join(paths.root, "config", f);
   const calendar = json<Calendar>(cfg("calendar.json"));
@@ -44,7 +55,8 @@ export function openContext(paths: AppPaths) {
   const levels = levelCfg.thresholds;
   const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
-  const facility = json<Facility>(cfg("facility.json"));
+  // 既定の施設の設定（JSON の形のまま持つ。症例ごとの上書きを重ねて三値に変えるのは src/server/app/cases.ts の 1 か所）
+  const facility = json<FacilityJson>(cfg("facility.json"));
   const deps = reviewDepsOf({ db, store, calendar });
 
   const setting = (key: string): string | null =>
@@ -52,7 +64,7 @@ export function openContext(paths: AppPaths) {
   const setSetting = (key: string, value: string) =>
     sqlite.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 
-  return { paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, deps, setting, setSetting };
+  return { paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;

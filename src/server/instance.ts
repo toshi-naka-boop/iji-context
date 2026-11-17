@@ -17,7 +17,7 @@ import { formatSoap } from "../chart/soap";
 import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
-import { defaultPaths, openApp, type App, type AppPaths } from "./app";
+import { defaultPaths, openApp, storeOptionsOf, type App, type AppPaths } from "./app";
 import { openAuth, type Auth, type User } from "./auth";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
@@ -102,7 +102,7 @@ export function tenantPaths(id: string): AppPaths {
 function openTenant(tenantId: string): App {
   const paths = tenantPaths(tenantId);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
-  const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
+  const store = storeOptionsOf(paths);
   const fresh = !existsSync(paths.knowledgeDir);
   if (fresh) {
     seed(store);

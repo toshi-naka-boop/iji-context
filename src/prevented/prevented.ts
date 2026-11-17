@@ -26,18 +26,20 @@ export type PreventedItem = {
   points: number;
 };
 
-const key = (f: Finding) => `${f.ruleId}|${f.messageKey}`;
+// 日付ごとの情報不足（R10 の sameDaySeparate）は、日付も合わせて見分ける
+const key = (f: Finding) => `${f.ruleId}|${f.messageKey}${f.missing?.date ? `|${f.missing.date}` : ""}`;
 const linePoints = (rev: Revision, lines: ClaimLine[], kubun: string) => {
   const l = lines.find((x) => x.kubun === kubun);
   const p = l ? pointsOf(rev, kubun) : null;
   return l && p !== null ? p * l.count : 0;
 };
-/** 判定に使った版（EngineResult.revisionId）。版の印を持たない古い記録は、基準月の版で数える */
-const revisionOf = (revisionId: string | undefined): Revision => {
+/**
+ * 判定に使った版（EngineResult.revisionId）。版の印を持たない古い記録は、基準月の版で数える。
+ * 同梱の版にない id（消した版で判定した、作り直していないデータの記録）は null：数えずに飛ばす（例外にしない。design.md §10 段 2）
+ */
+const revisionOf = (revisionId: string | undefined): Revision | null => {
   if (revisionId === undefined) return resolveRevision(period.yearMonth);
-  const rev = REVISIONS.find((r) => r.id === revisionId);
-  if (!rev) throw new Error(`未知の版: ${revisionId}`);
-  return rev;
+  return REVISIONS.find((r) => r.id === revisionId) ?? null;
 };
 
 /** 1 問ぶんの「防いだ」項目。resolvedByDoctor は F1 で解決した不足項目（field） */
@@ -45,6 +47,7 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
   if (!q.confirmed || q.drafts.length === 0) return [];
   const final = q.confirmed;
   const rev = revisionOf(final.result.revisionId);
+  if (!rev) return [];
   const finalKeys = new Set(final.result.findings.map(key));
   const seen = new Set<string>();
   const counted = new Set<string>();

@@ -5,7 +5,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { syncSkills } from "../scripts/sync-skills";
+import { period } from "../src/demo/period";
 import { evaluate } from "../src/engine";
+import { facilityOf } from "../src/engine/facility";
 import type { ClaimContext } from "../src/engine/types";
 import { modelFor } from "../src/mentor/models";
 import { leakedTerms, type Situation } from "../src/mentor/output";
@@ -62,7 +64,7 @@ const MONEY = /[0-9０-９,，]+\s*点|円|金額|査定|返戻/;
 
 function loadCase(root: string, c: Case): ClaimContext {
   const k = JSON.parse(readFileSync(path.join(root, "fixtures", "cases", `${c.case}.json`), "utf8"));
-  const facility = JSON.parse(readFileSync(path.join(root, "config", "facility.json"), "utf8"));
+  const facility = facilityOf(JSON.parse(readFileSync(path.join(root, "config", "facility.json"), "utf8")), k.facility);
   let lines = k.lines as ClaimContext["lines"];
   if (c.remove) lines = lines.filter((l) => !c.remove!.includes(l.kubun));
   if (c.replace) lines = lines.map((l) => (c.replace![l.kubun] ? { ...l, kubun: c.replace![l.kubun] } : l));
@@ -122,7 +124,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
         engine,
         situation: c.kind === "doctor" ? "カルテ不足" : (c.situation ?? "通常"),
         message: c.message!,
-        now: () => "2025-03-10T09:00:00+09:00",
+        now: () => period.clockStart,
         model: modelFor("mentor", { level: 1, scene: c.kind !== "doctor" && c.reveal ? "explain" : "hint" }),
         workspace: (() => { const cwd = ensureWorkspace(path.join(tmp, "ws"), "eval", store.skillsDir, "# 評価用\n\n- レベル：Lv.1\n", crosscheckSkills()); return { cwd, skills: workspaceSkillNames(cwd) }; })(),
         reveal: c.kind === "doctor" ? false : !!c.reveal,
