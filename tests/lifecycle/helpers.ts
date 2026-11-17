@@ -49,6 +49,7 @@ export function makeFacts(over: Partial<Facts> = {}): Facts {
     contactDocProvided: known(true),
     sameDaySeparate: known({}),
     rapidSameDayDocumented: known(false),
+    comprehensiveCare: known(true),
     ...over,
   };
 }

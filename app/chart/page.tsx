@@ -1,5 +1,5 @@
 "use client";
-// 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → レセメン（訪問の記録）へ
+// 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → 同じ画面に算定行・合計・指摘（FR-101）→ レセメン（訪問の記録）へ
 // 自由に書いて Haiku に SOAP の欄へ振り分けさせることも、見本（足りないカルテ・ちゃんとしたカルテ）を入れることもできる（2026-11-07 ユーザー判断）
 // 見た目は PC・タブレットで書く一般的な訪問カルテ（2026-11-08 にスマホの枠をやめた）。特定の製品に似せない
 // 電子カルテの画面を撮った画像を渡すと、AI が病名・診療記録・処方を書き写して自由記述の欄に入れる（2026-11-08 ユーザー判断。画像は保存しない）
@@ -13,6 +13,7 @@ import { SignIn, useClerk } from "../clerk";
 import SAMPLES from "../../fixtures/charts/samples.json";
 import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
+import { ClaimPreview } from "./claim-preview";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
@@ -45,6 +46,8 @@ export default function Chart() {
   const [free, setFree] = useState("");
   const [unmatched, setUnmatched] = useState<string[]>([]);
   const [err, setErr] = useState("");
+  /** 確定したカルテ（確定したら、同じ画面に算定行と指摘を出す） */
+  const [confirmed, setConfirmed] = useState<{ claimId: string; date: string } | null>(null);
   useEffect(() => {
     api<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
   }, []);
@@ -103,7 +106,7 @@ export default function Chart() {
     setErr("");
     try {
       const r = await api<{ claimId: string; date: string }>(`/api/chart/${ex.id}`, { facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f) });
-      router.push(`/work?visit=${encodeURIComponent(`${r.claimId}|${r.date}`)}`);
+      setConfirmed(r);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -122,14 +125,14 @@ export default function Chart() {
     <main className="shell">
       <TopBar />
       <PageGuide who="black-hair" title="カルテを書く">
-        訪問したていで、デモ用のカルテを書けます。自由に書けば AI が SOAP の欄に振り分けます。書くのが初めてなら、見本のカルテを入れてみてください。保存すると、算定に要る事実を読み取ってレセメンに渡します。
+        訪問したていで、デモ用のカルテを書けます。自由に書けば AI が SOAP の欄に振り分けます。書くのが初めてなら、見本のカルテを入れてみてください。保存すると、算定に要る事実を読み取ります。確かめて確定すると、この画面に算定行と指摘が出ます。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <div className="two-col">
         <aside aria-label="訪問する患者" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>訪問する患者</h2>
           {patients.map((x) => (
-            <button key={x.claimId} className={`patient-card${p?.claimId === x.claimId ? " on" : ""}`} disabled={!!ex && p?.claimId !== x.claimId} onClick={() => { setP(x); setNote(EMPTY); setEx(null); setFree(""); setUnmatched([]); }}>
+            <button key={x.claimId} className={`patient-card${p?.claimId === x.claimId ? " on" : ""}`} disabled={!!ex && p?.claimId !== x.claimId} onClick={() => { setP(x); setNote(EMPTY); setEx(null); setConfirmed(null); setFree(""); setUnmatched([]); }}>
               <span className="patient-band" style={{ background: colorOf(x.claimId).bg }} />
               <span style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
                 <strong>{x.name}</strong>
@@ -194,7 +197,16 @@ export default function Chart() {
                 {busy ? "読み取っています…" : "保存して、算定に要る事実を読み取る"}
               </button>
             )}
-            {ex && (
+            {ex && confirmed && (
+              <>
+                <div className="notice ok">{confirmed.date} の訪問のカルテを確定しました。</div>
+                <ClaimPreview noteId={ex.id} />
+                <div className="chips">
+                  <button className="primary" onClick={() => router.push(`/work?visit=${encodeURIComponent(`${confirmed.claimId}|${confirmed.date}`)}`)}>レセメンで訪問の記録を確かめる</button>
+                </div>
+              </>
+            )}
+            {ex && !confirmed && (
               <div>
                 <h3>読み取った事実（確かめてください）</h3>
                 <p className="muted">AI が読み取ったものです。違うものは外し、分類は直せます。どれもカルテに書かれた言葉から取っています。判定はこのあとユスティが行います。</p>
@@ -211,7 +223,7 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <button className="primary" onClick={hand}>これでレセメンに渡す（{ex.date} の訪問）</button>
+                <button className="primary" onClick={hand}>これで確定する（{ex.date} の訪問）</button>
               </div>
             )}
           </>

@@ -20,6 +20,9 @@ export function ruleKubun(ruleId: string, yearMonth: string, revs: Revision[] = 
 /** 不明な事実を誰に聞くか。臨床の判断は医師、それ以外は医療事務 */
 const DOCTOR_FACTS: FactKey[] = ["table7", "table8_2", "mainDisease", "homeOxygen", "acuteExacerbation", "deathPlace"];
 
+/** 不明な入力の宛先（導出の保留と共有する） */
+export const targetOfNeed = (key: NeedKey): "doctor" | "clerk" => ((DOCTOR_FACTS as string[]).includes(key) ? "doctor" : "clerk");
+
 /** 要る入力（患者の事実か、施設の設定）が分かっているか */
 function knownNeed(ctx: ClaimContext, key: NeedKey): boolean {
   return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : ctx.facts[key as FactKey].known;
@@ -48,7 +51,7 @@ export function evaluate(ctx: ClaimContext, revs: Revision[] = REVISIONS): Engin
         kind: "情報不足",
         lineRefs: rule.kubun.filter((k) => ctx.lines.some((l) => l.kubun === k)),
         // 施設の設定の不明も宛先は医療事務（field が "facility." で始まることで見分ける。§6-1）
-        missing: { target: (DOCTOR_FACTS as string[]).includes(unknown) ? "doctor" : "clerk", field: unknown },
+        missing: { target: targetOfNeed(unknown), field: unknown },
         messageKey: `${rule.id}.missing_fact`,
         reference: rule.reference,
       });

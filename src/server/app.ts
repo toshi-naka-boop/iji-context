@@ -48,6 +48,11 @@ export function openApp(paths: AppPaths) {
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, patients, visits } = notes;
+  /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
+  const chartClaim = (noteId: number, choices: Record<string, string>) => {
+    const claim = notes.claimOfNote(noteId, choices);
+    return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
+  };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
   const { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
@@ -77,6 +82,7 @@ export function openApp(paths: AppPaths) {
     saveNote,
     noteOf,
     confirmNote,
+    chartClaim,
     patients,
     outlookOf,
     patientFacts,

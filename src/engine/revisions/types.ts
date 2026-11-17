@@ -41,10 +41,12 @@ export type RevisionConsts = {
   price: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };
   /** 看取り・死亡診断・ターミナルケア（R09）。死亡日前 days 日以内に minVisits 回以上 */
   terminal: { mitori: string; shibou: string; terminal: string; days: number; minVisits: number };
-  /** 往診料と緊急往診加算（R10） */
-  oushin: { kubun: string; kinkyu: string };
-  /** 検体検査判断料・BNP・外来迅速検体検査加算（R11） */
-  tests: { judgement: string[]; bnp: string; bnpJudgement: string; rapid: string };
+  /** 往診料と緊急往診加算（R10）。revisit は往診料と併せて算定する再診料（導出の D02） */
+  oushin: { kubun: string; kinkyu: string; revisit: string };
+  /** 検体検査判断料・BNP・外来迅速検体検査加算（R11）。bloodDraw は血液採取（導出の D09） */
+  tests: { judgement: string[]; bnp: string; bnpJudgement: string; rapid: string; bloodDraw: string };
+  /** 検査の出来事の項目名 → 区分と判断料（導出の D09）。表にない項目名は導出しない */
+  testItems: Record<string, { kubun: string; judgement: string }>;
   /** 在宅医療DX情報活用加算（届出区分 → kubun）と、同月に併算定できない加算（R12） */
   dx: { tiers: Record<"1" | "2", string>; conflicts: string[] };
   /** 訪問診療料の週の上限（R13）と、週の始まりの曜日（0＝日曜） */

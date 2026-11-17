@@ -22,6 +22,10 @@ export const confirmBody = z.strictObject({
   facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
 });
 
+/** 算定プレビューの要選択への答え（pending の id → 選択肢の id）。クエリには JSON の文字列で載せる */
+export const claimQuery = z.strictObject({ choices: z.string().max(2000).optional() });
+export const claimChoices = z.record(z.string().max(80), z.string().max(40));
+
 export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT) });
 
 /** base64 にした画像の長さの上限（5MB の画像は 4/3 倍に膨らむ） */
