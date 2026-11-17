@@ -13,6 +13,11 @@ services:
       - RESEMEN_ALLOWED_ORIGINS=https://${RESEMEN_DOMAIN}
       # 招待なしの登録を許すときだけ 1 にする（既定は閉じる）
       - RESEMEN_OPEN_SIGNUP=${RESEMEN_OPEN_SIGNUP:-}
+      # 外部につなぐコネクタ（docs/connectors.md）。既定は空＝無効。有効にするときだけ、id と接続を許す host:port を書く。
+      # 接続先と認証情報（RESEMEN_CONNECT_<ID>_URL など）は、まだここから渡していない。有効にするときに、
+      # API キーと同じく Secret Manager から読み出して渡す行を足す（値をファイルに書かない）
+      - RESEMEN_CONNECTORS=${RESEMEN_CONNECTORS:-}
+      - RESEMEN_CONNECT_ALLOW=${RESEMEN_CONNECT_ALLOW:-}
     volumes:
       - resemen-data:/data
     expose:
