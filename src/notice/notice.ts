@@ -121,7 +121,20 @@ export function resolveNotice(notice: Notice, src: UkeSources, cases: ClaimConte
   });
 }
 
-/** 本人が確かめた 1 項目を、地域層の知識の候補にする入力（査定は必ず知識化。再審査を申し出るなら contested。FR-43） */
+/** 条件の注記に写す、通知の理由の長さの上限（設計パラメータ） */
+export const REASON_NOTE_MAX = 200;
+
+/** 通知の理由から、条件の注記を決まった規則で作る。理由の有無で変わるのは注記の文だけ */
+export function conditionNoteOf(reason: string): string {
+  const r = reason.replace(/[\s　]+/g, " ").trim();
+  return r.length > 0 ? `通知の理由：${r.slice(0, REASON_NOTE_MAX)}` : "通知に理由の記載がない（条件は未確認）";
+}
+
+/**
+ * 本人が確かめた 1 項目を、地域層の知識の候補にする入力（査定は必ず知識化。再審査を申し出るなら contested。FR-43）。
+ * 候補は必ず avoid・近似にする：通知が言うのは「この請求のこの項目が落ちた」ことで、区分・審査支払機関・都道府県の 3 つが
+ * 条件を表しきれているかは通知からは決められない。機械は連月・摘要コメントなどの条件を足さない（design.md §3）
+ */
 export function candidateOf(item: ResolvedItem, opts: { reexamFiled: boolean; fileName: string }): CreateInput {
   if (item.problems.length > 0 || !item.kubun || !item.payer || !item.prefecture) throw badRequest(`対応づけが済んでいない項目は候補にできない: ${item.problems.join(" / ")}`);
   const ref = `${item.outcome}:${item.claimId}:${item.yearMonth}:${item.kubun}`;
@@ -137,10 +150,13 @@ export function candidateOf(item: ResolvedItem, opts: { reexamFiled: boolean; fi
       `通知に書かれた理由：${item.reason}`,
       "",
       `出典：${opts.fileName}（読み取りは Claude、対応づけは決まった規則、登録は本人が確かめてから）`,
-      "条件（コメントの有無・続けて算定した月数など）は、責任者がレセメン会議で確かめて書き足す。",
+      "当てはまる条件は、区分・審査支払機関・都道府県だけでは表しきれていない（近似）。通知の理由を条件の注記として添える。",
     ].join("\n"),
     source: { type: item.outcome, ref },
     reexamFiled: item.outcome === "査定" && opts.reexamFiled,
+    polarity: "avoid",
+    matchApprox: true,
+    conditionNote: conditionNoteOf(item.reason),
     match: { kubunAll: [item.kubun], payer: item.payer, prefecture: item.prefecture },
   };
 }

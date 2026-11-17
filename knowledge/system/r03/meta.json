@@ -2,24 +2,24 @@
   "id": "system/r03",
   "layer": "制度",
   "status": "承認済み",
-  "summary": "R03：包括的支援加算は要介護3 以上で、かつ重症区分以外の患者に付ける",
-  "rev": "9f9e243a2c7e",
+  "summary": "R03：包括的支援加算は、管理料の区分が 2ロ・2ニ の月に、要介護3 以上の患者に付ける。施設入居時等医学総合管理料でも同じ",
+  "rev": "002c8980cb88",
   "polarity": "allow",
   "matchApprox": false,
   "conditionNote": null,
   "source_event": {
     "type": "初期投入",
     "ref": "design.md §2-3 R03",
-    "at": "2025-03-01T00:00:00+09:00"
+    "at": "2026-10-01T00:00:00+09:00"
   },
   "relates_to": null,
-  "valid_from": "2025-03-01T00:00:00+09:00",
+  "valid_from": "2026-10-01T00:00:00+09:00",
   "review_by": null,
   "hits": 0,
   "misses": 0,
-  "last_hit_at": "2025-03-10T09:00:00+09:00",
-  "last_used_at": "2025-03-10T09:00:00+09:00",
-  "status_since": "2025-03-01T00:00:00+09:00",
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2026-10-01T00:00:00+09:00",
   "retired_reason": null,
   "empathy": 0,
   "match": {
@@ -27,7 +27,7 @@
   },
   "history": [
     {
-      "at": "2025-03-01T00:00:00+09:00",
+      "at": "2026-10-01T00:00:00+09:00",
       "from": "",
       "to": "承認済み",
       "event": "CREATE",

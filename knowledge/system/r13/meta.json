@@ -2,24 +2,24 @@
   "id": "system/r13",
   "layer": "制度",
   "status": "承認済み",
-  "summary": "R13：週 3 回を超える訪問診療は、別表第七の疾病等か急性増悪のときに限る",
-  "rev": "7fa19ce6c5ff",
+  "summary": "R13：週 3 回を超える訪問診療料は、別表第七の疾病等か急性増悪のときに限る。週は日曜から土曜で数える",
+  "rev": "e21439f42073",
   "polarity": "allow",
   "matchApprox": false,
   "conditionNote": null,
   "source_event": {
     "type": "初期投入",
     "ref": "design.md §2-3 R13",
-    "at": "2025-03-01T00:00:00+09:00"
+    "at": "2026-10-01T00:00:00+09:00"
   },
   "relates_to": null,
-  "valid_from": "2025-03-01T00:00:00+09:00",
+  "valid_from": "2026-10-01T00:00:00+09:00",
   "review_by": null,
   "hits": 0,
   "misses": 0,
   "last_hit_at": null,
   "last_used_at": null,
-  "status_since": "2025-03-01T00:00:00+09:00",
+  "status_since": "2026-10-01T00:00:00+09:00",
   "retired_reason": null,
   "empathy": 0,
   "match": {
@@ -27,7 +27,7 @@
   },
   "history": [
     {
-      "at": "2025-03-01T00:00:00+09:00",
+      "at": "2026-10-01T00:00:00+09:00",
       "from": "",
       "to": "承認済み",
       "event": "CREATE",
