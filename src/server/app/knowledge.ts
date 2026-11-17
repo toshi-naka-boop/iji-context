@@ -1,14 +1,17 @@
 // 知識：検証キュー（FR-41・FR-65）と F11 提案・共感（FR-51）、査定・返戻の通知、ローカルルール
 import path from "node:path";
-import { evaluate } from "../../engine";
+import { evaluate, ruleKubun } from "../../engine";
+import { resolveRevision } from "../../engine/revisions";
 import type { ClaimContext, ClaimLine } from "../../engine/types";
 import { IDLE_DAYS, LAYER_SLUG } from "../../lifecycle/layers";
 import { matchState } from "../../lifecycle/match";
 import { verificationQueue } from "../../lifecycle/queue";
 import { seedLocalRules as seedInHouse } from "../../lifecycle/seed-local";
 import { applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../lifecycle/store";
+import type { KnowledgeMeta } from "../../lifecycle/types";
 import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
 import { SAMPLE_NOTICE_BASE, SAMPLE_NOTICE_PDF } from "../../notice/sample";
+import { judge, judgeAll } from "../../official/match";
 import type { UkeSources } from "../../uke/cases";
 import { badRequest, conflict, notFound } from "../errors";
 import type { Cases } from "./cases";
@@ -18,7 +21,7 @@ import type { QuestionCase } from "./question-case";
 import type { Questions } from "./questions";
 
 export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases, questionCase: QuestionCase, questions: Questions) {
-  const { paths, store } = ctx;
+  const { paths, store, official } = ctx;
   const { now } = clock;
   const { cases } = casesOf;
   const { caseFor } = questionCase;
@@ -69,7 +72,8 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
   function seedLocalRules() {
     // 院内ルールの種（中身は伏せ、何の区分に関するものかだけ出す。何年も積み上がった様子を見せる。FR-80）
-    const inHouse = seedInHouse(store);
+    // 承認済みで入れた種には、いまのレジストリとの矛盾を「確認済み」として記録する（最初の会議で種がまとめて要再検証にならないように）
+    const inHouse = seedInHouse(store, { official, now: now() });
     const n = json<Notice>(path.join(paths.root, `${SAMPLE_NOTICE_BASE}.json`));
     const items = resolveNoticeItems(n);
     return [...inHouse.map((id) => ({ id })), ...items.flatMap((item, i) => {
@@ -80,10 +84,27 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   }
   /**
    * ローカルルール（地域・ベテランの判断・院内）のうち、この請求に当てはまるもの（FR-78）。
-   * ユスティ（全国共通の決まり）とは別に見せる。保管・停止したものは出さない。院内のものはメンターの助言には使わない（FR-12）
+   * ユスティ（全国共通の決まり）とは別に見せる。保管・停止したものは出さない。院内のものはメンターの助言には使わない（FR-12）。
+   * 各ルールに、公的情報との突き合わせの結果と出典リンクを添える（FR-128。決まった規則で、請求の診療年月の版に当たる文書だけを使う）
    */
   function localRulesFor(ctx: ClaimContext) {
     const applied = evaluate(ctx).applied;
+    const generation = resolveRevision(ctx.yearMonth).generation;
+    const kubunOfRule = (ruleId: string) => ruleKubun(ruleId, ctx.yearMonth);
+    const officialOf = (m: KnowledgeMeta) => {
+      const all = judgeAll(m, official.docs, generation, kubunOfRule);
+      const hit = new Set(Object.values(all.ids).flat());
+      return {
+        verdict: all.verdict,
+        /** 近似の知識（条件の注記あり）。注記に照らして読むのは人 */
+        approx: all.approx,
+        conditionNote: all.approx ? m.conditionNote : null,
+        /** 当たった文書（id 昇順）。要旨とリンクだけで、原文は持たない */
+        docs: official.docs
+          .filter((d) => hit.has(d.id))
+          .map((d) => ({ id: d.id, kind: d.kind, issuer: d.issuer, number: d.number, issuedOn: d.issuedOn, url: d.url, stance: d.stance, summary: d.summary, verdict: judge(m, d, generation, kubunOfRule) })),
+      };
+    };
     return listKnowledge(store)
       .filter((m) => m.layer !== "制度" && m.status !== "保管" && m.status !== "停止")
       .map((m) => ({ m, state: matchState(m, ctx, applied) }))
@@ -102,6 +123,7 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
         stale: m.status === "承認済み" && Date.parse(now()) - Date.parse(m.last_hit_at ?? m.status_since) >= IDLE_DAYS * 86_400_000,
         unknown: state === "unknown",
         usedByMentor: m.status === "承認済み" && m.layer !== "院内",
+        official: officialOf(m),
       }));
   }
   const localRulesOf = (questionId: string, lines?: ClaimLine[]) => {

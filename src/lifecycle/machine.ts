@@ -19,6 +19,8 @@ type Rule = {
   /** 遷移に付随する更新（meta の浅いコピーに対して行う） */
   apply?: (meta: KnowledgeMeta, event: LifecycleEvent, now: string) => void;
   effects?: (meta: KnowledgeMeta, event: LifecycleEvent) => Effect[];
+  /** 状態が変わらなくても history に残す（OFFICIAL_BASELINE。status_since は変えない） */
+  record?: boolean;
   actor: (event: LifecycleEvent) => Actor;
 };
 
@@ -41,6 +43,11 @@ const retire = (m: KnowledgeMeta, e: LifecycleEvent): void => {
 const touchUsed = (m: KnowledgeMeta, _e: LifecycleEvent, now: string): void => {
   m.last_used_at = now;
   if (m.last_hit_at === null || ms(m.last_hit_at) < ms(now)) m.last_hit_at = now;
+};
+
+/** イベントに付いた公的文書の鍵を、確認済み（official_seen）に和集合で足す（v22。§4-3） */
+const seeOfficial = (m: KnowledgeMeta, e: LifecycleEvent): void => {
+  if ("officialKeys" in e && e.officialKeys) m.official_seen = [...new Set([...m.official_seen, ...e.officialKeys])].sort();
 };
 
 const disposal =
@@ -77,9 +84,9 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
     case "承認済み|TRIGGER":
       return {
         to: "要再検証",
-        // relates_to を持つ知識は元の知識の層の改定・改選も効く（v21。round-15 X-57）。元の層の判定は triggers.ts
+        // relates_to を持つ知識は元の知識の層の改定・改選も効く（v21。round-15 X-57）。元の層の判定は triggers.ts。④ 公的文書は自分の層で決める
         guard: (m, e) =>
-          e.type === "TRIGGER" && (LAYER_TRIGGERS[m.layer][e.trigger] || (m.relates_to !== null && e.trigger !== "idle"))
+          e.type === "TRIGGER" && (LAYER_TRIGGERS[m.layer][e.trigger] || (m.relates_to !== null && (e.trigger === "revision" || e.trigger === "reappointment")))
             ? null
             : `${m.layer}層に効かないトリガー`,
         actor: sys,
@@ -90,9 +97,12 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
     case "承認済み|USED":
     case "要再検証|USED":
       return { to: status, apply: touchUsed, actor: sys };
+    case "承認済み|OFFICIAL_BASELINE":
+      return { to: "承認済み", apply: seeOfficial, record: true, actor: sys };
     case "要再検証|RECHECK_PASS":
       return {
         to: "承認済み",
+        apply: seeOfficial,
         actor: (e) => (e.type === "RECHECK_PASS" && e.via === "veteran" ? "veteran" : "system"),
       };
     case "要再検証|RECHECK_FAIL":
@@ -109,7 +119,7 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
     case "停止|DISPOSAL_APPROVE":
       return { to: "保管", guard: needReason, apply: retire, actor: veteran };
     case "停止|DISPOSAL_REJECT":
-      return { to: "承認済み", actor: veteran };
+      return { to: "承認済み", apply: seeOfficial, actor: veteran };
     default:
       return undefined;
   }
@@ -147,7 +157,7 @@ export function transition(
 
   const next: KnowledgeMeta = { ...meta, history: [...meta.history] };
   rule.apply?.(next, event, now);
-  if (rule.to !== meta.status) {
+  if (rule.to !== meta.status || rule.record) {
     next.history.push({
       at: now,
       from: meta.status,
@@ -156,6 +166,8 @@ export function transition(
       actor: rule.actor(event),
       basis,
     });
+  }
+  if (rule.to !== meta.status) {
     next.status = rule.to;
     next.status_since = now;
   }

@@ -1,0 +1,22 @@
+{
+  "id": "GK-R8-01-Q3",
+  "kind": "疑義解釈",
+  "issuer": "厚生労働省保険局医療課",
+  "number": "その1 問3",
+  "issuedOn": "2026-03-23",
+  "url": "https://www.mhlw.go.jp/content/12400000/001678310.pdf",
+  "scope": {
+    "kubun": [
+      "A_DENSHI_RENKEI"
+    ],
+    "payer": null,
+    "prefecture": null,
+    "conditionNote": "令和8年6月以降に算定するには、改めて届出が要る"
+  },
+  "stance": "条件つき",
+  "summary": "医療DX推進体制整備加算を届け出ていた施設も、令和8年6月以降に新加算を算定するには改めて届出が要る",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

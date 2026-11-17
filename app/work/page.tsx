@@ -27,7 +27,16 @@ type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDise
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
 type Drill = { id: string; no: number; claimId: string; situation: string[]; cleared?: boolean };
 /** この請求に当てはまるローカルルール（地域・ベテランの判断・院内。FR-78） */
-type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean };
+type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean; official: OfficialMatch };
+/** 公的情報（疑義解釈・審査の取扱いなど）との突き合わせの結果と出典（FR-128）。決まった規則の結果で、AI は判定しない */
+type OfficialMatch = {
+  verdict: "整合" | "矛盾の恐れ" | "公的根拠なし" | "関連あり・未照合";
+  approx: boolean;
+  conditionNote: string | null;
+  docs: { id: string; kind: string; issuer: string; number: string; issuedOn: string; url: string; stance: string; summary: string; verdict: string }[];
+};
+/** 突き合わせの結果の札の色（危ない側を目立たせる） */
+const VERDICT_BADGE: Record<OfficialMatch["verdict"], string> = { 整合: "ok", 矛盾の恐れ: "warn", 公的根拠なし: "", "関連あり・未照合": "sky" };
 /** 医師確認の練習問題の今の状態（FR-76） */
 type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
@@ -383,6 +392,16 @@ export default function Work() {
                   {r.stale && <strong>【長く使われていない】</strong>}
                   {r.layer === "地域" ? "地域ルール" : r.layer === "ベテラン" ? "ベテランの判断" : "院内ルール"}：{r.summary}
                   <span className="muted">　{r.status}・{r.source}から・{r.since} から・最後に使われた日 {r.lastUsed ?? "なし"}{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : "承認されるまでメンターは使わない"}</span>
+                  {/* 公的情報との突き合わせ（FR-128）。要旨とリンクだけを出し、原文は載せない */}
+                  <div style={{ marginLeft: 12 }}>
+                    <span className={`badge ${VERDICT_BADGE[r.official.verdict]}`}>公的情報：{r.official.verdict}</span>
+                    {r.official.approx && r.official.docs.length > 0 && <span className="muted">　条件の注記あり{r.official.conditionNote ? `（このルールの条件：${r.official.conditionNote}）` : ""}。当てはまるかは読み比べて確かめてください</span>}
+                    {r.official.docs.map((d) => (
+                      <div key={d.id} className="muted">
+                        ・<a href={d.url} target="_blank" rel="noreferrer">{d.kind}　{d.issuer}　{d.number}</a>（{d.issuedOn}・{d.stance}{d.verdict !== r.official.verdict ? `・${d.verdict}` : ""}）{d.summary}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

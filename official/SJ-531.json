@@ -1,0 +1,22 @@
+{
+  "id": "SJ-531",
+  "kind": "審査の一般的な取扱い",
+  "issuer": "DX審査支払機構",
+  "number": "531",
+  "issuedOn": "2025-05-30",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/kikin_shinsa_atukai/shinsa_atukai_i/index.files/atukai_jirei_all_koumoku.pdf#page=226",
+  "scope": {
+    "kubun": [
+      "D005_5"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "傷病名が高血圧症の場合"
+  },
+  "stance": "認める",
+  "summary": "高血圧症に対する末梢血液一般検査",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}
