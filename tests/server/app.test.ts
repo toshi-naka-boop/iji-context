@@ -8,9 +8,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applications } from "../../src/db/schema";
 import { seed } from "../../scripts/seed-knowledge";
 import { cleanName, openApp, type App } from "../../src/server/app";
-import { readKnowledge } from "../../src/lifecycle/store";
+import { listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import { evaluate } from "../../src/engine";
+import { period } from "../../src/demo/period";
+import { docKey } from "../../src/official/match";
 import { at, claimId, dateIn, day } from "../helpers/period";
+import { makeDoc } from "../official/helpers";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -364,6 +367,95 @@ describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
     expect(st["local/seed-08"]).toBe("承認済み");
     expect(st["local/seed-10"]).toBe("保管");
     expect(st["local/seed-11"]).toBe("未検証");
+  });
+});
+
+describe("公的情報との突き合わせと、公的文書による再検証（FR-128〜131）", () => {
+  /** BNP（D008_19）を対象に持つ、同梱の支払基金の文書（evidence-master §2-4） */
+  const BNP_DOCS = ["SJ-133", "SJ-154", "SJ-210", "SJ-286", "SJ-319", "SJ-89"];
+  /** K6 の合成の査定通知から入る地域ルール（支払基金・東京都・BNP。条件の注記あり） */
+  function k6Rule() {
+    const q = app.start("new1", claimId("K6"));
+    return app.localRulesOf(q.id).find((r) => r.layer === "地域")!;
+  }
+  const historyEvents = () => listKnowledge(app.store).flatMap((m) => m.history.map((h) => h.event));
+
+  it("本番の配線は、同梱のレジストリを会議の整理に渡している", () => {
+    expect(app.deps.official?.docs.length).toBeGreaterThanOrEqual(10);
+    expect(app.deps.official?.generationOf(period.yearMonth)).toBe("R8");
+  });
+
+  it("K6 の地域ルールに「関連あり・未照合」の結果と、BNP の文書への出典リンクが出る。出すのは要旨とリンクだけで、「整合」とは出さない", () => {
+    app.seedLocalRules();
+    const rule = k6Rule();
+    expect(rule.official).toMatchObject({ verdict: "関連あり・未照合", approx: true });
+    expect(rule.official.conditionNote).toContain("通知の理由：");
+    expect(rule.official.docs.map((d) => d.id)).toEqual(BNP_DOCS);
+    for (const d of rule.official.docs) {
+      expect(d.url, d.id).toMatch(/^https:\/\/www\.hpdx\.or\.jp\/.+\.pdf#page=\d+$/);
+      expect(d.verdict, d.id).toBe("関連あり・未照合");
+      expect(Object.keys(d).sort(), d.id).toEqual(["id", "issuedOn", "issuer", "kind", "number", "stance", "summary", "url", "verdict"]);
+      expect(d.summary, d.id).not.toMatch(/[0-9０-９]\s*(点|円)/);
+    }
+    // 読み比べる相手：確定病名への連月は認める／疑いへの連月は認めない
+    expect(rule.official.docs.filter((d) => d.id === "SJ-133" || d.id === "SJ-319").map((d) => d.stance)).toEqual(["認める", "認めない"]);
+  });
+
+  it("どのローカルルールにも 4 つの結果のどれか 1 つが付く。当たる文書がなければ「公的根拠なし」で、出典は出ない", () => {
+    app.seedLocalRules();
+    const rules = [claimId("K1"), claimId("K6")].flatMap((c) => app.localRulesOf(app.start("new1", c).id));
+    expect(rules.length).toBeGreaterThan(3);
+    for (const r of rules) {
+      expect(["整合", "矛盾の恐れ", "公的根拠なし", "関連あり・未照合"], r.id).toContain(r.official.verdict);
+      expect(r.official.docs.length > 0, r.id).toBe(r.official.verdict !== "公的根拠なし");
+    }
+    // 血液採取の院内ルール（seed-07）には、当たる文書がない。管理料の院内ルール（seed-01）には、疑義解釈が当たる
+    expect(rules.find((r) => r.id === "local/seed-07")?.official).toMatchObject({ verdict: "公的根拠なし", approx: false, conditionNote: null, docs: [] });
+    expect(rules.find((r) => r.id === "local/seed-01")?.official.docs.map((d) => d.id)).toEqual(["GK-R8-02-Q66", "GK-R8-06-Q15", "GK-R8-08-Q9", "GK-R8-10-Q3"]);
+    // 同梱の文書はどれも条件の注記を持つので、矛盾の恐れ・整合は出ない
+    expect(rules.some((r) => r.official.verdict === "矛盾の恐れ" || r.official.verdict === "整合")).toBe(false);
+  });
+
+  it("K6 の地域ルールを承認して時計を改選日の後へ進めると、会議の議題（確かめ直し）に出る。同梱の文書では公的文書のトリガーは 1 件も出ない", () => {
+    app.seedLocalRules();
+    const rule = k6Rule();
+    app.verify(rule.id, true);
+    app.advanceClock(`${dateIn(8, 5)}T09:00:00+09:00`);
+    expect(readKnowledge(app.store, rule.id)?.status).toBe("要再検証");
+    const item = app.agenda().items.find((i) => i.kind === "recheck" && i.knowledgeId === rule.id)!;
+    expect(item.reason).toEqual({ kind: "recheck", event: "TRIGGER{reappointment}", trigger: "reappointment" });
+    expect(item.choices.map((c) => c.label)).toEqual(expect.arrayContaining(["その他", "判定不能"]));
+    expect(historyEvents()).not.toContain("TRIGGER{official}");
+    expect(historyEvents()).not.toContain("OFFICIAL_BASELINE");
+  });
+
+  it("（合成の文書）BNP を条件なしに認める文書がレジストリに入ると、K6 の地域ルールは「矛盾の恐れ」になり、時計を進めると要再検証になって議題に出る。自動では停止しない", () => {
+    app.seedLocalRules();
+    // 実在の文書ではない。レジストリに後から 1 件足された状況を作る
+    const added = makeDoc({ id: "X-BNP", stance: "認める", scope: { kubun: ["D008_19"], payer: "支払基金" } });
+    app.deps.official!.docs.push(added);
+    const rule = k6Rule();
+    expect(rule.official).toMatchObject({ verdict: "矛盾の恐れ", approx: true });
+    expect(rule.official.docs.map((d) => [d.id, d.verdict])).toEqual([...BNP_DOCS.map((id) => [id, "関連あり・未照合"]), ["X-BNP", "矛盾の恐れ"]]);
+    app.verify(rule.id, true);
+    // 未承認の間は動かない。承認の次の会議で議題に出る
+    app.advanceClock(at(14));
+    const after = readKnowledge(app.store, rule.id)!;
+    expect(after.status).toBe("要再検証");
+    expect(after.history.at(-1)).toMatchObject({ event: "TRIGGER{official}", basis: { trigger: "official", officialIds: [docKey(added)] } });
+    const item = app.agenda().items.find((i) => i.kind === "recheck" && i.knowledgeId === rule.id)!;
+    expect(item.reason).toMatchObject({ trigger: "official", official: [{ id: "X-BNP", url: added.url, summary: added.summary, seen: false }] });
+    expect((item.reason as { conditionNote?: string }).conditionNote).toContain("通知の理由：");
+    expect(app.agenda().items.some((i) => i.kind === "disposal" && i.knowledgeId === rule.id)).toBe(false);
+    // 要再検証の間は、メンターが助言に使わない
+    expect(k6Rule()).toMatchObject({ status: "要再検証", usedByMentor: false });
+    // 責任者が「今も正しい」と答えると承認済みに戻り、同じ文書では二度と要再検証にならない
+    expect(app.answerAgenda(item.itemId, 1)).toEqual({ status: "applied" });
+    expect(readKnowledge(app.store, rule.id)).toMatchObject({ status: "承認済み", official_seen: [docKey(added)] });
+    app.advanceClock(at(24));
+    expect(readKnowledge(app.store, rule.id)?.status).toBe("承認済み");
+    // 欄の表示は確認済みかどうかを見ない（矛盾の恐れと出続ける）
+    expect(k6Rule().official.verdict).toBe("矛盾の恐れ");
   });
 });
 
