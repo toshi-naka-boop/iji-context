@@ -1,25 +1,23 @@
 {
-  "currentNode": "完了",
-  "status": "awaiting_user",
-  "designVersion": "v21",
-  "approvedDesignVersion": "v21",
-  "approvedDesignSha256": "1892f740faf1d4de88454945696fd984aaac3b4116ce318bade4d77b6ac0823d",
-  "approvedAt": "2026-11-05T00:00:00+09:00",
-  "approvalEvidence": "v21:1892f740faf1 承認",
-  "requiredApprovalFingerprint": "v21:1892f740faf1",
-  "baseline": "feat/scaffold（docs/iji-context-design@7b02e90 から分岐）",
-  "criticRound": 16,
+  "currentNode": "実装",
+  "status": "in_progress",
+  "designVersion": "v22",
+  "approvedDesignVersion": "v22",
+  "approvedDesignSha256": "5cb8cee2d25a35a02a8990835ed511b05a912ab1f16c6ff5f5ae5879fbc5cd13",
+  "approvedAt": "2026-11-17T00:00:00+09:00",
+  "approvalEvidence": "質問「設計書 v22（指紋 v22:5cb8cee2d25a）を承認しますか？」への回答：「v22:5cb8cee2d25a を承認」。K6 の条件は「注記で読む形でよい」。R11 の外来迅速検体検査加算は「他の年度でないのかな？」（過去の年度の資料を調べてから決める。R11 のこの部分だけ未決）",
+  "requiredApprovalFingerprint": "v22:5cb8cee2d25a",
+  "baseline": "refactor/app-split（main@3a7da13 から分岐、PR #5）",
+  "criticRound": 19,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
-    "ledger.md",
-    "reviews/round-16-correctness.md",
-    "reviews/round-16-codex.md"
+    "ledger.md"
   ],
-  "nextAction": "未コミット：F4 UKE・K3〜K6・SDK 確認・F1 医師確認・F7/F10・F9・F2（Agent SDK でツール 6 つ、構造化出力、実機で 1 回動作確認済み）。361 本合格。ユーザー確認待ち：S-1（FR-66 と X-57）、K3・K4 の要介護度、K6 の保険、キャラ設定、F7 の正解の定義・F10 のしきい値・F9 の数え方。次は画面（算定画面・医師画面・会議の議題）",
-  "lastUpdated": "2026-11-05",
+  "nextAction": "段 1（機構、値は現行）を実装委譲。R11 の外来迅速の根拠を過去年度の資料で調査し、結果で R11 のこの部分だけ改訂して差分の承認を取る",
+  "lastUpdated": "2026-11-17",
   "delegation": {
-    "実装": "claude/claude-opus-5-5（メイン）",
+    "実装": "claude サブエージェント",
     "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol xhigh"
   }
 }
