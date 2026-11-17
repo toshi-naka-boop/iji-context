@@ -1,6 +1,7 @@
 // 医師確認の練習問題（spec FR-76。2026-11-07 ユーザー判断）：推測で算定せず、医師に聞いてから確定する練習。
 // 題材は根拠のある 3 つだけ（K3 の別表第八の二＝EM 5-1「重症区分（別表八の二: 難病）」「カルテに PD のみ記載」。2026-11-07 に K1 から入れ替え：K1 は在宅酸素療法中で、カルテだけで答えが決まってしまうため、週 4 回の訪問＝report-A 項目 21 の 13、K4 の DOAC と病型＝EM 5-1）。
 // 回答は問題の中だけで事実に戻す（本物の患者情報は変えない）。判定はユスティだけが行う
+import { claimIdOf, dayOf, mdOf } from "../demo/period";
 import type { ClaimContext } from "../engine/types";
 import type { QueryDraft } from "../query/doctor-query";
 
@@ -8,6 +9,11 @@ import type { QueryDraft } from "../query/doctor-query";
 export type AskFact = "table8_2" | "acuteExacerbation";
 
 type FactQuestion = { label: string; question: string; options: string[]; value: Record<string, boolean>; indicators: (c: ClaimContext) => { source: string; text: string }[] };
+
+/** 週 4 回の題材：K1 の訪問診療（14 日）と同じ週に足す 3 日 */
+const WEEK_EXTRA = [12, 13, 15];
+const WEEK_DAYS = [12, 13, 14, 15];
+const WEEK_SPAN = `${mdOf(WEEK_DAYS[0])}〜${mdOf(WEEK_DAYS[WEEK_DAYS.length - 1])}`;
 
 const yesNo = (b: { known: boolean; value?: unknown }, yes: string, no: string) => (b.known ? (b.value ? yes : no) : "記載なし");
 
@@ -25,11 +31,11 @@ export const FACT_QUESTIONS: Record<AskFact, FactQuestion> = {
   },
   acuteExacerbation: {
     label: "急性増悪があったか",
-    question: "3/10〜3/13 の週に訪問診療を 4 回行っています。この期間の病状について、急性増悪の有無の記載が診療録にありません。該当するものを選んでください。",
+    question: `${WEEK_SPAN} の週に訪問診療を 4 回行っています。この期間の病状について、急性増悪の有無の記載が診療録にありません。該当するものを選んでください。`,
     options: ["急性増悪あり", "急性増悪なし", "その他", "判定不能"],
     value: { 急性増悪あり: true, 急性増悪なし: false },
     indicators: () => [
-      { source: "訪問の記録", text: "3/10・3/11・3/12・3/13 に訪問診療" },
+      { source: "訪問の記録", text: `${WEEK_DAYS.map(mdOf).join("・")} に訪問診療` },
       { source: "診療録", text: "急性増悪の有無：記載なし" },
     ],
   },
@@ -62,18 +68,18 @@ export type DoctorDrill = { id: string; claimId: string; situation: string[]; as
 export const DOCTOR_DRILLS: DoctorDrill[] = [
   {
     id: "m01",
-    claimId: "K3-2025-03",
+    claimId: claimIdOf("K3"),
     situation: ["パーキンソン病。在宅酸素療法はしていない", "別表第八の二に当たるかは、カルテに書かれていない"],
     ask: "table8_2",
     make: (k) => ({ ...k, facts: { ...k.facts, table8_2: { known: false } } }),
   },
   {
     id: "m02",
-    claimId: "K1-2025-03",
-    situation: ["3/10〜3/13 の週に 4 回訪問した（3/10・3/11・3/12・3/13）", "急性増悪だったかは、カルテに書かれていない"],
+    claimId: claimIdOf("K1"),
+    situation: [`${WEEK_SPAN} の週に 4 回訪問した（${WEEK_DAYS.map(mdOf).join("・")}）`, "急性増悪だったかは、カルテに書かれていない"],
     ask: "acuteExacerbation",
     make: (k) => {
-      const extra = ["2025-03-10", "2025-03-11", "2025-03-13"];
+      const extra = WEEK_EXTRA.map(dayOf);
       return {
         ...k,
         facts: { ...k.facts, acuteExacerbation: { known: false } },
@@ -84,7 +90,7 @@ export const DOCTOR_DRILLS: DoctorDrill[] = [
   },
   {
     id: "m03",
-    claimId: "K4-2025-03",
+    claimId: claimIdOf("K4"),
     situation: ["DOAC を処方している", "傷病名は「心房細動」だけで、病型は書かれていない", "要介護度は要介護2（介護保険証で確認済み）"],
     crosscheck: "M01",
     make: (k) => ({ ...k, facts: { ...k.facts, careLevel: { known: true, value: 2 } } }),
