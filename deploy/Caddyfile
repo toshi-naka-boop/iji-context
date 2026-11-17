@@ -1,7 +1,10 @@
 # RESEMEN_DOMAIN（例：34-84-12-34.sslip.io、または自分のドメイン）で https を受けて、アプリへ渡す
 {$RESEMEN_DOMAIN} {
 	encode gzip
-	reverse_proxy app:3000
+	# 接続元の IP をアプリへ渡す。利用者が送ってきた X-Real-IP は上書きする（アプリはこの値だけを信用する。src/server/rate-limit.ts）
+	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
+	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
