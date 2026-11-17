@@ -3,6 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { period } from "../src/demo/period";
 import type { ClaimContext } from "../src/engine/types";
 import { buildUkeFiles, type UkeSources } from "../src/uke/cases";
 import { writeUke } from "../src/uke/uke";
@@ -10,8 +11,8 @@ import { writeUke } from "../src/uke/uke";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const CASES = ["K1", "K2", "K3", "K4", "K5", "K6"];
 export const UKE_FILES = { 国保連: "fixtures/uke/kokuhoren.UKE", 支払基金: "fixtures/uke/shiharaikikin.UKE" } as const;
-/** 請求年月（2025 年 3 月診療分を 4 月に請求） */
-export const BILLING_MONTH = "2025-04";
+/** 請求年月（基準月の診療分を翌月に請求。config/demo.json） */
+export const BILLING_MONTH = period.billingMonth;
 
 export function loadSources(): { cases: ClaimContext[]; src: UkeSources } {
   const cases = CASES.map((k) => JSON.parse(readFileSync(path.join(root, "fixtures", "cases", `${k}.json`), "utf8")) as ClaimContext);

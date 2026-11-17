@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CREATE_SQL } from "../../src/db/schema";
+import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
 import { importResult, type Outcome, type ResultKind } from "../../src/lifecycle/applications";
 import type { Calendar } from "../../src/lifecycle/calendar";
 import { meetingReview, submit, type ReviewDeps, type ReviewHooks } from "../../src/lifecycle/review";
@@ -25,7 +25,7 @@ export function harness() {
   const root = mkdtempSync(path.join(tmpdir(), "iji-review-"));
   const store = { knowledgeDir: path.join(root, "knowledge"), skillsDir: path.join(root, "skills") };
   const sqlite = new Database(":memory:");
-  sqlite.exec(CREATE_SQL);
+  migrate(sqlite, APP_MIGRATIONS);
   const deps: ReviewDeps = {
     db: drizzle(sqlite),
     store,

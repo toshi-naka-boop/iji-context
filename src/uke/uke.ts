@@ -4,7 +4,8 @@
 // 診療行為コードは架空（codes-fictional.ts）。実在のマスターとは無関係
 import iconv from "iconv-lite";
 import { fictionalCode, kubunOfCode } from "../engine/codes-fictional";
-import { pointsOf } from "../engine/points-2024";
+import { pointsOf, resolveRevision } from "../engine/revisions";
+import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine, Payer } from "../engine/types";
 import type { UkeFile, UkeReceipt } from "./types";
 
@@ -39,9 +40,9 @@ function record(n: number, cols: Record<number, string | number>): string {
   return out.join(",");
 }
 
-/** その行の点数（1 回分）×回数 */
-function linePoints(l: ClaimLine): number {
-  const p = pointsOf(l.kubun);
+/** その行の点数（1 回分）×回数。点数はレセプトの診療年月の版のもの */
+function linePoints(rev: Revision, l: ClaimLine): number {
+  const p = pointsOf(rev, l.kubun);
   if (p === null) throw new Error(`点数未収載の区分は UKE に書けない: ${l.kubun}`);
   return p * l.count;
 }
@@ -61,7 +62,8 @@ function dayCounts(l: ClaimLine, yearMonth: string): string[] {
 }
 
 function receiptTotal(r: UkeReceipt): number {
-  return r.lines.reduce((s, l) => s + linePoints(l), 0);
+  const rev = resolveRevision(r.yearMonth);
+  return r.lines.reduce((s, l) => s + linePoints(rev, l), 0);
 }
 
 function realDays(r: UkeReceipt): number {
@@ -88,6 +90,7 @@ export function formatUke(file: UkeFile): string {
   );
   file.receipts.forEach((r, idx) => {
     const p = r.patient;
+    const rev = resolveRevision(r.yearMonth);
     const total = receiptTotal(r);
     const days = realDays(r);
     // RE：13 列目（カルテ番号等）に請求 id を入れる
@@ -103,7 +106,7 @@ export function formatUke(file: UkeFile): string {
         2: shinryoShikibetsu(l.kubun),
         3: futanKubun(p.kohi.length),
         4: fictionalCode(l.kubun),
-        6: pointsOf(l.kubun) ?? "",
+        6: pointsOf(rev, l.kubun) ?? "",
         7: l.count,
       };
       dayCounts(l, r.yearMonth).forEach((v, i) => {
@@ -178,6 +181,8 @@ export function parseUke(buf: Buffer): UkeFile {
     } else if (kind === "SI") {
       stage = 3;
       const kubun = kubunOfCode(c[3]);
+      // コードは表にあっても、レセプトの診療年月の版にない区分は読まない（FR-106）
+      if (!Object.hasOwn(resolveRevision(cur.yearMonth).points, kubun)) throw new Error(`診療年月 ${cur.yearMonth} の版にない区分: ${kubun}`);
       const count = Number(c[6]);
       const dates: string[] = [];
       for (let d = 1; d <= 31; d++) {

@@ -3,7 +3,8 @@
 // 区分で当てはめるので、算定画面のローカルルールの欄で「どれが引っかかったか」が分かる。
 // 状態は本物の遷移（作成・承認・使用・トリガー・廃棄提案の承認）を古い日付で順に通して作る。古いまま使われていないものは、
 // レセメン会議（使われない期間＝180 日のトリガー）で要再検証に回る
-import { POINTS } from "../engine/points-2024";
+import { period } from "../demo/period";
+import { resolveRevision } from "../engine/revisions";
 import { applyEvent, createKnowledge, listKnowledge, type StoreOptions } from "./store";
 import type { LifecycleEvent, SourceType } from "./types";
 
@@ -44,7 +45,8 @@ export const LOCAL_SEEDS: Seed[] = [
   { slug: "seed-12", kubun: "D026_4", source: "提案", created: "2025-03-03", steps: [] },
 ];
 
-const nameOf = (kubun: string) => POINTS[kubun]?.name ?? kubun;
+/** 区分の名前は基準月の版の点数表から取る */
+const nameOf = (kubun: string) => resolveRevision(period.yearMonth).points[kubun]?.name ?? kubun;
 
 /** 院内ルールの種を入れる（すでにあるものは入れない）。入れた知識の id を返す */
 export function seedLocalRules(store: StoreOptions): string[] {

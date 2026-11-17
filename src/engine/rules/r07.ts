@@ -1,18 +1,23 @@
-// R07 処方箋料は内服 7 種類以上で 32 点（区分 2）。それ以外は 60 点（区分 3）
+// R07 処方箋料は内服の種類数が閾値以上で区分 2。それ以外は区分 3
+import { rxManyOral } from "../predicates";
+import type { RevisionConsts } from "../revisions/types";
 import type { Finding, Rule } from "../types";
-import { eventsOf, finding, has } from "./util";
+import { finding, has } from "./util";
 
-export const r07: Rule = {
-  id: "R07",
-  kubun: ["F400_3", "F400_2"],
-  reference: "F400 処方箋料 2・3",
-  appliesTo: (ctx) => has(ctx, "F400_3") || has(ctx, "F400_2"),
-  needs: () => [],
-  check(ctx) {
-    const out: Finding[] = [];
-    const many = eventsOf(ctx, "prescription").some((e) => e.oralKinds >= 7);
-    if (many && has(ctx, "F400_3")) out.push(finding(this, "区分誤り", ["F400_3"], "use_seven_or_more"));
-    if (!many && has(ctx, "F400_2")) out.push(finding(this, "区分誤り", ["F400_2"], "not_seven_or_more"));
-    return out;
-  },
-};
+export function makeR07(c: RevisionConsts): Rule {
+  const { many: MANY, other: OTHER } = c.rx;
+  return {
+    id: "R07",
+    kubun: [OTHER, MANY],
+    reference: "F400 処方箋料 2・3",
+    appliesTo: (ctx) => has(ctx, OTHER) || has(ctx, MANY),
+    needs: () => [],
+    check(ctx) {
+      const out: Finding[] = [];
+      const many = rxManyOral(ctx, c);
+      if (many && has(ctx, OTHER)) out.push(finding(this, "区分誤り", [OTHER], "use_seven_or_more"));
+      if (!many && has(ctx, MANY)) out.push(finding(this, "区分誤り", [MANY], "not_seven_or_more"));
+      return out;
+    },
+  };
+}

@@ -9,7 +9,7 @@ const claimId = z.string().regex(/^K\d{1,3}-\d{4}-\d{2}$/);
 const drillId = z.string().regex(/^[dm]\d{2}$/);
 /** 日付（YYYY-MM-DD） */
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-/** 区分（src/engine/points-2024.ts のキーの形） */
+/** 区分（点数表（src/engine/revisions/）のキーの形） */
 const kubun = z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/);
 
 /** 明細の 1 行（src/engine/types.ts の ClaimLine） */

@@ -1,18 +1,23 @@
-// R03 包括的支援加算は要介護 3 以上かつ重症区分以外。満たさないのに立てれば要件不足、満たすのに立てなければ取り忘れ
+// R03 包括的支援加算は要介護度が下限以上かつ重症区分以外。満たさないのに立てれば要件不足、満たすのに立てなければ取り忘れ
+import { hokatsuEligible } from "../predicates";
+import type { RevisionConsts } from "../revisions/types";
 import type { Rule } from "../types";
-import { C002_KANRI, fact, finding, has, present } from "./util";
+import { finding, has, present } from "./util";
 
-export const r03: Rule = {
-  id: "R03",
-  kubun: [...C002_KANRI, "C002_N10_HOKATSU"],
-  reference: "C002 注10 包括的支援加算",
-  appliesTo: (ctx) => present(ctx, C002_KANRI).length > 0,
-  needs: () => ["careLevel", "table8_2"],
-  check(ctx) {
-    const eligible = fact(ctx, "careLevel") >= 3 && !fact(ctx, "table8_2");
-    const claimed = has(ctx, "C002_N10_HOKATSU");
-    if (eligible && !claimed) return [finding(this, "取り忘れ", present(ctx, C002_KANRI), "missing")];
-    if (!eligible && claimed) return [finding(this, "要件不足", ["C002_N10_HOKATSU"], "not_eligible")];
-    return [];
-  },
-};
+export function makeR03(c: RevisionConsts): Rule {
+  const HOKATSU = c.hokatsu.kubun;
+  return {
+    id: "R03",
+    kubun: [...c.kanri.all, HOKATSU],
+    reference: "C002 注10 包括的支援加算",
+    appliesTo: (ctx) => present(ctx, c.kanri.all).length > 0,
+    needs: () => ["careLevel", "table8_2"],
+    check(ctx) {
+      const eligible = hokatsuEligible(ctx, c);
+      const claimed = has(ctx, HOKATSU);
+      if (eligible && !claimed) return [finding(this, "取り忘れ", present(ctx, c.kanri.all), "missing")];
+      if (!eligible && claimed) return [finding(this, "要件不足", [HOKATSU], "not_eligible")];
+      return [];
+    },
+  };
+}

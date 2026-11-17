@@ -4,12 +4,13 @@
 // 既にある知識は作り直さない（何度実行しても同じ）
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { RULES } from "../src/engine";
+import { period } from "../src/demo/period";
+import { rulesOf } from "../src/engine";
 import { createKnowledge, readKnowledge, type StoreOptions } from "../src/lifecycle/store";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** 初期投入の時刻（合成レセプトの診療年月の初日。固定条件） */
-export const SEED_AT = "2025-03-01T00:00:00+09:00";
+export const SEED_AT = period.seedAt;
 
 /** design.md §2-3 のルール一覧の「内容」 */
 export const RULE_TEXT: Record<string, string> = {
@@ -31,7 +32,7 @@ export const RULE_TEXT: Record<string, string> = {
 
 export function seed(store: StoreOptions): string[] {
   const made: string[] = [];
-  for (const rule of RULES) {
+  for (const rule of rulesOf(period.yearMonth)) {
     const slug = rule.id.toLowerCase();
     const id = `system/${slug}`;
     if (readKnowledge(store, id)) continue;

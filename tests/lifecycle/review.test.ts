@@ -256,3 +256,164 @@ describe("(h) 時刻の形式（v16。round-11 C-52）", () => {
     expect(b.reviewId).toBe(a.reviewId);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 改定の版（design.md v22 §4-4 手順 1、§7 #5 (i)〜(n)）。ここから下は v22 で足したテスト
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { eq } from "drizzle-orm";
+import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
+import { digestItems, reviews } from "../../src/db/schema";
+import { period } from "../../src/demo/period";
+import { ruleKubun } from "../../src/engine";
+import { meetingReview, type ReviewDeps } from "../../src/lifecycle/review";
+import { listKnowledge, readBody } from "../../src/lifecycle/store";
+import { reviewDepsOf } from "../../src/server/app";
+import { FAKE_REVISIONS } from "../engine/fake-revisions";
+import { CAL, T0 } from "./review-helpers";
+
+describe("改定の版と会議の整理（v22）", () => {
+  /** 版のない診療年月（全面移行の前のデータが残った場合） */
+  const OLD = "2000-01";
+  /** 版の有無を渡した配線。版のない年月で ruleKubun が呼ばれたら例外にして、呼ばれないことを確かめる */
+  const withRevisions = (): ReviewDeps => ({
+    ...h.deps,
+    hasRevision: (ym) => ym !== OLD,
+    ruleKubun: (id, ym) => {
+      if (ym === OLD) throw new Error(`診療年月に当たる版がない: ${ym}`);
+      return h.deps.ruleKubun(id, ym);
+    },
+  });
+  const skippedOf = (reviewId: string) => JSON.parse(h.deps.db.select().from(reviews).where(eq(reviews.reviewId, reviewId)).get()!.skipped) as string[];
+  const itemsOf = (deps: ReviewDeps) => buildDigest(deps).items;
+  const AT = "2025-03-10T00:00:00+09:00";
+
+  it("(i) ruleId を持つ知識の「関係あり」は、提出の診療年月の版のルールの kubun で決まる", () => {
+    // 作り物の版：F01 の対象区分は 2030 年の版で X1、2031 年の版で X2
+    const deps: ReviewDeps = { ...h.deps, ruleKubun: (id, ym) => ruleKubun(id, ym, FAKE_REVISIONS) };
+    const k = createKnowledge(h.deps.store, { layer: "制度", slug: "f01", summary: "F01", body: "F01 本文", source: { type: "初期投入", ref: "init" }, match: { ruleId: "F01" } }, T0).id;
+    h.submit("a", AT, { yearMonth: "2030-06", applied: ["F01"], kubun: ["X1", "X2"] });
+    h.submit("b", AT, { yearMonth: "2031-06", applied: ["F01"], kubun: ["X1", "X2"] });
+    // 同じ区分（X1）の査定でも、2030 年の提出では関係あり（外れ）、2031 年の提出では関係なし（当たり）
+    h.result("a", "査定", ["X1"], "2025-03-11T00:00:00+09:00");
+    h.result("b", "査定", ["X1"], "2025-03-11T00:00:00+09:00");
+    meetingReview(deps, "2025-03-15T00:00:00+09:00");
+    expect(counts(k)).toMatchObject({ hits: 1, misses: 1 });
+    const miss = itemsOf(deps).find((i) => i.kind === "miss" && i.knowledgeId === k)!;
+    expect(miss.reason).toMatchObject({ kind: "miss", misses: [{ submissionId: "a", kubun: ["X1"] }], sameApplied: [{ submissionId: "b", yearMonth: "2031-06", result: "査定" }] });
+  });
+
+  it("(j) 版のない提出が混ざっていても整理が最後まで回り、その提出は数え直しと議題に入らず、reviews.skipped に id が残る", () => {
+    const deps = withRevisions();
+    const k = h.regional("a");
+    const sys = h.system();
+    for (const [id, yearMonth] of [["old", OLD], ["new", "2025-03"], ["wait", "2025-03"], ["old-wait", OLD]] as const)
+      h.submit(id, AT, { yearMonth, applied: ["R01"], kubun: ["C001", "C002"] });
+    h.submit("old-ig", AT, { yearMonth: OLD, kubun: ["C002"], earlier: [["C001", "C002"]] });
+    h.result("old", "査定", ["C001", "C002"], "2025-03-11T00:00:00+09:00");
+    h.result("new", "査定", ["C001", "C002"], "2025-03-11T00:00:00+09:00");
+    const { reviewId } = meetingReview(deps, "2025-03-15T00:00:00+09:00");
+    expect(skippedOf(reviewId)).toEqual(["old", "old-ig", "old-wait"]);
+    expect(counts(k)).toMatchObject({ hits: 0, misses: 1 });
+    expect(counts(sys)).toMatchObject({ hits: 0, misses: 1 });
+    const digest = buildDigest(deps);
+    expect(digest.skippedCount).toBe(3);
+    const text = JSON.stringify(digest.items);
+    for (const id of ["old", "old-ig", "old-wait"]) expect(text).not.toContain(`"${id}"`);
+    expect(digest.items.filter((i) => i.kind === "ignored")).toEqual([]);
+    for (const id of [k, sys]) {
+      const miss = digest.items.find((i) => i.kind === "miss" && i.knowledgeId === id)!;
+      expect(miss.reason).toMatchObject({ misses: [{ submissionId: "new" }], sameApplied: [{ submissionId: "wait", result: "結果待ち" }] });
+    }
+    // もう一度回しても同じ
+    meetingReview(deps, "2025-03-15T00:00:00+09:00");
+    expect(counts(k)).toMatchObject({ hits: 0, misses: 1 });
+    expect(skippedOf(reviewId)).toEqual(["old", "old-ig", "old-wait"]);
+  });
+
+  it("(k) hasRevision を渡さない ReviewDeps では、どの年月の提出も整理の対象になる", () => {
+    expect(h.deps.hasRevision).toBeUndefined();
+    const k = h.regional("a");
+    h.submit("old", AT, { yearMonth: OLD });
+    h.submit("new", AT);
+    h.submit("old-ig", AT, { yearMonth: OLD, kubun: ["C002"], earlier: [["C001", "C002"]] });
+    h.result("old", "査定", ["C001"], "2025-03-11T00:00:00+09:00");
+    h.result("new", "査定", ["C001"], "2025-03-11T00:00:00+09:00");
+    const { reviewId } = h.review("2025-03-15T00:00:00+09:00");
+    expect(skippedOf(reviewId)).toEqual([]);
+    expect(counts(k)).toMatchObject({ misses: 2 });
+    const digest = buildDigest(h.deps);
+    expect(digest).not.toHaveProperty("skippedCount");
+    expect(digest.items.filter((i) => i.kind === "ignored").map((i) => i.submissionId)).toEqual(["old-ig"]);
+    expect((digest.items.find((i) => i.kind === "miss")!.reason as { misses: { submissionId: string }[] }).misses.map((m) => m.submissionId)).toEqual(["new", "old"]);
+  });
+
+  it("(l) 版のない提出を指す回答は反映しない：拾い直しでも、その場の回答でも stale。候補を作らず、misses に数えない", () => {
+    const k = h.regional("a");
+    for (const id of ["ig1", "ig2", "ig3"]) h.submit(id, AT, { yearMonth: OLD, kubun: ["C002"], earlier: [["C001", "C002"]] });
+    h.submit("m1", AT, { yearMonth: OLD });
+    h.result("m1", "査定", ["C001"], "2025-03-11T00:00:00+09:00");
+    // 版の有無を渡さない整理で、版のない提出の項目ができている（移行の前に作られた議題）
+    h.review("2025-03-15T00:00:00+09:00");
+    const item = (kind: string, submissionId: string | null) => itemsOf(h.deps).find((i) => i.kind === kind && i.submissionId === submissionId)!;
+    const [ig1, ig2, ig3, miss] = [item("ignored", "ig1"), item("ignored", "ig2"), item("ignored", "ig3"), item("miss", null)];
+    // ig2：移行の前に反映まで済んだ回答 2（applied=true）。外れに数えられている
+    expect(answerItem(h.deps, { itemId: ig2.itemId, answer: 2, freeText: "ig2 の記述" }, "2025-03-16T00:00:00+09:00").status).toBe("applied");
+    expect(counts(k)).toMatchObject({ misses: 2 });
+    // ig1：回答 2 が記録済みで、まだ反映していない（途中まで反映もしていない）
+    h.deps.db.update(digestItems).set({ answer: 2, freeText: "ig1 の記述", answeredAt: "2025-03-16T00:00:00+09:00", applied: false }).where(eq(digestItems.itemId, ig1.itemId)).run();
+
+    const deps = withRevisions();
+    // その場で届いた回答（answerItem）：ignored の回答 2 も、版のない提出を理由に含む miss の回答 2 も、記録だけ
+    expect(answerItem(deps, { itemId: ig3.itemId, answer: 2, freeText: "ig3 の記述" }, "2025-03-17T00:00:00+09:00")).toEqual({ status: "stale" });
+    expect(answerItem(deps, { itemId: miss.itemId, answer: 2, freeText: "miss の記述" }, "2025-03-17T00:00:00+09:00")).toEqual({ status: "stale" });
+    expect(h.get(k).status).toBe("承認済み");
+
+    const { reviewId } = meetingReview(deps, "2025-03-22T00:00:00+09:00");
+    expect(skippedOf(reviewId)).toEqual(["ig1", "ig2", "ig3", "m1"]);
+    const row = (itemId: string) => h.deps.db.select().from(digestItems).where(eq(digestItems.itemId, itemId)).get()!;
+    for (const i of [ig1, ig3, miss]) expect(row(i.itemId)).toMatchObject({ answer: 2, applied: false, stale: true });
+    // 候補は、移行の前に反映した ig2 の 1 件だけ。ig1・ig3・miss の記述は書き足されていない
+    const candidates = listKnowledge(h.deps.store).filter((m) => m.relates_to === k);
+    expect(candidates.length).toBe(1);
+    const body = readBody(h.deps.store, candidates[0].id);
+    expect(body).toContain("ig2 の記述");
+    for (const s of ["ig1 の記述", "ig3 の記述", "miss の記述"]) expect(body).not.toContain(s);
+    // 反映済み（applied=true）の ig2 も、版のない提出の外れ（m1）も misses に数えない。知識は動かない
+    expect(counts(k)).toEqual({ status: "承認済み", hits: 0, misses: 0 });
+    expect(itemsOf(deps).filter((i) => i.knowledgeId === k)).toEqual([]);
+  });
+
+  it("(m) 本番の配線が作る ReviewDeps は hasRevision を持ち、基準月で真、同梱の版のない年月で偽を返す", () => {
+    const deps = reviewDepsOf({ db: h.deps.db, store: h.deps.store, calendar: CAL });
+    expect(deps.hasRevision).toBeTypeOf("function");
+    expect(deps.hasRevision!(period.yearMonth)).toBe(true);
+    expect(deps.hasRevision!(OLD)).toBe(false);
+    expect(deps.ruleKubun("R01", period.yearMonth).length).toBeGreaterThan(0);
+    expect(() => deps.ruleKubun("R01", OLD)).toThrow(/版がない/);
+  });
+
+  it("(n) 旧い形の DB（reviews が 2 列）を migrate で開くと skipped の列が足され、整理が最後まで回って記録が残る。新しい DB でも同じ", () => {
+    const columns = (db: Database.Database) => (db.prepare("PRAGMA table_info(reviews)").all() as { name: string }[]).map((c) => c.name);
+    const old = new Database(":memory:");
+    migrate(old, APP_MIGRATIONS.slice(0, 1));
+    expect(columns(old)).toEqual(["review_id", "ran_at"]);
+    old.prepare("INSERT INTO reviews (review_id, ran_at) VALUES ('review-before', '2025-03-01T00:00:00.000Z')").run();
+    migrate(old, APP_MIGRATIONS);
+    expect(columns(old)).toEqual(["review_id", "ran_at", "skipped"]);
+
+    h.regional("a");
+    const deps: ReviewDeps = { ...h.deps, db: drizzle(old) };
+    const { reviewId } = meetingReview(deps, "2025-03-15T00:00:00+09:00");
+    expect(old.prepare("SELECT review_id, skipped FROM reviews ORDER BY ran_at").all()).toEqual([
+      { review_id: "review-before", skipped: "[]" },
+      { review_id: reviewId, skipped: "[]" },
+    ]);
+    expect(buildDigest(deps).reviewId).toBe(reviewId);
+    old.close();
+
+    // 新しく作った DB（テストの土台）でも同じ形になる
+    const fresh = h.review("2025-03-15T00:00:00+09:00");
+    expect(skippedOf(fresh.reviewId)).toEqual([]);
+  });
+});

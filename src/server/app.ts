@@ -20,7 +20,7 @@ import { createDailyCounter } from "./rate-limit";
 
 export { cleanName } from "./app/clerks";
 export { DEFAULT_NOW } from "./app/clock";
-export { defaultPaths, type AppPaths } from "./app/context";
+export { defaultPaths, reviewDepsOf, type AppPaths } from "./app/context";
 
 export function openApp(paths: AppPaths) {
   const ctx = openContext(paths);

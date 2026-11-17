@@ -27,6 +27,13 @@ CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, 
 CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
 `,
   },
+  {
+    // 会議の整理で対象から外した、版のない提出の id の一覧（JSON 配列の文字列。design.md §4-4）
+    version: 3,
+    sql: `
+ALTER TABLE reviews ADD COLUMN skipped TEXT NOT NULL DEFAULT '[]';
+`,
+  },
 ];
 
 /** ログインの auth.db */

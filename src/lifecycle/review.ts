@@ -26,9 +26,27 @@ export type ReviewDeps = {
   db: Db;
   store: StoreOptions;
   calendar: Calendar;
-  /** 制度層の知識が「関係あり」かを決める、エンジンの各ルールの kubun */
-  ruleKubun: (ruleId: string) => string[];
+  /** 制度層の知識が「関係あり」かを決める、エンジンの各ルールの kubun。提出の診療年月の版から取る */
+  ruleKubun: (ruleId: string, yearMonth: string) => string[];
+  /**
+   * 診療年月に当たる改定の版があるか（任意。渡すのは本番の配線だけ）。渡されなければ、すべての提出を版ありとして扱う。
+   * 版のない提出は、整理の最初に対象から外す（拾い直し・数え直し・議題のすべてで無いものとして扱う。§4-4 手順 1）
+   */
+  hasRevision?: (yearMonth: string) => boolean;
 };
+
+/** 版のない提出の id（昇順）。hasRevision を渡されていなければ空 */
+function skippedSubmissions(deps: ReviewDeps): string[] {
+  const has = deps.hasRevision;
+  if (!has) return [];
+  return deps.db
+    .select()
+    .from(submissions)
+    .all()
+    .filter((s) => !has(s.yearMonth))
+    .map((s) => s.submissionId)
+    .sort();
+}
 
 // ---------------------------------------------------------------------------
 // 提出（確定）
@@ -64,9 +82,12 @@ function judgeable(m: KnowledgeMeta): boolean {
   return !m.matchApprox && (m.match.ruleId !== undefined || (m.match.kubunAll?.length ?? 0) > 0);
 }
 
-/** 「関係あり」の区分：ruleId を持つ知識は層にかかわらずルールの kubun、それ以外は kubunAll（round-3 C-17、v20。round-14 X-55） */
-function relevantKubun(m: KnowledgeMeta, deps: ReviewDeps): string[] {
-  return m.match.ruleId !== undefined ? deps.ruleKubun(m.match.ruleId) : (m.match.kubunAll ?? []);
+/**
+ * 「関係あり」の区分：ruleId を持つ知識は層にかかわらずルールの kubun、それ以外は kubunAll（round-3 C-17、v20。round-14 X-55）。
+ * ルールの kubun は、その提出の診療年月の版から取る（版で対象区分が変わるため、提出ごとに計算する）
+ */
+function relevantKubun(m: KnowledgeMeta, deps: ReviewDeps, yearMonth: string): string[] {
+  return m.match.ruleId !== undefined ? deps.ruleKubun(m.match.ruleId, yearMonth) : (m.match.kubunAll ?? []);
 }
 
 /** §4-4 の変換表 */
@@ -85,7 +106,8 @@ export function effectOf(
 
 function observations(deps: ReviewDeps, meta: KnowledgeMeta): Observation[] {
   if (!judgeable(meta)) return [];
-  const rel = relevantKubun(meta, deps);
+  // 版のない提出は観測に入れない（ruleKubun も呼ばない）。数え直し・議題の除外はここ 1 か所で効く
+  const skipped = new Set(skippedSubmissions(deps));
   const rows = deps.db
     .select()
     .from(applications)
@@ -94,8 +116,10 @@ function observations(deps: ReviewDeps, meta: KnowledgeMeta): Observation[] {
     .all();
   const out: Observation[] = [];
   for (const r of rows) {
+    if (skipped.has(r.submissions.submissionId)) continue;
     const res = effectiveResult(deps.db, r.submissions.submissionId);
     if (!res) continue;
+    const rel = relevantKubun(meta, deps, r.submissions.yearMonth);
     const relatedKubun = res.kubun.filter((k) => rel.includes(k));
     out.push({
       submissionId: r.submissions.submissionId,
@@ -117,13 +141,16 @@ export function recount(deps: ReviewDeps, id: string): KnowledgeMeta {
   if (!meta) throw new Error(`知識が見つからない: ${id}`);
   const obs = observations(deps, meta).filter((o) => o.rev === meta.rev);
   const hitObs = obs.filter((o) => o.effect === "hit");
+  // 版のない提出への ignored の回答 2 は、反映済みでも外れに数えない
+  const skipped = new Set(skippedSubmissions(deps));
   const ignoredMisses = new Set(
     deps.db
       .select()
       .from(digestItems)
       .where(and(eq(digestItems.kind, "ignored"), eq(digestItems.knowledgeId, id), eq(digestItems.answer, 2), eq(digestItems.applied, true)))
       .all()
-      .map((r) => r.submissionId),
+      .map((r) => r.submissionId)
+      .filter((sid) => sid === null || !skipped.has(sid)),
   ).size;
   const candidates = [meta.last_used_at, ...hitObs.map((o) => o.importedAt)].filter((s): s is string => s !== null);
   const last = candidates.length ? candidates.reduce((a, b) => (ms(a) >= ms(b) ? a : b)) : null;
@@ -168,6 +195,9 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
   const ranAt = canonicalTime(now);
   const reviewId = `review-${ranAt}`;
 
+  // 版のない提出を分ける（§4-4 手順 1）。この後の拾い直し・数え直し・議題は、どれも同じ判定（skippedSubmissions）で除く
+  const skipped = skippedSubmissions(deps);
+
   // 手順 0：答えの拾い直し（round-10 C-47）
   const pending = deps.db
     .select()
@@ -197,7 +227,7 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
   hooks.onStep?.("digest");
   buildItems(deps, reviewId, now);
   // 整理を記録するのは最後（途中で止まった整理が、議題と次の会議の日の判定を隠さないように。round-14 X-56）
-  deps.db.insert(reviews).values({ reviewId, ranAt }).onConflictDoNothing().run();
+  deps.db.insert(reviews).values({ reviewId, ranAt, skipped: JSON.stringify(skipped) }).onConflictDoNothing().run();
   // 待たせていた miss が今回の議題から消えた recheck の答えを反映し、議題を作り直す（v21 補足。round-16 C-61）
   const held = deps.db
     .select()
@@ -285,13 +315,14 @@ function missReason(deps: ReviewDeps, meta: KnowledgeMeta): ItemReason | null {
     .map((o) => ({ submissionId: o.submissionId, resultId: o.resultId, kubun: o.relatedKubun }));
   if (misses.length === 0) return null;
   const missIds = new Set(misses.map((m) => m.submissionId));
+  const skipped = new Set(skippedSubmissions(deps));
   const sameApplied = deps.db
     .select()
     .from(applications)
     .innerJoin(submissions, eq(applications.submissionId, submissions.submissionId))
     .where(and(eq(applications.knowledgeId, meta.id), eq(applications.rev, meta.rev), eq(applications.role, "final"), eq(submissions.superseded, false)))
     .all()
-    .filter((r) => !missIds.has(r.submissions.submissionId))
+    .filter((r) => !missIds.has(r.submissions.submissionId) && !skipped.has(r.submissions.submissionId))
     .map((r) => ({
       submissionId: r.submissions.submissionId,
       claimId: r.submissions.claimId,
@@ -392,8 +423,10 @@ function buildItems(deps: ReviewDeps, reviewId: string, now: string): void {
     .innerJoin(submissions, eq(applications.submissionId, submissions.submissionId))
     .where(and(eq(applications.role, "ignored"), eq(submissions.superseded, false)))
     .all();
+  const skipped = new Set(skippedSubmissions(deps));
   for (const r of ignored) {
     const { submissionId, knowledgeId } = r.applications;
+    if (skipped.has(submissionId)) continue;
     const meta = metas.find((m) => m.id === knowledgeId);
     // 保管の知識には聞かない（v16 ユーザー判断）
     if (!meta || meta.status === "保管" || isClosed(deps, submissionId, knowledgeId)) continue;
@@ -447,9 +480,10 @@ export type DigestEntry = {
 };
 
 /** 最新の整理のまとめ（未回答の項目だけ）。ベテラン本人のメンター（F6）が言い換えて届ける */
-export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items: DigestEntry[] } {
+export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items: DigestEntry[]; skippedCount?: number } {
   const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
   if (!latest) return { reviewId: null, items: [] };
+  const skippedCount = (JSON.parse(latest.skipped) as string[]).length;
   const rows = deps.db
     .select()
     .from(digestItems)
@@ -468,6 +502,8 @@ export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items:
       choices: CHOICES[r.kind],
       ...(r.kind === "miss" ? { waitingRecheck: heldRecheck(deps, r.knowledgeId).length > 0 } : {}),
     })),
+    // 版がなくて整理の対象から外した提出の件数（あるときだけ。議題の末尾に件数だけを出す）
+    ...(skippedCount > 0 ? { skippedCount } : {}),
   };
 }
 
@@ -580,6 +616,13 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
   // 候補まで作り終えていれば、それも途中まで反映済みとみなす（round-11 C-54）
   const progressed = transitioned || (row.answer === 2 && findCandidate(deps, meta.id, itemId) !== null);
   if (!progressed) {
+    // 版のない提出を指す項目は反映しない（整理の手順 1 と同じ判定。候補も作らない。X-71）
+    const skipped = new Set(skippedSubmissions(deps));
+    if (skipped.size > 0) {
+      if (row.kind === "ignored" && skipped.has(row.submissionId ?? "")) return markStale();
+      const reason = JSON.parse(row.reason) as ItemReason;
+      if (reason.kind === "miss" && reason.misses.some((m) => skipped.has(m.submissionId))) return markStale();
+    }
     if (snapshotOf(deps, meta, now, row.kind) !== row.snapshot) return markStale();
     if (row.kind === "recheck") {
       // 同じ会議の外れの確認を優先する（審査支払機関が上位。v21。round-15 C-60）

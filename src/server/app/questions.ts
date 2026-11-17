@@ -1,5 +1,5 @@
 // 処理体験（1 件＝1 問）：問題の保存と進行、選択モード、練習問題
-import { POINTS } from "../../engine/points-2024";
+import { resolveRevision } from "../../engine/revisions";
 import type { ClaimContext, ClaimLine } from "../../engine/types";
 import { submit } from "../../lifecycle/review";
 import { choiceItems, judgePick } from "../../practice/choice";
@@ -47,9 +47,10 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   const inPhase = (q: Question, phase: Question["phase"], what: string) => {
     if (q.phase !== phase) throw conflict(`${what}: ${q.phase}`);
   };
-  /** 明細の区分は点数表にあるものだけ。ない区分は、判定に渡す前に利用者向けの誤りとして断る（文言は src/engine/points-2024.ts と同じ） */
-  const checkLines = (lines: ClaimLine[]) => {
-    const bad = lines.find((l) => !Object.hasOwn(POINTS, l.kubun));
+  /** 明細の区分は点数表にあるものだけ。ない区分は、判定に渡す前に利用者向けの誤りとして断る（文言はエンジンの pointsOf と同じ）。点数表は請求の診療年月の版 */
+  const checkLines = (lines: ClaimLine[], yearMonth: string) => {
+    const points = resolveRevision(yearMonth).points;
+    const bad = lines.find((l) => !Object.hasOwn(points, l.kubun));
     if (bad) throw badRequest(`未知の区分: ${bad.kubun}`);
   };
   const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
@@ -73,7 +74,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function draft(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
     inPhase(q, "ヒント", "下書きを確かめられない段階");
-    checkLines(lines);
+    checkLines(lines, caseFor(q).yearMonth);
     const r = checkDraft(q, { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } }, now(), judgeFor(q));
     saveQ(r.question);
     return r;
@@ -82,7 +83,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
     inPhase(q, "ヒント", "確定できない段階");
-    checkLines(lines);
+    checkLines(lines, caseFor(q).yearMonth);
     const ctx = { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } };
     let next = confirm(q, ctx, now(), judgeFor(q));
     // 医師確認の練習問題は、情報不足が残っている（医師に聞かずに確定した）ときや、照合の不一致が残っているときは不正解（FR-76）
