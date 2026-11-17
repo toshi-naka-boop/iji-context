@@ -1,5 +1,6 @@
 // 患者ごとに確かめた情報（履歴を残し、項目ごとに最新の 1 件を使う）
 import { isExpired, patientKeyOf, validatePatientFact, type PatientFact, type PatientFactInput } from "../../patient/facts";
+import { badRequest } from "../errors";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
@@ -31,7 +32,12 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   }
   function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput) {
     clerk(clerkId);
-    validatePatientFact(f, now());
+    // 入力の検査で落ちたものは、利用者に文言を返す（検査は src/patient/facts.ts）
+    try {
+      validatePatientFact(f, now());
+    } catch (e) {
+      throw badRequest(e instanceof Error ? e.message : String(e));
+    }
     const patientKey = patientKeyOf(patientOf(claimId));
     sqlite
       .prepare("INSERT INTO patient_facts (patient_key, fact_key, value, source, valid_until, checked_at, checked_by) VALUES (?, ?, ?, ?, ?, ?, ?)")

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import path from "node:path";
 import { assertTime, ms } from "../lifecycle/time";
 import type { ClerkTask, ConfirmedDisease, DoctorQuery } from "./types";
+import { badRequest, conflict, notFound } from "../server/errors";
 
 export const OTHER = "その他";
 export const UNDETERMINABLE = "判定不能";
@@ -103,7 +104,7 @@ function save(log: QueryLog, q: DoctorQuery): void {
 
 export function readQuery(log: QueryLog, id: string): DoctorQuery {
   const file = path.join(log.dir, `${id}.json`);
-  if (!existsSync(file)) throw new Error(`医師確認が見つからない: ${id}`);
+  if (!existsSync(file)) throw notFound(`医師確認が見つからない: ${id}`);
   return JSON.parse(readFileSync(file, "utf8")) as DoctorQuery;
 }
 
@@ -126,20 +127,20 @@ export function createQuery(log: QueryLog, draft: QueryDraft, now: string): Doct
   const errors = validateQuery(draft);
   if (errors.length) throw new Error(`医師確認の要件を満たさない: ${errors.join(" / ")}`);
   const id = `q-${createHash("sha256").update([draft.claimId, draft.field, now].join("\0")).digest("hex").slice(0, 12)}`;
-  if (existsSync(path.join(log.dir, `${id}.json`))) throw new Error(`同じ医師確認がすでにある: ${id}`);
+  if (existsSync(path.join(log.dir, `${id}.json`))) throw conflict(`同じ医師確認がすでにある: ${id}`);
   const q: DoctorQuery = { ...draft, id, createdAt: now, status: "未回答", answer: null, approval: null, remindedAt: null, heldAt: null };
   save(log, q);
   return q;
 }
 
 /** 医師の回答。選択肢から 1 つ。「その他」は自由記述が必須 */
-export function answerQuery(log: QueryLog, id: string, a: { option: string; freeText?: string; answeredBy: string }, now: string): DoctorQuery {
+export function answerQuery(log: QueryLog, id: string, a: { option: string; freeText?: string; answeredBy: string; answeredById?: string }, now: string): DoctorQuery {
   assertTime(now, "now");
   const q = readQuery(log, id);
-  if (q.status !== "未回答" && q.status !== "保留") throw new Error(`回答できない状態: ${q.status}`);
-  if (!q.options.includes(a.option)) throw new Error(`選択肢にない回答: ${a.option}`);
-  if (a.option === OTHER && !a.freeText?.trim()) throw new Error("「その他」には自由記述が必要");
-  const next: DoctorQuery = { ...q, status: "回答済み", answer: { option: a.option, freeText: a.freeText?.trim() || null, answeredBy: a.answeredBy, at: now } };
+  if (q.status !== "未回答" && q.status !== "保留") throw conflict(`回答できない状態: ${q.status}`);
+  if (!q.options.includes(a.option)) throw badRequest(`選択肢にない回答: ${a.option}`);
+  if (a.option === OTHER && !a.freeText?.trim()) throw badRequest("「その他」には自由記述が必要");
+  const next: DoctorQuery = { ...q, status: "回答済み", answer: { option: a.option, freeText: a.freeText?.trim() || null, answeredBy: a.answeredBy, ...(a.answeredById ? { answeredById: a.answeredById } : {}), at: now } };
   save(log, next);
   return next;
 }
@@ -148,12 +149,12 @@ export function answerQuery(log: QueryLog, id: string, a: { option: string; free
  * 医師の承認（確認ボタン）。承認者名と日時を残す（FR-33）。
  * 傷病名が確定するのは回答と承認がそろったときだけ（FR-32）。「判定不能」では確定しない
  */
-export function approveQuery(log: QueryLog, id: string, approver: string, now: string): { query: DoctorQuery; confirmed: ConfirmedDisease | null } {
+export function approveQuery(log: QueryLog, id: string, approver: string, now: string, approverId?: string): { query: DoctorQuery; confirmed: ConfirmedDisease | null } {
   assertTime(now, "now");
   if (!approver.trim()) throw new Error("承認者名が必要");
   const q = readQuery(log, id);
-  if (q.status !== "回答済み" || !q.answer) throw new Error(`承認できない状態: ${q.status}`);
-  const next: DoctorQuery = { ...q, status: "承認済み", approval: { approver, at: now } };
+  if (q.status !== "回答済み" || !q.answer) throw conflict(`承認できない状態: ${q.status}`);
+  const next: DoctorQuery = { ...q, status: "承認済み", approval: { approver, ...(approverId ? { approverId } : {}), at: now } };
   save(log, next);
   // 傷病名を確かめる質問（field が "SY:" で始まる）だけが傷病名を確定する。代行入力の確認などは確定しない
   const name = !q.field.startsWith("SY:") || q.answer.option === UNDETERMINABLE ? null : q.answer.option === OTHER ? q.answer.freeText : q.answer.option;

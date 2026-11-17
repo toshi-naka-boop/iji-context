@@ -5,6 +5,7 @@ import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/e
 import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
 import type { ClaimContext } from "../../engine/types";
 import type { Chart } from "../../uke/crosscheck";
+import { badRequest, conflict, notFound } from "../errors";
 import { contextAsOf, outlook, visitDays } from "../../visit/as-of";
 import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
@@ -22,9 +23,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
     const c = caseOf(claimId);
-    if (kind !== "訪問診療" && kind !== "往診") throw new Error(`訪問の種類が不正: ${kind}`);
+    if (kind !== "訪問診療" && kind !== "往診") throw badRequest(`訪問の種類が不正: ${kind}`);
     const date = now().slice(0, 10);
-    if (!date.startsWith(c.yearMonth)) throw new Error(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
+    if (!date.startsWith(c.yearMonth)) throw conflict(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
     const r = sqlite
       .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
       .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
@@ -33,16 +34,16 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
   function noteRow(id: number): NoteRow {
     const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
-    if (!r) throw new Error(`カルテがない: ${id}`);
+    if (!r) throw notFound(`カルテがない: ${id}`);
     return r;
   }
   const noteOf = (id: number) => JSON.parse(noteRow(id).note) as ChartNote;
   /** 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない */
   function confirmNote(id: number, facts: ExtractedFact[]) {
     const r = noteRow(id);
-    if (r.facts !== null) throw new Error(`もう確かめてある: ${id}`);
+    if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
     const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
-    if (v.dropped.length) throw new Error(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
+    if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
     sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }

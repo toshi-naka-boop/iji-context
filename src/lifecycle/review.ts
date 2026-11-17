@@ -20,6 +20,7 @@ import {
 import { assertTime, canonicalTime, ms } from "./time";
 import { evaluateTriggers, triggersOf } from "./triggers";
 import type { Basis, KnowledgeMeta, LifecycleEvent, TriggerKind } from "./types";
+import { notFound } from "../server/errors";
 
 export type ReviewDeps = {
   db: Db;
@@ -506,7 +507,7 @@ export function answerItem(
 ): AnswerOutcome {
   assertTime(now, "now");
   const row = deps.db.select().from(digestItems).where(eq(digestItems.itemId, input.itemId)).get();
-  if (!row) throw new Error(`未知の項目: ${input.itemId}`);
+  if (!row) throw notFound(`未知の項目: ${input.itemId}`);
   if (row.answer !== null) return { status: "duplicate" }; // round-4 X-19
   // 最新の会議に載っていない古い項目への回答は記録だけ（round-15 X-58）。回答が届いた時点で確かめ、
   // 回答と stale の印を同じ書き込みで残す（途中で止まっても拾い直しで反映されない。round-16 X-62）

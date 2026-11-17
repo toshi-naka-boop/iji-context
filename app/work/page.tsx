@@ -97,7 +97,7 @@ export default function Work() {
   }, []);
   /** 練習問題の一覧（本人が正解で終えたものに cleared が付く） */
   const loadDrills = () => api<{ fix: Drill[]; doctor: Drill[] }>("/api/drills").then(setDrills).catch(() => setDrills({ fix: [], doctor: [] }));
-  const loadVisits = () => api<Visit[]>(`/api/visits?clerkId=${CLERK}`).then(setVisits).catch(() => setVisits([]));
+  const loadVisits = () => api<Visit[]>("/api/visits").then(setVisits).catch(() => setVisits([]));
   async function sendProxy() {
     if (!q) return;
     setBusy(true);
@@ -111,7 +111,7 @@ export default function Work() {
       setBusy(false);
     }
   }
-  const loadCross = (claimId: string, asOf?: string) => api<Cross>(`/api/crosscheck?claimId=${claimId}&clerkId=${CLERK}${asOf ? `&asOf=${asOf}` : ""}`).then(setCross).catch(() => setCross(null));
+  const loadCross = (claimId: string, asOf?: string) => api<Cross>(`/api/crosscheck?claimId=${claimId}${asOf ? `&asOf=${asOf}` : ""}`).then(setCross).catch(() => setCross(null));
 
   useEffect(() => {
     if (!CLERK) return;
@@ -119,19 +119,19 @@ export default function Work() {
     api<Master>("/api/master").then(setMaster).catch(() => {});
     loadVisits();
     loadDrills();
-    api<MentorChoice>(`/api/character?clerkId=${CLERK}`).then(setMentorChoice).catch((e) => setErr(e.message));
-    api<{ imported: boolean; receipts: { claimId: string }[] }[]>(`/api/uke?clerkId=${CLERK}`)
+    api<MentorChoice>("/api/character").then(setMentorChoice).catch((e) => setErr(e.message));
+    api<{ imported: boolean; receipts: { claimId: string }[] }[]>("/api/uke")
       .then((us) => setUkeClaims(us.filter((u) => u.imported).flatMap((u) => u.receipts.map((r) => r.claimId))))
       .catch(() => setUkeClaims([]));
     refreshStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [CLERK]);
-  const refreshStatus = () => api<Status>(`/api/me?clerkId=${CLERK}`).then(setStatus).catch(() => {});
+  const refreshStatus = () => api<Status>("/api/me").then(setStatus).catch(() => {});
   /** 防いだ額は本人が開いたときだけ取りにいく（FR-57） */
   async function togglePrevented() {
     const next = !showPrevented;
     setShowPrevented(next);
-    if (next) setPrevented(await api<{ prevented: Prevented }>(`/api/me?clerkId=${CLERK}&optIn=1`).then((d) => d.prevented).catch(() => null));
+    if (next) setPrevented(await api<{ prevented: Prevented }>("/api/me?optIn=1").then((d) => d.prevented).catch(() => null));
   }
 
   const ctx = useMemo(() => qCase ?? cases.find((c) => c.claimId === q?.claimId) ?? null, [qCase, cases, q]);
@@ -214,7 +214,7 @@ export default function Work() {
   async function sendQuery(ruleId: string) {
     if (!q) return;
     try {
-      await api("/api/crosscheck", { claimId: q.claimId, ruleId, asOf: q.asOf, clerkId: CLERK });
+      await api("/api/crosscheck", { claimId: q.claimId, ruleId, asOf: q.asOf });
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -228,7 +228,7 @@ export default function Work() {
     setChoices([]);
     if (!silent) setChat((c) => [...c, { from: "me", text: message }]);
     try {
-      const r = await api<{ output: MentorOutput; choices: { ruleId: string; about: string }[] }>("/api/mentor", { clerkId: CLERK, questionId, message, situation, skipCrosscheck });
+      const r = await api<{ output: MentorOutput; choices: { ruleId: string; about: string }[] }>("/api/mentor", { questionId, message, situation, skipCrosscheck });
       setChat((c) => [...c, { from: "mentor", text: r.output.body, expression: r.output.expression, face: faceFor(situation, r.output.topic) }]);
       if (r.choices?.length) {
         setChoices(r.choices);
@@ -314,7 +314,7 @@ export default function Work() {
         <div className="panel">
           <h2 style={{ marginTop: 0 }}>一緒に働くメンターを選んでください</h2>
           <p className="muted">あとから「設定」で変えられます。</p>
-          <MentorPicker choice={mentorChoice} clerkId={CLERK} onChange={setMentorChoice} onError={setErr} onPick={() => { unlockAudio(); setJustPicked(true); }} />
+          <MentorPicker choice={mentorChoice} onChange={setMentorChoice} onError={setErr} onPick={() => { unlockAudio(); setJustPicked(true); }} />
         </div>
       )}
       {showWelcome && mentorChoice && (
@@ -475,7 +475,6 @@ export default function Work() {
             )}
             <PatientPanel
               claimId={q.claimId}
-              clerkId={CLERK}
               facts={ctx.facts}
               editable={q.phase === "ヒント" && q.mode !== "選択" && !q.drill}
               onSaved={() => {
