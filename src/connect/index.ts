@@ -7,7 +7,7 @@ import { createFixtureConnector } from "./fixture";
 import { createOrcaConnector, ORCA_ID } from "./orca";
 import type { Connector } from "./types";
 
-export type { ChartSource, ClaimSource, Connector, ConnectorChart, ConnectorClaims, ConnectorCoverage, ConnectorPatient, PatientSource, UnmappedLine } from "./types";
+export type { ChartSource, ClaimSource, Connector, ConnectorChart, ConnectorClaims, ConnectorPatient, PatientSource, UnmappedLine } from "./types";
 export { ConnectError, type ConnectErrorKind } from "./fetch";
 
 const EXTERNAL: Record<string, () => Connector> = { [ORCA_ID]: createOrcaConnector, [FHIR_ID]: createFhirConnector };

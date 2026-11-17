@@ -2,7 +2,8 @@
 // 相手は同梱の模擬サーバー（fixtures/connect/mock-server.ts）。実機にはつないでいない
 import { z } from "zod";
 import { connectJson, ConnectError, connectorEnv, formatError } from "./fetch";
-import { assertQuery, monthRange, type Connector, type ConnectorChart, type ConnectorCoverage, type ConnectorPatient } from "./types";
+import type { CoverageInfo } from "../patient/profile";
+import { assertQuery, monthRange, type Connector, type ConnectorChart, type ConnectorPatient } from "./types";
 
 export const FHIR_ID = "fhir";
 
@@ -142,20 +143,20 @@ function insuredOf(c: z.infer<typeof FhirCoverage>): { number: string; symbol: s
 }
 
 /** Coverage 1 件を加入情報にする。医療保険とも公費とも読めなければ null */
-export function toCoverage(c: z.infer<typeof FhirCoverage>): ConnectorCoverage | null {
+export function toCoverage(c: z.infer<typeof FhirCoverage>): CoverageInfo | null {
   const rest = { burdenRatio: null, validFrom: day(c.period?.start), validUntil: day(c.period?.end) };
   const insured = insuredOf(c);
   if (insured) {
     // 記号・番号の拡張があれば、そちらを採る（券面どおりの値）
     const ext = (url: string) => c.extension?.find((e) => e.url === url)?.valueString;
-    return { kind: "医療保険", number: insured.number, symbol: ext(FHIR_WIRE.symbolExtension) ?? insured.symbol, memberNo: ext(FHIR_WIRE.numberExtension) ?? insured.memberNo, ...rest };
+    return { kind: "医保", payerNumber: insured.number, symbol: ext(FHIR_WIRE.symbolExtension) ?? insured.symbol, memberNo: ext(FHIR_WIRE.numberExtension) ?? insured.memberNo, ...rest };
   }
   // 公費（置き場所は未確認。上の注）
   const system = kohiSystem();
   const payer = c.payor.map((p) => p.identifier).find((i) => i?.value && i.system === system);
   // 医療保険とも公費とも読めない加入情報は、種類を決められないので写さない
   if (!payer?.value) return null;
-  return { kind: "公費", number: payer.value, symbol: "", memberNo: c.subscriberId ?? "", ...rest };
+  return { kind: "公費", payerNumber: payer.value, symbol: "", memberNo: c.subscriberId ?? "", ...rest };
 }
 
 /** 氏名。漢字の表記（IDE）を採る。印がなければ、カナ（SYL）でない最初の名前 */
@@ -216,8 +217,8 @@ export function createFhirConnector(): Connector {
           patientId,
           name,
           sex: p.gender === "male" ? 1 : p.gender === "female" ? 2 : null,
-          birth: p.birthDate,
-          coverages: coverages.map(toCoverage).filter((c): c is ConnectorCoverage => c !== null),
+          birth: p.birthDate.replaceAll("-", ""),
+          coverages: coverages.map(toCoverage).filter((c): c is CoverageInfo => c !== null),
         };
       },
     },

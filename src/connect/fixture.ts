@@ -6,7 +6,8 @@ import type { ClaimContext } from "../engine/types";
 import type { Chart } from "../uke/crosscheck";
 import type { UkeFile, UkeReceipt } from "../uke/types";
 import { parseUke } from "../uke/uke";
-import { assertQuery, type Connector, type ConnectorCoverage } from "./types";
+import { recordOfUke } from "../patient/profile";
+import { assertQuery, type Connector } from "./types";
 
 export const FIXTURE_ID = "fixture";
 const UKE_FILES = ["kokuhoren.UKE", "shiharaikikin.UKE"];
@@ -40,12 +41,8 @@ export function createFixtureConnector(root = process.cwd()): Connector {
         const { patient } = receiptOf(patientId);
         // 負担割合は症例の事実から。有効期間は合成データにないので null（患者情報チェックでは「情報不足」になる）
         const ratio = json<ClaimContext>("cases", patientId)?.facts.burdenRatio;
-        const blank = { burdenRatio: null, validFrom: null, validUntil: null };
-        const coverages: ConnectorCoverage[] = [
-          { ...blank, kind: "医療保険", number: patient.insurer.number, symbol: patient.insurer.symbol, memberNo: patient.insurer.no, burdenRatio: ratio?.known ? ratio.value : null },
-          ...patient.kohi.map((k) => ({ ...blank, kind: "公費" as const, number: k.payerNo, symbol: "", memberNo: k.recipientNo })),
-        ];
-        return { patientId, name: patient.name, sex: patient.sex, birth: isoDate(patient.birth), coverages };
+        const record = recordOfUke(patient);
+        return { ...record, patientId, coverages: record.coverages.map((c) => (c.kind === "医保" ? { ...c, burdenRatio: ratio?.known ? ratio.value : null } : c)) };
       },
     },
     claims: {

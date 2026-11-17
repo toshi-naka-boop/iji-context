@@ -3,11 +3,12 @@
 // 持っているのは患者基本情報（PatientSource）だけ。請求（診療行為）は、公式仕様が xml2 形式だけなので読んでいない（下の注）
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { fictionalCode } from "../engine/codes-fictional";
-import { POINTS } from "../engine/points-2024";
+import { CODE_TABLE } from "../engine/codes-fictional";
+import { hasRevision, resolveRevision } from "../engine/revisions";
 import type { ClaimLine } from "../engine/types";
+import type { CoverageInfo } from "../patient/profile";
 import { connectJson, ConnectError, connectorEnv, formatError } from "./fetch";
-import { assertQuery, type Connector, type ConnectorCoverage, type ConnectorPatient, type UnmappedLine } from "./types";
+import { assertQuery, type Connector, type ConnectorPatient, type UnmappedLine } from "./types";
 
 export const ORCA_ID = "orca";
 
@@ -101,7 +102,7 @@ function toPatient(patientId: string, raw: unknown): ConnectorPatient {
   if (!p) throw formatError(ORCA_ID, "患者基本情報", [{ path: [ORCA_WIRE.patientRoot, "Patient_Information"] }]);
   if (p.Patient_ID !== patientId) throw new ConnectError(ORCA_ID, "format", "頼んだ患者と違う患者の応答が返った");
   // 応答は「保険組合せ」の一覧なので、同じ医療保険・同じ公費が何度も出る。重ねて数えない
-  const coverages = new Map<string, ConnectorCoverage>();
+  const coverages = new Map<string, CoverageInfo>();
   for (const h of p.HealthInsurance_Information ?? []) {
     const publics = h.PublicInsurance_Information ?? [];
     if (h.InsuranceProvider_Number && h.HealthInsuredPerson_Number) {
@@ -110,8 +111,8 @@ function toPatient(patientId: string, raw: unknown): ConnectorPatient {
       // 負担割合は組合せごとの値。医療保険そのものの割合として使うのは、公費の付かない組合せの値だけ
       const rate = publics.length === 0 && h.InsuranceCombination_Rate_Outpatient ? Number(h.InsuranceCombination_Rate_Outpatient) : null;
       coverages.set(key, {
-        kind: "医療保険",
-        number: h.InsuranceProvider_Number,
+        kind: "医保",
+        payerNumber: h.InsuranceProvider_Number,
         symbol,
         memberNo: h.HealthInsuredPerson_Number,
         burdenRatio: rate ?? coverages.get(key)?.burdenRatio ?? null,
@@ -122,7 +123,7 @@ function toPatient(patientId: string, raw: unknown): ConnectorPatient {
     for (const k of publics) {
       coverages.set(`公費/${k.PublicInsurer_Number}/${k.PublicInsuredPerson_Number}`, {
         kind: "公費",
-        number: k.PublicInsurer_Number,
+        payerNumber: k.PublicInsurer_Number,
         symbol: "",
         memberNo: k.PublicInsuredPerson_Number,
         burdenRatio: null,
@@ -131,7 +132,7 @@ function toPatient(patientId: string, raw: unknown): ConnectorPatient {
       });
     }
   }
-  return { patientId, name: p.WholeName, sex: Number(p.Sex) as 1 | 2, birth: p.BirthDate, coverages: [...coverages.values()] };
+  return { patientId, name: p.WholeName, sex: Number(p.Sex) as 1 | 2, birth: p.BirthDate.replaceAll("-", ""), coverages: [...coverages.values()] };
 }
 
 export function createOrcaConnector(): Connector {
@@ -169,7 +170,7 @@ export const OrcaMedicalMonth = z.object({
  */
 export function loadCodeMap(): Map<string, string> {
   const file = connectorEnv(ORCA_ID, "CODEMAP");
-  if (!file) return new Map(Object.keys(POINTS).map((kubun) => [fictionalCode(kubun), kubun]));
+  if (!file) return new Map(CODE_TABLE.map((r) => [r.code, r.kubun]));
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(file, "utf8"));
@@ -186,6 +187,9 @@ export function medicalMonthToLines(raw: unknown, query: { claimId: string; year
   const parsed = OrcaMedicalMonth.safeParse(raw);
   if (!parsed.success) throw formatError(ORCA_ID, "診療行為", parsed.error.issues);
   if (parsed.data.Perform_Date !== query.yearMonth) throw new ConnectError(ORCA_ID, "format", "頼んだ診療年月と違う月の応答が返った");
+  // 該当する版がない診療年月は判定しない（近い版で代用しない）
+  if (!hasRevision(query.yearMonth)) throw new ConnectError(ORCA_ID, "format", "診療年月に当たる版がない");
+  const points = resolveRevision(query.yearMonth).points;
   const lines: ClaimLine[] = [];
   const unmapped: UnmappedLine[] = [];
   for (const m of parsed.data.Medical_List_Information ?? []) {
@@ -193,7 +197,7 @@ export function medicalMonthToLines(raw: unknown, query: { claimId: string; year
     const dates = [...m.Perform_Calendar].flatMap((c, i) => (c === "1" ? [`${query.yearMonth}-${String(i + 1).padStart(2, "0")}`] : []));
     if (dates.length === 0) continue;
     const kubun = codeMap.get(m.Medication_Code);
-    if (kubun === undefined || !(kubun in POINTS)) unmapped.push({ claimId: query.claimId, code: m.Medication_Code, dates });
+    if (kubun === undefined || !Object.hasOwn(points, kubun)) unmapped.push({ claimId: query.claimId, code: m.Medication_Code, dates });
     else lines.push({ kubun, count: dates.length, dates });
   }
   return { lines, unmapped };

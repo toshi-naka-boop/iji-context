@@ -7,12 +7,13 @@ import { coverageCsvId, createFhirConnector, FHIR_WIRE, FhirCondition, FhirCover
 import { createFixtureConnector } from "../../src/connect/fixture";
 import { createOrcaConnector, medicalMonthToLines, OrcaPatientResponse } from "../../src/connect/orca";
 import { fictionalCode } from "../../src/engine/codes-fictional";
+import { CONNECT_FILES, generate, MOCK_PATIENTS } from "../../scripts/gen-connect";
 import { loadCase } from "../engine/helpers";
+import { claimId, dateIn, day, month as monthFrom, YM } from "../helpers/period";
 import { failure, pointAt, startMock, type Mock } from "./helpers";
 
 const root = path.join(__dirname, "..", "..");
 const json = (f: string) => JSON.parse(readFileSync(path.join(root, f), "utf8"));
-const YM = "2025-03";
 
 let mock: Mock;
 beforeAll(async () => {
@@ -25,19 +26,31 @@ const orca = createOrcaConnector();
 const fhir = createFhirConnector();
 const fixture = createFixtureConnector(root);
 
-/** 3 つのコネクタで同じになるはずの K3（負担割合は接続先によって取れる・取れないがある） */
-const k3 = (ratio: number | null) => ({
-  patientId: "K3",
-  name: "架空　三郎",
-  sex: 1,
-  birth: "1946-04-01",
-  coverages: [
-    { kind: "医療保険", number: "39139999", symbol: "", memberNo: "00000003", burdenRatio: ratio, validFrom: null, validUntil: null },
-    { kind: "公費", number: "54139999", symbol: "", memberNo: "9999999", burdenRatio: null, validFrom: "2024-10-01", validUntil: "2025-09-30" },
-  ],
-});
+const nextMonth = monthFrom(1);
+/** 合成データの患者（fixtures/uke/patients.json）。模擬サーバーのデータはここから作ってある */
+const patientOf = (k: string) => json("fixtures/uke/patients.json").patients[claimId(k)];
+/** 3 つのコネクタで同じになるはずの K3（負担割合は接続先によって取れる・取れないがある。公費の有効期間は模擬サーバーの仮置き） */
+const k3 = (ratio: number | null) => {
+  const p = patientOf("K3");
+  return {
+    patientId: "K3",
+    name: p.name,
+    sex: 1,
+    birth: p.birth,
+    coverages: [
+      { kind: "医保", payerNumber: p.insurer.number, symbol: "", memberNo: p.insurer.no, burdenRatio: ratio, validFrom: null, validUntil: null },
+      { kind: "公費", payerNumber: p.kohi[0].payerNo, symbol: "", memberNo: p.kohi[0].recipientNo, burdenRatio: null, validFrom: dateIn(-6, 1), validUntil: dateIn(5, 31) },
+    ],
+  };
+};
 
 describe("模擬サーバーの応答は、コネクタと同じ定義（スキーマ）に合う", () => {
+  it("模擬データは、症例と同じ合成データから作り直したものと一致する（基準月の患者・訪問日）", () => {
+    const out = generate();
+    expect(readFileSync(path.join(root, CONNECT_FILES.orca), "utf8")).toBe(out.orca);
+    expect(readFileSync(path.join(root, CONNECT_FILES.fhir), "utf8")).toBe(out.fhir);
+    expect(Object.keys(MOCK_PATIENTS)).toEqual(["K1", "K3", "K4"]);
+  });
   it("ORCA 形式", () => {
     const data = json("fixtures/connect/orca.json");
     expect(Object.keys(data.patients)).toEqual(["K1", "K3", "K4"]);
@@ -60,7 +73,8 @@ describe("ORCA 形式のコネクタ（患者基本情報）", () => {
     const same = await fixture.patient!.getPatient("K3");
     const core = (p: typeof got) => ({ ...p, coverages: p.coverages.map(({ validFrom, validUntil, ...c }) => c) });
     expect(core(got)).toEqual(core(same));
-    expect((await orca.patient!.getPatient("K1")).coverages).toEqual([{ kind: "医療保険", number: "39139999", symbol: "", memberNo: "00000001", burdenRatio: 0.1, validFrom: null, validUntil: null }]);
+    const k1 = patientOf("K1");
+    expect((await orca.patient!.getPatient("K1")).coverages).toEqual([{ kind: "医保", payerNumber: k1.insurer.number, symbol: "", memberNo: k1.insurer.no, burdenRatio: 0.1, validFrom: null, validUntil: null }]);
   });
 
   it("壊れた応答は形式違い（どの項目かだけを出す）。相手の失敗の結果は upstream、いない患者は not_found、認証失敗は auth", async () => {
@@ -92,15 +106,15 @@ describe("診療月診療コード情報 → 算定行（通信なし。公式�
     Perform_Date: YM,
     Medical_List_Information: [...loadCase(k).lines.map((l) => ({ Medication_Code: fictionalCode(l.kubun), Perform_Calendar: calendar(l.dates) })), ...extra],
   });
-  const query = (k: string) => ({ claimId: `${k}-${YM}`, yearMonth: YM });
+  const query = (k: string) => ({ claimId: claimId(k), yearMonth: YM });
 
   it("算定日区分（Perform_Calendar）から日付を作り、症例と同じ算定行になる", () => {
     for (const k of ["K1", "K3", "K4"]) expect(medicalMonthToLines(month(k), query(k))).toEqual({ lines: loadCase(k).lines, unmapped: [] });
   });
 
   it("対応のないコードは例外にせず unmapped に入り、算定行には入らない", () => {
-    const got = medicalMonthToLines(month("K1", [{ Medication_Code: "000000000", Perform_Calendar: calendar(["2025-03-12"]) }]), query("K1"));
-    expect(got.unmapped).toEqual([{ claimId: "K1-2025-03", code: "000000000", dates: ["2025-03-12"] }]);
+    const got = medicalMonthToLines(month("K1", [{ Medication_Code: "000000000", Perform_Calendar: calendar([day(12)]) }]), query("K1"));
+    expect(got.unmapped).toEqual([{ claimId: claimId("K1"), code: "000000000", dates: [day(12)] }]);
     expect(got.lines).toEqual(loadCase("K1").lines);
   });
 
@@ -114,10 +128,13 @@ describe("診療月診療コード情報 → 算定行（通信なし。公式�
     expect((await failure(async () => medicalMonthToLines(month("K4"), query("K4")))).kind).toBe("config");
   });
 
-  it("形の違う応答・頼んだ月と違う応答は形式違い", async () => {
+  it("形の違う応答・頼んだ月と違う応答・版のない診療年月は形式違い", async () => {
     const bad = { Perform_Date: YM, Medical_List_Information: [{ Medication_Code: "x", Perform_Calendar: "1" }] };
     expect((await failure(async () => medicalMonthToLines(bad, query("K1")))).kind).toBe("format");
-    expect((await failure(async () => medicalMonthToLines({ ...month("K1"), Perform_Date: "2025-04" }, query("K1")))).kind).toBe("format");
+    expect((await failure(async () => medicalMonthToLines({ ...month("K1"), Perform_Date: nextMonth }, query("K1")))).kind).toBe("format");
+    // 同梱の版より前の診療年月（2024 年度）は判定しない
+    const old = "2025-03";
+    expect((await failure(async () => medicalMonthToLines({ ...month("K1"), Perform_Date: old }, { claimId: `K1-${old}`, yearMonth: old }))).message).toContain("版がない");
   });
 });
 
@@ -133,12 +150,12 @@ describe("FHIR 形式のコネクタ", () => {
     expect(csv).toBe('"00138057","１２－３４","５６７８","01"');
     const coverage = (identifier: { system: string; value: string }[], extension: unknown[] = []) =>
       toCoverage(FhirCoverage.parse({ resourceType: "Coverage", payor: [{}], identifier, extension, period: { start: "2024-04-01" } }));
-    const want = { kind: "医療保険", number: "138057", symbol: "12-34", memberNo: "5678", burdenRatio: null, validFrom: "2024-04-01", validUntil: null };
+    const want = { kind: "医保", payerNumber: "138057", symbol: "12-34", memberNo: "5678", burdenRatio: null, validFrom: "2024-04-01", validUntil: null };
     expect(coverage([{ system: FHIR_WIRE.coverageCsvSystem, value: csv }])).toEqual(want);
     // コロン区切り（JP Core の例 "00012345:あいう:１８７:05"）は、記号・番号を券面のまま写す。記号と枝番がない形（"00012345::１８７:"）も読む。
     // 保険者番号は、こちらも 00 で始まる 8 桁を 6 桁に戻す（仕様の例の番号は 5 桁を 8 桁にしたもので、実在の桁数ではない）
-    expect(coverage([{ system: FHIR_WIRE.coverageMemberSystem, value: "00012345:あいう:１８７:05" }])).toEqual({ ...want, number: "012345", symbol: "あいう", memberNo: "１８７" });
-    expect(coverage([{ system: FHIR_WIRE.coverageMemberSystem, value: "01139999::１８７:" }])).toMatchObject({ number: "01139999", symbol: "", memberNo: "１８７" });
+    expect(coverage([{ system: FHIR_WIRE.coverageMemberSystem, value: "00012345:あいう:１８７:05" }])).toEqual({ ...want, payerNumber: "012345", symbol: "あいう", memberNo: "１８７" });
+    expect(coverage([{ system: FHIR_WIRE.coverageMemberSystem, value: "01139999::１８７:" }])).toMatchObject({ payerNumber: "01139999", symbol: "", memberNo: "１８７" });
     expect(
       coverage(
         [{ system: FHIR_WIRE.coverageCsvSystem, value: csv }],
@@ -156,7 +173,7 @@ describe("FHIR 形式のコネクタ", () => {
   it("公費負担者番号の identifier system は設定で差し替える（未確認のため）。合わない加入情報は写さない", async () => {
     pointAt(mock);
     vi.stubEnv("RESEMEN_CONNECT_FHIR_KOHI_SYSTEM", "urn:example:another-system");
-    expect((await fhir.patient!.getPatient("K3")).coverages.map((c) => c.kind)).toEqual(["医療保険"]);
+    expect((await fhir.patient!.getPatient("K3")).coverages.map((c) => c.kind)).toEqual(["医保"]);
   });
 
   it("Encounter・MedicationRequest・Condition が訪問日・処方・傷病名になり、合成カルテと同じ日付・同じ処方になる", async () => {
@@ -166,10 +183,10 @@ describe("FHIR 形式のコネクタ", () => {
       patientId: "K4",
       yearMonth: YM,
       entries: [
-        { date: "2025-03-11", s: "", a: "", p: "" },
-        { date: "2025-03-25", s: "", a: "", p: "" },
+        { date: day(13), s: "", a: "", p: "" },
+        { date: day(27), s: "", a: "", p: "" },
       ],
-      prescriptions: [{ date: "2025-03-11", category: "DOAC" }],
+      prescriptions: [{ date: day(13), category: "DOAC" }],
       diseases: [{ name: "心房細動", start: "2024-04-01" }],
     });
     const same = await fixture.chart!.getChart({ patientId: "K4", yearMonth: YM });
@@ -177,7 +194,7 @@ describe("FHIR 形式のコネクタ", () => {
     expect([k4.prescriptions, k4.diseases]).toEqual([same.prescriptions, same.diseases]);
     // 12 回の訪問（1 ページ 1 件）もたどれる。別の月は空
     expect((await fhir.chart!.getChart({ patientId: "K3", yearMonth: YM })).entries).toHaveLength(12);
-    expect((await fhir.chart!.getChart({ patientId: "K3", yearMonth: "2025-04" })).entries).toEqual([]);
+    expect((await fhir.chart!.getChart({ patientId: "K3", yearMonth: nextMonth })).entries).toEqual([]);
   });
 
   it("next リンクが別のホスト・接続先の範囲の外を指していたら拒否する。自分を指し続ける next は上限で止める", async () => {

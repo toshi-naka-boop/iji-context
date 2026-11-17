@@ -1,37 +1,15 @@
 // 連携の境界の型（spec FR-104）。外部とのやり取りは、患者基本情報／請求／カルテ記載の 3 つに分ける。
 // 画面と判定はこの型だけに依存し、個別の接続先（ORCA 形式・FHIR 形式・同梱の合成データ）を知らない
+import type { PatientRecord } from "../patient/profile";
 import type { UkeFile } from "../uke/types";
 
 /**
- * 保険・公費の加入情報 1 件。
- * 患者マスタの型（src/patient/profile.ts。別の作業で作成中）と統合するまでの、同じ趣旨の型
+ * 患者基本情報。中身は患者マスタに取り込む形（src/patient/profile.ts の PatientRecord・CoverageInfo）そのもので、
+ * コネクタはそれに接続先での患者の id を足すだけ（同じ趣旨の型を 2 つ持たない）
  */
-export type ConnectorCoverage = {
-  kind: "医療保険" | "公費";
-  /** 保険者番号（医療保険）または公費負担者番号（公費） */
-  number: string;
-  /** 被保険者証の記号（医療保険だけ。ないときは空文字） */
-  symbol: string;
-  /** 被保険者証の番号（医療保険）または受給者番号（公費） */
-  memberNo: string;
-  /** 負担割合（0.1 など）。接続先から取れないとき・公費は null */
-  burdenRatio: number | null;
-  /** 有効期間の始まり YYYY-MM-DD。分からないときは null */
-  validFrom: string | null;
-  /** 有効期間の終わり YYYY-MM-DD。分からない・期限なしは null */
-  validUntil: string | null;
-};
-
-/** 患者基本情報 */
-export type ConnectorPatient = {
-  /** 接続先での患者の id（患者番号）。保険者番号に依存しない */
+export type ConnectorPatient = PatientRecord & {
+  /** 接続先での患者の id（患者番号）。保険者番号に依存しない。患者マスタの id とは別 */
   patientId: string;
-  name: string;
-  /** 1 男、2 女。接続先が「不明・その他」を返したときは null */
-  sex: 1 | 2 | null;
-  /** YYYY-MM-DD */
-  birth: string;
-  coverages: ConnectorCoverage[];
 };
 
 /** 対応表にない診療行為コードの行（判定の対象外。spec FR-111） */

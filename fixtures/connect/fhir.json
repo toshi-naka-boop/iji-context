@@ -1,5 +1,5 @@
 {
-  "_note": "模擬サーバー（FHIR JP Core 形式）が返すリソース。合成データ。患者・保険・公費・傷病名は fixtures/uke/patients.json、訪問日と処方は fixtures/charts/ の K1・K3・K4 から。処方は分類名だけ（薬剤名は作らない）。医療保険の identifier・拡張・氏名の表記の拡張は JP Core V1.2.0 の定義どおり。公費負担者番号の identifier system と受給者番号の置き場所は未確認の仮の形（src/connect/fhir.ts の注）。氏名のカナ・訪問の時刻・公費の有効期間は架空の仮置き",
+  "_note": "模擬サーバー（FHIR JP Core 形式）が返すリソース。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者・保険・公費・傷病名は fixtures/uke/patients.json、訪問日と処方は fixtures/charts/ の K1・K3・K4 から。処方は分類名だけ（薬剤名は作らない）。医療保険の identifier・拡張・氏名の表記の拡張は JP Core V1.2.0 の定義どおり。公費負担者番号の identifier system と受給者番号の置き場所は未確認の仮の形（src/connect/fhir.ts の注）。氏名のカナ・訪問の時刻・公費の有効期間は架空の仮置き",
   "resources": [
     {
       "resourceType": "Patient",
@@ -36,7 +36,7 @@
         }
       ],
       "gender": "male",
-      "birthDate": "1939-04-01"
+      "birthDate": "1941-04-01"
     },
     {
       "resourceType": "Coverage",
@@ -55,7 +55,7 @@
       "identifier": [
         {
           "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
-          "value": "\"39139999\",\"\",\"０００００００１\",\"\""
+          "value": "\"39139993\",\"\",\"０００００００１\",\"\""
         }
       ],
       "status": "active",
@@ -66,7 +66,7 @@
         {
           "identifier": {
             "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
-            "value": "39139999"
+            "value": "39139993"
           }
         }
       ]
@@ -84,7 +84,7 @@
         "reference": "Patient/mock-K1"
       },
       "period": {
-        "start": "2025-03-12T10:00:00+09:00"
+        "start": "2026-10-14T10:00:00+09:00"
       }
     },
     {
@@ -100,7 +100,7 @@
         "reference": "Patient/mock-K1"
       },
       "period": {
-        "start": "2025-03-26T10:00:00+09:00"
+        "start": "2026-10-28T10:00:00+09:00"
       }
     },
     {
@@ -202,7 +202,7 @@
         }
       ],
       "gender": "male",
-      "birthDate": "1946-04-01"
+      "birthDate": "1948-04-01"
     },
     {
       "resourceType": "Coverage",
@@ -221,7 +221,7 @@
       "identifier": [
         {
           "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
-          "value": "\"39139999\",\"\",\"０００００００３\",\"\""
+          "value": "\"39139993\",\"\",\"０００００００３\",\"\""
         }
       ],
       "status": "active",
@@ -232,7 +232,7 @@
         {
           "identifier": {
             "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
-            "value": "39139999"
+            "value": "39139993"
           }
         }
       ]
@@ -253,14 +253,14 @@
         {
           "identifier": {
             "system": "urn:example:resemen:unconfirmed:kohi-payer-number",
-            "value": "54139999"
+            "value": "54139993"
           }
         }
       ],
-      "subscriberId": "9999999",
+      "subscriberId": "9999996",
       "period": {
-        "start": "2024-10-01",
-        "end": "2025-09-30"
+        "start": "2026-04-01",
+        "end": "2027-03-31"
       },
       "order": 1
     },
@@ -277,7 +277,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-03T10:00:00+09:00"
+        "start": "2026-10-05T10:00:00+09:00"
       }
     },
     {
@@ -293,7 +293,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-04T10:00:00+09:00"
+        "start": "2026-10-06T10:00:00+09:00"
       }
     },
     {
@@ -309,7 +309,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-05T10:00:00+09:00"
+        "start": "2026-10-07T10:00:00+09:00"
       }
     },
     {
@@ -325,7 +325,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-06T10:00:00+09:00"
+        "start": "2026-10-08T10:00:00+09:00"
       }
     },
     {
@@ -341,7 +341,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-10T10:00:00+09:00"
+        "start": "2026-10-12T10:00:00+09:00"
       }
     },
     {
@@ -357,7 +357,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-12T10:00:00+09:00"
+        "start": "2026-10-14T10:00:00+09:00"
       }
     },
     {
@@ -373,7 +373,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-14T10:00:00+09:00"
+        "start": "2026-10-16T10:00:00+09:00"
       }
     },
     {
@@ -389,7 +389,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-17T10:00:00+09:00"
+        "start": "2026-10-19T10:00:00+09:00"
       }
     },
     {
@@ -405,7 +405,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-19T10:00:00+09:00"
+        "start": "2026-10-21T10:00:00+09:00"
       }
     },
     {
@@ -421,7 +421,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-21T10:00:00+09:00"
+        "start": "2026-10-23T10:00:00+09:00"
       }
     },
     {
@@ -437,7 +437,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-24T10:00:00+09:00"
+        "start": "2026-10-26T10:00:00+09:00"
       }
     },
     {
@@ -453,7 +453,7 @@
         "reference": "Patient/mock-K3"
       },
       "period": {
-        "start": "2025-03-27T10:00:00+09:00"
+        "start": "2026-10-29T10:00:00+09:00"
       }
     },
     {
@@ -523,7 +523,7 @@
         }
       ],
       "gender": "male",
-      "birthDate": "1948-04-01"
+      "birthDate": "1950-04-01"
     },
     {
       "resourceType": "Coverage",
@@ -542,7 +542,7 @@
       "identifier": [
         {
           "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
-          "value": "\"39139999\",\"\",\"０００００００４\",\"\""
+          "value": "\"39139993\",\"\",\"０００００００４\",\"\""
         }
       ],
       "status": "active",
@@ -553,7 +553,7 @@
         {
           "identifier": {
             "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
-            "value": "39139999"
+            "value": "39139993"
           }
         }
       ]
@@ -571,7 +571,7 @@
         "reference": "Patient/mock-K4"
       },
       "period": {
-        "start": "2025-03-11T10:00:00+09:00"
+        "start": "2026-10-13T10:00:00+09:00"
       }
     },
     {
@@ -587,7 +587,7 @@
         "reference": "Patient/mock-K4"
       },
       "period": {
-        "start": "2025-03-25T10:00:00+09:00"
+        "start": "2026-10-27T10:00:00+09:00"
       }
     },
     {
@@ -603,7 +603,7 @@
       "subject": {
         "reference": "Patient/mock-K4"
       },
-      "authoredOn": "2025-03-11",
+      "authoredOn": "2026-10-13",
       "medicationCodeableConcept": {
         "text": "DOAC"
       }
