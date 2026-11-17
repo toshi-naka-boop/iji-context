@@ -2,6 +2,7 @@
 // UKE の取り込み（月末。レセコンが書き出した提出用のファイルを読み込み、提出前の点検にかける）
 // 今回はデモ用の 2 本（国保連・支払基金。合成データ・架空コード）を選んで取り込むだけ
 import { useEffect, useState } from "react";
+import { payerLabel } from "../../src/messages";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import { PageGuide } from "../page-guide";
@@ -39,7 +40,7 @@ export default function UkeImport() {
             <div className="card-band" style={{ background: u.imported ? "var(--accent)" : "var(--surface)" }} />
             <div className="card-body">
               <div className="chips" style={{ alignItems: "center", justifyContent: "space-between" }}>
-                <span className="badge">{u.payer}・{u.prefecture}</span>
+                <span className="badge">{payerLabel(u.payer)}・{u.prefecture}</span>
                 <span className={`badge ${u.imported ? "blue" : ""}`}>{u.imported ? "取り込み済み" : "未取り込み"}</span>
               </div>
               <h2 style={{ margin: "12px 0 4px", fontSize: 18, wordBreak: "break-all" }}>{u.name}</h2>
