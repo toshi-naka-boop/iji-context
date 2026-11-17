@@ -1,7 +1,6 @@
 // 患者ごとに医療事務が確かめた情報（要介護度・別表第七・別表第八の二・在宅酸素）。
 // 判定はカルテ側の事実に、残した最新の値を重ねて使う。要介護度は認定の有効期間の終わりを過ぎたら「分からない」に戻す
 import type { Facts } from "../engine/types";
-import type { UkePatient } from "../uke/types";
 
 export const PATIENT_FACT_KEYS = ["careLevel", "table7", "table8_2", "homeOxygen"] as const;
 export type PatientFactKey = (typeof PATIENT_FACT_KEYS)[number];
@@ -9,10 +8,8 @@ export const FACT_SOURCES = ["介護保険証", "カルテ", "医師に確認"] 
 export type FactSource = (typeof FACT_SOURCES)[number];
 
 export type PatientFactInput = { key: PatientFactKey; value: number | boolean; source: FactSource; validUntil: string | null };
-export type PatientFact = PatientFactInput & { patientKey: string; checkedAt: string; checkedBy: string };
-
-/** 患者の見分け方：UKE の保険者番号と被保険者番号（合成データ） */
-export const patientKeyOf = (p: UkePatient): string => `${p.insurer.number}-${p.insurer.no}`;
+/** patientId は患者マスタの id（保険が変わっても同じ人に付いたままになる。FR-67・FR-121） */
+export type PatientFact = PatientFactInput & { patientId: string; checkedAt: string; checkedBy: string };
 
 const dateOf = (iso: string) => iso.slice(0, 10);
 

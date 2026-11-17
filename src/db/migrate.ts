@@ -34,6 +34,29 @@ CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT N
 ALTER TABLE reviews ADD COLUMN skipped TEXT NOT NULL DEFAULT '[]';
 `,
   },
+  {
+    // 患者マスタ（FR-121）：患者と、その保険・公費の加入情報（追記型。coverage_id ごとに最新の 1 行を使う）。
+    // 確かめた患者情報（patient_facts）の鍵を「保険者番号-被保険者番号」から患者 id に寄せる。
+    // それまでの鍵ごとに患者を 1 人作り（氏名・生年月日は空。次に UKE を読んだときに埋まる）、番号は医保の加入情報として残す
+    version: 4,
+    sql: `
+CREATE TABLE patients (id TEXT PRIMARY KEY, name TEXT, sex INTEGER, birth TEXT, source TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE patient_coverages (id INTEGER PRIMARY KEY AUTOINCREMENT, coverage_id TEXT NOT NULL, patient_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL, payer_number TEXT NOT NULL, symbol TEXT NOT NULL DEFAULT '', member_no TEXT NOT NULL, burden_ratio REAL, valid_from TEXT, valid_until TEXT, source TEXT NOT NULL, checked_by TEXT, checked_at TEXT, created_at TEXT NOT NULL);
+CREATE INDEX patient_coverages_patient ON patient_coverages (patient_id);
+CREATE INDEX patient_coverages_number ON patient_coverages (payer_number, member_no);
+CREATE TABLE patient_key_map (old_key TEXT PRIMARY KEY, patient_id TEXT NOT NULL, at TEXT NOT NULL);
+INSERT INTO patient_key_map (old_key, patient_id, at)
+  SELECT patient_key, 'P' || printf('%04d', ROW_NUMBER() OVER (ORDER BY MIN(id))), MIN(checked_at) FROM patient_facts GROUP BY patient_key;
+INSERT INTO patients (id, source, updated_at) SELECT patient_id, '移行', at FROM patient_key_map;
+INSERT INTO patient_coverages (coverage_id, patient_id, kind, position, payer_number, member_no, source, created_at)
+  SELECT '', patient_id, '医保', 0, substr(old_key, 1, instr(old_key, '-') - 1), substr(old_key, instr(old_key, '-') + 1), '移行', at
+  FROM patient_key_map WHERE instr(old_key, '-') > 1 ORDER BY patient_id;
+UPDATE patient_coverages SET coverage_id = 'C' || id;
+UPDATE patient_facts SET patient_key = (SELECT m.patient_id FROM patient_key_map m WHERE m.old_key = patient_facts.patient_key);
+ALTER TABLE patient_facts RENAME COLUMN patient_key TO patient_id;
+DROP TABLE patient_key_map;
+`,
+  },
 ];
 
 /** ログインの auth.db */

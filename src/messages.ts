@@ -1,6 +1,7 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FactKey, Finding } from "./engine/types";
+import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
   "R01.no_visit": "訪問診療のない月に在医総管が入っています",
@@ -59,4 +60,48 @@ export function findingText(f: Finding): string {
       : `${label}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : ""}確かめて入力してください`;
   }
   return FINDING_TEXT[f.messageKey] ?? f.messageKey;
+}
+
+/**
+ * 患者情報チェック（P01〜P08。src/patient/checks.ts）の文言。ユスティの指摘とは別の欄に出す。
+ * 医療事務が次に何を確かめればよいかを書く。断定できないものは「確かめてください」にとどめる
+ */
+export const PATIENT_FINDING_TEXT: Record<string, string> = {
+  "P01.insurer_length": "保険者番号の桁数が合いません。資格情報で番号を確かめてください",
+  "P01.insurer_check_digit": "保険者番号の検証番号が合いません。資格情報で番号を確かめてください",
+  "P01.kohi_payer_length": "公費負担者番号の桁数が合いません。受給者証で番号を確かめてください",
+  "P01.kohi_payer_check_digit": "公費負担者番号の検証番号が合いません。受給者証で番号を確かめてください",
+  "P01.recipient_length": "受給者番号の桁数が合いません。受給者証で番号を確かめてください",
+  "P01.recipient_check_digit": "受給者番号の検証番号が合いません。受給者証で番号を確かめてください",
+  "P02.late_elderly_under_65": "後期高齢者医療の番号ですが、生年月日では 65 歳未満です。生年月日と資格情報を確かめてください",
+  "P02.late_elderly_65_74": "65〜74 歳で後期高齢者医療になっています。障害の認定による加入か、資格情報で確かめてください",
+  "P02.over_75_not_late_elderly": "75 歳以上ですが、後期高齢者医療の番号ではありません。生年月日と資格情報を確かめてください",
+  "P03.missing": "負担割合が入っていません。資格情報で確かめて入力してください",
+  "P03.late_elderly_ratio": "後期高齢者医療の負担割合は 1 割・2 割・3 割のいずれかです。資格情報で確かめてください",
+  "P03.age_70_74_ratio": "70〜74 歳の負担割合は 2 割か 3 割です。資格情報で確かめてください",
+  "P03.receipt_type_ratio": "負担割合とレセプト種別が合っていません。資格情報の負担割合と、レセコンの登録を確かめてください",
+  "P04.insurance_kind": "レセプト種別と保険の種類が合っていません。レセコンの保険の登録を確かめてください",
+  "P04.kohi_count": "レセプト種別と公費の数が合っていません。受給者証と、レセコンの公費の登録を確かめてください",
+  "P04.age": "レセプト種別と年齢が合っていません。生年月日と、レセコンの保険の登録を確かめてください",
+  "P05.order": "公費の順番を確かめてください（法別番号 {first} は {second} より先に書きます）",
+  "P06.no_valid_insurance": "この月に有効な医療保険の加入情報がありません。資格情報を確かめてください",
+  "P06.overlap": "この月に有効な医療保険が 2 件以上あります。それぞれの有効期間を確かめて入力してください",
+  "P06.no_period_insurance": "資格の有効期限が入っていません。資格情報で有効期間を確かめて入力してください",
+  "P06.no_period_kohi": "受給者証の有効期限が入っていません。受給者証で有効期間を確かめて入力してください",
+  "P06.outside_period": "有効期間の外に診療日があります。診療日の時点の資格を確かめてください",
+  "P06.expired": "有効期限を過ぎています。新しい資格情報を確かめて入力してください",
+  "P06.mid_month": "月の途中で有効期間が切り替わります。診療日が期間の中か確かめてください",
+  "P07.missing": "要介護度に有効期間が入っていません。介護保険証で要介護認定の有効期間を確かめてください",
+  "P07.expired": "要介護認定の有効期間が切れています。介護保険証で新しい認定を確かめてください",
+  "P07.expiring_soon": "要介護認定の有効期間がもうすぐ切れます。更新の状況を確かめてください",
+  "P08.name_missing": "氏名が入っていません。レセコンの患者登録を確かめてください",
+  "P08.birth_format": "生年月日が日付として読めません。レセコンの患者登録を確かめてください",
+  "P08.birth_future": "生年月日が今日より先の日付です。レセコンの患者登録を確かめてください",
+  "P08.sex_code": "性別の記録が読めません。レセコンの患者登録を確かめてください",
+};
+
+/** 患者情報チェックの指摘の文。{first} などは params の値に置き換える */
+export function patientFindingText(f: Pick<PatientFinding, "messageKey" | "params">): string {
+  const text = PATIENT_FINDING_TEXT[f.messageKey] ?? f.messageKey;
+  return text.replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
 }

@@ -1,7 +1,8 @@
 // 症例（合成 UKE ＋ 合成カルテ側の事実）
+import { existsSync } from "node:fs";
 import path from "node:path";
 import type { ClaimContext } from "../../engine/types";
-import { applyPatientFacts, patientKeyOf } from "../../patient/facts";
+import { applyPatientFacts } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
@@ -13,16 +14,29 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   const { paths, facility } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
-  const { latestPatientFacts } = patients;
+  const { latestPatientFacts, ingest, masterFacts } = patients;
+
+  const fixtureFile = (claimId: string) => path.join(paths.root, "fixtures", "cases", `${claimId.split("-")[0]}.json`);
+  const fixtureOf = (claimId: string) => json<ClaimContext>(fixtureFile(claimId));
+  /** 症例側が持つ負担割合（症例がない・値がないときは null）。患者マスタに負担割合が入っていないときに使う */
+  function caseBurdenRatioOf(claimId: string): number | null {
+    if (!existsSync(fixtureFile(claimId))) return null;
+    const f = fixtureOf(claimId).facts.burdenRatio;
+    return f.known ? f.value : null;
+  }
 
   function cases(): ClaimContext[] {
     const files = ukeFiles();
     const out: ClaimContext[] = [];
     for (const file of files) {
       for (const r of file.receipts) {
-        const k = r.claimId.split("-")[0];
-        const c = json<ClaimContext>(path.join(paths.root, "fixtures", "cases", `${k}.json`));
-        const facts = applyPatientFacts(c.facts, latestPatientFacts(patientKeyOf(r.patient)), now());
+        const c = fixtureOf(r.claimId);
+        // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
+        // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
+        const patientId = ingest(r.patient);
+        const master = masterFacts(patientId, r.yearMonth);
+        const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
+        const facts = applyPatientFacts(merged, latestPatientFacts(patientId), now());
         out.push(toClaimContext(file, r.claimId, { facility, facts, events: c.events, history: c.history }));
       }
     }
@@ -34,7 +48,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     return c;
   };
 
-  return { cases, caseOf };
+  return { cases, caseOf, caseBurdenRatioOf };
 }
 
 export type Cases = ReturnType<typeof createCases>;
