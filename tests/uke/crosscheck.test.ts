@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 import { validateQuery } from "../../src/query/doctor-query";
 import { crosscheck, type Chart } from "../../src/uke/crosscheck";
 import type { UkePatient } from "../../src/uke/types";
+import { claimId } from "../helpers/period";
 
 const root = path.join(__dirname, "..", "..");
 const chart = JSON.parse(readFileSync(path.join(root, "fixtures/charts/K4.json"), "utf8")) as Chart;
-const patient = (JSON.parse(readFileSync(path.join(root, "fixtures/uke/patients.json"), "utf8")) as { patients: Record<string, UkePatient> }).patients["K4-2025-03"];
+const patient = (JSON.parse(readFileSync(path.join(root, "fixtures/uke/patients.json"), "utf8")) as { patients: Record<string, UkePatient> }).patients[claimId("K4")];
 
 describe("病名と処方の不一致", () => {
   it("K4：DOAC を処方しているのに傷病名が「心房細動」だけ → 医師確認の下書きが 1 件。7 要件の検証を通る", () => {

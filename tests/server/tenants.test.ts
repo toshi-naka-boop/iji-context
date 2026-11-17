@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
+import { at } from "../helpers/period";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -30,7 +31,7 @@ describe("クリニックの DB ハンドル", () => {
   it("上限を超えたら、いちばん長く使われていないクリニックを閉じる。閉じたクリニックは、次に使うときに開き直る", () => {
     const [a, b, c] = users;
     const first = appOf(a);
-    instance.runAs(a, () => instance.getApp().advanceClock("2025-03-12T09:00:00+09:00"));
+    instance.runAs(a, () => instance.getApp().advanceClock(at(14)));
     appOf(b);
     appOf(a); // a を使い直したので、いちばん古いのは b
     const bApp = appOf(b);
@@ -40,11 +41,11 @@ describe("クリニックの DB ハンドル", () => {
     expect(instance.openTenantCount()).toBe(2);
     // b が閉じられ、a は開いたまま
     expect(() => bApp.now()).toThrow();
-    expect(first.now()).toBe("2025-03-12T09:00:00+09:00");
+    expect(first.now()).toBe(at(14));
     // b は取り直せば使える（今度は a が閉じられる）。データは残っている
-    expect(appOf(b).now()).toBe("2025-03-10T09:00:00+09:00");
+    expect(appOf(b).now()).toBe(at(13));
     expect(() => first.now()).toThrow();
-    expect(appOf(a).now()).toBe("2025-03-12T09:00:00+09:00");
+    expect(appOf(a).now()).toBe(at(14));
   });
 
   it("実行中の呼び出しがあるクリニックは、上限を超えていても閉じない（LLM の応答を待つ間もハンドルを使える）", async () => {
@@ -60,7 +61,7 @@ describe("クリニックの DB ハンドル", () => {
     appOf(c);
     appOf(b);
     release();
-    await expect(running).resolves.toBe("2025-03-12T09:00:00+09:00");
+    await expect(running).resolves.toBe(at(14));
     // 終わったあとは、ほかのクリニックと同じように閉じる対象になる
     appOf(b);
     appOf(c);

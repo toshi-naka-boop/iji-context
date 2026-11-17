@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
+import { at, claimId } from "../helpers/period";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -37,7 +38,7 @@ describe("医師確認の回答と承認", () => {
     const owner = auth().register("clinic_owner", "やまだ", "password123");
     const cookie = cookieOf(owner);
     // 代行入力の確認を 1 件、医師確認に回しておく
-    const id = instance.runAs(owner, () => instance.getApp().proxySubmit("K1-2025-03", "下書き", { text: "整えた文", missing: [] }).query!.id);
+    const id = instance.runAs(owner, () => instance.getApp().proxySubmit(claimId("K1"), "下書き", { text: "整えた文", missing: [] }).query!.id);
 
     // 既定のロールは事務：回答も承認もできず、記録は変わらない
     expect(owner.role).toBe("clerk");
@@ -127,9 +128,9 @@ describe("招待制の登録", () => {
     expect(auth().login("dr_again", "password123")).toBeNull();
 
     // 同じクリニックのデータを見る（時計は tenant ごと）。ほかのクリニックとは混ざらない
-    instance.runAs(owner, () => instance.getApp().advanceClock("2025-03-21T09:00:00+09:00"));
-    expect(instance.runAs(doctor, () => instance.getApp().now())).toBe("2025-03-21T09:00:00+09:00");
-    expect(instance.runAs(other, () => instance.getApp().now())).toBe("2025-03-10T09:00:00+09:00");
+    instance.runAs(owner, () => instance.getApp().advanceClock(at(23)));
+    expect(instance.runAs(doctor, () => instance.getApp().now())).toBe(at(23));
+    expect(instance.runAs(other, () => instance.getApp().now())).toBe(at(13));
     // 招待で入った人は自分の医療事務の行を持ち、持ち主の行（new1）とは別
     expect(instance.clerkIdOf(doctor)).toBe(doctor.id);
     expect(instance.clerkIdOf(owner)).toBe("new1");

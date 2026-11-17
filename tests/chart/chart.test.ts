@@ -4,6 +4,7 @@ import { validateFacts, type ChartNote } from "../../src/chart/extract";
 import { chartWithNotes, withNotes } from "../../src/chart/notes";
 import type { ClaimContext } from "../../src/engine/types";
 import k4 from "../../fixtures/cases/K4.json";
+import { claimId, day } from "../helpers/period";
 
 const note: ChartNote = { s: "動悸なし", o: "脈不整", a: "AF", p: "エリキュース継続", rx: "エリキュース 5mg" };
 
@@ -32,20 +33,20 @@ describe("その月の請求に重ねる", () => {
   const K4 = k4 as unknown as ClaimContext;
   it("書いた訪問診療は訪問の出来事と行に足し、同じ日の訪問は重ねない", () => {
     const c = withNotes(K4, [
-      { date: "2025-03-18", kind: "訪問診療", note, facts: [] },
-      { date: "2025-03-11", kind: "訪問診療", note, facts: [] },
+      { date: day(20), kind: "訪問診療", note, facts: [] },
+      { date: day(13), kind: "訪問診療", note, facts: [] },
     ]);
-    expect(c.lines.find((l) => l.kubun === "C001_1I")).toEqual({ kubun: "C001_1I", count: 3, dates: ["2025-03-11", "2025-03-18", "2025-03-25"] });
+    expect(c.lines.find((l) => l.kubun === "C001_1I")).toEqual({ kubun: "C001_1I", count: 3, dates: [day(13), day(20), day(27)] });
     expect(c.events.filter((e) => e.type === "visit").length).toBe(3);
   });
   it("往診は往診料の行になり、急性増悪の記載があれば月の急性増悪を「あり」にする", () => {
-    const c = withNotes(K4, [{ date: "2025-03-13", kind: "往診", note, facts: [{ kind: "急性増悪", value: "あり", quote: "AF" }] }]);
-    expect(c.lines.find((l) => l.kubun === "C000")?.dates).toEqual(["2025-03-13"]);
+    const c = withNotes(K4, [{ date: day(15), kind: "往診", note, facts: [{ kind: "急性増悪", value: "あり", quote: "AF" }] }]);
+    expect(c.lines.find((l) => l.kubun === "C000")?.dates).toEqual([day(15)]);
     expect(c.facts.acuteExacerbation).toEqual({ known: true, value: true });
   });
   it("照合用のカルテに、書いた記録と処方の分類を足す", () => {
-    const ch = chartWithNotes(null, "K4-2025-03", [{ date: "2025-03-18", kind: "訪問診療", note, facts: [{ kind: "処方", value: "DOAC", quote: "エリキュース 5mg" }] }]);
+    const ch = chartWithNotes(null, claimId("K4"), [{ date: day(20), kind: "訪問診療", note, facts: [{ kind: "処方", value: "DOAC", quote: "エリキュース 5mg" }] }]);
     expect(ch?.entries[0].a).toBe("AF");
-    expect(ch?.prescriptions).toEqual([{ date: "2025-03-18", category: "DOAC" }]);
+    expect(ch?.prescriptions).toEqual([{ date: day(20), category: "DOAC" }]);
   });
 });

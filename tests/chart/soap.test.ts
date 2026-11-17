@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { unmatchedPhrases } from "../../src/chart/soap";
 import SAMPLES from "../../fixtures/charts/samples.json";
+import { claimId, YM } from "../helpers/period";
 
 const note = (n: Partial<Record<"s" | "o" | "a" | "p" | "rx", string>>) => ({ s: "", o: "", a: "", p: "", rx: "", ...n });
 
@@ -17,13 +18,13 @@ describe("SOAP に整えた結果の検査", () => {
 describe("カルテ記載の見本", () => {
   it("5 人全員に、足りないカルテとちゃんとしたカルテがある", () => {
     for (const k of ["K1", "K2", "K3", "K4", "K5"]) {
-      const s = (SAMPLES as Record<string, unknown>)[`${k}-2025-03`] as { lacking: string; complete: string };
+      const s = (SAMPLES as Record<string, unknown>)[`${k}-${YM}`] as { lacking: string; complete: string };
       expect(s.lacking && s.complete && s.lacking !== s.complete).toBeTruthy();
     }
   });
   it("K3 と K4 の足りないカルテは EM 5-1 の例（「PD」だけ・「AF」だけ）", () => {
-    expect(SAMPLES["K3-2025-03"].lacking).toContain("PD");
-    expect(SAMPLES["K4-2025-03"].lacking).toContain("AF");
-    expect(SAMPLES["K4-2025-03"].complete).toContain("非弁膜症性");
+    expect(SAMPLES[claimId("K3")].lacking).toContain("PD");
+    expect(SAMPLES[claimId("K4")].lacking).toContain("AF");
+    expect(SAMPLES[claimId("K4")].complete).toContain("非弁膜症性");
   });
 });

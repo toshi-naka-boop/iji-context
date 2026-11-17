@@ -8,7 +8,9 @@ describe("練習問題", () => {
   it.each(DRILLS)("$id は $ruleId で指摘される", (d) => {
     const ctx = d.make(loadCase(d.claimId.split("-")[0]));
     const f = evaluate(ctx).findings;
-    expect(f.map((x) => x.ruleId)).toContain(d.ruleId);
+    // ねらいのルールで、情報不足でない指摘（違反）が出る。確認待ちだけの題材にしない（design.md §8 実装メモ (f)）
+    expect(f.filter((x) => x.kind !== "情報不足").map((x) => x.ruleId)).toContain(d.ruleId);
+    expect(f.filter((x) => x.kind === "情報不足")).toEqual([]);
     // ねらい以外のルールの指摘が混ざっていない（混ざると練習の焦点がぼける）
     expect(f.filter((x) => x.ruleId !== d.ruleId && x.kind !== "情報不足").map((x) => x.ruleId)).toEqual([]);
   });
