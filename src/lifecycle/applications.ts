@@ -7,6 +7,7 @@ import type { ClaimContext, ClaimLine } from "../engine/types";
 import { applications, claimResults, submissions } from "../db/schema";
 import { matchState, matches } from "./match";
 import type { KnowledgeMeta } from "./types";
+import { notFound } from "../server/errors";
 
 export type Db = BetterSQLite3Database<Record<string, unknown>>;
 
@@ -132,7 +133,7 @@ export function importResult(db: Db, result: SubmissionResult, now: string): { d
   const dup = db.select().from(claimResults).where(eq(claimResults.resultId, result.resultId)).get();
   if (dup) return { duplicate: true, adopted: false };
   const sub = db.select().from(submissions).where(eq(submissions.submissionId, result.submissionId)).get();
-  if (!sub) throw new Error(`未知の submissionId: ${result.submissionId}`);
+  if (!sub) throw notFound(`未知の submissionId: ${result.submissionId}`);
 
   const hash = contentHash(result);
   let adopted = result.kind !== "資格";

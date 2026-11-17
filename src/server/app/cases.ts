@@ -7,6 +7,7 @@ import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
+import { notFound } from "../errors";
 
 export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients) {
   const { paths, facility } = ctx;
@@ -29,7 +30,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   }
   const caseOf = (claimId: string): ClaimContext => {
     const c = cases().find((x) => x.claimId === claimId);
-    if (!c) throw new Error(`症例がない: ${claimId}`);
+    if (!c) throw notFound(`症例がない: ${claimId}`);
     return c;
   };
 

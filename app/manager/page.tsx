@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { AuditLog } from "./audit-log";
 
 type Report = {
   label: string;
@@ -26,7 +27,7 @@ export default function Manager() {
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="事務長レポート">
-        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。
+        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。下には、操作の記録（監査ログ）を新しい順に並べています。
       </PageGuide>
       {r && (
         <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
@@ -39,6 +40,7 @@ export default function Manager() {
           ))}
         </div>
       )}
+      <AuditLog />
     </main>
   );
 }

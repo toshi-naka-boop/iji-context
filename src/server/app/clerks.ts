@@ -1,12 +1,13 @@
 // 医療事務
 import { validateStyle, type Style } from "../../mentor/style";
 import type { AppContext } from "./context";
+import { badRequest, notFound } from "../errors";
 
 /** 本人が決めた名前を検査する（1〜20 文字。改行・制御文字と、指示の書式に使われる記号は受け付けない） */
 export function cleanName(raw: string): string {
   const n = raw.trim();
-  if (n.length < 1 || n.length > 20) throw new Error("名前は 1〜20 文字で入れてください");
-  if (/[\u0000-\u001f\u007f#`<>{}[\]|\\*_]/.test(n)) throw new Error("名前に使えない文字があります");
+  if (n.length < 1 || n.length > 20) throw badRequest("名前は 1〜20 文字で入れてください");
+  if (/[\u0000-\u001f\u007f#`<>{}[\]|\\*_]/.test(n)) throw badRequest("名前に使えない文字があります");
   return n;
 }
 
@@ -21,15 +22,21 @@ export function createClerks(ctx: AppContext) {
   /** 審査員などが自分の利用者を作る（名前は呼び方に使う）。キャラは選ぶまで仮の a */
   function createClerk(name: string) {
     const n = name.trim();
-    if (n.length < 1 || n.length > 20) throw new Error("名前は 1〜20 文字");
-    const count = (sqlite.prepare("SELECT COUNT(*) AS n FROM clerks WHERE id LIKE 'u%'").get() as { n: number }).n;
-    const id = `u${String(count + 1).padStart(4, "0")}`;
-    upsertClerk({ id, name: n, callName: "さん", characterId: "a", role: "clerk" });
+    if (n.length < 1 || n.length > 20) throw badRequest("名前は 1〜20 文字");
+    // 番号は、いまある番号の最大の次（件数から振ると、行が消えたときに既存の id とぶつかる）。採番と保存は 1 つのトランザクションで、既存の行は上書きしない
+    const id = sqlite
+      .transaction(() => {
+        const max = (sqlite.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 0) AS n FROM clerks WHERE id GLOB 'u[0-9]*'").get() as { n: number }).n;
+        const next = `u${String(max + 1).padStart(4, "0")}`;
+        sqlite.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, 'さん', 'a', 'clerk')").run(next, n);
+        return next;
+      })
+      .immediate();
     return clerk(id);
   }
   function clerk(id: string) {
     const r = sqlite.prepare("SELECT * FROM clerks WHERE id = ?").get(id) as { id: string; name: string; call_name: string; character_id: string; role: string; session_id: string | null } | undefined;
-    if (!r) throw new Error(`医療事務が登録されていない: ${id}`);
+    if (!r) throw notFound(`医療事務が登録されていない: ${id}`);
     return r;
   }
   const setSession = (id: string, sessionId: string) => sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);

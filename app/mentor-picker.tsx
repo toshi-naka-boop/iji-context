@@ -14,8 +14,9 @@ async function post(body: unknown): Promise<MentorChoice> {
 }
 
 /** キャラを押すと選んだことになる。話し方の好み・16 タイプは任意で、変えるとすぐ保存する。onPick はキャラを押したクリックの中で呼ぶ（初回の声を流せるようにする） */
-export function MentorPicker({ choice, clerkId, onChange, onError, onPick }: { choice: MentorChoice; clerkId: string; onChange: (c: MentorChoice) => void; onError: (msg: string) => void; onPick?: () => void }) {
-  const run = (body: unknown) => post({ clerkId, ...(body as object) }).then(onChange).catch((e: Error) => onError(e.message));
+export function MentorPicker({ choice, onChange, onError, onPick }: { choice: MentorChoice; onChange: (c: MentorChoice) => void; onError: (msg: string) => void; onPick?: () => void }) {
+  // 本人の id は送らない（サーバーがセッションから決める）
+  const run = (body: unknown) => post(body).then(onChange).catch((e: Error) => onError(e.message));
   const pickStyle = (style: Style) => run({ style });
   return (
     <>

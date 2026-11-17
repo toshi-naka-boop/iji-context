@@ -4,29 +4,37 @@ import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 import { evaluate } from "../../../src/engine";
 import type { ClaimContext } from "../../../src/engine/types";
-import type { Effort } from "../../../src/mentor/models";
 import { askVeteranMentor } from "../../../src/mentor/peer";
 import { modelFor } from "../../../src/mentor/models";
 import { askMentor } from "../../../src/mentor/session";
 import { ensureWorkspace, workspaceSkillNames } from "../../../src/mentor/workspace";
 import { syncSkills } from "../../../scripts/sync-skills";
+import { route } from "../../../src/server/http";
+import { allow } from "../../../src/server/policy";
 import { crosscheckSkills } from "../../../src/uke/crosscheck";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request): Promise<Response> {
-  if (process.env.NODE_ENV === "production") return new Response("Not Found", { status: 404 });
+// 開発用のルートだけで使うので、スキーマはここに置く
+const checkQuery = z.strictObject({
+  model: z.string().max(100).optional(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  explain: z.enum(["0", "1"]).optional(),
+  peer: z.string().max(2000).optional(),
+});
+
+// 権限表の dev の行：本番では route() が 404 を返し、開発時もログインした人だけが呼べる。LLM を呼ぶので、回数制限を付ける
+export const GET = route({ roles: allow("GET /api/mentor-check"), query: checkQuery, limit: "llm" }, async ({ query }) => {
   const root = mkdtempSync(path.join(tmpdir(), "iji-mentor-check-"));
   const started = Date.now();
   // ?model=…&effort=… でモデルと考える深さを試せる（所要時間の比較用）
-  const url = new URL(req.url);
-  const model = url.searchParams.get("model");
-  const effort = url.searchParams.get("effort") as Effort | null;
+  const { model, effort } = query;
   // ?explain=1 で確定したあとの解説を試す（判定の中身を渡す）
-  const explain = url.searchParams.get("explain") === "1";
+  const explain = query.explain === "1";
   try {
     const base = process.cwd();
     const k2 = JSON.parse(readFileSync(path.join(base, "fixtures/cases/K2.json"), "utf8"));
@@ -43,7 +51,7 @@ export async function GET(req: Request): Promise<Response> {
     cpSync(path.join(base, "knowledge"), deps.store.knowledgeDir, { recursive: true });
     syncSkills(deps.store);
     // ?peer=問い でベテランのメンター（config/models.json の veteranMentor）を試す
-    const peer = url.searchParams.get("peer");
+    const { peer } = query;
     if (peer) {
       const vcwd = ensureWorkspace(path.join(root, "ws"), "vet", deps.store.skillsDir, "# 動作確認（ベテラン）\n", crosscheckSkills());
       const ws = { cwd: vcwd, skills: workspaceSkillNames(vcwd) };
@@ -70,4 +78,4 @@ export async function GET(req: Request): Promise<Response> {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}
+});

@@ -6,7 +6,6 @@ import type { DoctorQuery } from "../../src/query/types";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
 
-const DOCTOR = "院長";
 const STATUS_BADGE: Record<string, string> = { 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
 
 export default function Doctor() {
@@ -18,7 +17,7 @@ export default function Doctor() {
 
   async function post(url: string, body: unknown) {
     setErr("");
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(url, body === undefined ? { method: "POST" } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json();
     if (!r.ok) setErr(d.error);
     load();
@@ -29,7 +28,7 @@ export default function Doctor() {
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="医師確認">
-        カルテに書かれていないことを、ここで医師に確かめます。医師の役になって選択肢から答え、内容を確かめて承認してください。点数や金額はここには出しません。
+        カルテに書かれていないことを、ここで医師に確かめます。医師の役割で選択肢から答え、内容を確かめて承認してください（1 人で使っているときは、設定で役割を医師に切り替えます）。点数や金額はここには出しません。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <div className="stats">
@@ -63,13 +62,13 @@ export default function Doctor() {
                       ))}
                     </div>
                     {p.option === "その他" && <p><input placeholder="具体的に" value={p.freeText} onChange={(e) => setPick({ ...pick, [q.id]: { ...p, freeText: e.target.value } })} style={{ width: "100%" }} /></p>}
-                    <button className="primary" disabled={!p.option} onClick={() => post(`/api/doctor/${q.id}/answer`, { option: p.option, freeText: p.freeText || undefined, answeredBy: DOCTOR })}>回答する</button>
+                    <button className="primary" disabled={!p.option} onClick={() => post(`/api/doctor/${q.id}/answer`, { option: p.option, freeText: p.freeText || undefined })}>回答する</button>
                   </div>
                 )}
                 {q.status === "回答済み" && q.answer && (
                   <div style={{ marginTop: 12 }}>
                     <p>回答：<strong>{q.answer.option}</strong>{q.answer.freeText ? `（${q.answer.freeText}）` : ""}</p>
-                    <button className="primary" onClick={() => post(`/api/doctor/${q.id}/approve`, { approver: DOCTOR })}>内容を確認して承認する</button>
+                    <button className="primary" onClick={() => post(`/api/doctor/${q.id}/approve`, undefined)}>内容を確認して承認する</button>
                   </div>
                 )}
                 {q.status === "承認済み" && q.approval && <div className="notice ok">承認：{q.approval.approver}　{q.approval.at}</div>}

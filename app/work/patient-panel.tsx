@@ -17,7 +17,7 @@ function show(key: PatientFactKey, v: number | boolean): string {
   return v ? "当たる" : "当たらない";
 }
 
-export function PatientPanel(props: { claimId: string; clerkId: string; facts: Facts; editable: boolean; onSaved: () => void }) {
+export function PatientPanel(props: { claimId: string; facts: Facts; editable: boolean; onSaved: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [key, setKey] = useState<PatientFactKey>("careLevel");
   const [value, setValue] = useState("");
@@ -38,7 +38,7 @@ export function PatientPanel(props: { claimId: string; clerkId: string; facts: F
   async function save() {
     setErr("");
     const fact = { key, value: key === "careLevel" ? Number(value) : value === "true", source, validUntil: key === "careLevel" ? validUntil || null : null };
-    const r = await fetch(`/api/patients/${props.claimId}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clerkId: props.clerkId, fact }) });
+    const r = await fetch(`/api/patients/${props.claimId}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json();
     if (!r.ok) return setErr(d.error ?? "エラー");
     setRows(d.facts);

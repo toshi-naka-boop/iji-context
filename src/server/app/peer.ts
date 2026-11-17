@@ -2,6 +2,7 @@
 import { escalationCandidate } from "../../mentor/peer";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
+import { badRequest, conflict, notFound } from "../errors";
 
 export function createPeer(ctx: AppContext, clock: Clock) {
   const { sqlite, store } = ctx;
@@ -9,8 +10,12 @@ export function createPeer(ctx: AppContext, clock: Clock) {
 
   type PeerRow = { id: string; from_clerk: string; question: string; status: "回答待ち" | "解決"; answer: string | null; answered_by: string | null; knowledge_id: string | null; created_at: string; answered_at: string | null };
   const peerList = (): PeerRow[] => sqlite.prepare("SELECT * FROM peer_questions ORDER BY created_at, id").all() as PeerRow[];
+  /** 画面に返す一覧。誰が聞いたか（from_clerk）は、ベテランのロールと、その問いを出した本人にだけ返す。ほかの人には問いと回答だけ */
+  const peerListFor = (viewer: { clerkId: string; role: string }): (Omit<PeerRow, "from_clerk"> & { from_clerk?: string })[] =>
+    peerList().map(({ from_clerk, ...rest }) => (viewer.role === "veteran" || from_clerk === viewer.clerkId ? { ...rest, from_clerk } : rest));
+  /** 番号は、いまある番号の最大の次（件数から振ると、行が消えたときに既存の id とぶつかる）。保存は INSERT だけなので、ぶつかっても上書きはしない */
   function newPeerId(): string {
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM peer_questions").get() as { n: number }).n;
+    const n = (sqlite.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 0) AS n FROM peer_questions WHERE id GLOB 'P[0-9]*'").get() as { n: number }).n;
     return `P${String(n + 1).padStart(4, "0")}`;
   }
   /** ベテランのメンターが答えた問いを記録し、知識候補にする */
@@ -29,15 +34,15 @@ export function createPeer(ctx: AppContext, clock: Clock) {
   /** ベテラン本人の回答。知識候補（未検証）を作る */
   function peerAnswerByHuman(id: string, answer: string) {
     const row = peerList().find((r) => r.id === id);
-    if (!row) throw new Error(`問いがない: ${id}`);
-    if (row.status !== "回答待ち") throw new Error(`回答済み: ${id}`);
-    if (!answer.trim()) throw new Error("回答が空");
+    if (!row) throw notFound(`問いがない: ${id}`);
+    if (row.status !== "回答待ち") throw conflict(`回答済み: ${id}`);
+    if (!answer.trim()) throw badRequest("回答が空");
     const k = escalationCandidate(store, { id, question: row.question, answer, answeredBy: "veteran" }, now());
     sqlite.prepare("UPDATE peer_questions SET status = '解決', answer = ?, answered_by = 'veteran', knowledge_id = ?, answered_at = ? WHERE id = ?").run(answer, k.id, now(), id);
     return { id, knowledgeId: k.id };
   }
 
-  return { peerList, peerResolvedByMentor, peerToHuman, peerAnswerByHuman };
+  return { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman };
 }
 
 export type Peer = ReturnType<typeof createPeer>;

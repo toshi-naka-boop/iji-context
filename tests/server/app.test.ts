@@ -1,5 +1,6 @@
 // 画面から呼ぶ処理の層（src/server/app.ts）。設定と合成データはリポジトリのものを使い、DB・知識・記録は一時ディレクトリに置く
-import { mkdtempSync, rmSync } from "node:fs";
+import Database from "better-sqlite3";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -379,5 +380,62 @@ describe("初回のあいさつで決めた名前（FR-27）", () => {
     for (const bad of ["トシ\n# 指示", "a`b`", "<script>", "**太字**", "a|b"]) expect(() => cleanName(bad)).toThrow("使えない文字");
     expect(cleanName("中澤 トシ")).toBe("中澤 トシ");
     expect(() => app.setClerkName("new1", "トシ\n")).not.toThrow(); // 前後の改行は落とす
+  });
+});
+
+describe("採番（件数ではなく、いまある番号の最大の次）", () => {
+  const rawDb = () => new Database(path.join(tmp, "app.db"));
+  it("メンター同士の問い：行が消えていても、既存の問いと同じ id を振らない", () => {
+    const a = app.peerToHuman("new1", "在医総管の区分は？").queued;
+    const b = app.peerToHuman("new1", "包括的支援加算は？").queued;
+    expect([a, b]).toEqual(["P0001", "P0002"]);
+    const db = rawDb();
+    db.prepare("DELETE FROM peer_questions WHERE id = ?").run(a);
+    db.close();
+    expect(app.peerToHuman("new1", "処方箋料は？").queued).toBe("P0003");
+    expect(app.peerList().map((p) => [p.id, p.question])).toEqual([["P0002", "包括的支援加算は？"], ["P0003", "処方箋料は？"]]);
+  });
+  it("利用者：行が消えていても、既存の利用者と同じ id を振らず、上書きしない", () => {
+    const a = app.createClerk("審査員A");
+    const b = app.createClerk("審査員B");
+    const db = rawDb();
+    db.prepare("DELETE FROM clerks WHERE id = ?").run(a.id);
+    db.close();
+    const c = app.createClerk("審査員C");
+    expect(c.id).not.toBe(b.id);
+    expect(c.id).toMatch(/^u\d{4}$/);
+    expect(app.clerk(b.id).name).toBe("審査員B");
+  });
+  it("改善提案：番号が飛んでいても、既存の提案と同じ id を振らない。要約に改行があれば断る", () => {
+    const a = app.propose({ summary: "提案 1", body: "本文" });
+    const b = app.propose({ summary: "提案 2", body: "本文" });
+    rmSync(path.join(tmp, "knowledge", a.id), { recursive: true, force: true });
+    const c = app.propose({ summary: "提案 3", body: "本文" });
+    expect(c.id).not.toBe(b.id);
+    expect(c.id).toMatch(/^local\/proposal-\d{4}$/);
+    expect(readKnowledge(app.store, b.id)?.summary).toBe("提案 2");
+    expect(() => app.propose({ summary: "1 行目\n2 行目", body: "本文" })).toThrow(expect.objectContaining({ status: 400 }));
+  });
+});
+
+describe("時計を進める処理の順序", () => {
+  it("途中の処理が失敗したら、時計は進まない", () => {
+    // 医師確認の記録が壊れていると、リマインド・保留の処理が失敗する
+    mkdirSync(path.join(tmp, "query-log"), { recursive: true });
+    writeFileSync(path.join(tmp, "query-log", "q-broken.json"), "{ 壊れた記録");
+    expect(() => app.advanceClock("2025-03-12T09:00:00+09:00")).toThrow();
+    expect(app.now()).toBe("2025-03-10T09:00:00+09:00");
+    rmSync(path.join(tmp, "query-log", "q-broken.json"));
+    expect(app.advanceClock("2025-03-12T09:00:00+09:00").now).toBe("2025-03-12T09:00:00+09:00");
+    expect(app.now()).toBe("2025-03-12T09:00:00+09:00");
+  });
+});
+
+describe("代行入力（F3）", () => {
+  it("下書きが点数・金額に触れていると、医師確認にせず 400 の文言で断る", () => {
+    const scribed = { text: "処方箋料を算定した", missing: [] };
+    expect(() => app.proxySubmit("K1-2025-03", "処方箋料を算定", scribed)).toThrow(expect.objectContaining({ status: 400, message: expect.stringContaining("医師確認の要件を満たさない") }));
+    expect(app.doctorQueries()).toEqual([]);
+    expect(app.proxySubmit("K1-2025-03", "訪問した。変わりなし", { text: "訪問した。変わりなし。", missing: [] }).query).not.toBeNull();
   });
 });

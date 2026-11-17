@@ -8,6 +8,7 @@ import type { ClaimContext } from "../engine/types";
 import type { CreateInput } from "../lifecycle/store";
 import { modelOptions, type ModelChoice } from "../mentor/models";
 import { runOnce, type RunStats } from "../mentor/run";
+import { badRequest } from "../server/errors";
 import { payerOfInsurer, type UkeSources } from "../uke/cases";
 
 export const NOTICE_OUTPUT_SCHEMA = {
@@ -116,7 +117,7 @@ export function resolveNotice(notice: Notice, src: UkeSources, cases: ClaimConte
 
 /** 本人が確かめた 1 項目を、地域層の知識の候補にする入力（査定は必ず知識化。再審査を申し出るなら contested。FR-43） */
 export function candidateOf(item: ResolvedItem, opts: { reexamFiled: boolean; fileName: string }): CreateInput {
-  if (item.problems.length > 0 || !item.kubun || !item.payer || !item.prefecture) throw new Error(`対応づけが済んでいない項目は候補にできない: ${item.problems.join(" / ")}`);
+  if (item.problems.length > 0 || !item.kubun || !item.payer || !item.prefecture) throw badRequest(`対応づけが済んでいない項目は候補にできない: ${item.problems.join(" / ")}`);
   const ref = `${item.outcome}:${item.claimId}:${item.yearMonth}:${item.kubun}`;
   return {
     layer: "地域",

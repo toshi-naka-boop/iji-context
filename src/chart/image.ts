@@ -4,6 +4,7 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { modelOptions, type ModelChoice } from "../mentor/models";
 import { runOnce } from "../mentor/run";
+import { badRequest } from "../server/errors";
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -55,9 +56,9 @@ export function toFreeText(t: ChartImageText): string {
 
 /** 画像を Claude に読ませ、書き写した文を返す（画像は保存しない） */
 export async function readChartImage(image: Buffer, model?: ModelChoice): Promise<{ text: string; parts: ChartImageText }> {
-  if (image.length === 0 || image.length > MAX_IMAGE_BYTES) throw new Error("画像が空か、5MB を超えています");
+  if (image.length === 0 || image.length > MAX_IMAGE_BYTES) throw badRequest("画像が空か、5MB を超えています");
   const mediaType = imageTypeOf(image);
-  if (!mediaType) throw new Error("PNG・JPEG・WebP の画像を選んでください");
+  if (!mediaType) throw badRequest("PNG・JPEG・WebP の画像を選んでください");
   async function* prompt(): AsyncIterable<SDKUserMessage> {
     yield {
       type: "user",
@@ -81,6 +82,7 @@ export async function readChartImage(image: Buffer, model?: ModelChoice): Promis
     ...modelOptions(model),
   });
   const parts = toImageText(r.structured);
-  if (parts.unreadable || !toFreeText(parts)) throw new Error("画像からカルテの文字を読み取れませんでした。電子カルテの画面を撮った画像か、文字が読める大きさかを確かめてください");
+  // 読めない画像を選んだのは利用者なので、理由を画面に返す
+  if (parts.unreadable || !toFreeText(parts)) throw badRequest("画像からカルテの文字を読み取れませんでした。電子カルテの画面を撮った画像か、文字が読める大きさかを確かめてください");
   return { text: toFreeText(parts), parts };
 }

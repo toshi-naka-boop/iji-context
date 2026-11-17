@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { UkePatient } from "../../uke/types";
 import { parseUke } from "../../uke/uke";
+import { badRequest, notFound } from "../errors";
 import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
 
@@ -24,7 +25,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   }
   function importUke(clerkId: string, name: string) {
     clerk(clerkId);
-    if (!UKE_FILES.some((f) => path.basename(f) === name)) throw new Error(`取り込める UKE ではない: ${name}`);
+    if (!UKE_FILES.some((f) => path.basename(f) === name)) throw badRequest(`取り込める UKE ではない: ${name}`);
     const done = importedUke(clerkId);
     if (!done.includes(name)) setSetting(`uke:${clerkId}`, JSON.stringify([...done, name]));
     return ukeList(clerkId);
@@ -33,7 +34,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.map((x) => x.claimId));
   function patientOf(claimId: string): UkePatient {
     const r = ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
-    if (!r) throw new Error(`UKE にないレセプト: ${claimId}`);
+    if (!r) throw notFound(`UKE にないレセプト: ${claimId}`);
     return r.patient;
   }
 

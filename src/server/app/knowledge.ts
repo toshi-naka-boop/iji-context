@@ -2,13 +2,14 @@
 import path from "node:path";
 import { evaluate } from "../../engine";
 import type { ClaimContext, ClaimLine } from "../../engine/types";
-import { IDLE_DAYS } from "../../lifecycle/layers";
+import { IDLE_DAYS, LAYER_SLUG } from "../../lifecycle/layers";
 import { matchState } from "../../lifecycle/match";
 import { verificationQueue } from "../../lifecycle/queue";
 import { seedLocalRules as seedInHouse } from "../../lifecycle/seed-local";
-import { applyEvent, createKnowledge, listKnowledge, readBody } from "../../lifecycle/store";
+import { applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../lifecycle/store";
 import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
 import type { UkeSources } from "../../uke/cases";
+import { badRequest, conflict, notFound } from "../errors";
 import type { Cases } from "./cases";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
@@ -20,20 +21,33 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   const { now } = clock;
   const { cases } = casesOf;
   const { caseFor } = questionCase;
-  const { loadQ } = questions;
+  const { loadQ, checkLines } = questions;
 
   /** 検証キュー：未検証の知識を共感数の多い順（同数は古い順）。状態は変えない */
   const queue = () => verificationQueue(listKnowledge(store)).map((m) => ({ ...m, body: readBody(store, m.id) }));
+  /** 検証・共感は未検証の知識にだけできる。知識がない・状態が違うときは、利用者向けの誤りとして先に断る（文言は lifecycle のものと同じ） */
+  function unverified(id: string, event: "VERIFY_APPROVE" | "VERIFY_REJECT" | "EMPATHY") {
+    const m = readKnowledge(store, id);
+    if (!m) throw notFound(`知識が見つからない: ${id}`);
+    if (m.status !== "未検証") throw conflict(`許されない遷移: 状態「${m.status}」にイベント ${event} は適用できない（${id}）`);
+  }
   /** ベテランの検証（承認で承認済み、却下で保管） */
   function verify(id: string, approve: boolean, reason?: string) {
+    unverified(id, approve ? "VERIFY_APPROVE" : "VERIFY_REJECT");
     return applyEvent(store, id, approve ? { type: "VERIFY_APPROVE" } : { type: "VERIFY_REJECT", reason: reason?.trim() || "ベテランの検証で却下" }, now()).meta;
   }
   /** 共感（候補の並び順だけに効く。状態は変えない） */
-  const empathize = (id: string) => applyEvent(store, id, { type: "EMPATHY" }, now()).meta;
+  function empathize(id: string) {
+    unverified(id, "EMPATHY");
+    return applyEvent(store, id, { type: "EMPATHY" }, now()).meta;
+  }
   /** 誰でも投稿できる改善提案（院内層の候補。既存の知識を直す案なら relates_to に対象を入れる） */
   function propose(input: { summary: string; body: string; relatesTo?: string | null }) {
-    if (!input.summary.trim() || !input.body.trim()) throw new Error("要約と本文が必要");
-    const n = listKnowledge(store).filter((m) => m.layer === "院内").length;
+    if (!input.summary.trim() || !input.body.trim()) throw badRequest("要約と本文が必要");
+    // 要約は 1 行（文言は lifecycle の createKnowledge のものと同じ）
+    if (/[\r\n]/.test(input.summary.trim())) throw badRequest("summary は 1 行・1024 文字以内で必須");
+    // 番号は、いまある提案の番号の最大の次。件数から振ると、番号が飛んだときに既存の id とぶつかる
+    const n = Math.max(0, ...listKnowledge(store).map((m) => Number(/\/proposal-(\d+)$/.exec(m.id)?.[1] ?? 0)));
     return createKnowledge(
       store,
       { layer: "院内", slug: `proposal-${String(n + 1).padStart(4, "0")}`, summary: input.summary.trim().slice(0, 200), body: input.body.trim(), source: { type: "提案", ref: `proposal-${n + 1}` }, relates_to: input.relatesTo ?? null, match: {} },
@@ -44,8 +58,12 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   const resolveNoticeItems = (notice: Notice) => resolveNotice(notice, json<UkeSources>(path.join(paths.root, "fixtures", "uke", "patients.json")), cases());
   function registerNotice(notice: Notice, index: number, opts: { reexamFiled: boolean; fileName: string }) {
     const item = resolveNoticeItems(notice)[index];
-    if (!item) throw new Error(`通知に ${index + 1} 件目の項目がない`);
-    return createKnowledge(store, candidateOf(item, opts), now());
+    if (!item) throw badRequest(`通知に ${index + 1} 件目の項目がない`);
+    const cand = candidateOf(item, opts);
+    // 同じ項目をもう一度登録したときは、利用者向けの誤りとして先に断る（文言は lifecycle の createKnowledge のものと同じ）
+    const id = `${LAYER_SLUG[cand.layer]}/${cand.slug}`;
+    if (readKnowledge(store, id)) throw conflict(`既に存在する知識: ${id}`);
+    return createKnowledge(store, cand, now());
   }
   /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
   function seedLocalRules() {
@@ -87,6 +105,7 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   }
   const localRulesOf = (questionId: string, lines?: ClaimLine[]) => {
     const q = loadQ(questionId);
+    if (lines) checkLines(lines);
     const c = caseFor(q);
     return localRulesFor(lines ? { ...c, lines } : c);
   };

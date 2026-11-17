@@ -7,6 +7,12 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?start.sh から起動してください}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      # Caddy の後ろで動く（アプリの口は外に出していない）ので、Caddy が付ける X-Real-IP を接続元として信用する
+      - RESEMEN_TRUST_PROXY=1
+      # 画面を開く Origin（https://ドメイン）。GET 以外の API は、この Origin か同じ Host からだけ受ける
+      - RESEMEN_ALLOWED_ORIGINS=https://${RESEMEN_DOMAIN}
+      # 招待なしの登録を許すときだけ 1 にする（既定は閉じる）
+      - RESEMEN_OPEN_SIGNUP=${RESEMEN_OPEN_SIGNUP:-}
     volumes:
       - resemen-data:/data
     expose:

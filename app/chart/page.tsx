@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
+import { MAX_CHART_TEXT } from "../../src/chart/limits";
 import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
@@ -33,7 +34,6 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
 export default function Chart() {
   const router = useRouter();
   const { clerk: user, ready } = useClerk();
-  const CLERK = user?.id ?? "";
   const [patients, setPatients] = useState<Patient[]>([]);
   const [p, setP] = useState<Patient | null>(null);
   const [kind, setKind] = useState<VisitKind>("訪問診療");
@@ -54,7 +54,7 @@ export default function Chart() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api<Extracted>("/api/chart", { claimId: p.claimId, clerkId: CLERK, kind, note });
+      const r = await api<Extracted>("/api/chart", { claimId: p.claimId, kind, note });
       setEx(r);
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
     } catch (e) {
@@ -114,7 +114,7 @@ export default function Chart() {
   const field = (k: keyof ChartNote, label: string, rows = 2) => (
     <label className="chart-field">
       <span>{label}</span>
-      <textarea rows={rows} value={note[k]} disabled={!!ex} onChange={(e) => setNote({ ...note, [k]: e.target.value })} />
+      <textarea rows={rows} value={note[k]} maxLength={MAX_CHART_TEXT} disabled={!!ex} onChange={(e) => setNote({ ...note, [k]: e.target.value })} />
     </label>
   );
 

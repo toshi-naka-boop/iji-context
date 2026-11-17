@@ -14,12 +14,12 @@ export default function UkeImport() {
   const [err, setErr] = useState("");
   useEffect(() => {
     if (!user) return;
-    fetch(`/api/uke?clerkId=${user.id}`).then((r) => r.json()).then(setList).catch((e) => setErr(String(e)));
+    fetch("/api/uke").then((r) => r.json()).then(setList).catch((e) => setErr(String(e)));
   }, [user]);
   async function take(name: string) {
     if (!user) return;
     setErr("");
-    const r = await fetch("/api/uke", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clerkId: user.id, name }) });
+    const r = await fetch("/api/uke", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
     const d = await r.json();
     if (!r.ok) return setErr(d.error ?? "エラー");
     setList(d);

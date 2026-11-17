@@ -1,5 +1,5 @@
 "use client";
-// ログイン・登録（spec FR-72）。登録は誰でもできる。登録するとその人専用のクリニック（合成データ）が用意される（FR-73）
+// ログイン・登録（spec FR-72）。登録は招待制（FR-137）。招待コードで、招待されたクリニックに入る
 import { useState } from "react";
 
 export default function Login() {
@@ -7,6 +7,7 @@ export default function Login() {
   const [login, setLogin] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -18,7 +19,7 @@ export default function Login() {
       const r = await fetch(`/api/auth/${mode}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(mode === "login" ? { login, password } : { login, name, password }),
+        body: JSON.stringify(mode === "login" ? { login, password } : { login, name, password, inviteCode: inviteCode.trim() || undefined }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "エラー");
@@ -63,11 +64,17 @@ export default function Login() {
             <span>パスワード{mode === "register" ? "（8 文字以上）" : ""}</span>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required />
           </label>
+          {mode === "register" && (
+            <label className="chart-field">
+              <span>招待コード（事務長から受け取ったもの）</span>
+              <input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} maxLength={64} autoComplete="off" />
+            </label>
+          )}
           <button className="primary" type="submit" disabled={busy}>{busy ? "…" : mode === "login" ? "ログイン" : "登録してはじめる"}</button>
         </form>
         {err && <div className="notice warn">{err}</div>}
         {mode === "register" && (
-          <p className="muted">登録すると、あなた専用のクリニック（合成データ・架空コード）が用意されます。ほかの人の操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
+          <p className="muted">招待コードで登録すると、招待されたクリニック（合成データ・架空コード）に入ります。ほかのクリニックの操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
         )}
       </div>
     </main>

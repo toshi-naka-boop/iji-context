@@ -1,4 +1,5 @@
 // 処理体験（1 件＝1 問）：問題の保存と進行、選択モード、練習問題
+import { POINTS } from "../../engine/points-2024";
 import type { ClaimContext, ClaimLine } from "../../engine/types";
 import { submit } from "../../lifecycle/review";
 import { choiceItems, judgePick } from "../../practice/choice";
@@ -14,6 +15,7 @@ import type { AppContext } from "./context";
 import type { Doctor } from "./doctor";
 import type { Notes } from "./notes";
 import type { QuestionCase } from "./question-case";
+import { badRequest, conflict, notFound } from "../errors";
 
 export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, cases: Cases, notes: Notes, doctor: Doctor, questionCase: QuestionCase) {
   const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
@@ -26,36 +28,52 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
 
   const saveQ = (q: Question) =>
     sqlite.prepare("INSERT INTO questions (id, clerk_id, claim_id, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data").run(q.id, q.clerkId, q.claimId, JSON.stringify(q));
+  /**
+   * 新しい問題を保存する。番号は、いまある番号の最大の次（件数から振ると、行が消えたときに既存の id とぶつかる）。
+   * 採番と保存は 1 つのトランザクションにして、既存の行は上書きしない（ぶつかったら主キーの違反で止まる）
+   */
+  const createQ = sqlite.transaction((make: (id: string) => Question): Question => {
+    const n = (sqlite.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 0) AS n FROM questions WHERE id GLOB 'q[0-9]*'").get() as { n: number }).n;
+    const q = make(`q${String(n + 1).padStart(4, "0")}`);
+    sqlite.prepare("INSERT INTO questions (id, clerk_id, claim_id, data) VALUES (?, ?, ?, ?)").run(q.id, q.clerkId, q.claimId, JSON.stringify(q));
+    return q;
+  });
   const loadQ = (id: string): Question => {
     const r = sqlite.prepare("SELECT data FROM questions WHERE id = ?").get(id) as { data: string } | undefined;
-    if (!r) throw new Error(`問題がない: ${id}`);
+    if (!r) throw notFound(`問題がない: ${id}`);
     return JSON.parse(r.data) as Question;
+  };
+  /** いまの段階ではできない操作は、業務上の拒否として文言を返す（文言は src/practice/practice.ts と同じ） */
+  const inPhase = (q: Question, phase: Question["phase"], what: string) => {
+    if (q.phase !== phase) throw conflict(`${what}: ${q.phase}`);
+  };
+  /** 明細の区分は点数表にあるものだけ。ない区分は、判定に渡す前に利用者向けの誤りとして断る（文言は src/engine/points-2024.ts と同じ） */
+  const checkLines = (lines: ClaimLine[]) => {
+    const bad = lines.find((l) => !Object.hasOwn(POINTS, l.kubun));
+    if (bad) throw badRequest(`未知の区分: ${bad.kubun}`);
   };
   const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
 
   /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
   function startDrill(clerkId: string, drillId: string): Question {
     clerk(clerkId);
+    if (!isDoctorDrill(drillId) && !drillList().some((x) => x.id === drillId)) throw notFound(`練習問題がない: ${drillId}`);
     const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, d.claimId, now(), "通常", undefined, d.id);
-    saveQ(q);
-    return q;
+    return createQ.immediate((id) => startQuestion(id, clerkId, d.claimId, now(), "通常", undefined, d.id));
   }
   function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
     const c = monthOf(claimId, clerkId);
     if (asOf) {
-      if (mode !== "通常") throw new Error("訪問の時点の問題は通常モードだけ");
-      if (!visitDays(c).some((d) => d.date === asOf)) throw new Error(`この日の訪問はない: ${claimId} ${asOf}`);
+      if (mode !== "通常") throw badRequest("訪問の時点の問題は通常モードだけ");
+      if (!visitDays(c).some((d) => d.date === asOf)) throw notFound(`この日の訪問はない: ${claimId} ${asOf}`);
     }
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode, asOf);
-    saveQ(q);
-    return q;
+    return createQ.immediate((id) => startQuestion(id, clerkId, claimId, now(), mode, asOf));
   }
   function draft(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
+    inPhase(q, "ヒント", "下書きを確かめられない段階");
+    checkLines(lines);
     const r = checkDraft(q, { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } }, now(), judgeFor(q));
     saveQ(r.question);
     return r;
@@ -63,6 +81,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   /** 確定：エンジンが判定し、提出として適用記録を書く（ライフサイクルの submit） */
   function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
     const q = loadQ(id);
+    inPhase(q, "ヒント", "確定できない段階");
+    checkLines(lines);
     const ctx = { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } };
     let next = confirm(q, ctx, now(), judgeFor(q));
     // 医師確認の練習問題は、情報不足が残っている（医師に聞かずに確定した）ときや、照合の不一致が残っているときは不正解（FR-76）
@@ -86,25 +106,32 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     return next;
   }
   function explain(id: string) {
-    const q = toExplanation(loadQ(id));
+    const cur = loadQ(id);
+    inPhase(cur, "判定", "解説に進めない段階");
+    const q = toExplanation(cur);
     saveQ(q);
     return q;
   }
   function done(id: string) {
-    const q = finish(loadQ(id), now());
+    const cur = loadQ(id);
+    inPhase(cur, "解説", "終えられない段階");
+    const q = finish(cur, now());
     saveQ(q);
     return q;
   }
   // 選択モード：問題は UKE の原案（医療事務が入力した明細）から作り、正誤はユスティだけで決める
   function choiceQ(id: string) {
     const q = loadQ(id);
-    if (q.mode !== "選択") throw new Error(`選択モードの問題ではない: ${id}`);
-    if (q.phase !== "ヒント") throw new Error(`選べない段階: ${q.phase}`);
+    if (q.mode !== "選択") throw badRequest(`選択モードの問題ではない: ${id}`);
+    if (q.phase !== "ヒント") throw conflict(`選べない段階: ${q.phase}`);
     return q;
   }
   const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
   function pick(id: string, lineIndex: number, option: string) {
     const q = choiceQ(id);
+    const item = choiceItems(caseOf(q.claimId), choiceGroups).find((x) => x.lineIndex === lineIndex);
+    if (!item) throw badRequest(`選択の問題がない行: ${lineIndex}`);
+    if (!item.options.includes(option)) throw badRequest(`選択肢にない: ${option}`);
     const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
     saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
     return r;
@@ -118,8 +145,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function askDoctorForDrill(questionId: string) {
     const q = loadQ(questionId);
     const d = q.drill && isDoctorDrill(q.drill) ? doctorDrillOf(q.drill) : null;
-    if (!d?.ask) throw new Error("この問題では、ここから医師確認は送らない");
-    if (q.phase !== "ヒント") throw new Error(`医師確認を送れない段階: ${q.phase}`);
+    if (!d?.ask) throw badRequest("この問題では、ここから医師確認は送らない");
+    if (q.phase !== "ヒント") throw conflict(`医師確認を送れない段階: ${q.phase}`);
     const existing = drillQuery(q);
     if (existing) return existing;
     const r = askMissing(queryLog, { target: "doctor", ...factQueryDraft(d.ask, caseFor(q), q.id) }, now());
@@ -147,7 +174,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
   };
 
-  return { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
+  return { loadQ, checkLines, startDrill, start, draft, confirmQ, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
 }
 
 export type Questions = ReturnType<typeof createQuestions>;

@@ -15,6 +15,8 @@ import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
 import { createUke } from "./app/uke";
+import { createAudit } from "./audit";
+import { createDailyCounter } from "./rate-limit";
 
 export { cleanName } from "./app/clerks";
 export { DEFAULT_NOW } from "./app/clock";
@@ -46,7 +48,7 @@ export function openApp(paths: AppPaths) {
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
   const { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
-  const { peerList, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
+  const { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
   const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf } = knowledge;
   const { importClaimResult, agenda, answerAgenda, runMeeting } = meeting;
   const { personal, manager } = prevented;
@@ -57,6 +59,8 @@ export function openApp(paths: AppPaths) {
     store,
     queryLog,
     close: () => sqlite.close(),
+    audit: createAudit(sqlite),
+    dailyCounter: createDailyCounter(sqlite),
     cases,
     caseOf,
     caseFor,
@@ -109,6 +113,7 @@ export function openApp(paths: AppPaths) {
     runMeeting,
     crosscheckOf,
     peerList,
+    peerListFor,
     proxySubmit,
     queue,
     verify,
