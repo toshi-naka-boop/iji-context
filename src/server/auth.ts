@@ -5,17 +5,13 @@ import Database from "better-sqlite3";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
 
 export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
 export type User = { id: string; login: string; name: string };
-
-const AUTH_SQL = `
-CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
-`;
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16);
@@ -61,7 +57,7 @@ export function openAuth(dbFile: string) {
   mkdirSync(path.dirname(dbFile), { recursive: true });
   const db = new Database(dbFile);
   db.pragma("journal_mode = WAL");
-  db.exec(AUTH_SQL);
+  migrate(db, AUTH_MIGRATIONS);
   const toUser = (r: { id: string; login: string; name: string }): User => ({ id: r.id, login: r.login, name: r.name });
 
   function register(login: string, name: string, password: string): User {

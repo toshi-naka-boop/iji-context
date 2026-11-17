@@ -1,0 +1,111 @@
+// 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/extract";
+import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
+import type { ClaimContext } from "../../engine/types";
+import type { Chart } from "../../uke/crosscheck";
+import { contextAsOf, outlook, visitDays } from "../../visit/as-of";
+import type { Cases } from "./cases";
+import type { Clerks } from "./clerks";
+import type { Clock } from "./clock";
+import { json, type AppContext } from "./context";
+import type { Uke } from "./uke";
+
+export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases) {
+  const { sqlite, paths } = ctx;
+  const { now } = clock;
+  const { clerk } = clerks;
+  const { patientOf } = uke;
+  const { cases, caseOf } = casesOf;
+
+  function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
+    clerk(clerkId);
+    const c = caseOf(claimId);
+    if (kind !== "訪問診療" && kind !== "往診") throw new Error(`訪問の種類が不正: ${kind}`);
+    const date = now().slice(0, 10);
+    if (!date.startsWith(c.yearMonth)) throw new Error(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
+    const r = sqlite
+      .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
+      .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
+    return { id: Number(r.lastInsertRowid), date };
+  }
+  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
+  function noteRow(id: number): NoteRow {
+    const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
+    if (!r) throw new Error(`カルテがない: ${id}`);
+    return r;
+  }
+  const noteOf = (id: number) => JSON.parse(noteRow(id).note) as ChartNote;
+  /** 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない */
+  function confirmNote(id: number, facts: ExtractedFact[]) {
+    const r = noteRow(id);
+    if (r.facts !== null) throw new Error(`もう確かめてある: ${id}`);
+    const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
+    if (v.dropped.length) throw new Error(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
+    return { claimId: r.claim_id, date: r.date };
+  }
+  /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
+  function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
+    if (!clerkId) return [];
+    return (sqlite.prepare("SELECT * FROM chart_notes WHERE claim_id = ? AND clerk_id = ? AND facts IS NOT NULL ORDER BY id").all(claimId, clerkId) as NoteRow[]).map((r) => ({
+      date: r.date,
+      kind: r.kind as VisitKind,
+      note: JSON.parse(r.note) as ChartNote,
+      facts: JSON.parse(r.facts!) as ExtractedFact[],
+    }));
+  }
+  /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
+  const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
+  /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
+  function patients() {
+    return cases()
+      .filter((c) => visitDays(c).length > 0)
+      .map((c) => {
+        const p = patientOf(c.claimId);
+        const f = c.facts;
+        const v = <T,>(x: { known: boolean; value?: T }) => (x.known ? (x as { value: T }).value : null);
+        return {
+          claimId: c.claimId,
+          name: p.name,
+          sex: p.sex === 1 ? "男" : "女",
+          age: v(f.age),
+          insurance: v(f.insurance),
+          mainDisease: v(f.mainDisease),
+          diseases: p.diseases.map((d) => d.name),
+          careLevel: v(f.careLevel),
+          table7: v(f.table7),
+          table8_2: v(f.table8_2),
+          homeOxygen: v(f.homeOxygen),
+        };
+      });
+  }
+
+  /** 訪問の記録（レセコンに入れる前）：その月の訪問日と、その日のカルテ。デモデータとして、時計に関係なく全部の訪問で練習できる（2026-11-07 ユーザー判断） */
+  function visits(clerkId?: string) {
+    return cases().map((c) => monthOf(c.claimId, clerkId)).flatMap((c) =>
+      visitDays(c).map((d) => ({
+        claimId: c.claimId,
+        date: d.date,
+        type: d.type,
+        mainDisease: c.facts.mainDisease.known ? c.facts.mainDisease.value : null,
+        chart: chartOf(c.claimId, clerkId)?.entries.find((e) => e.date === d.date) ?? null,
+        /** その日までの実施（レセコンに入れる前の下書きの元） */
+        lines: contextAsOf(c, d.date).lines,
+        outlook: outlook(c, d.date),
+        /** 本人が書いた訪問か */
+        written: confirmedNotes(c.claimId, clerkId).some((n) => n.date === d.date),
+      })),
+    ).sort((a, b) => (a.date === b.date ? (a.claimId < b.claimId ? -1 : 1) : a.date < b.date ? -1 : 1));
+  }
+  /** 照合用のカルテ：合成カルテに、本人が書いて確かめた訪問カルテを重ねる（FR-69） */
+  function chartOf(claimId: string, clerkId?: string): Chart | null {
+    const f = path.join(paths.root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
+    return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
+  }
+
+  return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, patients, visits, chartOf };
+}
+
+export type Notes = ReturnType<typeof createNotes>;
