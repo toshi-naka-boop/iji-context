@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
+    "check:banned-words": "tsx scripts/check-banned-words.ts",
     "start": "next start"
   },
   "type": "module",

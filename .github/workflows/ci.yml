@@ -1,0 +1,41 @@
+# 型・テスト・ビルド・依存の脆弱性・文言の決まりを確かめる。秘密情報（API キー等）は使わない
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同じ ref の古い実行は止める
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Node は Dockerfile（node:22-bookworm-slim）に合わせる
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # 本番の依存だけを見る。high 以上で落とす
+      - run: npm audit --omit=dev --audit-level=high
+
+      # 「教育」「学習」「学ぶ」「教える」を文書・UI 文言に入れない（CLAUDE.md 固定条件）
+      - run: npm run check:banned-words
