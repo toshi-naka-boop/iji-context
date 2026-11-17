@@ -41,7 +41,7 @@ export function openApp(paths: AppPaths) {
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
-  const { ukeList, importUke, importedClaims } = uke;
+  const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
@@ -90,6 +90,8 @@ export function openApp(paths: AppPaths) {
     createClerk,
     ukeList,
     importUke,
+    sampleUke,
+    uploadUke,
     importedClaims,
     clerk,
     setSession,
