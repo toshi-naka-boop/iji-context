@@ -42,6 +42,8 @@ export const claimResults = sqliteTable("claim_results", {
 export const reviews = sqliteTable("reviews", {
   reviewId: text("review_id").primaryKey(),
   ranAt: text("ran_at").notNull(),
+  /** JSON 配列文字列。整理の対象から外した、版のない提出の id（列は APP_MIGRATIONS で足す。下の CREATE_SQL にはない） */
+  skipped: text("skipped").notNull().default("[]"),
 });
 
 export const digestItems = sqliteTable("digest_items", {

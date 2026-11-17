@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
+import { hasRevision } from "../../engine/revisions";
 import type { Facility } from "../../engine/types";
 import type { Calendar } from "../../lifecycle/calendar";
 import type { ReviewDeps } from "../../lifecycle/review";
@@ -23,6 +24,11 @@ export function defaultPaths(root = process.cwd()): AppPaths {
   };
 }
 
+/** 本番の配線が作る ReviewDeps。版の有無（hasRevision）を必ず渡す（渡し忘れると、版のない提出で会議の整理が止まる） */
+export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar">): ReviewDeps {
+  return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
+}
+
 export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
 
 export function openContext(paths: AppPaths) {
@@ -39,7 +45,7 @@ export function openContext(paths: AppPaths) {
   const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
   const facility = json<Facility>(cfg("facility.json"));
-  const deps: ReviewDeps = { db, store, calendar, ruleKubun };
+  const deps = reviewDepsOf({ db, store, calendar });
 
   const setting = (key: string): string | null =>
     (sqlite.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
