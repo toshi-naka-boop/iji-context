@@ -8,7 +8,7 @@ import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFact, type PatientFactKey 
 import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patient/profile";
 
 type Row = PatientFact & { expired: boolean };
-type Profile = { coverages: Coverage[]; findings: (PatientFinding & { text: string })[] };
+type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
 
 const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", table7: "別表第七", table8_2: "別表第八の二", homeOxygen: "在宅酸素療法" };
 
@@ -176,7 +176,13 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
                   <tr key={c.coverageId}>
                     <td>{coverageName(c)}</td>
                     <td>{c.payerNumber}{c.kind === "公費" ? `／${c.memberNo}` : ""}</td>
-                    <td>{c.kind === "医保" ? ratioText(c.burdenRatio) : ""}</td>
+                    <td>
+                      {c.kind !== "医保"
+                        ? ""
+                        : c.burdenRatio === null && profile.caseBurdenRatio !== null
+                          ? `${ratioText(profile.caseBurdenRatio)}（カルテの値）`
+                          : ratioText(c.burdenRatio)}
+                    </td>
                     <td>{periodText(c)}</td>
                     <td className="muted">{c.checkedAt ? `${c.checkedAt.slice(0, 10)} に${c.source}で確かめた` : "取り込んだ値"}</td>
                   </tr>

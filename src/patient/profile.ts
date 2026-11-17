@@ -49,6 +49,8 @@ export type PatientProfile = {
   careCertification: { validUntil: string | null } | null;
   /** その月のレセプトのレセプト種別（請求があるときだけ） */
   receiptType?: string | null;
+  /** 症例側（合成カルテ・受給者証情報）が持つ負担割合。患者マスタに負担割合が入っていないときだけ使う */
+  caseBurdenRatio?: number | null;
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");

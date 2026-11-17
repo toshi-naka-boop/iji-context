@@ -61,7 +61,7 @@ describe("患者情報チェックのルート", () => {
     const cookie = cookieOf(owner);
     const before = (await (await GET(get(profileUrl, cookie), params(CLAIM))).json()) as { coverages: { coverageId: string; kind: string }[]; findings: { messageKey: string; coverageId?: string }[] };
     const med = before.coverages[0];
-    expect(before.findings.filter((f) => f.coverageId === med.coverageId).map((f) => f.messageKey)).toEqual(["P01.insurer_check_digit", "P03.missing", "P06.no_period_insurance"]);
+    expect(before.findings.filter((f) => f.coverageId === med.coverageId).map((f) => f.messageKey)).toEqual(["P01.insurer_check_digit", "P06.no_period_insurance"]);
     const coverage = { coverageId: med.coverageId, source: "オンライン資格確認", payerNumber: "39139993", burdenRatio: 0.1, validFrom: null, validUntil: "2025-07-31" };
 
     // 確かめた人の名前を送っても受け取らない／根拠が選択肢にない／日付の形が違う

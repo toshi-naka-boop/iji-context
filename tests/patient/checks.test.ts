@@ -120,6 +120,14 @@ describe("P03 負担割合", () => {
     expect(of("P03", profile())).toEqual([]);
   });
 
+  it("患者マスタに入っていなくても、症例側に値があれば未入力とはしない。その値でも不整合は見る。患者マスタの値があればそちらで見る", () => {
+    const none = medical({ burdenRatio: null });
+    expect(of("P03", profile({ coverages: [none], caseBurdenRatio: 0.1 }))).toEqual([]);
+    expect(of("P03", profile({ coverages: [none], caseBurdenRatio: null }))).toEqual([["情報不足", "P03.missing"]]);
+    expect(of("P03", profile({ coverages: [none], caseBurdenRatio: 0.3 }))).toEqual([["不整合", "P03.receipt_type_ratio"]]);
+    expect(of("P03", profile({ coverages: [medical({ burdenRatio: 0.3 })], caseBurdenRatio: 0.1 }))).toEqual([["不整合", "P03.receipt_type_ratio"]]);
+  });
+
   it("後期高齢者は 1・2・3 割、70〜74 歳は 2 割か 3 割。レセプト種別とも合わせる", () => {
     expect(of("P03", profile({ coverages: [medical({ burdenRatio: 0.5 })] }))).toEqual([["不整合", "P03.late_elderly_ratio"]]);
     const k6 = (ratio: number, receiptType = "1118", birth = "19540401") => profile({ birth, receiptType, coverages: [medical({ payerNumber: "01139997", burdenRatio: ratio })] });

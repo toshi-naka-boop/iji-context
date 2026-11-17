@@ -140,12 +140,28 @@ describe("既存の合成データ（K1〜K6）", () => {
       const fixture = json<ClaimContext>(path.join(repo, "fixtures", "cases", `${c.claimId.split("-")[0]}.json`));
       expect(c.facts.age).toEqual(fixture.facts.age);
       expect(c.facts.insurance).toEqual(fixture.facts.insurance);
-      // UKE には負担割合が載っていないので、確かめて入力するまでは「分からない」になる
-      expect(c.facts.burdenRatio).toEqual({ known: false });
+      // UKE には負担割合が載っていないので、患者マスタに入るまでは症例側の値をそのまま使う（「分からない」で消さない）
+      expect(c.facts.burdenRatio).toEqual(fixture.facts.burdenRatio);
+      expect(c.facts.burdenRatio.known).toBe(true);
       // 年齢・保険種別・負担割合を症例の JSON の値に戻しても、判定は同じ
       const withFixture = { ...c, facts: { ...c.facts, age: fixture.facts.age, insurance: fixture.facts.insurance, burdenRatio: fixture.facts.burdenRatio } };
       expect(evaluate(c)).toEqual(evaluate(withFixture));
+      // 症例側に負担割合があるので、未入力の指摘は出ない
+      expect(app.patientProfile(c.claimId).findings.map((f) => f.checkId)).not.toContain("P03");
     }
+    app.close();
+  });
+
+  it("負担割合を確かめて入力すると、患者マスタの値が症例側の値より優先される", () => {
+    const app = openApp(paths());
+    app.upsertClerk({ id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" });
+    const before = app.patientProfile("K1-2025-03");
+    expect(before.caseBurdenRatio).toBe(0.1);
+    const after = app.confirmCoverage("K1-2025-03", "new1", { coverageId: before.coverages[0].coverageId, source: "オンライン資格確認", burdenRatio: 0.2, validFrom: null, validUntil: "2025-07-31" });
+    expect(after.coverages[0].burdenRatio).toBe(0.2);
+    expect(app.caseOf("K1-2025-03").facts.burdenRatio).toEqual({ known: true, value: 0.2 });
+    // ほかの患者は症例側の値のまま
+    expect(app.caseOf("K2-2025-03").facts.burdenRatio).toEqual({ known: true, value: 0.1 });
     app.close();
   });
 

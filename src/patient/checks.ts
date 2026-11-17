@@ -163,11 +163,13 @@ export function checkPatient(profile: PatientProfile, basis: CheckBasis): Patien
   const type = profile.receiptType ? RECEIPT_TYPES[profile.receiptType] : undefined;
   for (const c of medical) {
     const at = { coverageId: c.coverageId };
-    if (c.burdenRatio === null) {
+    // 患者マスタに入っていなければ、症例側の値で見る（医保が 1 件に決まるときだけ）。どちらにもなければ情報不足
+    const ratio = c.burdenRatio ?? (medical.length === 1 ? profile.caseBurdenRatio ?? null : null);
+    if (ratio === null) {
       finding("P03", "情報不足", "burdenRatio", "P03.missing", at);
       continue;
     }
-    const r = tenths(c.burdenRatio);
+    const r = tenths(ratio);
     const late = isLateElderly(c.payerNumber);
     if (late && ![1, 2, 3].includes(r)) finding("P03", "不整合", "burdenRatio", "P03.late_elderly_ratio", at);
     else if (!late && ageStart !== null && ageStart >= 70 && ageStart <= 74 && ![2, 3].includes(r)) finding("P03", "不整合", "burdenRatio", "P03.age_70_74_ratio", at);

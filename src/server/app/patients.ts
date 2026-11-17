@@ -181,17 +181,20 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   /** その患者について、エンジンの Facts の年齢・保険種別・負担割合を患者マスタから出す（design.md §6） */
   const masterFacts = (patientId: string, yearMonth: string) => factsFromPatient(profileOfPatient(patientId), yearMonth);
 
-  /** 画面に返す形：加入情報と、患者情報チェックの指摘（文言つき）。氏名・生年月日は返さない（画面のこの欄では使わない） */
-  function patientProfile(claimId: string) {
+  /**
+   * 画面に返す形：加入情報と、患者情報チェックの指摘（文言つき）。氏名・生年月日は返さない（画面のこの欄では使わない）。
+   * caseBurdenRatio は症例側が持つ負担割合（なければ null）。患者マスタに負担割合が入っていないときだけ使う
+   */
+  function patientProfile(claimId: string, caseBurdenRatio: number | null = null) {
     const r = receiptOf(claimId);
-    const profile = profileOfPatient(ingest(r.patient), r.patient.receiptType);
+    const profile = { ...profileOfPatient(ingest(r.patient), r.patient.receiptType), caseBurdenRatio };
     const serviceDates = [...new Set(r.lines.flatMap((l) => l.dates))].sort();
     const findings: (PatientFinding & { text: string })[] = checkPatient(profile, { yearMonth: r.yearMonth, today: now().slice(0, 10), serviceDates }).map((f) => ({ ...f, text: patientFindingText(f) }));
-    return { patientId: profile.patientId, yearMonth: r.yearMonth, coverages: profile.coverages, findings };
+    return { patientId: profile.patientId, yearMonth: r.yearMonth, coverages: profile.coverages, caseBurdenRatio, findings };
   }
 
   /** 加入情報の確認入力（追記。確かめた人はセッションの本人、時刻はデモの時計） */
-  function confirmCoverage(claimId: string, clerkId: string, input: CoverageInput) {
+  function confirmCoverage(claimId: string, clerkId: string, input: CoverageInput, caseBurdenRatio: number | null = null) {
     clerk(clerkId);
     const patientId = patientIdOf(claimId);
     const cur = coveragesOf(patientId).find((c) => c.coverageId === input.coverageId);
@@ -207,7 +210,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
         "INSERT INTO patient_coverages (coverage_id, patient_id, kind, position, payer_number, symbol, member_no, burden_ratio, valid_from, valid_until, source, checked_by, checked_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(cur.coverageId, patientId, cur.kind, cur.position, input.payerNumber ?? cur.payerNumber, cur.symbol, input.memberNo ?? cur.memberNo, input.burdenRatio ?? cur.burdenRatio, input.validFrom ?? null, input.validUntil ?? null, input.source, clerkId, now(), now());
-    return patientProfile(claimId);
+    return patientProfile(claimId, caseBurdenRatio);
   }
 
   return { latestPatientFacts, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage };

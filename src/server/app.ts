@@ -9,7 +9,7 @@ import { createDoctor } from "./app/doctor";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
-import { createPatients } from "./app/patients";
+import { createPatients, type CoverageInput } from "./app/patients";
 import { createPeer } from "./app/peer";
 import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
@@ -42,8 +42,11 @@ export function openApp(paths: AppPaths) {
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
   const { ukeList, importUke, importedClaims } = uke;
-  const { patientFacts, savePatientFact, patientProfile, confirmCoverage } = patientFactsOf;
-  const { cases, caseOf } = casesOf;
+  const { patientFacts, savePatientFact } = patientFactsOf;
+  const { cases, caseOf, caseBurdenRatioOf } = casesOf;
+  // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
+  const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
+  const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, patients, visits } = notes;
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
