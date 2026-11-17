@@ -1,6 +1,6 @@
 {
-  "claimId": "K5-2025-03",
-  "yearMonth": "2025-03",
+  "claimId": "K5-2026-10",
+  "yearMonth": "2026-10",
   "payer": "国保連",
   "prefecture": "東京都",
   "facts": {
@@ -50,27 +50,43 @@
     "emergencyEligible": {
       "known": true,
       "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "居宅"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
     }
   },
   "events": [
     {
       "type": "visit",
-      "date": "2025-03-10",
+      "date": "2026-10-12",
       "sameBuildingCount": 1
     },
     {
       "type": "visit",
-      "date": "2025-03-17",
+      "date": "2026-10-19",
       "sameBuildingCount": 1
     },
     {
       "type": "oushin",
-      "date": "2025-03-20",
+      "date": "2026-10-22",
       "kind": "normal"
     },
     {
       "type": "death",
-      "date": "2025-03-20"
+      "date": "2026-10-22"
     }
   ],
   "lines": [
@@ -78,29 +94,52 @@
       "kubun": "C001_1I",
       "count": 2,
       "dates": [
-        "2025-03-10",
-        "2025-03-17"
+        "2026-10-12",
+        "2026-10-19"
+      ]
+    },
+    {
+      "kubun": "O001_3I",
+      "count": 2,
+      "dates": [
+        "2026-10-12",
+        "2026-10-19"
+      ]
+    },
+    {
+      "kubun": "O100_1HA",
+      "count": 2,
+      "dates": [
+        "2026-10-12",
+        "2026-10-19"
+      ]
+    },
+    {
+      "kubun": "C001_N13_DX",
+      "count": 1,
+      "dates": [
+        "2026-10-12"
       ]
     },
     {
       "kubun": "C000",
       "count": 1,
       "dates": [
-        "2025-03-20"
+        "2026-10-22"
       ]
     },
     {
       "kubun": "C001_N6_TERMINAL",
       "count": 1,
       "dates": [
-        "2025-03-20"
+        "2026-10-22"
       ]
     },
     {
       "kubun": "C001_N7_MITORI",
       "count": 1,
       "dates": [
-        "2025-03-20"
+        "2026-10-22"
       ]
     }
   ]

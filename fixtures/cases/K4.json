@@ -1,6 +1,6 @@
 {
-  "claimId": "K4-2025-03",
-  "yearMonth": "2025-03",
+  "claimId": "K4-2026-10",
+  "yearMonth": "2026-10",
   "payer": "国保連",
   "prefecture": "東京都",
   "facts": {
@@ -50,17 +50,33 @@
     "emergencyEligible": {
       "known": true,
       "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "施設入居等"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
     }
   },
   "events": [
     {
       "type": "visit",
-      "date": "2025-03-11",
+      "date": "2026-10-13",
       "sameBuildingCount": 1
     },
     {
       "type": "visit",
-      "date": "2025-03-25",
+      "date": "2026-10-27",
       "sameBuildingCount": 1
     }
   ],
@@ -69,15 +85,38 @@
       "kubun": "C001_1I",
       "count": 2,
       "dates": [
-        "2025-03-11",
-        "2025-03-25"
+        "2026-10-13",
+        "2026-10-27"
       ]
     },
     {
-      "kubun": "C002_2RO1",
+      "kubun": "O001_3I",
+      "count": 2,
+      "dates": [
+        "2026-10-13",
+        "2026-10-27"
+      ]
+    },
+    {
+      "kubun": "O100_1HA",
+      "count": 2,
+      "dates": [
+        "2026-10-13",
+        "2026-10-27"
+      ]
+    },
+    {
+      "kubun": "C001_N13_DX",
       "count": 1,
       "dates": [
-        "2025-03-25"
+        "2026-10-13"
+      ]
+    },
+    {
+      "kubun": "C002-2_2RO1",
+      "count": 1,
+      "dates": [
+        "2026-10-27"
       ]
     }
   ]

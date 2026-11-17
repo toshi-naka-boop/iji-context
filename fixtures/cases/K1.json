@@ -1,6 +1,6 @@
 {
-  "claimId": "K1-2025-03",
-  "yearMonth": "2025-03",
+  "claimId": "K1-2026-10",
+  "yearMonth": "2026-10",
   "payer": "国保連",
   "prefecture": "東京都",
   "facts": {
@@ -51,22 +51,38 @@
     "emergencyEligible": {
       "known": true,
       "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "居宅"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
     }
   },
   "events": [
     {
       "type": "visit",
-      "date": "2025-03-12",
+      "date": "2026-10-14",
       "sameBuildingCount": 1
     },
     {
       "type": "visit",
-      "date": "2025-03-26",
+      "date": "2026-10-28",
       "sameBuildingCount": 1
     },
     {
       "type": "test",
-      "date": "2025-03-12",
+      "date": "2026-10-14",
       "items": [
         "末梢血液一般",
         "HbA1c",
@@ -76,7 +92,7 @@
     },
     {
       "type": "prescription",
-      "date": "2025-03-26",
+      "date": "2026-10-28",
       "oralKinds": 6,
       "days": 28
     }
@@ -86,121 +102,129 @@
       "kubun": "C001_1I",
       "count": 2,
       "dates": [
-        "2025-03-12",
-        "2025-03-26"
+        "2026-10-14",
+        "2026-10-28"
       ]
     },
     {
-      "kubun": "O100_3I",
+      "kubun": "O001_3I",
       "count": 2,
       "dates": [
-        "2025-03-12",
-        "2025-03-26"
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "O100_1HA",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
       ]
     },
     {
       "kubun": "C001_N13_DX",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "C002_2I1",
       "count": 1,
       "dates": [
-        "2025-03-26"
+        "2026-10-28"
       ]
     },
     {
       "kubun": "C002_N15_RENKEI",
       "count": 1,
       "dates": [
-        "2025-03-26"
+        "2026-10-28"
       ]
     },
     {
       "kubun": "C103_2",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "C158",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "C157_1",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "C153_2",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D400_1",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D005_5",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D005_9",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D007_10",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
-      "kubun": "D008_18",
+      "kubun": "D008_19",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D026_3",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D026_4",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D026_5",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     }
   ]
