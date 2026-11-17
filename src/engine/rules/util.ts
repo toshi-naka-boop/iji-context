@@ -1,9 +1,6 @@
 // ルールが共通で使う小道具
 import type { ClaimContext, ClaimEvent, ClaimLine, FactKey, Finding, FindingKind, Rule } from "../types";
 
-export const C002_KANRI = ["C002_2I1", "C002_2RO1", "C002_2NI1"];
-export const C001_VISIT = ["C001_1I", "C001_1RO"];
-
 export function lineOf(ctx: ClaimContext, kubun: string): ClaimLine | undefined {
   return ctx.lines.find((l) => l.kubun === kubun && l.count > 0);
 }
@@ -14,10 +11,6 @@ export function has(ctx: ClaimContext, kubun: string): boolean {
 
 export function present(ctx: ClaimContext, kubuns: string[]): string[] {
   return kubuns.filter((k) => has(ctx, k));
-}
-
-export function countOf(ctx: ClaimContext, kubuns: string[]): number {
-  return ctx.lines.filter((l) => kubuns.includes(l.kubun)).reduce((s, l) => s + l.count, 0);
 }
 
 export function eventsOf<T extends ClaimEvent["type"]>(ctx: ClaimContext, type: T): Extract<ClaimEvent, { type: T }>[] {

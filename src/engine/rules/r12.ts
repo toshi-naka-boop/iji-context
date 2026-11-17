@@ -1,19 +1,30 @@
-// R12 在宅医療DX情報活用加算は医療情報取得加算・医療DX推進体制整備加算と同月併算定不可
+// R12 在宅医療DX情報活用加算：併算定できない加算と同月に立てない。区分（加算1・加算2）は届出の区分に合わせる
 import type { RevisionConsts } from "../revisions/types";
-import type { Rule } from "../types";
-import { finding, has, present } from "./util";
+import type { Finding, Rule } from "../types";
+import { finding, present } from "./util";
 
 export function makeR12(c: RevisionConsts): Rule {
-  const { kubun: DX, conflicts: CONFLICT } = c.dx;
+  const { tiers: TIERS, conflicts: CONFLICT } = c.dx;
+  const DX = Object.values(TIERS);
   return {
     id: "R12",
-    kubun: [DX, ...CONFLICT],
+    kubun: [...DX, ...CONFLICT],
     reference: "C001 注13 在宅医療DX情報活用加算",
-    appliesTo: (ctx) => has(ctx, DX),
-    needs: () => [],
+    appliesTo: (ctx) => present(ctx, DX).length > 0,
+    needs: () => ["facility.dxTier"],
     check(ctx) {
+      const out: Finding[] = [];
+      const dx = present(ctx, DX);
       const p = present(ctx, CONFLICT);
-      return p.length ? [finding(this, "背反", [DX, ...p], "same_month")] : [];
+      if (p.length) out.push(finding(this, "背反", [...dx, ...p], "same_month"));
+      const tier = ctx.facility.dxTier;
+      if (!tier.known) return out;
+      if (tier.value === "なし") out.push(finding(this, "要件不足", dx, "dx_not_notified"));
+      else {
+        const wrong = dx.filter((k) => k !== TIERS[tier.value as "1" | "2"]);
+        if (wrong.length) out.push(finding(this, "区分誤り", wrong, "dx_tier"));
+      }
+      return out;
     },
   };
 }

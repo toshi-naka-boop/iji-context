@@ -1,8 +1,8 @@
-// R13 週の上限を超える訪問診療は、例外疾病（別表第七）か急性増悪のときだけ
+// R13 週の上限を超える訪問診療料は、例外疾病（別表第七）か急性増悪のときだけ。算定した行の日で数える（算定しなかった訪問は数えない）
 import { maxVisitsPerWeek } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { Rule } from "../types";
-import { eventsOf, fact, finding } from "./util";
+import { fact, finding, present } from "./util";
 
 export function makeR13(c: RevisionConsts): Rule {
   const LIMIT = c.weeklyVisitLimit;
@@ -10,12 +10,12 @@ export function makeR13(c: RevisionConsts): Rule {
     id: "R13",
     kubun: c.visitKubun,
     reference: "C001 注1（週3回限度）・別表第七",
-    appliesTo: (ctx) => eventsOf(ctx, "visit").length > 0,
-    needs: (ctx) => (maxVisitsPerWeek(ctx) > LIMIT ? ["table7", "acuteExacerbation"] : []),
+    appliesTo: (ctx) => present(ctx, c.visitKubun).length > 0,
+    needs: (ctx) => (maxVisitsPerWeek(ctx, c) > LIMIT ? ["table7", "acuteExacerbation"] : []),
     check(ctx) {
-      if (maxVisitsPerWeek(ctx) <= LIMIT) return [];
+      if (maxVisitsPerWeek(ctx, c) <= LIMIT) return [];
       if (fact(ctx, "table7") || fact(ctx, "acuteExacerbation")) return [];
-      return [finding(this, "要件不足", c.visitKubun.filter((k) => ctx.lines.some((l) => l.kubun === k)), "over_three_a_week")];
+      return [finding(this, "要件不足", present(ctx, c.visitKubun), "over_three_a_week")];
     },
   };
 }

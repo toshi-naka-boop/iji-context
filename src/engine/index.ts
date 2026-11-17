@@ -2,7 +2,7 @@
 // 点数とルールは、診療年月から決まる改定の版のものを使う（§2-5）。該当する版がなければ例外
 import { pointsOf, resolveRevision, REVISIONS } from "./revisions";
 import type { Revision } from "./revisions/types";
-import type { ClaimContext, EngineResult, FactKey, Finding, Rule } from "./types";
+import type { ClaimContext, EngineResult, FacilityFactKey, FactKey, Finding, NeedKey, Rule } from "./types";
 
 /** その診療年月の版のルール一式。版のない年月は例外 */
 export function rulesOf(yearMonth: string, revs: Revision[] = REVISIONS): Rule[] {
@@ -20,6 +20,11 @@ export function ruleKubun(ruleId: string, yearMonth: string, revs: Revision[] = 
 /** 不明な事実を誰に聞くか。臨床の判断は医師、それ以外は医療事務 */
 const DOCTOR_FACTS: FactKey[] = ["table7", "table8_2", "mainDisease", "homeOxygen", "acuteExacerbation", "deathPlace"];
 
+/** 要る入力（患者の事実か、施設の設定）が分かっているか */
+function knownNeed(ctx: ClaimContext, key: NeedKey): boolean {
+  return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : ctx.facts[key as FactKey].known;
+}
+
 export function evaluate(ctx: ClaimContext, revs: Revision[] = REVISIONS): EngineResult {
   const rev = resolveRevision(ctx.yearMonth, revs);
   const excludedCount = ctx.excluded?.length ?? 0;
@@ -36,13 +41,14 @@ export function evaluate(ctx: ClaimContext, revs: Revision[] = REVISIONS): Engin
   for (const rule of rev.rules) {
     if (!rule.appliesTo(ctx)) continue;
     applied.push(rule.id);
-    const unknown = rule.needs(ctx).find((k) => !ctx.facts[k].known);
+    const unknown = rule.needs(ctx).find((k) => !knownNeed(ctx, k));
     if (unknown) {
       findings.push({
         ruleId: rule.id,
         kind: "情報不足",
         lineRefs: rule.kubun.filter((k) => ctx.lines.some((l) => l.kubun === k)),
-        missing: { target: DOCTOR_FACTS.includes(unknown) ? "doctor" : "clerk", field: unknown },
+        // 施設の設定の不明も宛先は医療事務（field が "facility." で始まることで見分ける。§6-1）
+        missing: { target: (DOCTOR_FACTS as string[]).includes(unknown) ? "doctor" : "clerk", field: unknown },
         messageKey: `${rule.id}.missing_fact`,
         reference: rule.reference,
       });

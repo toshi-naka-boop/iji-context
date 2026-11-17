@@ -1,0 +1,20 @@
+// 令和8年度改定の値の変更の版（design.md §2-5。FR-147）。適用は 2027年6月〜2028年5月診療分
+// r2026 との差分だけを持つ。変わるのは、外来・在宅ベースアップ評価料(Ⅰ)と外来・在宅物価対応料の点数（EM §2-3 の N-1〜N-7）
+import { extendRevision } from "./extend";
+import { r2026 } from "./r2026";
+
+export const r2027_06 = extendRevision(r2026, {
+  id: "r2027-06",
+  label: "令和8年度改定・値の変更（2027年6月〜2028年5月診療分）",
+  effectiveFrom: "2027-06",
+  effectiveUntil: "2028-05",
+  points: {
+    O001_1: 34,
+    O001_2: 8,
+    O001_3I: 158,
+    O001_3RO: 38,
+    O100_1I: 4,
+    O100_1RO: 4,
+    O100_1HA: 6,
+  },
+});

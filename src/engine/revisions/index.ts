@@ -1,6 +1,7 @@
 // 同梱の版の一覧と、診療年月から版を 1 つに決める規則（design.md §2-5）
 // 該当する版がなければ例外にし、近い版で代用しない
-import { r2024Transition } from "./r2024-transition";
+import { r2026 } from "./r2026";
+import { r2027_06 } from "./r2027-06";
 import type { Revision } from "./types";
 
 const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -44,8 +45,8 @@ export function assertRevisions(revs: Revision[]): void {
   }
 }
 
-/** 同梱の版の一覧。段 1 は移行用の版 1 つ */
-export const REVISIONS: Revision[] = [r2024Transition];
+/** 同梱の版の一覧。令和8年度改定後の版と、その値の変更の版（FR-92・FR-147） */
+export const REVISIONS: Revision[] = [r2026, r2027_06];
 assertRevisions(REVISIONS);
 
 /** 診療年月に当たる版があるか（形式違いの年月は「ない」） */
