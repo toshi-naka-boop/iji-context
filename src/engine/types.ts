@@ -63,6 +63,8 @@ export type Facts = {
   sameDaySeparate: Fact<Record<string, boolean>>;
   /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
   rapidSameDayDocumented: Fact<boolean>;
+  /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
+  comprehensiveCare: Fact<boolean>;
 };
 
 export type FactKey = keyof Facts;

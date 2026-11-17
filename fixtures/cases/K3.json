@@ -67,6 +67,10 @@
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": true
     }
   },
   "events": [

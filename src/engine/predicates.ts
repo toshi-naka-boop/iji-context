@@ -39,6 +39,12 @@ export function billedOushinDays(ctx: ClaimContext, c: RevisionConsts): string[]
   return billedDays(ctx, [c.oushin.kubun]);
 }
 
+/** 往診料だけを算定した日（訪問診療料を算定していない日） */
+export function oushinOnlyBilledDays(ctx: ClaimContext, c: RevisionConsts): string[] {
+  const v = new Set(billedVisitDays(ctx, c));
+  return billedOushinDays(ctx, c).filter((d) => !v.has(d));
+}
+
 /** 訪問診療料と往診料の両方を算定した日 */
 export function sameDayPairs(ctx: ClaimContext, c: RevisionConsts): string[] {
   const o = new Set(billedOushinDays(ctx, c));

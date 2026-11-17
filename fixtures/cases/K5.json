@@ -66,6 +66,10 @@
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": false
     }
   },
   "events": [
@@ -142,5 +146,9 @@
         "2026-10-22"
       ]
     }
-  ]
+  ],
+  "choices": {
+    "D11-mitori:2026-10-22": "mitori",
+    "D12-terminal:2026-10-22": "yes"
+  }
 }

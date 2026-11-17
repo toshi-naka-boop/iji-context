@@ -1,6 +1,6 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
-import type { FacilityFactKey, FactKey, Finding, Payer } from "./engine/types";
+import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
 import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
@@ -69,6 +69,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
   contactDocProvided: "連絡担当者・往診担当医などの文書を患者に提供しているか",
   sameDaySeparate: "同じ日の訪問診療料と往診料が、別々の診療のものか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
+  comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
@@ -79,6 +80,26 @@ export const FACILITY_LABEL: Record<FacilityFactKey, string> = {
   note16Met: "管理料の注16 の基準を満たしているか",
   revisitBaseUpSameDay: "訪問診療料と往診料の両方がある日に、再診時等のベースアップ評価料を重ねて算定できるか",
   revisitPriceSameDay: "訪問診療料と往診料の両方がある日に、再診時等の物価対応料を重ねて算定できるか",
+};
+
+/** 足りない入力（患者の事実か、施設の設定）の名前 */
+export const needLabel = (key: NeedKey): string =>
+  key.startsWith("facility.") ? `施設の設定「${FACILITY_LABEL[key.slice("facility.".length) as FacilityFactKey] ?? key}」` : (FACT_LABEL[key as FactKey] ?? key);
+
+/** 算定行の導出規則（design.md §2-8 の D01〜D12）を、根拠として画面に出す文 */
+export const DERIVE_TEXT: Record<string, string> = {
+  D01: "訪問診療の記録 1 件につき 1 回",
+  D02: "往診の記録 1 件につき 1 回",
+  D03: "その月の訪問診療料の回数と、患者の状態・居住の場所・施設の基準で決まる区分",
+  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上",
+  D05: "退院後に在宅療養を始め、管理料の算定開始月から 3 か月目まで",
+  D06: "訪問診療料を算定した月に 1 回（届出の区分による）",
+  D07: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
+  D08: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
+  D09: "検査の項目ごとに 1 回。血液採取は検査の日ごとに 1 回、判断料は区分ごとに月 1 回",
+  D10: "管理料を算定しない月の処方。内服の種類数で区分が決まる",
+  D11: "本人が選んだ",
+  D12: "本人が選んだ（死亡日前 14 日以内に 2 回以上の訪問・往診の記録がある）",
 };
 
 /** 確認してほしい点の文。情報不足は「どこを確かめるか」を添える（医療事務あては本人、医師あては医師確認） */
