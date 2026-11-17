@@ -42,7 +42,11 @@ export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
       const wrongVisit = VISIT.filter((k) => (lineOf(ctx, k)?.dates ?? []).some((d) => !v.has(d)));
       if (wrongVisit.length) out.push(finding(this, "区分誤り", wrongVisit, "oushin_only_day"));
       const otherDays = lineOf(ctx, OTHER)?.dates ?? [];
-      if (otherDays.some((d) => v.has(d) && !o.has(d))) out.push(finding(this, "区分誤り", [OTHER], "use_visit"));
+      // 訪問診療料だけの日の再診時等：その日に訪問診療時の区分がまだなければ置き換え、すでにあれば重複なので外す（置き換えると同じ日に 2 つ残る）
+      const vt = visitTypeDays(ctx);
+      const onVisitOnly = otherDays.filter((d) => v.has(d) && !o.has(d));
+      if (onVisitOnly.some((d) => !vt.has(d))) out.push(finding(this, "区分誤り", [OTHER], "use_visit"));
+      if (onVisitOnly.some((d) => vt.has(d))) out.push(finding(this, "背反", [OTHER], "duplicate_on_visit_day"));
       // 両方を算定した日の重ね：設定が偽なら、再診時等の行は算定できないので外す（区分の置き換えにしない）
       const setting = ctx.facility[overlapKey];
       if (overlapDays(ctx).length > 0 && setting.known && setting.value === false) out.push(finding(this, "背反", [OTHER], "no_revisit_on_both_day"));

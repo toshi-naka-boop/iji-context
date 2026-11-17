@@ -11,7 +11,12 @@ export function makeR13(c: RevisionConsts): Rule {
     kubun: c.visitKubun,
     reference: "C001 注1（週3回限度）・別表第七",
     appliesTo: (ctx) => present(ctx, c.visitKubun).length > 0,
-    needs: (ctx) => (maxVisitsPerWeek(ctx, c) > LIMIT ? ["table7", "acuteExacerbation"] : []),
+    // 別表第七に当たると分かっていれば、急性増悪は聞かない（答えで結論が変わらない）
+    needs: (ctx) => {
+      if (maxVisitsPerWeek(ctx, c) <= LIMIT) return [];
+      const t7 = ctx.facts.table7;
+      return t7.known && t7.value ? [] : ["table7", "acuteExacerbation"];
+    },
     check(ctx) {
       if (maxVisitsPerWeek(ctx, c) <= LIMIT) return [];
       if (fact(ctx, "table7") || fact(ctx, "acuteExacerbation")) return [];
