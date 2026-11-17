@@ -91,9 +91,9 @@ describe("患者マスタへの取り込み", () => {
   it("確かめて直した番号は、UKE を読み直しても加入情報を増やさない。確かめた人と根拠が残る", () => {
     const { ctx, clock, patients } = setup(() => [file([["K7-2025-03", person({ insurer: { number: "01139999", symbol: "1", no: "00000007" } })]])]);
     const before = patients.patientProfile("K7-2025-03");
-    expect(before.findings.map((f) => f.messageKey)).toEqual(["P01.insurer_check_digit", "P03.missing", "P06.no_period_insurance", "P07.missing"]);
+    expect(before.findings.map((f) => f.messageKey)).toEqual(["P01.insurer_check_digit", "P03.missing", "P06.no_period_insurance"]);
     const after = patients.confirmCoverage("K7-2025-03", "new1", { coverageId: before.coverages[0].coverageId, source: "オンライン資格確認", payerNumber: "01139997", burdenRatio: 0.2, validFrom: null, validUntil: "2025-07-31" });
-    expect(after.findings.map((f) => f.messageKey)).toEqual(["P07.missing"]);
+    expect(after.findings.map((f) => f.messageKey)).toEqual([]);
     expect(patients.patientProfile("K7-2025-03").coverages).toEqual([
       expect.objectContaining({ coverageId: before.coverages[0].coverageId, payerNumber: "01139997", burdenRatio: 0.2, validUntil: "2025-07-31", source: "オンライン資格確認", checkedBy: "new1", checkedAt: clock.now() }),
     ]);

@@ -215,12 +215,15 @@ export function checkPatient(profile: PatientProfile, basis: CheckBasis): Patien
     }
   }
 
-  // P07 要介護認定の有効期間（FR-67。今日の日付で見る）
+  // P07 要介護認定の有効期間（FR-67。今日の日付で見る）。
+  // 要介護度の記録がない患者には出さない（認定を受けていない人もいる。要介護度が要るときの確認は、ユスティの R03 の情報不足が担う）
   const care = profile.careCertification;
   const p07 = { basisDate: today };
-  if (!care || care.validUntil === null) finding("P07", "情報不足", "careLevel", "P07.missing", p07);
-  else if (today > care.validUntil) finding("P07", "期限", "careLevel", "P07.expired", p07);
-  else if (care.validUntil <= addDays(today, CARE_EXPIRY_NOTICE_DAYS)) finding("P07", "期限", "careLevel", "P07.expiring_soon", p07);
+  if (care) {
+    if (care.validUntil === null) finding("P07", "情報不足", "careLevel", "P07.missing", p07);
+    else if (today > care.validUntil) finding("P07", "期限", "careLevel", "P07.expired", p07);
+    else if (care.validUntil <= addDays(today, CARE_EXPIRY_NOTICE_DAYS)) finding("P07", "期限", "careLevel", "P07.expiring_soon", p07);
+  }
 
   // P08 記録の形式
   if (!profile.name || profile.name.trim() === "") finding("P08", "形式", "name", "P08.name_missing");

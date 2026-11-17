@@ -200,8 +200,12 @@ describe("P06 資格・受給者証の有効期間", () => {
 });
 
 describe("P07 要介護認定の有効期間", () => {
-  it("記録がなければ情報不足。期限の当日までは出ず、翌日から期限の指摘。期限が近いと知らせる", () => {
-    expect(of("P07", profile({ careCertification: null }))).toEqual([["情報不足", "P07.missing"]]);
+  it("要介護度の記録がない患者には出さない（認定を受けていない人もいる）。記録があるのに有効期間がなければ情報不足", () => {
+    expect(of("P07", profile({ careCertification: null }))).toEqual([]);
+    expect(of("P07", profile({ careCertification: { validUntil: null } }))).toEqual([["情報不足", "P07.missing"]]);
+  });
+
+  it("期限の当日までは出ず、翌日から期限の指摘。期限が近いと知らせる", () => {
     const p = profile({ careCertification: { validUntil: "2025-05-31" } });
     expect(of("P07", p)).toEqual([]);
     expect(of("P07", p, { ...basis, today: "2025-05-01" })).toEqual([["期限", "P07.expiring_soon"]]);
