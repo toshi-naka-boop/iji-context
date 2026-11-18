@@ -6,15 +6,15 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v23:73426b201d79",
+  "requiredApprovalFingerprint": "v23:90d26e0b99ca",
   "baseline": "feat/integration（PR #16）",
-  "criticRound": 22,
+  "criticRound": 23,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "round-22 の批評（design-critic と codex）を受けて §11 を改訂し、承認CPへ",
+  "nextAction": "round-23 の批評で新規 high がなければ承認CPへ",
   "lastUpdated": "2026-11-19",
   "delegation": {
     "実装": "claude サブエージェント",
