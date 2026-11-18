@@ -246,8 +246,10 @@ npm install
 `.env.local` に `ANTHROPIC_API_KEY` を置きます（キーはコードに書きません）。メンターの声を使うときだけ、`ELEVENLABS_API_KEY` も置きます（見本は `env.local.example`）。
 
 ```bash
-npm run dev
+RESEMEN_OPEN_SIGNUP=1 npm run dev
 ```
+
+登録は招待制です。`RESEMEN_OPEN_SIGNUP=1` を付けて起動したときだけ、ログイン画面の「はじめて使う」から招待なしで登録できます（登録した人は、自分だけのクリニックの持ち主になります）。2 人目からは、「設定」で招待コードを出して渡します。最初の 1 人を作ったあとは、この設定を外して起動し直します。
 
 ここから下は、作り直すときだけ使います。作り済みのものはリポジトリに入っています。
 
