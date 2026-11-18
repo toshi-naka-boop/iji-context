@@ -6,7 +6,10 @@ import { connectorOf, enabledConnectors } from "../../src/connect";
 import { coverageCsvId, createFhirConnector, FHIR_WIRE, FhirCondition, FhirCoverage, FhirEncounter, FhirMedicationRequest, FhirPatient, toCoverage } from "../../src/connect/fhir";
 import { createFixtureConnector } from "../../src/connect/fixture";
 import { createOrcaConnector, OrcaPatientResponse } from "../../src/connect/orca";
+import { evaluate } from "../../src/engine";
+import { toClaimContext } from "../../src/uke/cases";
 import { CONNECT_FILES, generate, MOCK_PATIENTS } from "../../scripts/gen-connect";
+import { loadCase } from "../engine/helpers";
 import { claimId, dateIn, day, month as monthFrom, YM } from "../helpers/period";
 import { failure, pointAt, startMock, type Mock } from "./helpers";
 
@@ -47,11 +50,11 @@ describe("模擬サーバーの応答は、コネクタと同じ定義（スキ�
     const out = generate();
     expect(readFileSync(path.join(root, CONNECT_FILES.orca), "utf8")).toBe(out.orca);
     expect(readFileSync(path.join(root, CONNECT_FILES.fhir), "utf8")).toBe(out.fhir);
-    expect(Object.keys(MOCK_PATIENTS)).toEqual(["K1", "K3", "K4"]);
+    expect(Object.keys(MOCK_PATIENTS)).toEqual(["K1", "K2", "K3", "K4"]);
   });
   it("ORCA 形式", () => {
     const data = json("fixtures/connect/orca.json");
-    expect(Object.keys(data.patients)).toEqual(["K1", "K3", "K4"]);
+    expect(Object.keys(data.patients)).toEqual(["K1", "K2", "K3", "K4"]);
     for (const r of Object.values(data.patients)) expect(OrcaPatientResponse.safeParse(r).success).toBe(true);
   });
   it("FHIR 形式", () => {
@@ -90,10 +93,88 @@ describe("ORCA 形式のコネクタ（患者基本情報）", () => {
     expect((await failure(() => orca.patient!.getPatient("K1"))).kind).toBe("auth");
   });
 
-  it("患者の id は、通信の前に文字種を確かめる。請求（診療行為）は xml2 形式だけなので持たない", async () => {
+  it("患者の id は、通信の前に文字種を確かめる。カルテ記載は持たない", async () => {
     pointAt(mock);
     await expect(orca.patient!.getPatient("K1&class=99")).rejects.toThrow("患者の id");
-    expect([orca.claims, orca.chart]).toEqual([undefined, undefined]);
+    expect(orca.chart).toBeUndefined();
+  });
+});
+
+describe("ORCA 形式のコネクタ（請求。診療行為の API は xml2 形式）", () => {
+  const claims = (patientIds: string[], yearMonth = YM) => orca.claims!.getClaims({ yearMonth, patientIds });
+
+  it("模擬サーバー → コネクタ → 請求の境界 → 点検で、症例と同じ行・同じ判定になり、合計が採用値と一致する（K2＝6,372、K1＝14,806）", async () => {
+    pointAt(mock);
+    vi.stubEnv("RESEMEN_CONNECTORS", "orca");
+    const { files, unmapped } = await connectorOf("orca", root).claims!.getClaims({ yearMonth: YM, patientIds: ["K2", "K1"] });
+    expect(unmapped).toEqual([]);
+    expect(files.map((f) => [f.payer, f.receipts.map((r) => r.claimId)])).toEqual([["国保連", [claimId("K2"), claimId("K1")]]]);
+    for (const [k, total] of [["K2", 6372], ["K1", 14806]] as const) {
+      const want = loadCase(k);
+      const got = toClaimContext(files[0], want.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+      expect(got.lines).toEqual(want.lines);
+      expect(evaluate(got)).toEqual(evaluate(want));
+      expect(evaluate(got).total).toBe(total);
+    }
+    // 患者と保険は患者基本情報から引く。レセプト種別と傷病名は、診療行為の API に載っていないので空
+    expect(files[0].receipts[0].patient).toEqual({ ...patientOf("K2"), receiptType: "", diseases: [] });
+    // 合成データのない月は、レセプトなし
+    expect((await claims(["K2"], nextMonth)).files).toEqual([]);
+  });
+
+  it("架空コードの表にないコードが 1 つでもあれば、応答ごと受け取らない（コードはエラーに出さない）", async () => {
+    pointAt(mock, "unknown-code");
+    const e = await failure(() => claims(["K2"]));
+    expect([e.kind, e.message]).toEqual(["format", expect.stringContaining("架空コードの表にないコード")]);
+    expect(e.message).not.toMatch(/\d{9}/);
+  });
+
+  it("壊れた XML、DOCTYPE・実体の宣言つきの XML、項目の欠けた応答は受け取らない", async () => {
+    pointAt(mock, "xml-broken");
+    const broken = await failure(() => claims(["K2"]));
+    expect([broken.kind, broken.message]).toEqual(["format", expect.stringContaining("XML として読めない")]);
+    pointAt(mock, "xml-doctype");
+    const doctype = await failure(() => claims(["K2"]));
+    expect([doctype.kind, doctype.message]).toEqual(["format", expect.stringContaining("DOCTYPE")]);
+    pointAt(mock, "broken");
+    const schema = await failure(() => claims(["K2"]));
+    expect([schema.kind, schema.message]).toEqual(["format", expect.stringContaining("Perform_Calendar")]);
+    pointAt(mock, "html");
+    expect((await failure(() => claims(["K2"]))).kind).toBe("format");
+  });
+
+  it("上限を超える応答は、XML として読む前に断る", async () => {
+    vi.stubEnv("RESEMEN_CONNECT_MAX_BYTES", "65536");
+    pointAt(mock, "huge");
+    expect((await failure(() => claims(["K2"]))).kind).toBe("too_large");
+    pointAt(mock, "huge-chunked");
+    expect((await failure(() => claims(["K2"]))).kind).toBe("too_large");
+  });
+
+  it("__proto__ という名前の要素がある応答は受け取らず、Object.prototype も汚れない", async () => {
+    pointAt(mock, "xml-proto");
+    const e = await failure(() => claims(["K2"]));
+    expect([e.kind, e.message]).toEqual(["format", expect.stringContaining("XML として読めない")]);
+    expect(Object.prototype).not.toHaveProperty("polluted");
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("相手の失敗の結果は upstream、いない患者は not_found、認証失敗は auth。患者の指定と、診療年月に当たる版は、通信の前に確かめる", async () => {
+    pointAt(mock, "api-error");
+    const e = await failure(() => claims(["K2"]));
+    expect([e.kind, e.message]).toEqual(["upstream", expect.stringContaining("Api_Result 89")]);
+    pointAt(mock);
+    expect((await failure(() => claims(["K9"]))).kind).toBe("not_found");
+    vi.stubEnv("RESEMEN_CONNECT_ORCA_PASSWORD", "wrong-password");
+    expect((await failure(() => claims(["K2"]))).kind).toBe("auth");
+
+    vi.unstubAllEnvs();
+    await expect(orca.claims!.getClaims({ yearMonth: YM })).rejects.toThrow("患者の id を指定する");
+    await expect(claims(["K2<x>"])).rejects.toThrow("患者の id");
+    await expect(claims(["A".repeat(20)])).rejects.toThrow("請求 id にできない");
+    // 接続先の設定がなくても版の検査で止まる（＝通信の前）
+    const noRevision = await failure(() => claims(["K2"], monthFrom(-36)));
+    expect([noRevision.kind, noRevision.message]).toEqual(["format", expect.stringContaining("版がない")]);
   });
 });
 
@@ -192,7 +273,7 @@ describe("コネクタの登録", () => {
     vi.stubEnv("RESEMEN_CONNECTORS", "orca, FHIR");
     expect(enabledConnectors(root).map((c) => [c.id, !!c.patient, !!c.claims, !!c.chart])).toEqual([
       ["fixture", true, true, true],
-      ["orca", true, false, false],
+      ["orca", true, true, false],
       ["fhir", true, false, true],
     ]);
     vi.stubEnv("RESEMEN_CONNECTORS", "orca,unknown");

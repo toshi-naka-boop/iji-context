@@ -9,7 +9,7 @@
 | 境界 | 返すもの | 持っているコネクタ |
 |---|---|---|
 | `PatientSource` | 患者基本情報 `ConnectorPatient`（接続先での患者の id ＋ 患者マスタに取り込む形 `PatientRecord`：氏名・性別・生年月日 YYYYMMDD・加入情報 `CoverageInfo` の一覧） | fixture・orca・fhir |
-| `ClaimSource` | 診療年月の請求 `ConnectorClaims`（`files` は UKE を読んだときと同じ `UkeFile`、`unmapped` は対応のないコードの行） | fixture |
+| `ClaimSource` | 診療年月の請求 `ConnectorClaims`（`files` は UKE を読んだときと同じ `UkeFile`、`unmapped` は対応のないコードの行） | fixture・orca |
 | `ChartSource` | 診療年月のカルテ記載 `ConnectorChart`（訪問日ごとの記録・処方・傷病名） | fixture・fhir |
 
 `Connector = { id, label, patient?, claims?, chart? }`。持っている能力だけを載せる。書き込みの口はない。
@@ -27,13 +27,13 @@
 - いまは処理があるだけで、呼ぶ画面・API はない。
 
 - `fixture`（`fixture.ts`）：同梱の合成データ（fixtures/ の UKE・症例・カルテ）。常に有効。通信しない。
-- `orca`（`orca.ts`）：ORCA API 形式（日レセ API）。患者基本情報だけ。請求は持たない（下の「ORCA の請求」）。
+- `orca`（`orca.ts`）：ORCA API 形式（日レセ API）。患者基本情報と、その月の請求（診療行為。下の「ORCA の請求」）。
 - `fhir`（`fhir.ts`）：HL7 FHIR JP Core 形式。Patient・Coverage と、Encounter・MedicationRequest・Condition の検索。
 
 ## コネクタの足し方
 
 1. `src/connect/<id>.ts` に `create<Id>Connector()` を書き、持てる境界だけを実装する。
-2. 外へ出る通信は、必ず `connectJson(id, 相対パス)`（`fetch.ts`）を通す。`fetch` や `http.request` を直接呼ばない。
+2. 外へ出る通信は、必ず `connectJson(id, 相対パス)`（`fetch.ts`。JSON でない応答は `connectText`）を通す。`fetch` や `http.request` を直接呼ばない。
 3. 応答は zod のスキーマで検査してから境界の型に写す。合わなければ `formatError`（取り込まない）。
 4. 通信の形（パス・項目名・スキーマ）と、その出典・未確認の点をファイルの冒頭に集め、模擬サーバー（`fixtures/connect/mock-server.ts`）も同じ定義を使う。
 5. `src/connect/index.ts` の `EXTERNAL` に足し、`tests/connect/` に模擬サーバーとの結合テストを書く。
@@ -58,7 +58,7 @@
 防ぐもの：
 - 許可リストにない接続先（`host:port` の完全一致。既定は空）。
 - https 以外。http は「本番でない・ループバック・許可リストにある」がそろったときだけ（模擬サーバー用。本番ではこの例外を持てない）。
-- リダイレクト（従わない）、遅い応答（全体にタイムアウト）、大きい応答（content-length と実際に読んだ量の両方）、content-type・JSON・スキーマの違い。
+- リダイレクト（従わない）、遅い応答（全体にタイムアウト）、大きい応答（content-length と実際に読んだ量の両方）、content-type・JSON（ORCA の請求は XML）・スキーマの違い。
 - 本番での内部アドレス宛て：10/8・100.64/10・127/8・0/8・169.254/16（クラウドのメタデータ）・172.16/12・192.168/16・198.18/15・224/4・240/4、::・::1・64:ff9b::/96・fc00::/7・fe80::/10・ff00::/8。答えの IP が 1 つでも当たれば出ない。
 - **DNS リバインディング**：名前解決は 1 回だけで、検査を通った IP にそのまま接続する（`node:https` の `request` に、その IP だけを返す `lookup` を渡す。接続は毎回新しく張る）。ホスト名は元のまま渡すので、証明書の検証・SNI・Host ヘッダは元のホスト名で働く。
 - 相手が返した URL（FHIR の next リンク）で、設定した接続先の範囲（同じ origin・同じパスの下）の外へ出ること。
@@ -77,13 +77,24 @@
 
 診療行為コードは対応表で区分に写す。同梱の対応表は架空コード（`src/engine/codes-fictional.ts`）だけで、実在のマスターとの対応表は同梱しない。
 対応表にないコード、対応先がこのアプリの区分にないコードは、例外にせず `unmapped`（請求 id・コード・日付）に入れ、算定行には入れない。`unmapped` が 1 件以上あるレセプトは「判定の対象外 n 件」と表示し、合計を出さない（表示とエンジン側は後の工程）。
+いまあるコネクタは、どれも `unmapped` を出さない（fixture のコードはすべて表にあり、orca は表にないコードがあれば応答ごと断る）。
 
-**ORCA の請求は未対応。** 診療行為（`medicalgetv2`）と患者病名（`diseasegetv2`）は、公式仕様で要求・応答とも xml2 形式だけ（`format=json` の記載がない）。XML パーサは自作せず、依存の追加（承認が要る。FR-115）もしていないので、ORCA コネクタは `ClaimSource` を持たない。
+### ORCA の請求（`orca.ts` の `claims.getClaims`）
+
+患者の id ごとに、診療行為の API（`POST api01rv2/medicalgetv2?class=03`。診療月診療コード情報）を呼び、コードと算定日を算定行にする。この API は、公式仕様で要求・応答とも xml2 形式だけ（`format=json` の記載がない）。
+
+- **受け取るのは架空コードだけ。** 架空コードの表にないコードが 1 つでもあれば、`unmapped` に回さず、応答ごと断る（UKE の取り込みと同じ関数 `isFictionalCode` で確かめる。実在のデータを通さないため）。診療年月の版にない区分のコード、診療年月に当たる版がない月も断る。ORCA コネクタの `unmapped` はいつも空。
+- XML は `fast-xml-parser`（MIT）で読む。設定は安全な側：実体を展開しない、DOCTYPE・実体の宣言のある応答は読まずに断る、値は文字列のまま受けて zod で検査する、属性は読まない、`__proto__`・`constructor`・`toString` などの名前の要素があれば断る。整形式でない XML も断る。大きさの上限（`RESEMEN_CONNECT_MAX_BYTES`）は、XML として読む前に `fetch.ts` で通す。
+- 患者・保険は患者基本情報（`patientgetv2`）から引く。医療保険が 1 つに決まらない患者は断る（どの保険で請求したかが、この API では分からないため）。あて先（国保連・支払基金）は、保険者番号から決める（`payerOfInsurer`）。
+- この API に載っていないので埋めていないもの：レセプト種別・傷病名・コメント・医療機関の情報・都道府県・請求年月（どれも空）。レセプト種別と傷病名を使うチェックは働かない。公費は、患者基本情報にあるものを全部載せる（その月の請求に使ったかどうかは分からない）。
+- 回数は「算定した日の数」として読む。同じ日に 2 回以上の算定は、この API の形（日ごとの 0／1）では分からない。包括分の行（`Medical_Class_code` が 1）は、あれば断る。
+- 請求 id は「患者の id-診療年月」で作る。患者の id を省いた呼び出しは断る（全件を返す API ではない）。
+- 患者病名（`diseasegetv2`）は読んでいない（これも xml2 形式だけ）。
 
 ## 模擬サーバー（FR-112）
 
 `npx tsx scripts/mock-connect.ts [ポート]` で 127.0.0.1 に起動する（既定 8799）。認証の値は起動のたびに作られ、アプリに渡す環境変数の形で表示される。
-返すのは合成データ（K1・K3・K4。`fixtures/connect/orca.json`・`fhir.json`）だけ。この 2 つは、症例と同じ合成データ（`fixtures/uke/patients.json`・`fixtures/cases/`・`fixtures/charts/`）から `npx tsx scripts/gen-connect.ts` で作る（手で直さない。診療年月は `config/demo.json`）。パスの頭に `/fault/<種類>` を付けると壊した応答を返す（`mock-server.ts` の `FAULTS`）。自動テストも同じサーバーを使う。
+返すのは合成データ（K1・K2・K3・K4。`fixtures/connect/orca.json`・`fhir.json`）だけ。ORCA の診療行為は、症例の算定行を架空コードにして、xml2 形式で返す。この 2 つは、症例と同じ合成データ（`fixtures/uke/patients.json`・`fixtures/cases/`・`fixtures/charts/`）から `npx tsx scripts/gen-connect.ts` で作る（手で直さない。診療年月は `config/demo.json`）。パスの頭に `/fault/<種類>` を付けると壊した応答を返す（`mock-server.ts` の `FAULTS`）。自動テストも同じサーバーを使う。
 
 ## UKE のアップロード（FR-106〜109）
 
@@ -121,7 +132,7 @@ UKE に載るのは請求の中身と患者・保険の情報だけで、判定�
 確認済み（一次資料を読んで、スキーマと模擬サーバーを合わせた）：
 - 日レセ API 概要（呼び出し方・BASIC 認証・WebORCA の `/api`）：https://www.orca.med.or.jp/receipt/tec/api/
 - 患者基本情報 patientgetv2（更新履歴の最新 2026-08-25）。`format=json`、`patientinfores`、`Api_Result`（ゼロ以外エラー。10＝患者なし）、氏名・生年月日（YYYY-MM-DD）・性別（1 男 2 女）、保険組合せ（保険者番号・記号・番号・適用開始日・終了日・外来負担割合）、公費（負担者番号・受給者番号・適用開始日・終了日）：https://www.orca.med.or.jp/receipt/tec/api/patientget.html
-- 診療行為 medicalgetv2（更新履歴の最新 2026-07-28）。xml2 形式だけ、class=03 の項目名と算定日区分：https://www.orca.med.or.jp/receipt/tec/api/medicalinfo.html
+- 診療行為 medicalgetv2（更新履歴の最新 2026-07-28。2026-11-18 に読み直した）。`POST /api01rv2/medicalgetv2?class=03`、Content-Type は application/xml（UTF-8）、xml2 形式だけ。要求は `<data><medicalgetreq type="record">` の下に Patient_ID（必須）・Perform_Date。応答は `<xmlio2><medicalget03res type="record">` の下に Api_Result・Patient_Information・Perform_Date（診療年月 YYYY-MM）・Medical_List_Information（繰り返し 400。Medication_Code・Medical_Class_code・Perform_Total_Number・Perform_Calendar）：https://www.orca.med.or.jp/receipt/tec/api/medicalinfo.html
 - 患者病名 diseasegetv2。xml2 形式だけ：https://www.orca.med.or.jp/receipt/tec/api/disease.html
 - JP_Patient（V1.2.0、2025-07-30）。患者番号の検索（SHALL）：https://jpfhir.jp/fhir/core/1.2.0/StructureDefinition-jp-patient.html
 - JP_HumanName（V1.2.0）。漢字・カナの見分け（拡張 iso21090-EN-representation、IDE｜SYL）：https://jpfhir.jp/fhir/core/1.2.0/StructureDefinition-jp-humanname.json
@@ -133,6 +144,7 @@ UKE に載るのは請求の中身と患者・保険の情報だけで、判定�
 
 未確認のまま形を決めている（実機の前に確かめる。詳しくは `orca.ts`・`fhir.ts` の冒頭）：
 - ORCA：`format=json` のときの JSON の形（仕様にあるのは xml2 のサンプルだけ。同じ項目名で、繰り返しは配列と仮定）。記号・番号が全角で返るか。適用終了日 9999-12-31 の意味。公費の負担率の単位（写していない）。
+- ORCA の診療行為：要求の Perform_Date に診療年月だけを書けるか（いまは月の初日を送る）。応答の content-type（application/xml と仮定）と XML 宣言の有無。その月に診療行為がないときの応答（エラー一覧の「15 対象がありません」が class=03 で返るかは書かれていない。いまは相手の失敗として扱う）。包括分の行がどう返るか。患者番号が頭にゼロを足して返るか（仕様の例は 00017。いまは頼んだ番号と同じでなければ断る）。
 - FHIR：公費負担者番号の置き場所と identifier system（既定は `urn:example:…` の仮の値）、公費の受給者番号の置き場所（`subscriberId` と仮定）、payor を論理参照で読むこと。
 - FHIR：負担割合の値の単位（置き場所 `costToBeneficiary` は確認。写していない）。訪問診療の Encounter の見分け方。表示名を `text` から読むこと。
 - FHIR：検索の SHOULD の項目と、日付に ge／le を並べる書き方を相手が受けるか。ページ送り（next リンク）は FHIR R4 本体の仕様で、JP Core の文書では確かめていない。
