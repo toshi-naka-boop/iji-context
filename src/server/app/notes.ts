@@ -22,11 +22,13 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { now } = clock;
   const { clerk } = clerks;
   const { patientOf } = uke;
-  const { cases, caseOf } = casesOf;
+  const { cases, caseOf, isUploaded } = casesOf;
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
     const c = caseOf(claimId);
+    // 訪問カルテは、その月の訪問の記録（出来事）に重ねて使う。記録のないレセプトは対象外
+    if (isUploaded(claimId)) throw badRequest("アップロードした UKE のレセプトは、訪問カルテの対象外です（カルテ側の記録がないため）");
     if (kind !== "訪問診療" && kind !== "往診") throw badRequest(`訪問の種類が不正: ${kind}`);
     const date = now().slice(0, 10);
     if (!date.startsWith(c.yearMonth)) throw conflict(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);

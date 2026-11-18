@@ -1,5 +1,4 @@
 // 問題ごとの請求の組み立て：訪問の時点・練習問題・医師確認の練習問題で、判定に渡す請求を変える
-import { evaluate } from "../../engine";
 import type { ClaimContext, ClaimLine } from "../../engine/types";
 import { answerValue, askField, doctorDrillOf, isDoctorDrill, withAnswer } from "../../practice/doctor-drills";
 import { drillOf } from "../../practice/drills";
@@ -10,7 +9,7 @@ import type { Doctor } from "./doctor";
 import type { Notes } from "./notes";
 
 export function createQuestionCase(cases: Cases, notes: Notes, doctor: Doctor) {
-  const { caseOf } = cases;
+  const { caseOf, judge } = cases;
   const { monthOf } = notes;
   const { doctorQueries } = doctor;
 
@@ -33,7 +32,7 @@ export function createQuestionCase(cases: Cases, notes: Notes, doctor: Doctor) {
     return d?.ask ? (doctorQueries().find((x) => x.field === askField(d.ask!, q.id)) ?? null) : null;
   };
   /** 訪問の時点では、月末まで決まらないルールを指摘にしない */
-  const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(evaluate(c)) : evaluate);
+  const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(judge(c)) : judge);
   const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>, asOf?: string, clerkId?: string): ClaimContext => {
     const c = caseAt(claimId, asOf, clerkId);
     return { ...c, lines, facts: { ...c.facts, ...(facts ?? {}) } };

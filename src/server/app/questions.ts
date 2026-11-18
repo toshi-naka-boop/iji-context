@@ -21,7 +21,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
-  const { caseOf } = cases;
+  const { caseOf, isUploaded } = cases;
   const { monthOf } = notes;
   const { crosscheckOf } = doctor;
   const { caseFor, drillQuery, judgeFor, withLines } = questionCase;
@@ -65,6 +65,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
     const c = monthOf(claimId, clerkId);
+    // 選択モードの正解は、カルテ側の記録を読むルールも使って 1 つに決める。記録のないレセプトでは決められないので、対象外にする
+    if (mode === "選択" && isUploaded(claimId)) throw badRequest("アップロードした UKE のレセプトは、選択モードの対象外です（カルテ側の記録がなく、正解を 1 つに決められないため）。通常モードで点検してください");
     if (asOf) {
       if (mode !== "通常") throw badRequest("訪問の時点の問題は通常モードだけ");
       if (!visitDays(c).some((d) => d.date === asOf)) throw notFound(`この日の訪問はない: ${claimId} ${asOf}`);

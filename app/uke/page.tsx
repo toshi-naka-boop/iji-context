@@ -8,7 +8,7 @@ import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import { PageGuide } from "../page-guide";
 
-type Uke = { name: string; payer: string; prefecture: string; billingMonth: string; receipts: { claimId: string; patient: string }[]; imported: boolean };
+type Uke = { name: string; uploaded: boolean; payer: string; prefecture: string; billingMonth: string; receipts: { claimId: string; patient: string }[]; imported: boolean };
 
 export default function UkeImport() {
   const { clerk: user, ready } = useClerk();
@@ -68,7 +68,7 @@ export default function UkeImport() {
                 <span className="badge">{payerLabel(u.payer)}・{u.prefecture}</span>
                 <span className={`badge ${u.imported ? "blue" : ""}`}>{u.imported ? "取り込み済み" : "未取り込み"}</span>
               </div>
-              <h2 style={{ margin: "12px 0 4px", fontSize: 18, wordBreak: "break-all" }}>{u.name}</h2>
+              <h2 style={{ margin: "12px 0 4px", fontSize: 18, wordBreak: "break-all" }}>{u.uploaded ? `アップロードした UKE（${u.name.slice(0, 8)}）` : u.name}</h2>
               <div style={{ display: "flex", gap: 24, margin: "8px 0" }}>
                 <div><div className="muted">請求</div><span className="num" style={{ fontSize: 22 }}>{u.billingMonth}</span></div>
                 <div><div className="muted">レセプト</div><span className="num" style={{ fontSize: 22 }}>{u.receipts.length}</span><span className="muted"> 件</span></div>
@@ -78,8 +78,9 @@ export default function UkeImport() {
               </div>
               <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
                 {u.imported ? <a href="/work">算定画面の「月末の点検」で点検する →</a> : <button className="primary" onClick={() => take(u.name)}>取り込む</button>}
-                <a href={`/api/uke/sample?name=${encodeURIComponent(u.name)}`} download={u.name}>見本をダウンロード</a>
+                {!u.uploaded && <a href={`/api/uke/sample?name=${encodeURIComponent(u.name)}`} download={u.name}>見本をダウンロード</a>}
               </div>
+              {u.uploaded && <p className="muted" style={{ margin: "12px 0 0" }}>カルテ側の記録がないレセプトです。足りない事実は「情報不足」として出ます。訪問カルテ・選択モード・練習問題の対象外です。</p>}
             </div>
           </article>
         ))}
@@ -89,7 +90,7 @@ export default function UkeImport() {
           <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>ファイルを選んでアップロード</h2>
           <p className="muted" style={{ margin: "0 0 12px" }}>
             受け取るのは、架空コードだけで作られた合成データの UKE です。実在の患者のデータは入れないでください（架空コードの表にないコードを含むファイルは、ファイルごと断ります）。
-            いま点検に並べられるのは、見本と同じ内容の UKE です。上の「見本をダウンロード」で取ったファイルで試せます。
+            同梱の症例にないレセプトは、カルテ側の記録（訪問・処方など）がないまま点検に並び、足りない事実は「情報不足」として出ます。同梱の症例や、すでに取り込んだ UKE と同じ請求 id で内容が違うファイルは断ります。
           </p>
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <input type="file" accept=".UKE,.uke" aria-label="アップロードする UKE のファイル" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDone(""); setErr(""); }} />
