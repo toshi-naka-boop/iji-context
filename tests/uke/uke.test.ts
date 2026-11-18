@@ -165,6 +165,16 @@ describe("形式（FR-06）", () => {
       expect(reject(withCell(4, 1, "8830001"))).toEqual([4, "傷病名コードは未コード化（名称だけ）のものに限る"]);
     });
 
+    it("SI の点数が版の点数表と合わない・HO の合計点数が行の合計と合わないものは断る。理由に値は入らない（X-76）", () => {
+      // BNP の点数 130 → 9999、空欄。HO の合計 274 → 1
+      expect(reject(withCell(SI, 5, "9999"))).toEqual([SI, "点数が診療年月の版の点数表と合わない"]);
+      expect(reject(withCell(SI, 5, ""))).toEqual([SI, "点数が診療年月の版の点数表と合わない"]);
+      expect(reject(withCell(3, 5, "1"))).toEqual([3, "合計点数が行の合計と合わない"]);
+      for (const buf of [withCell(SI, 5, "9999"), withCell(3, 5, "12345")]) expect(() => parseUke(buf)).toThrow(/^\d+ 行目：(?!.*(9999|12345|130|274))/);
+      // 同梱の見本は 2 本とも通る
+      for (const f of Object.values(UKE_FILES)) expect(() => parseUke(read(f))).not.toThrow();
+    });
+
     it("1 日の回数は上限まで。大きな数を入れても、日付の並びを作らずに断る", () => {
       const day1 = 13;
       const started = Date.now();
