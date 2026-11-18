@@ -1,21 +1,21 @@
 {
-  "currentNode": "実装",
+  "currentNode": "批評",
   "status": "in_progress",
-  "designVersion": "v22",
-  "approvedDesignVersion": "v22",
-  "approvedDesignSha256": "f95b873d28a8440d8cd929bd2036d16cdd56dea7941c523d4b6c2938fbac14e7",
-  "approvedAt": "2026-11-17T00:00:00+09:00",
-  "approvalEvidence": "v22:5cb8cee2d25a を承認（2026-11-17、回答「v22:5cb8cee2d25a を承認」）。その後の変更は R11 の外来迅速検体検査加算だけで、質問「R11 の…指摘をどうしますか？」への回答「要件の確認に弱める (Recommended)」（2026-11-17）に基づく。変更後の指紋 v22:f95b873d28a8",
-  "requiredApprovalFingerprint": "v22:f95b873d28a8",
-  "baseline": "refactor/app-split（main@3a7da13 から分岐、PR #5）",
-  "criticRound": 19,
+  "designVersion": "v23",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v23:73426b201d79",
+  "baseline": "feat/integration（PR #16）",
+  "criticRound": 22,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "段 1 の実装（委譲中）。R11 の改訂は段 2 で実装",
-  "lastUpdated": "2026-11-17",
+  "nextAction": "round-22 の批評（design-critic と codex）を受けて §11 を改訂し、承認CPへ",
+  "lastUpdated": "2026-11-19",
   "delegation": {
     "実装": "claude サブエージェント",
     "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol xhigh"
