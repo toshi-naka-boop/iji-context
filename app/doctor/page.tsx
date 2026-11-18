@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { DoctorQuery } from "../../src/query/types";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { getJson } from "../get-json";
 
 const STATUS_BADGE: Record<string, string> = { 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
 
@@ -12,7 +13,7 @@ export default function Doctor() {
   const [qs, setQs] = useState<DoctorQuery[]>([]);
   const [pick, setPick] = useState<Record<string, { option: string; freeText: string }>>({});
   const [err, setErr] = useState("");
-  const load = () => fetch("/api/doctor").then((r) => r.json()).then(setQs);
+  const load = () => getJson<DoctorQuery[]>("/api/doctor").then(setQs).catch((e: Error) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
   async function post(url: string, body: unknown) {

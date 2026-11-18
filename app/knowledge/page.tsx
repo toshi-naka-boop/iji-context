@@ -4,6 +4,7 @@ import { LocalRuleHistoryMock } from "./history-mock";
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { getJson } from "../get-json";
 
 const STATUS_COLOR: Record<string, string> = { 承認済み: "var(--accent)", 未検証: "var(--sky)", 要再検証: "var(--warn-mark)", 停止: "#5a4632", 保管: "var(--muted)" };
 
@@ -25,9 +26,10 @@ export default function Knowledge() {
   const [prop, setProp] = useState({ summary: "", body: "" });
   const [err, setErr] = useState("");
   const load = () => {
-    fetch("/api/knowledge?view=queue").then((r) => r.json()).then(setQueue);
-    fetch("/api/knowledge").then((r) => r.json()).then(setAll);
-    fetch("/api/peer").then((r) => r.json()).then(setPeer);
+    const fail = (e: Error) => setErr(e.message);
+    getJson<K[]>("/api/knowledge?view=queue").then(setQueue).catch(fail);
+    getJson<K[]>("/api/knowledge").then(setAll).catch(fail);
+    getJson<Peer[]>("/api/peer").then(setPeer).catch(fail);
   };
   useEffect(load, []);
   const run = (p: Promise<unknown>) => p.then(() => { setErr(""); load(); }).catch((e) => setErr(e.message));

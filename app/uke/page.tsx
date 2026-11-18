@@ -7,6 +7,7 @@ import { UKE_LIMITS } from "../../src/uke/limits";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import { PageGuide } from "../page-guide";
+import { getJson } from "../get-json";
 
 type Uke = { name: string; uploaded: boolean; payer: string; prefecture: string; billingMonth: string; receipts: { claimId: string; patient: string }[]; imported: boolean };
 
@@ -19,7 +20,7 @@ export default function UkeImport() {
   const [done, setDone] = useState("");
   useEffect(() => {
     if (!user) return;
-    fetch("/api/uke").then((r) => r.json()).then(setList).catch((e) => setErr(String(e)));
+    getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
   }, [user]);
   async function take(name: string) {
     if (!user) return;
