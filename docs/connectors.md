@@ -49,7 +49,6 @@
 | `RESEMEN_CONNECT_<ID>_TOKEN` | Bearer 認証（FHIR） | 同上 |
 | `RESEMEN_CONNECT_FHIR_PATIENT_SYSTEM` | 患者番号の identifier system（医療機関コードを含む全体。必須） | `urn:oid:1.2.392.100495.20.3.51.19999999999` |
 | `RESEMEN_CONNECT_FHIR_KOHI_SYSTEM` | 公費負担者番号の identifier system | 未確認。既定は仮の値 |
-| `RESEMEN_CONNECT_ORCA_CODEMAP` | 診療行為コード → 区分 の対応表（JSON）のパス。既定は架空コードの表 | `/data/codemap.json` |
 | `RESEMEN_CONNECT_TIMEOUT_MS`／`RESEMEN_CONNECT_MAX_BYTES` | タイムアウト（既定 10 秒）・応答の上限（既定 2 MB） | `10000`／`2097152` |
 
 接続先はリクエストから受け取らない。コネクタ id から、この環境変数だけを引く。
@@ -80,7 +79,6 @@
 対応表にないコード、対応先がこのアプリの区分にないコードは、例外にせず `unmapped`（請求 id・コード・日付）に入れ、算定行には入れない。`unmapped` が 1 件以上あるレセプトは「判定の対象外 n 件」と表示し、合計を出さない（表示とエンジン側は後の工程）。
 
 **ORCA の請求は未対応。** 診療行為（`medicalgetv2`）と患者病名（`diseasegetv2`）は、公式仕様で要求・応答とも xml2 形式だけ（`format=json` の記載がない）。XML パーサは自作せず、依存の追加（承認が要る。FR-115）もしていないので、ORCA コネクタは `ClaimSource` を持たない。
-応答を読めたあとの写し方（`medicalMonthToLines`：class=03 の `Medication_Code` と `Perform_Calendar` → 算定行と `unmapped`）だけを、公式の項目名で置いてある（通信なし。どこからも呼ばれていない）。
 
 ## 模擬サーバー（FR-112）
 

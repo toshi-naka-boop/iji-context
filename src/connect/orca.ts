@@ -1,14 +1,10 @@
 // ORCA API 形式（日医標準レセプトソフト API）の読み取りコネクタ（spec FR-110）。読み取りだけで、書き込みの API は呼ばない。
 // 相手は同梱の模擬サーバー（fixtures/connect/mock-server.ts）。実機にはつないでいない。
 // 持っているのは患者基本情報（PatientSource）だけ。請求（診療行為）は、公式仕様が xml2 形式だけなので読んでいない（下の注）
-import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { CODE_TABLE } from "../engine/codes-fictional";
-import { hasRevision, resolveRevision } from "../engine/revisions";
-import type { ClaimLine } from "../engine/types";
 import type { CoverageInfo } from "../patient/profile";
-import { connectJson, ConnectError, connectorEnv, formatError } from "./fetch";
-import { assertQuery, type Connector, type ConnectorPatient, type UnmappedLine } from "./types";
+import { connectJson, ConnectError, formatError } from "./fetch";
+import { assertQuery, type Connector, type ConnectorPatient } from "./types";
 
 export const ORCA_ID = "orca";
 
@@ -147,58 +143,4 @@ export function createOrcaConnector(): Connector {
       },
     },
   };
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// 診療月診療コード情報（medicalgetv2 class=03）→ 算定行。通信はしない。
-// xml2 形式を読めるようになったとき（依存の承認後）に、読んだ結果をここへ渡す。項目名は公式仕様で確認済み（上の注）。
-// いまはどのコネクタからも呼ばれていない（対応のないコードの扱い＝spec FR-111 を、コードと一緒に残すために置いている）
-// ───────────────────────────────────────────────────────────────────────────
-export const OrcaMedicalMonth = z.object({
-  /** 診療年月 YYYY-MM */
-  Perform_Date: z.string().regex(/^\d{4}-\d{2}$/),
-  Medical_List_Information: z
-    .array(z.object({ Medication_Code: z.string().regex(/^\d{9}$/), Perform_Calendar: z.string().regex(/^[01]{31}$/) }))
-    .max(400)
-    .optional(),
-});
-
-/**
- * 診療行為コード → このアプリの区分 の対応表。
- * 同梱するのは架空コード（src/engine/codes-fictional.ts）だけ。実在のマスターとの対応表は同梱しない。
- * 差し替えるときは RESEMEN_CONNECT_ORCA_CODEMAP に JSON（{"コード": "区分"}）のパスを書く
- */
-export function loadCodeMap(): Map<string, string> {
-  const file = connectorEnv(ORCA_ID, "CODEMAP");
-  if (!file) return new Map(CODE_TABLE.map((r) => [r.code, r.kubun]));
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    throw new ConnectError(ORCA_ID, "config", "対応表（RESEMEN_CONNECT_ORCA_CODEMAP）が読めない");
-  }
-  const parsed = z.record(z.string(), z.string()).safeParse(raw);
-  if (!parsed.success) throw new ConnectError(ORCA_ID, "config", "対応表（RESEMEN_CONNECT_ORCA_CODEMAP）の形が違う");
-  return new Map(Object.entries(parsed.data));
-}
-
-/** 診療月診療コード情報を算定行にする。対応のないコードは例外にせず unmapped に入れる（判定の対象外） */
-export function medicalMonthToLines(raw: unknown, query: { claimId: string; yearMonth: string }, codeMap = loadCodeMap()): { lines: ClaimLine[]; unmapped: UnmappedLine[] } {
-  const parsed = OrcaMedicalMonth.safeParse(raw);
-  if (!parsed.success) throw formatError(ORCA_ID, "診療行為", parsed.error.issues);
-  if (parsed.data.Perform_Date !== query.yearMonth) throw new ConnectError(ORCA_ID, "format", "頼んだ診療年月と違う月の応答が返った");
-  // 該当する版がない診療年月は判定しない（近い版で代用しない）
-  if (!hasRevision(query.yearMonth)) throw new ConnectError(ORCA_ID, "format", "診療年月に当たる版がない");
-  const points = resolveRevision(query.yearMonth).points;
-  const lines: ClaimLine[] = [];
-  const unmapped: UnmappedLine[] = [];
-  for (const m of parsed.data.Medical_List_Information ?? []) {
-    // Perform_Calendar は、算定した日に 1 を並べた 31 文字（2 日だけなら 0100…）
-    const dates = [...m.Perform_Calendar].flatMap((c, i) => (c === "1" ? [`${query.yearMonth}-${String(i + 1).padStart(2, "0")}`] : []));
-    if (dates.length === 0) continue;
-    const kubun = codeMap.get(m.Medication_Code);
-    if (kubun === undefined || !Object.hasOwn(points, kubun)) unmapped.push({ claimId: query.claimId, code: m.Medication_Code, dates });
-    else lines.push({ kubun, count: dates.length, dates });
-  }
-  return { lines, unmapped };
 }

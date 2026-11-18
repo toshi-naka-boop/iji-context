@@ -5,10 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { connectorOf, enabledConnectors } from "../../src/connect";
 import { coverageCsvId, createFhirConnector, FHIR_WIRE, FhirCondition, FhirCoverage, FhirEncounter, FhirMedicationRequest, FhirPatient, toCoverage } from "../../src/connect/fhir";
 import { createFixtureConnector } from "../../src/connect/fixture";
-import { createOrcaConnector, medicalMonthToLines, OrcaPatientResponse } from "../../src/connect/orca";
-import { fictionalCode } from "../../src/engine/codes-fictional";
+import { createOrcaConnector, OrcaPatientResponse } from "../../src/connect/orca";
 import { CONNECT_FILES, generate, MOCK_PATIENTS } from "../../scripts/gen-connect";
-import { loadCase } from "../engine/helpers";
 import { claimId, dateIn, day, month as monthFrom, YM } from "../helpers/period";
 import { failure, pointAt, startMock, type Mock } from "./helpers";
 
@@ -96,45 +94,6 @@ describe("ORCA 形式のコネクタ（患者基本情報）", () => {
     pointAt(mock);
     await expect(orca.patient!.getPatient("K1&class=99")).rejects.toThrow("患者の id");
     expect([orca.claims, orca.chart]).toEqual([undefined, undefined]);
-  });
-});
-
-describe("診療月診療コード情報 → 算定行（通信なし。公式仕様の項目名）", () => {
-  /** 算定した日に 1 を並べた 31 文字 */
-  const calendar = (dates: string[]) => Array.from({ length: 31 }, (_, i) => (dates.some((d) => Number(d.slice(8)) === i + 1) ? "1" : "0")).join("");
-  const month = (k: string, extra: { Medication_Code: string; Perform_Calendar: string }[] = []) => ({
-    Perform_Date: YM,
-    Medical_List_Information: [...loadCase(k).lines.map((l) => ({ Medication_Code: fictionalCode(l.kubun), Perform_Calendar: calendar(l.dates) })), ...extra],
-  });
-  const query = (k: string) => ({ claimId: claimId(k), yearMonth: YM });
-
-  it("算定日区分（Perform_Calendar）から日付を作り、症例と同じ算定行になる", () => {
-    for (const k of ["K1", "K3", "K4"]) expect(medicalMonthToLines(month(k), query(k))).toEqual({ lines: loadCase(k).lines, unmapped: [] });
-  });
-
-  it("対応のないコードは例外にせず unmapped に入り、算定行には入らない", () => {
-    const got = medicalMonthToLines(month("K1", [{ Medication_Code: "000000000", Perform_Calendar: calendar([day(12)]) }]), query("K1"));
-    expect(got.unmapped).toEqual([{ claimId: claimId("K1"), code: "000000000", dates: [day(12)] }]);
-    expect(got.lines).toEqual(loadCase("K1").lines);
-  });
-
-  it("対応表は設定で差し替えられる。対応先がこのアプリの区分にないコードも unmapped", async () => {
-    vi.stubEnv("RESEMEN_CONNECT_ORCA_CODEMAP", path.join(root, "tests", "connect", "codemap-partial.json"));
-    const want = loadCase("K4").lines;
-    const got = medicalMonthToLines(month("K4"), query("K4"));
-    expect(got.lines).toEqual([want[0]]);
-    expect(got.unmapped.map((u) => u.dates)).toEqual(want.slice(1).map((l) => l.dates));
-    vi.stubEnv("RESEMEN_CONNECT_ORCA_CODEMAP", path.join(root, "no-such-file.json"));
-    expect((await failure(async () => medicalMonthToLines(month("K4"), query("K4")))).kind).toBe("config");
-  });
-
-  it("形の違う応答・頼んだ月と違う応答・版のない診療年月は形式違い", async () => {
-    const bad = { Perform_Date: YM, Medical_List_Information: [{ Medication_Code: "x", Perform_Calendar: "1" }] };
-    expect((await failure(async () => medicalMonthToLines(bad, query("K1")))).kind).toBe("format");
-    expect((await failure(async () => medicalMonthToLines({ ...month("K1"), Perform_Date: nextMonth }, query("K1")))).kind).toBe("format");
-    // 同梱の版より前の診療年月（2024 年度）は判定しない
-    const old = "2025-03";
-    expect((await failure(async () => medicalMonthToLines({ ...month("K1"), Perform_Date: old }, { claimId: `K1-${old}`, yearMonth: old }))).message).toContain("版がない");
   });
 });
 
