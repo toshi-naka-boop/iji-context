@@ -458,7 +458,7 @@ export default function Work() {
             )}
             <table>
               <thead>
-                <tr><th>区分</th><th>回数</th><th>日（3 月）</th><th>点数</th><th /></tr>
+                <tr><th>区分</th><th>回数</th><th>日（{Number(ctx.claimId.slice(-2))} 月）</th><th>点数</th><th /></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
