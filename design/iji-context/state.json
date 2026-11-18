@@ -1,12 +1,12 @@
 {
-  "currentNode": "批評",
-  "status": "in_progress",
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
   "designVersion": "v23",
   "approvedDesignVersion": null,
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v23:96986cd24000",
+  "requiredApprovalFingerprint": "v23:5e9a47dc9f78",
   "baseline": "feat/integration（PR #16）",
   "criticRound": 24,
   "openIssueIds": [],
@@ -14,7 +14,7 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "round-24（codex だけ。3 巡目で打ち切り）で新規 high がなければ承認CPへ",
+  "nextAction": "ユーザーの承認（指紋つき）を待つ。承認後、段 5 から実装を委譲",
   "lastUpdated": "2026-11-19",
   "delegation": {
     "実装": "claude サブエージェント",
