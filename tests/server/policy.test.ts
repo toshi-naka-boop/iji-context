@@ -32,9 +32,9 @@ describe("権限表", () => {
     }
   });
 
-  it("開発用（dev）の行は 3 つだけ。ログインの確かめは route() が持ち、ルートの中には書かない", () => {
+  it("開発用（dev）の行は 4 つだけ（時計を進める操作を含む）。ログインの確かめは route() が持ち、ルートの中には書かない", () => {
     const dev = Object.entries(POLICY).filter(([, rule]) => rule === "dev").map(([key]) => key);
-    expect(dev).toEqual(["GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]);
+    expect(dev).toEqual(["POST /api/clock", "GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]);
     for (const r of routes.filter((x) => x.keys.some((k) => dev.includes(k)))) expect(/ログインしてください|\bviewer\b/.test(r.src), r.file).toBe(false);
     // ログインした人なら、ロールは問わない
     for (const role of ["clerk", "veteran", "manager", "doctor"] as const) expect(permits("dev", { role }, () => false)).toBe(true);

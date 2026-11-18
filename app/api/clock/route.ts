@@ -6,7 +6,7 @@ import { clockBody } from "../../../src/server/schemas/clock";
 
 export const GET = route({ roles: allow("GET /api/clock") }, () => ({ now: getApp().now() }));
 
-/** 時計を進める（デモ）。医師確認のリマインド・保留と、会議の日の整理が動く */
+/** 時計を進める（開発用。本番では 404）。医師確認のリマインド・保留と、会議の日の整理が動く */
 export const POST = route({ roles: allow("POST /api/clock"), body: clockBody, audit: { target: ({ body }) => body.now } }, ({ body }) => getApp().advanceClock(body.now));
 
 export const runtime = "nodejs";

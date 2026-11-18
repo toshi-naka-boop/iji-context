@@ -86,9 +86,14 @@ export function TopBar({ status }: { status?: Status | null }) {
       <div className="side-date">
         <span>デモの日付</span>
         <span className="num">{now ? now.slice(0, 10).replaceAll("-", ".") : "----.--.--"}</span>
-        <input type="date" value={input} onChange={(e) => setInput(e.target.value)} aria-label="デモの日付" />
-        <button onClick={advance}>日付を進める</button>
-        {msg && <span>{msg}</span>}
+        {/* 日付を進めるのは開発用（本番では API が 404 を返すので、操作も出さない） */}
+        {process.env.NODE_ENV !== "production" && (
+          <>
+            <input type="date" value={input} onChange={(e) => setInput(e.target.value)} aria-label="デモの日付" />
+            <button onClick={advance}>日付を進める</button>
+            {msg && <span>{msg}</span>}
+          </>
+        )}
       </div>
       {(
         <div className="side-user">

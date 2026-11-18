@@ -93,7 +93,8 @@ export const POLICY = {
   "POST /api/character": ALL,
   "POST /api/clerk/name": ALL,
   "GET /api/clock": ALL,
-  "POST /api/clock": ALL,
+  // 時計を進めるのは開発用（本番では 404）。進めると会議の整理と医師確認の期限がクリニック全体で動くため、利用者の操作にしない
+  "POST /api/clock": "dev",
   "GET /api/master": ALL,
   "POST /api/voice/listen": ALL,
   "POST /api/voice/speak": ALL,
