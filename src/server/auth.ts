@@ -1,6 +1,6 @@
 // ログイン（spec FR-72）：ログイン ID とパスワード。パスワードは Node 標準の scrypt でハッシュにして保存し、平文は残さない。
 // セッションはランダムなトークンを httpOnly の cookie で渡し、DB にはトークンのハッシュだけを置く。
-// 利用者のデータは 1 人 1 クリニック（tenant）に分ける（src/server/tenant.ts）
+// 利用者のデータは 1 人 1 クリニック（tenant）に分ける（src/server/instance.ts）
 import Database from "better-sqlite3";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -50,7 +50,9 @@ export class Throttle {
   constructor(private max: number, private windowMs: number) {}
   blocked(key: string, now = Date.now()): boolean {
     const xs = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
-    this.hits.set(key, xs);
+    // 残っていないキーは持たない（毎回違うキーで叩かれても増え続けないように）
+    if (xs.length === 0) this.hits.delete(key);
+    else this.hits.set(key, xs);
     return xs.length >= this.max;
   }
   hit(key: string, now = Date.now()) {
@@ -60,6 +62,9 @@ export class Throttle {
     this.hits.delete(key);
   }
 }
+
+/** ない ID のときに照合する相手（起動時に 1 回だけ作る） */
+const DUMMY_HASH = hashPassword(randomBytes(16).toString("hex"));
 
 export function openAuth(dbFile: string) {
   mkdirSync(path.dirname(dbFile), { recursive: true });
@@ -166,7 +171,7 @@ export function openAuth(dbFile: string) {
   function login(loginId: string, password: string): User | null {
     const r = db.prepare("SELECT * FROM users WHERE login = ?").get(loginId) as (Row & { password_hash: string }) | undefined;
     if (!r) {
-      verifyPassword(password, hashPassword("dummy-password")); // 時間で ID の有無が分からないように
+      verifyPassword(password, DUMMY_HASH); // 時間で ID の有無が分からないように（ある ID と同じく照合を 1 回だけ回す）
       return null;
     }
     return verifyPassword(password, r.password_hash) ? toUser(r) : null;
