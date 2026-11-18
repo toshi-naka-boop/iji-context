@@ -85,11 +85,13 @@ describe("ログイン", () => {
 describe("請求 id の形", () => {
   it("../ や / を含む請求 id は 400 で、ファイルを読みに行かない", async () => {
     const cross = await import("../../app/api/crosscheck/route");
+    // 文字種は合っているが存在しない請求 id は、形式違いではなく「見つからない」（アップロードした UKE の請求 id も同じ文字種で受けるため）
+    expect((await cross.GET(get(`/api/crosscheck?claimId=K1-${YM.slice(0, 4)}-13`))).status).toBe(404);
     const facts = await import("../../app/api/patients/[claimId]/facts/route");
     // クリニックの DB の用意（初回だけ症例を読む）を先に済ませておく
     instance.runAs(user, () => instance.getApp().cases());
     const chart = (await import("../../app/api/chart/route")).POST;
-    for (const bad of ["../../secret", "K1/../../secret", `${claimId("K1")}/x`, "..", `${claimId("K1")}.json`, `K1-${YM.slice(0, 4)}-13`, ` ${claimId("K1")}`]) {
+    for (const bad of ["../../secret", "K1/../../secret", `${claimId("K1")}/x`, "..", `${claimId("K1")}.json`, ` ${claimId("K1")}`]) {
       fsCalls.paths.length = 0;
       const q = await cross.GET(get(`/api/crosscheck?claimId=${encodeURIComponent(bad)}`));
       expect(q.status).toBe(400);

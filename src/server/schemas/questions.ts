@@ -1,10 +1,9 @@
 // 処理体験（1 件＝1 問）の入力。画面（app/work/page.tsx）が送る形だけを受ける
 import { z } from "zod";
+import { claimId } from "./cases";
 
 /** 問題の id（src/server/app/questions.ts の start が作る形：q0001） */
 const questionId = z.string().regex(/^q\d{4,9}$/);
-/** 請求の id（症例-診療年月：K1-2026-10） */
-const claimId = z.string().regex(/^K\d{1,3}-\d{4}-\d{2}$/);
 /** 練習問題の id（src/practice/drills.ts の d00、doctor-drills.ts の m01） */
 const drillId = z.string().regex(/^[dm]\d{2}$/);
 /** 日付（YYYY-MM-DD） */
