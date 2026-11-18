@@ -394,6 +394,30 @@ describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と
   });
 });
 
+describe("同じ区分を複数の行に分けた請求（X-75）", () => {
+  /** 行を 1 日ずつの別の行に分ける */
+  const split = (ctx: ClaimContext, kubun: string): ClaimContext => ({ ...ctx, lines: ctx.lines.flatMap((l) => (l.kubun === kubun ? l.dates.map((d) => ({ kubun, count: 1, dates: [d] })) : [l])) });
+  it("R11：判断料を 14 日と 28 日の別の行で 1 回ずつ算定しても、月 1 回の背反が出る", () => {
+    const c = withLines(K2, line("D026_3", 1, [SECOND]));
+    expect(tags(c, "R11")).toEqual(["R11:背反:judgement_once_a_month"]);
+    expect(of(c, "R11")[0].lineRefs).toEqual(["D026_3"]);
+  });
+  it("R08・R15：2 行目にある往診料だけの日も、訪問診療時の区分の誤りとして出る", () => {
+    const r08 = split(setDates(K1_OUSHIN, "O001_3I", [FIRST, SECOND, OTHER]), "O001_3I");
+    expect(tags(r08, "R08")).toEqual(["R08:区分誤り:oushin_only_day"]);
+    const r15 = split(setDates(K1_OUSHIN, "O100_1HA", [FIRST, SECOND, OTHER]), "O100_1HA");
+    expect(tags(r15, "R15")).toEqual(["R15:区分誤り:oushin_only_day"]);
+  });
+  it("分けても束ねても、指摘と合計は同じ。行ごとの点数は渡された行のまま", () => {
+    for (const k of ["C001_1I", "O001_3I", "O100_1HA"]) {
+      const s = evaluate(split(K1, k));
+      expect(s.findings).toEqual(evaluate(K1).findings);
+      expect(s.total).toBe(evaluate(K1).total);
+      expect(s.byLine).toHaveLength(K1.lines.length + 1);
+    }
+  });
+});
+
 describe("未知の区分", () => {
   it("例外を投げる（0 点にしない）。前の年度だけの区分も、この版にはない", () => {
     expect(() => evaluate(withLines(K1, line("XXXX")))).toThrow();

@@ -37,6 +37,17 @@ describe("2 本を読む", () => {
     }
   });
 
+  it("同じ区分を 2 行に分けた UKE でも、月 1 回の判断料の 2 回目を見逃さない（X-75）", () => {
+    const { cases, src } = loadSources();
+    const k2 = cases.find((c) => c.claimId === claimId("K2"))!;
+    const want = loadCase("K2");
+    const twice = { ...k2, lines: [...k2.lines, { kubun: "D026_3", count: 1, dates: [day(28)] }] };
+    const file = parseUke(writeUke(buildUkeFiles([twice], src, BILLING_MONTH).国保連));
+    const got = toClaimContext(file, k2.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+    expect(got.lines.filter((l) => l.kubun === "D026_3")).toHaveLength(2);
+    expect(evaluate(got).findings.map((f) => f.messageKey)).toEqual(["R11.judgement_once_a_month"]);
+  });
+
   it("K3 は公費（54）が 1 件目の KO に載り、負担区分は 2（医保＋公費①）", () => {
     const k3 = files.国保連.receipts.find((r) => r.claimId === claimId("K3"))!;
     expect(k3.patient.kohi.map((x) => x.payerNo.slice(0, 2))).toEqual(["54"]);
