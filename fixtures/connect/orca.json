@@ -1,5 +1,5 @@
 {
-  "_note": "模擬サーバー（ORCA API 形式）の応答。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者は fixtures/uke/patients.json の K1・K3・K4、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き",
+  "_note": "模擬サーバー（ORCA API 形式）の応答。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者は fixtures/uke/patients.json の K1・K2・K3・K4、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き。medical は診療行為（medicalgetv2 class=03）の中身で、模擬サーバーが xml2 形式にして返す。行は fixtures/cases/ の算定行、コードは架空コード（src/engine/codes-fictional.ts）",
   "patients": {
     "K1": {
       "patientinfores": {
@@ -16,6 +16,28 @@
               "InsuranceProvider_Number": "39139993",
               "HealthInsuredPerson_Symbol": "",
               "HealthInsuredPerson_Number": "00000001",
+              "Certificate_StartDate": "",
+              "Certificate_ExpiredDate": ""
+            }
+          ]
+        }
+      }
+    },
+    "K2": {
+      "patientinfores": {
+        "Api_Result": "00",
+        "Patient_Information": {
+          "Patient_ID": "K2",
+          "WholeName": "架空　二郎",
+          "BirthDate": "1946-04-01",
+          "Sex": "1",
+          "HealthInsurance_Information": [
+            {
+              "Insurance_Combination_Number": "0001",
+              "InsuranceCombination_Rate_Outpatient": "0.10",
+              "InsuranceProvider_Number": "39139993",
+              "HealthInsuredPerson_Symbol": "",
+              "HealthInsuredPerson_Number": "00000002",
               "Certificate_StartDate": "",
               "Certificate_ExpiredDate": ""
             }
@@ -82,6 +104,298 @@
           ]
         }
       }
+    }
+  },
+  "medical": {
+    "K1": {
+      "Patient_Information": {
+        "Patient_ID": "K1",
+        "WholeName": "架空　一郎",
+        "BirthDate": "1941-04-01",
+        "Sex": "1"
+      },
+      "Perform_Date": "2026-10",
+      "Medical_List_Information": [
+        {
+          "Medication_Code": "990000001",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000043",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000047",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000003",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000009",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000001000"
+        },
+        {
+          "Medication_Code": "990000016",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000001000"
+        },
+        {
+          "Medication_Code": "990000020",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000021",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000022",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000019",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000027",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000028",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000029",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000030",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000042",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000032",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000033",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000034",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        }
+      ]
+    },
+    "K2": {
+      "Patient_Information": {
+        "Patient_ID": "K2",
+        "WholeName": "架空　二郎",
+        "BirthDate": "1946-04-01",
+        "Sex": "1"
+      },
+      "Perform_Date": "2026-10",
+      "Medical_List_Information": [
+        {
+          "Medication_Code": "990000001",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000043",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000047",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000000100000000000001000"
+        },
+        {
+          "Medication_Code": "990000003",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000010",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000001000"
+        },
+        {
+          "Medication_Code": "990000012",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000001000"
+        },
+        {
+          "Medication_Code": "990000015",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000001000"
+        },
+        {
+          "Medication_Code": "990000027",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000028",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000029",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000030",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000032",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        },
+        {
+          "Medication_Code": "990000033",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000100000000000000000"
+        }
+      ]
+    },
+    "K3": {
+      "Patient_Information": {
+        "Patient_ID": "K3",
+        "WholeName": "架空　三郎",
+        "BirthDate": "1948-04-01",
+        "Sex": "1"
+      },
+      "Perform_Date": "2026-10",
+      "Medical_List_Information": [
+        {
+          "Medication_Code": "990000001",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "12",
+          "Perform_Calendar": "0000111100010101001010100100100"
+        },
+        {
+          "Medication_Code": "990000043",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "12",
+          "Perform_Calendar": "0000111100010101001010100100100"
+        },
+        {
+          "Medication_Code": "990000047",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "12",
+          "Perform_Calendar": "0000111100010101001010100100100"
+        },
+        {
+          "Medication_Code": "990000003",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000100000000000000000000000000"
+        },
+        {
+          "Medication_Code": "990000009",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000000100"
+        }
+      ]
+    },
+    "K4": {
+      "Patient_Information": {
+        "Patient_ID": "K4",
+        "WholeName": "架空　四郎",
+        "BirthDate": "1950-04-01",
+        "Sex": "1"
+      },
+      "Perform_Date": "2026-10",
+      "Medical_List_Information": [
+        {
+          "Medication_Code": "990000001",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000001000000000000010000"
+        },
+        {
+          "Medication_Code": "990000043",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000001000000000000010000"
+        },
+        {
+          "Medication_Code": "990000047",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "02",
+          "Perform_Calendar": "0000000000001000000000000010000"
+        },
+        {
+          "Medication_Code": "990000003",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000001000000000000000000"
+        },
+        {
+          "Medication_Code": "990000053",
+          "Medical_Class_code": "0",
+          "Perform_Total_Number": "01",
+          "Perform_Calendar": "0000000000000000000000000010000"
+        }
+      ]
     }
   }
 }

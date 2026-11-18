@@ -5,7 +5,7 @@
 // パス：
 //   /orca/api01rv2/patientgetv2?id=K1&format=json（GET・Basic 認証）
 //   /fhir/Patient?identifier=…｜/fhir/Coverage?beneficiary=…｜/fhir/Encounter｜/fhir/MedicationRequest｜/fhir/Condition（GET・Bearer 認証。1 ページ 1 件）
-// ORCA の診療行為（medicalgetv2）は、公式仕様が xml2 形式だけなので持たない（src/connect/orca.ts の注）
+//   /orca/api01rv2/medicalgetv2?class=03（POST・Basic 認証。要求も応答も xml2 形式。診療月診療コード情報）
 // 頭に /fault/<種類> を付けると、わざと壊した応答を返す（FAULTS を参照）
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -35,6 +35,14 @@ export const FAULTS = [
   "slow",
   /** ORCA：相手が失敗の結果（Api_Result）を返す */
   "api-error",
+  /** ORCA の診療行為：閉じていないタグのある XML */
+  "xml-broken",
+  /** ORCA の診療行為：DOCTYPE と実体の宣言つきの XML */
+  "xml-doctype",
+  /** ORCA の診療行為：__proto__ という名前の要素がある XML */
+  "xml-proto",
+  /** ORCA の診療行為：架空コードの表にないコードの行が 1 つ混じる */
+  "unknown-code",
   /** FHIR：next リンクが別のホストを指す */
   "next-other-host",
   /** FHIR：next リンクが同じホストの、接続先の範囲の外を指す */
@@ -55,7 +63,18 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const load = <T>(file: string) => JSON.parse(readFileSync(path.join(here, file), "utf8")) as T;
 
 type Resource = { resourceType: string; id: string; [k: string]: unknown };
-type OrcaData = { patients: Record<string, unknown> };
+type OrcaMedical = { Patient_Information: { Patient_ID: string }; Perform_Date: string; Medical_List_Information: Record<string, string>[] };
+type OrcaData = { patients: Record<string, unknown>; medical: Record<string, OrcaMedical> };
+
+/** 架空コードの表にないコード（unknown-code 用。表のコードは 99 で始まる） */
+const UNKNOWN_CODE = "980000001";
+
+/** xml2 形式にする（日レセ API の応答の書き方）：オブジェクトは type="record"、配列は type="array" で中の要素名は「〜_child」、値は type="string" */
+function xml2(name: string, v: unknown): string {
+  if (Array.isArray(v)) return `<${name} type="array">${v.map((x) => xml2(`${name}_child`, x)).join("")}</${name}>`;
+  if (v && typeof v === "object") return `<${name} type="record">${Object.entries(v).map(([k, x]) => xml2(k, x)).join("")}</${name}>`;
+  return `<${name} type="string">${String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</${name}>`;
+}
 
 const send = (res: ServerResponse, status: number, body: unknown, type = "application/json") => {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -69,7 +88,8 @@ function commonFault(fault: Fault | null, req: IncomingMessage, res: ServerRespo
   else if (fault === "html") send(res, 200, "<html><body>login</body></html>", "text/html");
   else if (fault === "redirect") res.writeHead(302, { location: `http://${req.headers.host}${rest}` }).end();
   else if (fault === "huge" || fault === "huge-chunked" || fault === "lying-length") {
-    const headers: Record<string, string | number> = { "content-type": "application/json" };
+    // content-type は頼まれた形に合わせる（コネクタが大きさの検査まで進むように）
+    const headers: Record<string, string | number> = { "content-type": req.headers.accept === ORCA_WIRE.xmlType ? ORCA_WIRE.xmlType : "application/json" };
     if (fault === "huge") headers["content-length"] = HUGE_BYTES + 9;
     if (fault === "lying-length") headers["content-length"] = 20;
     res.writeHead(200, headers);
@@ -81,7 +101,34 @@ function commonFault(fault: Fault | null, req: IncomingMessage, res: ServerRespo
   return true;
 }
 
+/** 診療行為（診療月診療コード情報）。要求の本文から患者番号と診療年月を読み、その月の診療行為を xml2 形式で返す */
+async function orcaMedical(data: OrcaData, fault: Fault | null, req: IncomingMessage, res: ServerResponse, url: URL) {
+  if (req.method !== "POST" || url.searchParams.get("class") !== ORCA_WIRE.medicalClass || !String(req.headers["content-type"]).startsWith(ORCA_WIRE.xmlType)) return send(res, 404, { error: "not found" });
+  let body = "";
+  for await (const chunk of req.setEncoding("utf8")) body += chunk;
+  const item = (name: string) => new RegExp(`<${name} type="string">([^<]*)</${name}>`).exec(body)?.[1] ?? "";
+  const xml = (text: string) => send(res, 200, text, ORCA_WIRE.xmlType);
+  const wrap = (content: Record<string, unknown>) => `<${ORCA_WIRE.xmlRoot}>${xml2(ORCA_WIRE.medicalRoot, content)}</${ORCA_WIRE.xmlRoot}>`;
+  if (!body.includes(`<${ORCA_WIRE.medicalRequestRoot} type="record">`)) return xml(wrap({ Api_Result: "97" }));
+  if (fault === "api-error") return xml(wrap({ Api_Result: "89" }));
+  const found = data.medical[item("Patient_ID")];
+  if (!found) return xml(wrap({ Api_Result: ORCA_WIRE.notFoundResult }));
+  const { Medical_List_Information: rows, ...head } = found;
+  const ok = { Api_Result: "00", ...head };
+  // 合成データのない月は、診療行為のない応答（診療年月は頼まれた月）
+  const month = item("Perform_Date").slice(0, 7);
+  if (month !== found.Perform_Date) return xml(wrap({ ...ok, Perform_Date: month }));
+  if (fault === "broken") return xml(wrap({ ...ok, Medical_List_Information: rows.map(({ Perform_Calendar: _dropped, ...r }) => r) }));
+  if (fault === "unknown-code") return xml(wrap({ ...ok, Medical_List_Information: [...rows, { ...rows[0], Medication_Code: UNKNOWN_CODE }] }));
+  const good = wrap({ ...ok, Medical_List_Information: rows });
+  if (fault === "xml-broken") return xml(good.replace("</Perform_Date>", ""));
+  if (fault === "xml-doctype") return xml(`<!DOCTYPE ${ORCA_WIRE.xmlRoot} [<!ENTITY e "${found.Perform_Date}">]>${good.replace(`>${found.Perform_Date}</Perform_Date>`, ">&e;</Perform_Date>")}`);
+  if (fault === "xml-proto") return xml(good.replace("<Perform_Date", `<__proto__ type="record"><polluted type="string">1</polluted></__proto__><Perform_Date`));
+  xml(good);
+}
+
 function orca(data: OrcaData, fault: Fault | null, req: IncomingMessage, res: ServerResponse, url: URL, sub: string) {
+  if (sub === ORCA_WIRE.medicalPath) return void orcaMedical(data, fault, req, res, url);
   if (sub !== ORCA_WIRE.patientPath || req.method !== "GET" || url.searchParams.get("format") !== "json") return send(res, 404, { error: "not found" });
   const id = url.searchParams.get("id") ?? "";
   const result = (code: string) => send(res, 200, { [ORCA_WIRE.patientRoot]: { Api_Result: code } });

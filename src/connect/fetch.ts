@@ -1,4 +1,4 @@
-// 外向きの通信の守り（spec FR-113）。コネクタが外へ出るときは、必ずこのファイルの connectJson を通す。
+// 外向きの通信の守り（spec FR-113）。コネクタが外へ出るときは、必ずこのファイルの connectJson（XML は connectText）を通す。
 // - 接続先はリクエストから受け取らない。コネクタ id から、サーバー側の環境変数（RESEMEN_CONNECT_<ID>_URL など）を引く
 // - 許可リスト RESEMEN_CONNECT_ALLOW（host:port の完全一致）にない接続先には出ない。既定は空
 // - https だけ。http は「本番でない・ループバック・許可リストにある」の 3 つがそろったときだけ（同梱の模擬サーバー用）
@@ -187,8 +187,10 @@ export function pinnedLookup(address: string): LookupFunction {
 export type ConnectRequest = {
   /** 読み取りだけ。POST は、取得に POST を使う API のためにある */
   method?: "GET" | "POST";
-  /** POST の本文（JSON にして送る） */
+  /** POST の本文（JSON にして送る。contentType を書いたときは、文字列をそのまま送る） */
   body?: unknown;
+  /** 本文の content-type。JSON 以外（ORCA の xml2 形式）を送るときだけ書く */
+  contentType?: string;
   /** Accept に書く値。応答の content-type もこのどれかでなければ拒否する */
   accept?: string[];
 };
@@ -198,6 +200,19 @@ export type ConnectRequest = {
  * 失敗はすべて ConnectError（kind で原因が分かる）
  */
 export async function connectJson(id: string, target: string, req: ConnectRequest = {}): Promise<unknown> {
+  const text = await connectText(id, target, req);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ConnectError(id, "format", "応答が JSON として読めない");
+  }
+}
+
+/**
+ * コネクタの接続先から、応答の本文を文字列（UTF-8）で読む。通信の守り（許可リスト・https・リダイレクト・時間・大きさ・content-type）はここにある。
+ * 返すのは大きさの上限を通った本文だけ。JSON でも XML でも、解析はこのあとで行う
+ */
+export async function connectText(id: string, target: string, req: ConnectRequest = {}): Promise<string> {
   const { base, auth } = connectorConfig(id);
   const url = resolveTarget(id, base, target);
   const address = await assertAllowed(id, url);
@@ -205,11 +220,11 @@ export async function connectJson(id: string, target: string, req: ConnectReques
   const accept = req.accept ?? ["application/json"];
   const timeoutMs = positiveInt("RESEMEN_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
   const maxBytes = positiveInt("RESEMEN_CONNECT_MAX_BYTES", DEFAULT_MAX_BYTES);
-  const body = req.body === undefined ? null : Buffer.from(JSON.stringify(req.body), "utf8");
+  const body = req.body === undefined ? null : Buffer.from(req.contentType ? String(req.body) : JSON.stringify(req.body), "utf8");
   const headers: Record<string, string | number> = { accept: accept.join(", ") };
   if (auth?.type === "basic") headers.authorization = `Basic ${Buffer.from(`${auth.user}:${auth.password}`, "utf8").toString("base64")}`;
   if (auth?.type === "bearer") headers.authorization = `Bearer ${auth.token}`;
-  if (body) Object.assign(headers, { "content-type": "application/json", "content-length": body.byteLength });
+  if (body) Object.assign(headers, { "content-type": req.contentType ?? "application/json", "content-length": body.byteLength });
 
   // タイムアウトは、接続・応答のヘッダ・本文を読み終えるまでの全体にかける
   const ac = new AbortController();
@@ -254,9 +269,9 @@ export async function connectJson(id: string, target: string, req: ConnectReques
       chunks.push(chunk);
     }
     try {
-      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)));
+      return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
     } catch {
-      throw new ConnectError(id, "format", "応答が JSON として読めない", status);
+      throw new ConnectError(id, "format", "応答が UTF-8 として読めない", status);
     }
   } catch (e) {
     if (e instanceof ConnectError) throw e;
