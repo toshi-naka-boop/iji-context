@@ -6,15 +6,15 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v23:90d26e0b99ca",
+  "requiredApprovalFingerprint": "v23:96986cd24000",
   "baseline": "feat/integration（PR #16）",
-  "criticRound": 23,
+  "criticRound": 24,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "round-23 の批評で新規 high がなければ承認CPへ",
+  "nextAction": "round-24（codex だけ。3 巡目で打ち切り）で新規 high がなければ承認CPへ",
   "lastUpdated": "2026-11-19",
   "delegation": {
     "実装": "claude サブエージェント",
