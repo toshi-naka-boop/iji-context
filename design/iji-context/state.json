@@ -1,20 +1,20 @@
 {
-  "currentNode": "改訂",
+  "currentNode": "批評",
   "status": "in_progress",
   "designVersion": "v23",
   "approvedDesignVersion": null,
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": null,
+  "requiredApprovalFingerprint": "v23:189a6ad76676",
   "baseline": "feat/integration（PR #16）",
-  "criticRound": 24,
+  "criticRound": 25,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "ユーザー判断（実在データの受け入れ・版を選んで試算・摘要欄の点検）を §11-11〜13 に入れ、摘要欄の調査の結果を待って §11-13 を書き、批評 → 承認CP",
+  "nextAction": "§11-11〜14 を round-25 の批評（design-critic と codex）に掛け、反映して承認CPへ",
   "lastUpdated": "2026-11-19",
   "delegation": {
     "実装": "claude サブエージェント",
