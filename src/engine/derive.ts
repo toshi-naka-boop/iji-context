@@ -178,9 +178,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   /** 訪問診療料を立てるか。往診と同じ日（別々の診療）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
   function visitDecision(v: (typeof visits)[number]): Decision {
     const same = sameDay.get(v.date);
-    if (same && same.visit !== "check") return same.visit;
+    // 同じ日の要選択で訪問診療料を選んだ日（bill）も、前日の往診料の制限は下で調べる（X-74）
+    if (same && (same.visit === "hold" || same.visit === "skip")) return same.visit;
     const prev = addDays(v.date, -1);
-    const afterOushin = same !== undefined || (oushins.some((o) => o.date === prev) && oushinDecision(prev) !== "skip");
+    const afterOushin = same?.visit === "check" || (oushins.some((o) => o.date === prev) && oushinDecision(prev) !== "skip");
     if (!afterOushin) return "bill";
     const ok = visitBillable(ctx);
     if (ok === true) return "bill";

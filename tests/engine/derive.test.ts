@@ -201,6 +201,44 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
     expect(r.notBilled).toEqual([{ event: { type: "visit", date: D }, reason: "after_oushin" }]);
     quiet(ng, r);
   });
+  describe("前日に往診料があり、同じ日の要選択で訪問診療料を選んだ日（X-74）", () => {
+    /** 13 日に往診、14 日に訪問診療と往診（1 回の診療） */
+    const base = withFact(withEvents(K2, { type: "oushin", date: day(13), kind: "normal" }, oushin), "sameDaySeparate", sep({ [D]: false }));
+    const id = `D01-encounter:${D}`;
+    const r10 = (c: ClaimContext, r: DeriveResult) => judge(c, r).findings.filter((f) => f.ruleId === "R10");
+    it("文書提供なしなら、選んでも訪問診療料を立てず notBilled に残す（翌日の制限を飛ばさない）", () => {
+      const c = withFact(base, "contactDocProvided", no);
+      const r = derive(c, { choices: { [id]: "visit" } });
+      expect(datesOf(r, VISIT)).toEqual([day(28)]);
+      expect(datesOf(r, OUSHIN)).toEqual([day(13)]);
+      expect(r.notBilled).toEqual([
+        { event: { type: "oushin", date: D }, reason: "same_encounter" },
+        { event: { type: "visit", date: D }, reason: "after_oushin" },
+      ]);
+      expect(r.pending).toEqual([]);
+      expect(r10(c, r)).toEqual([]);
+    });
+    it("文書提供が不明なら訪問診療料を事実不足（医療事務）で保留にし、提供済みなら立てる", () => {
+      const u = withFact(base, "contactDocProvided", unknown);
+      const ru = derive(u, { choices: { [id]: "visit" } });
+      expect(ru.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "contactDocProvided", target: "clerk", date: D })]);
+      expect(datesOf(ru, VISIT)).toEqual([day(28)]);
+      const ok = derive(base, { choices: { [id]: "visit" } });
+      expect(datesOf(ok, VISIT)).toEqual([D, day(28)]);
+      expect(judge(base, ok).findings).toEqual([]);
+    });
+    it("不変条件：保留のない導出の行を検証に通すと、R10 の指摘が出ない（同じ日の答え × 選択 × 文書提供の全組み合わせ）", () => {
+      for (const separate of [true, false])
+        for (const pick of ["visit", "oushin"])
+          for (const doc of [yes, no]) {
+            const c = withFact(withFact(base, "sameDaySeparate", sep({ [D]: separate })), "contactDocProvided", doc);
+            const r = derive(c, { choices: separate ? {} : { [id]: pick } });
+            const label = `separate=${separate} pick=${pick} doc=${doc.value}`;
+            expect(r.pending, label).toEqual([]);
+            expect(r10(c, r), label).toEqual([]);
+          }
+    });
+  });
   it("緊急の往診は、対象の患者と確かめたときだけ緊急往診加算を立てる。不明なら事実不足（医療事務）", () => {
     const c = withEvents(K2, { type: "oushin", date: day(20), kind: "emergency" });
     expect(datesOf(derive(c), C.oushin.kinkyu)).toEqual([day(20)]);
