@@ -45,6 +45,12 @@ export type Facts = {
   table7: Fact<boolean>;
   /** 別表第八の二に該当（重症区分） */
   table8_2: Fact<boolean>;
+  /**
+   * 要介護度のほかに、別表第八の三（包括的支援加算の対象）のどれかの状態に当たるか。R03・D04 が読む。
+   * 障害支援区分 2 以上、認知症高齢者の日常生活自立度 Ⅲ 以上、週 1 回以上の訪問看護、訪問診療・訪問看護での処置、
+   * 看護職員が配置された施設での処置、麻薬の投薬、その他（EM R8-15a）。要介護 3 以上は careLevel で見る
+   */
+  table8_3Other: Fact<boolean>;
   mainDisease: Fact<string>;
   homeOxygen: Fact<boolean>;
   /** 看取りの場所（"在宅" など。死亡がない月は null） */

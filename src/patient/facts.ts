@@ -1,8 +1,8 @@
-// 患者ごとに医療事務が確かめた情報（要介護度・別表第七・別表第八の二・在宅酸素）。
+// 患者ごとに医療事務が確かめた情報（要介護度・別表第七・別表第八の二・別表第八の三の要介護度以外・在宅酸素）。
 // 判定はカルテ側の事実に、残した最新の値を重ねて使う。要介護度は認定の有効期間の終わりを過ぎたら「分からない」に戻す
 import type { Facts } from "../engine/types";
 
-export const PATIENT_FACT_KEYS = ["careLevel", "table7", "table8_2", "homeOxygen"] as const;
+export const PATIENT_FACT_KEYS = ["careLevel", "table7", "table8_2", "table8_3Other", "homeOxygen"] as const;
 export type PatientFactKey = (typeof PATIENT_FACT_KEYS)[number];
 export const FACT_SOURCES = ["介護保険証", "カルテ", "医師に確認"] as const;
 export type FactSource = (typeof FACT_SOURCES)[number];

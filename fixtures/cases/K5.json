@@ -27,6 +27,9 @@
       "known": true,
       "value": true
     },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "末期悪性腫瘍"

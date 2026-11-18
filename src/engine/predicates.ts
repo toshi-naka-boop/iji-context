@@ -100,9 +100,18 @@ export function hokatsuInScope(ctx: ClaimContext, c: RevisionConsts): boolean {
   return t.known === true ? tiers.includes(t.value) : t.need === "facility.note16Met" && t.candidates.every((x) => tiers.includes(x));
 }
 
-/** 包括的支援加算の対象か（要介護度が下限以上）。期待される区分が加算の対象の区分で、careLevel が分かっている前提 */
-export function hokatsuEligible(ctx: ClaimContext, c: RevisionConsts): boolean {
-  return fact(ctx, "careLevel") >= c.hokatsu.careLevelMin;
+/**
+ * 包括的支援加算の対象か（別表第八の三。EM R8-15a）。R03 と導出の D04 が同じ答えを使う。
+ * 要介護度が下限以上か、ほかの状態に当たれば対象。どちらにも当たらないと分かっていれば対象外。
+ * 決まらないときは、次に確かめる事実を 1 つ返す（要介護度が先。答えで結果が変わらないことは聞かない）
+ */
+export function hokatsuEligible(ctx: ClaimContext, c: RevisionConsts): { known: true; value: boolean } | { known: false; need: "careLevel" | "table8_3Other" } {
+  const care = ctx.facts.careLevel;
+  const other = ctx.facts.table8_3Other;
+  if ((care.known && care.value >= c.hokatsu.careLevelMin) || (other.known && other.value)) return { known: true, value: true };
+  if (!care.known) return { known: false, need: "careLevel" };
+  if (!other.known) return { known: false, need: "table8_3Other" };
+  return { known: true, value: false };
 }
 
 /**

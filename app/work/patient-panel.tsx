@@ -10,7 +10,7 @@ import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patien
 type Row = PatientFact & { expired: boolean };
 type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
 
-const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", table7: "別表第七", table8_2: "別表第八の二", homeOxygen: "在宅酸素療法" };
+const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", table7: "別表第七", table8_2: "別表第八の二", table8_3Other: "別表第八の三（要介護度以外）", homeOxygen: "在宅酸素療法" };
 
 /** 確かめ方の言い方（「医師に確認で確かめた」とならないように） */
 const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : `${s}で確かめた`);
