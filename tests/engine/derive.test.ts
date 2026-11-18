@@ -269,6 +269,19 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(datesOf(r, C.rx.other)).toEqual([day(28)]);
     expect(judge(c, r).findings).toEqual([]);
   });
+  it("処方箋料の区分は処方ごとに決める：1 日に内服 5 種類、20 日に 7 種類なら 60＋32＝92 点（X-77）", () => {
+    const rx = (n: number, oralKinds: number): ClaimEvent => ({ type: "prescription", date: day(n), oralKinds, days: 28 });
+    const c: ClaimContext = { ...withFact(K2, "comprehensiveCare", no), events: [...K2.events.filter((e) => e.type !== "prescription"), rx(1, 5), rx(20, 7)] };
+    const r = derive(c);
+    expect(r.pending).toEqual([]);
+    expect(datesOf(r, C.rx.other)).toEqual([day(1)]);
+    expect(datesOf(r, C.rx.many)).toEqual([day(20)]);
+    const result = judge(c, r);
+    const pointsOfRx = [C.rx.other, C.rx.many].map((k) => result.byLine.find((b) => b.kubun === k)?.points);
+    expect(pointsOfRx).toEqual([60, 32]);
+    expect(result.findings).toEqual([]);
+    for (const k of [C.rx.other, C.rx.many]) expect(r.basis.find((b) => b.kubun === k)?.events).toHaveLength(1);
+  });
   it("居住の場所・注16（区分を左右するとき）・施設の届出が不明なら、その区分だけ保留になる", () => {
     expect(derive(withFact(K2, "residence", unknown)).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["residence"]);
     expect(derive(withFacility(K2, { note16Met: unknown })).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["facility.note16Met"]);

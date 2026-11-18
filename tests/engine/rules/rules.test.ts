@@ -418,6 +418,28 @@ describe("同じ区分を複数の行に分けた請求（X-75）", () => {
   });
 });
 
+describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", () => {
+  const A = day(1);
+  const B = day(20);
+  /** 管理料のない月。1 日に内服 5 種類、20 日に 7 種類の処方 */
+  const base = (...lines: ReturnType<typeof line>[]): ClaimContext => ({
+    ...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1"),
+    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), { type: "prescription", date: A, oralKinds: 5, days: 14 }, { type: "prescription", date: B, oralKinds: 7, days: 14 }],
+    lines: [...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1").lines, ...lines],
+  });
+  it("処方ごとに合う区分なら指摘なし", () => {
+    expect(tags(base(line("F400_3", 1, [A]), line("F400_2", 1, [B])), "R07")).toEqual([]);
+  });
+  it("7 種類以上の処方の日を区分 3 にすると use_seven_or_more、未満の処方の日を区分 2 にすると not_seven_or_more", () => {
+    expect(tags(base(line("F400_3", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more"]);
+    expect(tags(base(line("F400_2", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+    expect(tags(base(line("F400_2", 1, [A]), line("F400_3", 1, [B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more", "R07:区分誤り:not_seven_or_more"]);
+  });
+  it("行の日に処方の出来事がないときは、月の処方のどれかに合えば指摘しない（日付で対応がとれないときの仮置き）", () => {
+    expect(tags(base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)])), "R07")).toEqual([]);
+  });
+});
+
 describe("未知の区分", () => {
   it("例外を投げる（0 点にしない）。前の年度だけの区分も、この版にはない", () => {
     expect(() => evaluate(withLines(K1, line("XXXX")))).toThrow();

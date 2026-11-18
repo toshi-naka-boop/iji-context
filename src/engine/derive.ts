@@ -9,7 +9,7 @@ import {
   ikouEligible,
   kanriKubun,
   oushinOnlyBilledDays,
-  rxManyOral,
+  rxKubun,
   terminalVisitsOk,
   visitBillable,
   visitKubunOn,
@@ -306,8 +306,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if (first) add(k, [first.date], { derive: "D09", events: [first] });
   }
 
-  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は R07 と同じ述語（月の処方に内服 7 種類以上があるか）で決める
-  if (!kanri && !kanriOpen && rxs.length) add(rxManyOral(ctx, c) ? c.rx.many : c.rx.other, rxs.map((e) => e.date), { derive: "D10", events: rxs });
+  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（その処方の内服が 7 種類以上か）で決める（X-77）
+  if (!kanri && !kanriOpen)
+    for (const k of [c.rx.other, c.rx.many]) {
+      const mine = rxs.filter((e) => rxKubun(c, e) === k);
+      add(k, mine.map((e) => e.date), { derive: "D10", events: mine });
+    }
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];

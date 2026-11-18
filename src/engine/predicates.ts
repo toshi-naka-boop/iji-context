@@ -115,9 +115,21 @@ export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
   return doc.known ? doc.value : "unknown";
 }
 
-/** 内服の種類数が閾値以上の処方があるか（処方箋料の区分を決める） */
-export function rxManyOral(ctx: ClaimContext, c: RevisionConsts): boolean {
-  return eventsOf(ctx, "prescription").some((e) => e.oralKinds >= c.rx.oralKindsThreshold);
+/** 処方 1 件の処方箋料の区分。処方ごとに、内服の種類数が閾値以上かで決める（D10・R07 が共有。X-77） */
+export function rxKubun(c: RevisionConsts, e: { oralKinds: number }): string {
+  return e.oralKinds >= c.rx.oralKindsThreshold ? c.rx.many : c.rx.other;
+}
+
+/**
+ * その日の処方箋料として合う区分（その日の処方の区分）。
+ * その日に処方の出来事がなければ（日付なしは day を "" で渡す）、日付で処方と行の対応がとれないので、月の処方のどれかの区分に合えばよいとする。
+ * 処方の出来事が月に 1 件もなければ、閾値未満の区分だけ
+ */
+export function rxKubunOn(ctx: ClaimContext, c: RevisionConsts, day: string): string[] {
+  const all = eventsOf(ctx, "prescription");
+  const onDay = all.filter((e) => e.date === day);
+  const of = (onDay.length ? onDay : all).map((e) => rxKubun(c, e));
+  return of.length ? [...new Set(of)] : [c.rx.other];
 }
 
 /**
