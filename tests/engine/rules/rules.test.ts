@@ -364,6 +364,36 @@ describe("R16 管理料の族", () => {
   });
 });
 
+describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
+  const D = day(21);
+  const DEATH = day(22);
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  const ONE_DAY: ClaimContext = {
+    ...loadCase("K5"),
+    events: [
+      { type: "visit", date: D, sameBuildingCount: 1 },
+      { type: "oushin", date: D, kind: "normal" },
+      { type: "death", date: DEATH },
+    ],
+    lines: [line("C001_1I", 1, [D]), line("C001_N6_TERMINAL", 1, [DEATH])],
+  };
+  it("別々の診療でないと確かめた日は 1 回と数える（2 回に届かず要件不足）", () => {
+    expect(tags(separate(ONE_DAY, { [D]: false }), "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+  });
+  it("別々の診療と確かめた日は 2 回と数える", () => {
+    expect(tags(separate(ONE_DAY, { [D]: true }), "R09")).toEqual([]);
+  });
+  it("確かめていない日で回数が決まらないときは、その日つきの情報不足（医療事務）", () => {
+    expect(of(ONE_DAY, "R09")).toEqual([expect.objectContaining({ kind: "情報不足", lineRefs: ["C001_N6_TERMINAL"], missing: { target: "clerk", field: "sameDaySeparate", date: D } })]);
+    expect(of(withFact(ONE_DAY, "sameDaySeparate", unknown), "R09")).toHaveLength(1);
+  });
+  it("ほかの日の訪問で 2 回に届いていれば、確かめていない日があっても聞かない", () => {
+    const c = withEvents(ONE_DAY, { type: "visit", date: day(19), sameBuildingCount: 1 });
+    expect(tags(c, "R09")).toEqual([]);
+    expect(tags(separate(c, { [D]: false }), "R09")).toEqual([]);
+  });
+});
+
 describe("未知の区分", () => {
   it("例外を投げる（0 点にしない）。前の年度だけの区分も、この版にはない", () => {
     expect(() => evaluate(withLines(K1, line("XXXX")))).toThrow();

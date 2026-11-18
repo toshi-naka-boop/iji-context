@@ -319,8 +319,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       { id: "none", label: "どちらも算定しない", kubun: [] },
     ], [mitori, shibou]);
     if (picked === "mitori" || picked === "shibou") add(picked === "mitori" ? mitori : shibou, [death.date], { derive: "D11", events: [death], choice: id });
+    const enough = terminalVisitsOk(ctx, c);
     if (!facts.deathPlace.known) lack(`D12-place:${death.date}`, "deathPlace", [terminal]);
-    else if (terminalVisitsOk(ctx, c)) {
+    else if (enough.ok === "unknown") {
+      // 回数が、同じ日の訪問診療と往診が別々の診療かで変わる（X-73）。その日の事実不足（D01）に、ターミナルケア加算も待たせる
+      for (const d of enough.ask) {
+        const held = pending.find((p) => p.id === `D01-sameDay:${d}`);
+        if (held) held.blocks.push(terminal);
+        else lack(`D12-sameDay:${d}`, "sameDaySeparate", [terminal], d);
+      }
+    } else if (enough.ok) {
       const tid = `D12-terminal:${death.date}`;
       const yes = ask(tid, "在宅ターミナルケア加算を算定しますか（訪問の回数のほかの要件は、記録で確かめてください）", [
         { id: "yes", label: "算定する", kubun: [terminal] },
