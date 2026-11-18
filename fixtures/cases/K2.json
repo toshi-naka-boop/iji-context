@@ -28,6 +28,9 @@
       "known": true,
       "value": false
     },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "2型糖尿病"

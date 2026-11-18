@@ -28,6 +28,9 @@
       "known": true,
       "value": true
     },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "パーキンソン病"

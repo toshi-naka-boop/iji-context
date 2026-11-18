@@ -27,6 +27,10 @@
       "known": true,
       "value": false
     },
+    "table8_3Other": {
+      "known": true,
+      "value": false
+    },
     "mainDisease": {
       "known": true,
       "value": "心房細動"
