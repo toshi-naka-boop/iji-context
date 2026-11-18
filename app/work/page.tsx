@@ -367,7 +367,7 @@ export default function Work() {
           )}
           <div className="chips">
             {cases.filter((c) => ukeClaims?.includes(c.claimId)).map((c) => (
-              <button key={c.claimId} onClick={() => begin(c.claimId)}>
+              <button key={c.claimId} onClick={() => begin(c.claimId).catch((e) => setErr(e.message))}>
                 {c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
               </button>
             ))}

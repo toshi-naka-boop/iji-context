@@ -55,11 +55,12 @@ describe("請求 id にパスを仕込んだ UKE が読み込まれても、外�
     return { ctx, cases, notes: createNotes(ctx, clock, clerks, uke, cases) };
   }
 
-  it("症例の JSON：前はカルテの JSON（../charts/K1）を症例として開いていた。いまは開かず、負担割合は「ない」、症例の一覧は定型の例外", () => {
+  it("症例の JSON：前はカルテの JSON（../charts/K1）を症例として開いていた。いまは開かず、負担割合は「ない」、症例の一覧では事実が「不明」のレセプトになる", () => {
     for (const id of TRAVERSALS) {
       const { ctx, cases } = setup(id);
       expect([id, cases.caseBurdenRatioOf(id)]).toEqual([id, null]);
-      expect(() => cases.cases()).toThrow("症例の表にない請求 id のレセプトがある");
+      const [c] = cases.cases();
+      expect([id, cases.isUploaded(id), c.facts.mainDisease, c.facts.burdenRatio, c.events, c.history]).toEqual([id, true, { known: false }, { known: false }, [], undefined]);
       ctx.sqlite.close();
     }
   });
