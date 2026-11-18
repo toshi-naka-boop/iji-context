@@ -150,7 +150,8 @@ export function writeUke(file: UkeFile): Buffer {
 /**
  * UKE のバイト列を読む（spec FR-106）。受け取れない入力は、行番号つきの UkeError にする（一部だけを読んで返すことはしない）。
  * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／
- * 請求 id の文字種と重複／コードが架空コードの表にあること／診療年月に当たる版があること／算定日と回数・GO の件数と合計
+ * 請求 id の文字種と重複／コードが架空コードの表にあること／診療年月に当たる版があること／算定日と回数・GO の件数と合計／
+ * SI の点数が版の点数表と合うこと・HO の合計点数が行の合計と合うこと
  */
 export function parseUke(buf: Buffer): UkeFile {
   const fail = (line: number | null, reason: string): never => {
@@ -205,6 +206,7 @@ export function parseUke(buf: Buffer): UkeFile {
 
   const receipts: UkeReceipt[] = [];
   const claimIds = new Set<string>();
+  const hoTotals: { line: number; receipt: UkeReceipt; total: number }[] = [];
   let cur: UkeReceipt | null = null;
   let points: Revision["points"] = {};
   let daysInMonth = 31;
@@ -249,7 +251,9 @@ export function parseUke(buf: Buffer): UkeFile {
       stage = 1;
       // 番号の桁数・検証番号はここでは断らない（患者情報チェック P01 が指摘として返す）。実日数と点数は数字であることだけを見る
       int(c[4], line, "診療実日数", 0, 31);
-      int(c[5], line, "合計点数", 0, UKE_LIMITS.maxPoints);
+      const declared = int(c[5], line, "合計点数", 0, UKE_LIMITS.maxPoints);
+      // HO の合計点数は、そのレセプトの行を読み終えてから行の合計と突き合わせる（X-76）
+      if (kind === "HO") hoTotals.push({ line, receipt: cur, total: declared });
       if (kind === "HO") cur.patient.insurer = { number: c[1], symbol: c[2], no: c[3] };
       else cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
     } else if (kind === "SY") {
@@ -270,7 +274,11 @@ export function parseUke(buf: Buffer): UkeFile {
       const kubun = kubunOfCode(c[3]);
       // コードは表にあっても、レセプトの診療年月の版にない区分は読まない（FR-106）
       if (!Object.hasOwn(points, kubun)) fail(line, "診療年月の版にない区分のコード");
-      if (c[5] !== "") int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
+      const given = c[5] === "" ? null : int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
+      // 点数は診療年月の版の点数表のものに限る（合計は点数表から計算するので、食い違う点数を黙って捨てない。X-76）。
+      // 点数未収載の区分は、下の合計の確認で断る
+      const listed = points[kubun].points;
+      if (listed !== null && given !== listed) fail(line, "点数が診療年月の版の点数表と合わない");
       const count = int(c[6], line, "回数", 1, 31 * UKE_LIMITS.maxDailyCount);
       const dates: string[] = [];
       for (let d = 1; d <= 31; d++) {
@@ -291,11 +299,14 @@ export function parseUke(buf: Buffer): UkeFile {
     }
   });
   let total = 0;
+  const totals = new Map<UkeReceipt, number>();
   try {
-    total = receipts.reduce((s, r) => s + receiptTotal(r), 0);
+    for (const r of receipts) totals.set(r, receiptTotal(r));
+    total = [...totals.values()].reduce((s, t) => s + t, 0);
   } catch {
     fail(goLine, "点数のない区分があり、合計を確かめられない");
   }
+  for (const h of hoTotals) if (h.total !== totals.get(h.receipt)) fail(h.line, "合計点数が行の合計と合わない");
   if (int(go[1], goLine, "総件数", 0, UKE_LIMITS.maxLines) !== receipts.length) fail(goLine, "GO の総件数とレセプト数が合わない");
   if (int(go[2], goLine, "総合計点数", 0, UKE_LIMITS.maxPoints * 100) !== total) fail(goLine, "GO の総合計点数と計算が合わない");
   return {

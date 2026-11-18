@@ -364,6 +364,82 @@ describe("R16 管理料の族", () => {
   });
 });
 
+describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
+  const D = day(21);
+  const DEATH = day(22);
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  const ONE_DAY: ClaimContext = {
+    ...loadCase("K5"),
+    events: [
+      { type: "visit", date: D, sameBuildingCount: 1 },
+      { type: "oushin", date: D, kind: "normal" },
+      { type: "death", date: DEATH },
+    ],
+    lines: [line("C001_1I", 1, [D]), line("C001_N6_TERMINAL", 1, [DEATH])],
+  };
+  it("別々の診療でないと確かめた日は 1 回と数える（2 回に届かず要件不足）", () => {
+    expect(tags(separate(ONE_DAY, { [D]: false }), "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+  });
+  it("別々の診療と確かめた日は 2 回と数える", () => {
+    expect(tags(separate(ONE_DAY, { [D]: true }), "R09")).toEqual([]);
+  });
+  it("確かめていない日で回数が決まらないときは、その日つきの情報不足（医療事務）", () => {
+    expect(of(ONE_DAY, "R09")).toEqual([expect.objectContaining({ kind: "情報不足", lineRefs: ["C001_N6_TERMINAL"], missing: { target: "clerk", field: "sameDaySeparate", date: D } })]);
+    expect(of(withFact(ONE_DAY, "sameDaySeparate", unknown), "R09")).toHaveLength(1);
+  });
+  it("ほかの日の訪問で 2 回に届いていれば、確かめていない日があっても聞かない", () => {
+    const c = withEvents(ONE_DAY, { type: "visit", date: day(19), sameBuildingCount: 1 });
+    expect(tags(c, "R09")).toEqual([]);
+    expect(tags(separate(c, { [D]: false }), "R09")).toEqual([]);
+  });
+});
+
+describe("同じ区分を複数の行に分けた請求（X-75）", () => {
+  /** 行を 1 日ずつの別の行に分ける */
+  const split = (ctx: ClaimContext, kubun: string): ClaimContext => ({ ...ctx, lines: ctx.lines.flatMap((l) => (l.kubun === kubun ? l.dates.map((d) => ({ kubun, count: 1, dates: [d] })) : [l])) });
+  it("R11：判断料を 14 日と 28 日の別の行で 1 回ずつ算定しても、月 1 回の背反が出る", () => {
+    const c = withLines(K2, line("D026_3", 1, [SECOND]));
+    expect(tags(c, "R11")).toEqual(["R11:背反:judgement_once_a_month"]);
+    expect(of(c, "R11")[0].lineRefs).toEqual(["D026_3"]);
+  });
+  it("R08・R15：2 行目にある往診料だけの日も、訪問診療時の区分の誤りとして出る", () => {
+    const r08 = split(setDates(K1_OUSHIN, "O001_3I", [FIRST, SECOND, OTHER]), "O001_3I");
+    expect(tags(r08, "R08")).toEqual(["R08:区分誤り:oushin_only_day"]);
+    const r15 = split(setDates(K1_OUSHIN, "O100_1HA", [FIRST, SECOND, OTHER]), "O100_1HA");
+    expect(tags(r15, "R15")).toEqual(["R15:区分誤り:oushin_only_day"]);
+  });
+  it("分けても束ねても、指摘と合計は同じ。行ごとの点数は渡された行のまま", () => {
+    for (const k of ["C001_1I", "O001_3I", "O100_1HA"]) {
+      const s = evaluate(split(K1, k));
+      expect(s.findings).toEqual(evaluate(K1).findings);
+      expect(s.total).toBe(evaluate(K1).total);
+      expect(s.byLine).toHaveLength(K1.lines.length + 1);
+    }
+  });
+});
+
+describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", () => {
+  const A = day(1);
+  const B = day(20);
+  /** 管理料のない月。1 日に内服 5 種類、20 日に 7 種類の処方 */
+  const base = (...lines: ReturnType<typeof line>[]): ClaimContext => ({
+    ...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1"),
+    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), { type: "prescription", date: A, oralKinds: 5, days: 14 }, { type: "prescription", date: B, oralKinds: 7, days: 14 }],
+    lines: [...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1").lines, ...lines],
+  });
+  it("処方ごとに合う区分なら指摘なし", () => {
+    expect(tags(base(line("F400_3", 1, [A]), line("F400_2", 1, [B])), "R07")).toEqual([]);
+  });
+  it("7 種類以上の処方の日を区分 3 にすると use_seven_or_more、未満の処方の日を区分 2 にすると not_seven_or_more", () => {
+    expect(tags(base(line("F400_3", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more"]);
+    expect(tags(base(line("F400_2", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+    expect(tags(base(line("F400_2", 1, [A]), line("F400_3", 1, [B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more", "R07:区分誤り:not_seven_or_more"]);
+  });
+  it("行の日に処方の出来事がないときは、月の処方のどれかに合えば指摘しない（日付で対応がとれないときの仮置き）", () => {
+    expect(tags(base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)])), "R07")).toEqual([]);
+  });
+});
+
 describe("未知の区分", () => {
   it("例外を投げる（0 点にしない）。前の年度だけの区分も、この版にはない", () => {
     expect(() => evaluate(withLines(K1, line("XXXX")))).toThrow();

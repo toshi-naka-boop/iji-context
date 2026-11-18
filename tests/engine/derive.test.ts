@@ -201,6 +201,44 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
     expect(r.notBilled).toEqual([{ event: { type: "visit", date: D }, reason: "after_oushin" }]);
     quiet(ng, r);
   });
+  describe("前日に往診料があり、同じ日の要選択で訪問診療料を選んだ日（X-74）", () => {
+    /** 13 日に往診、14 日に訪問診療と往診（1 回の診療） */
+    const base = withFact(withEvents(K2, { type: "oushin", date: day(13), kind: "normal" }, oushin), "sameDaySeparate", sep({ [D]: false }));
+    const id = `D01-encounter:${D}`;
+    const r10 = (c: ClaimContext, r: DeriveResult) => judge(c, r).findings.filter((f) => f.ruleId === "R10");
+    it("文書提供なしなら、選んでも訪問診療料を立てず notBilled に残す（翌日の制限を飛ばさない）", () => {
+      const c = withFact(base, "contactDocProvided", no);
+      const r = derive(c, { choices: { [id]: "visit" } });
+      expect(datesOf(r, VISIT)).toEqual([day(28)]);
+      expect(datesOf(r, OUSHIN)).toEqual([day(13)]);
+      expect(r.notBilled).toEqual([
+        { event: { type: "oushin", date: D }, reason: "same_encounter" },
+        { event: { type: "visit", date: D }, reason: "after_oushin" },
+      ]);
+      expect(r.pending).toEqual([]);
+      expect(r10(c, r)).toEqual([]);
+    });
+    it("文書提供が不明なら訪問診療料を事実不足（医療事務）で保留にし、提供済みなら立てる", () => {
+      const u = withFact(base, "contactDocProvided", unknown);
+      const ru = derive(u, { choices: { [id]: "visit" } });
+      expect(ru.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "contactDocProvided", target: "clerk", date: D })]);
+      expect(datesOf(ru, VISIT)).toEqual([day(28)]);
+      const ok = derive(base, { choices: { [id]: "visit" } });
+      expect(datesOf(ok, VISIT)).toEqual([D, day(28)]);
+      expect(judge(base, ok).findings).toEqual([]);
+    });
+    it("不変条件：保留のない導出の行を検証に通すと、R10 の指摘が出ない（同じ日の答え × 選択 × 文書提供の全組み合わせ）", () => {
+      for (const separate of [true, false])
+        for (const pick of ["visit", "oushin"])
+          for (const doc of [yes, no]) {
+            const c = withFact(withFact(base, "sameDaySeparate", sep({ [D]: separate })), "contactDocProvided", doc);
+            const r = derive(c, { choices: separate ? {} : { [id]: pick } });
+            const label = `separate=${separate} pick=${pick} doc=${doc.value}`;
+            expect(r.pending, label).toEqual([]);
+            expect(r10(c, r), label).toEqual([]);
+          }
+    });
+  });
   it("緊急の往診は、対象の患者と確かめたときだけ緊急往診加算を立てる。不明なら事実不足（医療事務）", () => {
     const c = withEvents(K2, { type: "oushin", date: day(20), kind: "emergency" });
     expect(datesOf(derive(c), C.oushin.kinkyu)).toEqual([day(20)]);
@@ -230,6 +268,19 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(kubunOf(r).some((k) => k.startsWith("C002"))).toBe(false);
     expect(datesOf(r, C.rx.other)).toEqual([day(28)]);
     expect(judge(c, r).findings).toEqual([]);
+  });
+  it("処方箋料の区分は処方ごとに決める：1 日に内服 5 種類、20 日に 7 種類なら 60＋32＝92 点（X-77）", () => {
+    const rx = (n: number, oralKinds: number): ClaimEvent => ({ type: "prescription", date: day(n), oralKinds, days: 28 });
+    const c: ClaimContext = { ...withFact(K2, "comprehensiveCare", no), events: [...K2.events.filter((e) => e.type !== "prescription"), rx(1, 5), rx(20, 7)] };
+    const r = derive(c);
+    expect(r.pending).toEqual([]);
+    expect(datesOf(r, C.rx.other)).toEqual([day(1)]);
+    expect(datesOf(r, C.rx.many)).toEqual([day(20)]);
+    const result = judge(c, r);
+    const pointsOfRx = [C.rx.other, C.rx.many].map((k) => result.byLine.find((b) => b.kubun === k)?.points);
+    expect(pointsOfRx).toEqual([60, 32]);
+    expect(result.findings).toEqual([]);
+    for (const k of [C.rx.other, C.rx.many]) expect(r.basis.find((b) => b.kubun === k)?.events).toHaveLength(1);
   });
   it("居住の場所・注16（区分を左右するとき）・施設の届出が不明なら、その区分だけ保留になる", () => {
     expect(derive(withFact(K2, "residence", unknown)).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["residence"]);
@@ -303,5 +354,43 @@ describe("不変条件（§2-8）", () => {
       const imports = [...readFileSync(f, "utf8").matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
       for (const i of imports) expect(/mentor|@anthropic-ai|claude-agent-sdk/.test(i), `${f}: ${i}`).toBe(false);
     }
+  });
+});
+
+describe("ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
+  const D = day(21);
+  const DEATH = day(22);
+  const TERMINAL = C.terminal.terminal;
+  const tid = `D12-terminal:${DEATH}`;
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  const ONE_DAY: ClaimContext = {
+    ...K5,
+    events: [
+      { type: "visit", date: D, sameBuildingCount: 1 },
+      { type: "oushin", date: D, kind: "normal" },
+      { type: "death", date: DEATH },
+    ],
+    lines: [],
+  };
+  const choices = { [`D01-encounter:${D}`]: "visit", [`D11-mitori:${DEATH}`]: "none", [tid]: "yes" };
+  it("別々の診療でない日は 1 回なので、ターミナルケア加算を聞かず、答えがあっても立てない", () => {
+    const c = withFact(ONE_DAY, "sameDaySeparate", sep({ [D]: false }));
+    const r = derive(c, { choices });
+    expect(r.pending).toEqual([]);
+    expect(kubunOf(r)).not.toContain(TERMINAL);
+    expect(r.staleChoices).toEqual([tid]);
+    expect(judge(c, r).findings.filter((f) => f.ruleId === "R09")).toEqual([]);
+  });
+  it("別々の診療と確かめた日は 2 回なので、選べば立つ", () => {
+    const c = withFact(ONE_DAY, "sameDaySeparate", sep({ [D]: true }));
+    const r = derive(c, { choices });
+    expect(kubunOf(r)).toContain(TERMINAL);
+    expect(judge(c, r).findings.filter((f) => f.ruleId === "R09")).toEqual([]);
+  });
+  it("確かめていない日で回数が決まらないときは、その日の事実不足がターミナルケア加算も保留にする", () => {
+    const r = derive(ONE_DAY, { choices });
+    expect(r.pending.map((p) => p.id)).toEqual([`D01-sameDay:${D}`]);
+    expect(r.pending[0].blocks).toContain(TERMINAL);
+    expect(kubunOf(r)).not.toContain(TERMINAL);
   });
 });

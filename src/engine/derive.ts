@@ -9,7 +9,7 @@ import {
   ikouEligible,
   kanriKubun,
   oushinOnlyBilledDays,
-  rxManyOral,
+  rxKubun,
   terminalVisitsOk,
   visitBillable,
   visitKubunOn,
@@ -178,9 +178,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   /** 訪問診療料を立てるか。往診と同じ日（別々の診療）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
   function visitDecision(v: (typeof visits)[number]): Decision {
     const same = sameDay.get(v.date);
-    if (same && same.visit !== "check") return same.visit;
+    // 同じ日の要選択で訪問診療料を選んだ日（bill）も、前日の往診料の制限は下で調べる（X-74）
+    if (same && (same.visit === "hold" || same.visit === "skip")) return same.visit;
     const prev = addDays(v.date, -1);
-    const afterOushin = same !== undefined || (oushins.some((o) => o.date === prev) && oushinDecision(prev) !== "skip");
+    const afterOushin = same?.visit === "check" || (oushins.some((o) => o.date === prev) && oushinDecision(prev) !== "skip");
     if (!afterOushin) return "bill";
     const ok = visitBillable(ctx);
     if (ok === true) return "bill";
@@ -305,8 +306,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if (first) add(k, [first.date], { derive: "D09", events: [first] });
   }
 
-  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は R07 と同じ述語（月の処方に内服 7 種類以上があるか）で決める
-  if (!kanri && !kanriOpen && rxs.length) add(rxManyOral(ctx, c) ? c.rx.many : c.rx.other, rxs.map((e) => e.date), { derive: "D10", events: rxs });
+  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（その処方の内服が 7 種類以上か）で決める（X-77）
+  if (!kanri && !kanriOpen)
+    for (const k of [c.rx.other, c.rx.many]) {
+      const mine = rxs.filter((e) => rxKubun(c, e) === k);
+      add(k, mine.map((e) => e.date), { derive: "D10", events: mine });
+    }
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];
@@ -319,8 +324,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       { id: "none", label: "どちらも算定しない", kubun: [] },
     ], [mitori, shibou]);
     if (picked === "mitori" || picked === "shibou") add(picked === "mitori" ? mitori : shibou, [death.date], { derive: "D11", events: [death], choice: id });
+    const enough = terminalVisitsOk(ctx, c);
     if (!facts.deathPlace.known) lack(`D12-place:${death.date}`, "deathPlace", [terminal]);
-    else if (terminalVisitsOk(ctx, c)) {
+    else if (enough.ok === "unknown") {
+      // 回数が、同じ日の訪問診療と往診が別々の診療かで変わる（X-73）。その日の事実不足（D01）に、ターミナルケア加算も待たせる
+      for (const d of enough.ask) {
+        const held = pending.find((p) => p.id === `D01-sameDay:${d}`);
+        if (held) held.blocks.push(terminal);
+        else lack(`D12-sameDay:${d}`, "sameDaySeparate", [terminal], d);
+      }
+    } else if (enough.ok) {
       const tid = `D12-terminal:${death.date}`;
       const yes = ask(tid, "在宅ターミナルケア加算を算定しますか（訪問の回数のほかの要件は、記録で確かめてください）", [
         { id: "yes", label: "算定する", kubun: [terminal] },

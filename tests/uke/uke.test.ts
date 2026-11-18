@@ -37,6 +37,17 @@ describe("2 本を読む", () => {
     }
   });
 
+  it("同じ区分を 2 行に分けた UKE でも、月 1 回の判断料の 2 回目を見逃さない（X-75）", () => {
+    const { cases, src } = loadSources();
+    const k2 = cases.find((c) => c.claimId === claimId("K2"))!;
+    const want = loadCase("K2");
+    const twice = { ...k2, lines: [...k2.lines, { kubun: "D026_3", count: 1, dates: [day(28)] }] };
+    const file = parseUke(writeUke(buildUkeFiles([twice], src, BILLING_MONTH).国保連));
+    const got = toClaimContext(file, k2.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+    expect(got.lines.filter((l) => l.kubun === "D026_3")).toHaveLength(2);
+    expect(evaluate(got).findings.map((f) => f.messageKey)).toEqual(["R11.judgement_once_a_month"]);
+  });
+
   it("K3 は公費（54）が 1 件目の KO に載り、負担区分は 2（医保＋公費①）", () => {
     const k3 = files.国保連.receipts.find((r) => r.claimId === claimId("K3"))!;
     expect(k3.patient.kohi.map((x) => x.payerNo.slice(0, 2))).toEqual(["54"]);
@@ -152,6 +163,16 @@ describe("形式（FR-06）", () => {
       for (const v of ["-1", "1.5", "1e9", "Infinity", "", " 1"]) expect(reject(withCell(SI, 6, v))).toEqual([SI, "回数が数字でない"]);
       expect(reject(withCell(SI, 5, "99999999"))).toEqual([SI, "点数が範囲の外"]);
       expect(reject(withCell(4, 1, "8830001"))).toEqual([4, "傷病名コードは未コード化（名称だけ）のものに限る"]);
+    });
+
+    it("SI の点数が版の点数表と合わない・HO の合計点数が行の合計と合わないものは断る。理由に値は入らない（X-76）", () => {
+      // BNP の点数 130 → 9999、空欄。HO の合計 274 → 1
+      expect(reject(withCell(SI, 5, "9999"))).toEqual([SI, "点数が診療年月の版の点数表と合わない"]);
+      expect(reject(withCell(SI, 5, ""))).toEqual([SI, "点数が診療年月の版の点数表と合わない"]);
+      expect(reject(withCell(3, 5, "1"))).toEqual([3, "合計点数が行の合計と合わない"]);
+      for (const buf of [withCell(SI, 5, "9999"), withCell(3, 5, "12345")]) expect(() => parseUke(buf)).toThrow(/^\d+ 行目：(?!.*(9999|12345|130|274))/);
+      // 同梱の見本は 2 本とも通る
+      for (const f of Object.values(UKE_FILES)) expect(() => parseUke(read(f))).not.toThrow();
     });
 
     it("1 日の回数は上限まで。大きな数を入れても、日付の並びを作らずに断る", () => {

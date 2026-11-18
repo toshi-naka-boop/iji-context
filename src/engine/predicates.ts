@@ -115,18 +115,48 @@ export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
   return doc.known ? doc.value : "unknown";
 }
 
-/** 内服の種類数が閾値以上の処方があるか（処方箋料の区分を決める） */
-export function rxManyOral(ctx: ClaimContext, c: RevisionConsts): boolean {
-  return eventsOf(ctx, "prescription").some((e) => e.oralKinds >= c.rx.oralKindsThreshold);
+/** 処方 1 件の処方箋料の区分。処方ごとに、内服の種類数が閾値以上かで決める（D10・R07 が共有。X-77） */
+export function rxKubun(c: RevisionConsts, e: { oralKinds: number }): string {
+  return e.oralKinds >= c.rx.oralKindsThreshold ? c.rx.many : c.rx.other;
 }
 
-/** ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽 */
-export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): boolean {
+/**
+ * その日の処方箋料として合う区分（その日の処方の区分）。
+ * その日に処方の出来事がなければ（日付なしは day を "" で渡す）、日付で処方と行の対応がとれないので、月の処方のどれかの区分に合えばよいとする。
+ * 処方の出来事が月に 1 件もなければ、閾値未満の区分だけ
+ */
+export function rxKubunOn(ctx: ClaimContext, c: RevisionConsts, day: string): string[] {
+  const all = eventsOf(ctx, "prescription");
+  const onDay = all.filter((e) => e.date === day);
+  const of = (onDay.length ? onDay : all).map((e) => rxKubun(c, e));
+  return of.length ? [...new Set(of)] : [c.rx.other];
+}
+
+/**
+ * ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽。
+ * 同じ日の訪問診療と往診の出来事は、別々の診療でないと確かめた日（sameDaySeparate が偽）なら 1 回と数える（X-73）。
+ * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す
+ */
+export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[] } {
   const death = eventsOf(ctx, "death")[0];
-  if (!death) return false;
+  if (!death) return { ok: false, ask: [] };
   const from = addDays(death.date, -c.terminal.days);
-  const n = ctx.events.filter((e) => (e.type === "visit" || e.type === "oushin") && e.date >= from && e.date <= death.date).length;
-  return n >= c.terminal.minVisits;
+  const done = [...eventsOf(ctx, "visit"), ...eventsOf(ctx, "oushin")].filter((e) => e.date >= from && e.date <= death.date);
+  const separate = ctx.facts.sameDaySeparate.known ? ctx.facts.sameDaySeparate.value : {};
+  let min = 0;
+  let max = 0;
+  const ask: string[] = [];
+  for (const d of [...new Set(done.map((e) => e.date))].sort()) {
+    const types = done.filter((e) => e.date === d).map((e) => e.type);
+    const both = types.includes("visit") && types.includes("oushin");
+    const answer = both ? separate[d] : true;
+    min += answer === true ? types.length : 1;
+    max += answer === false ? 1 : types.length;
+    if (answer === undefined) ask.push(d);
+  }
+  if (min >= c.terminal.minVisits) return { ok: true, ask: [] };
+  if (max < c.terminal.minVisits) return { ok: false, ask: [] };
+  return { ok: "unknown", ask };
 }
 
 /** 週ごとの、訪問診療料を算定した回数の最大値。算定しなかった訪問は数えない */
