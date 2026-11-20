@@ -4,7 +4,7 @@ import iconv from "iconv-lite";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { BILLING_MONTH, CASES, generate, loadSources, UKE_FILES } from "../../scripts/gen-uke";
+import { BILLING_MONTH, CASES, EXTRA, generate, generateExtra, loadSources, UKE_FILES } from "../../scripts/gen-uke";
 import { evaluate } from "../../src/engine";
 import { pointsOf, resolveRevision } from "../../src/engine/revisions";
 import { codeOf } from "../../src/engine/revisions/codes";
@@ -516,6 +516,62 @@ describe("単位で読む（§11-14 完了条件 (a)・(b)・(d)）", () => {
     for (const c of ["114018370", "114042570"]) expect(one(c, "C001_N6_TERMINAL")).toEqual(["C001_N6_TERMINAL"]);
     for (const c of [rev.codes.F400_2.primary, ...rev.codes.F400_2.accept]) expect(one(c, "F400_2")).toEqual(["F400_2"]);
     for (const c of [rev.codes.F400_3.primary, ...rev.codes.F400_3.accept]) expect(one(c, "F400_3")).toEqual(["F400_3"]);
+  });
+});
+
+describe("点検の対象外の単位がある請求（design.md §11-11 完了条件 (f)）と、見本以外で試す合成の UKE", () => {
+  const extra = { taishogai: read(EXTRA.taishogai.file), kisaimore: read(EXTRA.kisaimore.file) };
+  const k = (name: string) => loadCase(name);
+  /** 取り込んだ UKE と同じ形の請求にする：カルテ側の記録なし。事実は、もとの症例のものを使う（突き合わせのため） */
+  const ctxOf = (buf: Buffer, base: string) => {
+    const file = readUke(buf, uploadClaimIdOf(1));
+    const b = k(base);
+    return { file, ctx: toClaimContext(file, "U1-1", { facility: b.facility, facts: b.facts, events: [], recordsKnown: false }) };
+  };
+
+  it("合成の 2 本は入力だけで決まり（作り直したものとファイルが一致）、見本の 2 本とは別のファイル。患者は見本の誰とも違う", () => {
+    const out = generateExtra();
+    expect(out.taishogai.equals(extra.taishogai)).toBe(true);
+    expect(out.kisaimore.equals(extra.kisaimore)).toBe(true);
+    const known = [...files.国保連.receipts, ...files.支払基金.receipts].map((r) => `${r.patient.name}|${r.patient.birth}|${r.patient.insurer.no}`);
+    for (const buf of Object.values(extra)) {
+      const p = parseUke(buf).claims[0].patient;
+      expect(known).not.toContain(`${p.name}|${p.birth}|${p.insurer.no}`);
+      expect(known.some((x) => x.startsWith(`${p.name}|`) || x.endsWith(`|${p.insurer.no}`))).toBe(false);
+    }
+  });
+
+  it("対象外の行の例（EM 5-1）：扱っていないコードの加算と同じ単位にある往診料は、単位ごと対象外に残る。小計と UKE の合計は別に出て、total は null", () => {
+    const u = EXTRA.taishogai.extraUnit;
+    // 足した単位は、EM 5-1 の行のコードと点数
+    expect(em).toContain(`${u.codes[0]}（往診料）・${u.codes[1]}（緊急往診加算「定める患者以外」）`);
+    expect([u.codes[0], u.points]).toEqual([code("C000"), pts("C000") + 325]);
+    expect(Object.values(rev.codes).some((c) => c.primary === u.codes[1] || c.accept.includes(u.codes[1]))).toBe(false);
+    const { file, ctx } = ctxOf(extra.taishogai, EXTRA.taishogai.base);
+    const r = file.receipts[0];
+    const base = k(EXTRA.taishogai.base);
+    // もとの症例の行はそのまま点検の対象。往診料は対応しているコードだが、同じ単位の加算を扱っていないので、行にしない
+    expect(r.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates }))).toEqual(base.lines);
+    expect(r.others).toEqual([{ unit: r.lines.length, codes: u.codes, points: u.points, count: 1, days: Array.from({ length: 31 }, (_, i) => (i === u.day - 1 ? 1 : 0)) }]);
+    expect(r.patientNo).toBe(EXTRA.taishogai.patientNo);
+    const whole = evaluate(base).total!;
+    expect(r.declared).toEqual({ ho: whole + u.points, ko: [] });
+    expect(ctx.partial).toBe(true);
+    const result = evaluate(ctx);
+    expect([result.total, result.subtotal]).toEqual([null, whole]);
+    // 訪問日の記載は訪問診療料の日だけ（往診の日はない）が、往診料の行が対象外にあるので、日付の突き合わせはしない。指摘は出ない
+    expect(result.findings.filter((f) => f.kind !== "情報不足")).toEqual([]);
+  });
+
+  it("記載を欠いた例（EM 5-1）：必須の記載を 1 つ欠いた UKE は、その記載の記載もれが 1 件だけ出る。対象外の単位はなく、合計が出る", () => {
+    const { file, ctx } = ctxOf(extra.kisaimore, EXTRA.kisaimore.base);
+    expect(file.receipts[0].others).toBeUndefined();
+    expect(ctx.partial).toBeUndefined();
+    const result = evaluate(ctx);
+    expect(result.total).toBe(evaluate(k(EXTRA.kisaimore.base)).total);
+    expect("subtotal" in result).toBe(false);
+    expect(result.findings.filter((f) => f.kind !== "情報不足").map((f) => [f.messageKey, f.kind, f.params?.rule, f.lineRefs])).toEqual([["R17.comment_missing", "記載もれ", "T216-spo2", ["C103_2"]]]);
+    expect(file.receipts[0].comments.some((c) => c.code === EXTRA.kisaimore.dropComment)).toBe(false);
   });
 });
 
