@@ -1,14 +1,16 @@
 // 合成 UKE 2 本を fixtures/uke/ に書き出す（spec FR-05）。`npx tsx scripts/gen-uke.ts`
 // 入力は fixtures/cases/K1〜K7.json と fixtures/uke/patients.json。出力は入力だけで決まる。
-// 見本の 2 本とは別に、アップロードで試すための合成の UKE も 2 本書き出す（design.md §11-11。設定は fixtures/uke/extra.json、値は EM 5-1 の表）：
-// 点検の対象外の行を含むもの（taishogai.UKE）と、必須の記載を 1 つ欠いたもの（kisaimore.UKE）
+// 見本の 2 本とは別に、アップロードで試すための合成の UKE も 3 本書き出す（design.md §11-11・§11-12。設定は fixtures/uke/extra.json、値は EM 5-1 の表）：
+// 点検の対象外の行を含むもの（taishogai.UKE）、必須の記載を 1 つ欠いたもの（kisaimore.UKE）、改定前の診療年月のもの（kaiteimae.UKE）
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { period } from "../src/demo/period";
+import { monthFrom, period } from "../src/demo/period";
+import { resolveRevision, revisionById } from "../src/engine/revisions";
 import type { ClaimContext } from "../src/engine/types";
 import { buildUkeFiles, type UkeSources } from "../src/uke/cases";
 import type { UkeFile } from "../src/uke/types";
+import { UNCODED_DISEASE } from "../src/uke/diseases";
 import { encodeUke, formatUke, writeUke } from "../src/uke/uke";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,6 +36,7 @@ type ExtraPatient = { name: string; sex: 1 | 2; birth: string; insurerNo: string
 type Extra = {
   taishogai: { file: string; base: string; patientNo: string; patient: ExtraPatient; extraUnit: { day: number; shikibetsu: string; codes: string[]; points: number } };
   kisaimore: { file: string; base: string; patientNo: string; patient: ExtraPatient; dropComment: string };
+  kaiteimae: { file: string; base: string; patientNo: string; patient: ExtraPatient; monthsBack: number; pointsOf: string; drop: string[] };
 };
 export const EXTRA = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "extra.json"), "utf8")) as Extra;
 
@@ -56,7 +59,9 @@ function extraFile(e: { base: string; patientNo: string; patient: ExtraPatient }
 /**
  * 見本以外で試す合成の UKE（design.md §11-11。EM 5-1 の表）。
  * taishogai：もとの症例に、扱っていない実在の診療行為コードを含む算定単位を 1 つ足す（単位の最後の行に 1 回分の点数。HO・GO の合計にも足す）。取り込むと、その単位が点検の対象外になる。
- * kisaimore：もとの症例から、必須の記載のコメントを 1 つ外す。取り込んだレセプトの点検で、記載もれが 1 件出る
+ * kisaimore：もとの症例から、必須の記載のコメントを 1 つ外す。取り込んだレセプトの点検で、記載もれが 1 件出る。
+ * kaiteimae：もとの症例を、改定前の診療年月（基準月の monthsBack か月前）のレセプトにする（design.md §11-12）。コードは基準月の版のもの（EM §2-9 で、令和6年度版でも同じと確かめた区分だけ）、
+ * 点数は pointsOf の版（令和6年度の値）。drop の区分の行とコメントは入れず、傷病名は未コード化で書く。診療年月に版がないので、取り込むと月末の点検には並ばず、版を選んで試算する
  */
 export function generateExtra(): Record<keyof Extra, Buffer> {
   const t = EXTRA.taishogai;
@@ -77,7 +82,35 @@ export function generateExtra(): Record<keyof Extra, Buffer> {
   const file = extraFile(k);
   const dropped = { ...file, receipts: file.receipts.map((r) => ({ ...r, comments: r.comments.filter((c) => c.code !== k.dropComment) })) };
   if (dropped.receipts[0].comments.length !== file.receipts[0].comments.length - 1) throw new Error(`外す記載が 1 件に決まらない: ${k.dropComment}`);
-  return { taishogai: encodeUke(text), kisaimore: writeUke(dropped) };
+  return { taishogai: encodeUke(text), kisaimore: writeUke(dropped), kaiteimae: generateOld() };
+}
+
+function generateOld(): Buffer {
+  const o = EXTRA.kaiteimae;
+  const old = revisionById(o.pointsOf);
+  if (!old) throw new Error(`点数を取る版がない: ${o.pointsOf}`);
+  const file = extraFile(o);
+  const yearMonth = monthFrom(-o.monthsBack);
+  /** 基準月の日付（YYYY-MM-DD）を、同じ日のまま改定前の診療年月に移す */
+  const moved = (date: string) => {
+    if (!date.startsWith(`${period.yearMonth}-`)) throw new Error(`基準月の外の日付: ${date}`);
+    return `${yearMonth}${date.slice(7)}`;
+  };
+  /** 傷病名の診療開始日（YYYYMMDD）を、同じ月数だけ前にずらす */
+  const earlier = (ymd: string) => {
+    const i = Number(ymd.slice(0, 4)) * 12 + Number(ymd.slice(4, 6)) - 1 - o.monthsBack;
+    return `${Math.floor(i / 12)}${String((i % 12) + 1).padStart(2, "0")}${ymd.slice(6)}`;
+  };
+  const receipts = file.receipts.map((r) => ({
+    ...r,
+    yearMonth,
+    patient: { ...r.patient, diseases: r.patient.diseases.map((d) => ({ ...d, code: UNCODED_DISEASE, start: earlier(d.start) })) },
+    lines: r.lines.filter((l) => !o.drop.includes(l.kubun)).map((l) => ({ ...l, dates: l.dates.map(moved) })),
+    comments: [],
+  }));
+  // 書くときの版：コードの表・診療識別は基準月の版、点数表は pointsOf の版。pointsOf の版にない区分の行が残っていれば、書き出しが例外にする
+  const rev = { ...resolveRevision(period.yearMonth), points: old.points };
+  return writeUke({ ...file, billingMonth: monthFrom(1 - o.monthsBack), receipts }, () => rev);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
@@ -87,7 +120,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     console.log(`書き出し: ${file}`);
   }
   const extra = generateExtra();
-  for (const key of ["taishogai", "kisaimore"] as const) {
+  for (const key of ["taishogai", "kisaimore", "kaiteimae"] as const) {
     writeFileSync(path.join(root, EXTRA[key].file), extra[key]);
     console.log(`書き出し: ${EXTRA[key].file}`);
   }

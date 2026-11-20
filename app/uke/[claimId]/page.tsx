@@ -1,7 +1,9 @@
 "use client";
 // 取り込んだレセプトの点検（design.md §11-11・§11-13）：UKE に書いてあるとおりのまま（行もコメントも入れ替えずに）点検した結果を見せる。
 // 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → 点検した行と小計 → 対象外の行 → UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
-// 読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。月末の点検（行を入力する問題）とは別の画面
+// 読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。月末の点検（行を入力する問題）とは別の画面。
+// 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
+// 診療年月に版がないレセプトは点検できないので、開くと最新の版が選ばれた状態で試算を見せる
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
@@ -18,6 +20,9 @@ type Check = {
   patient: string;
   patientNo: string | null;
   unreadable: { reason: string } | null;
+  /** 診療年月から決まる版（なければ null）と、試算で選べる版 */
+  revisionId?: string | null;
+  revisions?: { id: string; label: string }[];
   declared?: { ho: number | null; ko: number[] };
   lines?: Line[];
   subtotal?: number | null;
@@ -29,9 +34,19 @@ type Check = {
   comments?: { code: string; text: string }[];
   patientFindings?: { checkId: string; kind: string; text: string }[];
 };
+/** 試算の結果。点検と同じ項目に、選んだ版と、点数の違いが付く */
+type Trial = Check & {
+  trial: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
+  rulesAvailable: boolean;
+  revisionLabel: string;
+  pointDiffs: { kubun: string[]; name: string; ukePoints: number; revPoints: number; count: number }[];
+};
 
 const num = (n: number) => n.toLocaleString("ja-JP");
 const pts = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${num(n)} 点`);
+/** 診療年月（YYYY-MM）を、画面の文に出す形にする */
+const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
+const signed = (n: number) => (n > 0 ? `+${num(n)}` : num(n));
 const days = (dates: string[]) => [...new Set(dates)].map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、");
 /** 指摘を出す順（種類ごと） */
 const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘れ", "記載もれ"];
@@ -41,14 +56,31 @@ export default function UkeClaimCheck() {
   const { claimId } = useParams<{ claimId: string }>();
   const [check, setCheck] = useState<Check | null>(null);
   const [err, setErr] = useState("");
+  /** 選んでいる版。診療年月の版なら点検、ほかの版なら試算 */
+  const [rev, setRev] = useState("");
+  const [trial, setTrial] = useState<Trial | null>(null);
   useEffect(() => {
     if (!user) return;
-    getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`).then(setCheck).catch((e: Error) => setErr(e.message));
+    getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`)
+      .then((d) => {
+        setCheck(d);
+        // 診療年月に版がないレセプトは、最新の版（選べる版の最後）を選んだ状態にする
+        setRev(d.revisionId ?? d.revisions?.at(-1)?.id ?? "");
+      })
+      .catch((e: Error) => setErr(e.message));
   }, [user, claimId]);
+  useEffect(() => {
+    setTrial(null);
+    if (!user || !check || rev === "" || rev === check.revisionId) return;
+    setErr("");
+    getJson<Trial>(`/api/uke/claims/${encodeURIComponent(claimId)}/trial?rev=${encodeURIComponent(rev)}`).then(setTrial).catch((e: Error) => setErr(e.message));
+  }, [user, claimId, check, rev]);
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
-  const c = check;
+  const head = check;
+  /** 見せる中身：試算していれば試算、していなければ点検（版のないレセプトは、試算が届くまで中身がない） */
+  const c = trial ?? (check && check.revisionId !== null ? check : null);
   const findings = c?.findings ?? [];
   const lines = c?.lines ?? [];
   const others = c?.others ?? [];
@@ -61,18 +93,59 @@ export default function UkeClaimCheck() {
       </PageGuide>
       <p style={{ margin: "0 0 12px" }}><a href="/uke">← UKE 取り込みに戻る</a></p>
       {err && <div className="notice warn">{err}</div>}
-      {c && (
+      {head && (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>
-            {c.claimId} {c.patient}{c.patientNo ? `（患者の番号 ${c.patientNo}）` : ""}　<span className="muted">診療年月 {c.yearMonth}</span>
+            {head.claimId} {head.patient}{head.patientNo ? `（患者の番号 ${head.patientNo}）` : ""}　<span className="muted">診療年月 {head.yearMonth}</span>
           </h2>
-          {c.unreadable ? (
+          {head.unreadable && (
             <div className="notice warn">
               <strong>このレセプトは、いまは点検できません。</strong>
-              <div>{c.unreadable.reason}</div>
+              <div>{head.unreadable.reason}</div>
             </div>
-          ) : (
+          )}
+          {!head.unreadable && (head.revisions ?? []).length > 0 && (
+            <label style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span>点数表とルールの版</span>
+              <select value={rev} onChange={(e) => setRev(e.target.value)}>
+                {(head.revisions ?? []).map((r) => <option key={r.id} value={r.id}>{r.label}{r.id === head.revisionId ? "（診療年月の版）" : "（試算）"}</option>)}
+              </select>
+            </label>
+          )}
+          {!head.unreadable && head.revisionId === null && (
+            <div className="notice">この診療年月の版はありません。月末の点検と提出には並びません。版を選んで試算できます。</div>
+          )}
+          {trial && (
+            <div className="notice warn">
+              <strong>診療年月 {monthLabel(trial.trial.claimYearMonth)} のレセプトを、{trial.revisionLabel}の点数表とルールで試算しています。実際の請求の判定ではありません。</strong>
+              <div>日付は UKE のままで、何も記録しません。この版が読む事実がレセプトの側にないときは「情報不足」として出ます。</div>
+            </div>
+          )}
+          {!head.unreadable && c && (
             <>
+              {trial && (
+                <>
+                  <h3 style={{ margin: 0 }}>点数の違い</h3>
+                  {trial.pointDiffs.length === 0 ? <p className="muted" style={{ margin: 0 }}>UKE に書いてある点数と、この版の点数が違う行はありません。</p> : (
+                    <table className="emr-table">
+                      <thead>
+                        <tr><th>名称</th><th>回数</th><th>UKE の点数</th><th>この版の点数</th><th>差</th></tr>
+                      </thead>
+                      <tbody>
+                        {trial.pointDiffs.map((d, i) => (
+                          <tr key={i}>
+                            <td>{d.name}</td>
+                            <td>{d.count}</td>
+                            <td>{num(d.ukePoints)}</td>
+                            <td>{num(d.revPoints)}</td>
+                            <td>{signed(d.revPoints - d.ukePoints)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
               {others.length > 0 && (
                 <div className="notice warn">
                   <strong>この請求には、点検の対象外の行が {c.otherRows} 行あります。</strong>
@@ -82,7 +155,7 @@ export default function UkeClaimCheck() {
               <div className="notice">カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。</div>
 
               <h3 style={{ margin: 0 }}>ユスティの指摘</h3>
-              {findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
+              {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
               {(c.commentMissingCount ?? 0) > 0 && <p style={{ margin: 0 }}>記載もれを {c.commentMissingCount} 件見つけました。</p>}
               {KINDS.filter((k) => findings.some((f) => f.kind === k)).map((k) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -124,7 +197,7 @@ export default function UkeClaimCheck() {
                 </tbody>
               </table>
               <div className="notice">
-                <strong>点検した行の小計：{pts(c.subtotal)}</strong>
+                <strong>点検した行の小計{trial ? "（この版の点数）" : ""}：{pts(c.subtotal)}</strong>
                 {others.length > 0 && <div>対象外の行を含まない小計です。請求の合計は、下の「UKE に書いてある合計」です。</div>}
               </div>
 
@@ -168,11 +241,15 @@ export default function UkeClaimCheck() {
                 </table>
               )}
 
-              <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
-              {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-              {(c.patientFindings ?? []).map((f, i) => (
-                <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
-              ))}
+              {!trial && (
+                <>
+                  <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
+                  {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
+                  {(c.patientFindings ?? []).map((f, i) => (
+                    <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
+                  ))}
+                </>
+              )}
             </>
           )}
         </section>

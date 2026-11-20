@@ -2,9 +2,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { UkeFile, UkePatient, UkeReceipt } from "../../uke/types";
-import { readStoredUke, readUke, UkeError } from "../../uke/uke";
+import type { UkeClaim, UkeFile, UkePatient, UkeReceipt } from "../../uke/types";
+import { parseUke, readStoredUke, readUke, UkeError } from "../../uke/uke";
 import { uploadClaimIdOf } from "../../uke/upload";
+import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { badRequest, notFound } from "../errors";
 import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
@@ -64,15 +65,26 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     ...sampleBytes().map((b, i) => ({ name: path.basename(UKE_FILES[i]), uploaded: false, file: readUke(b) })),
     ...uploads().map((u) => ({ name: nameOf(u), uploaded: true, file: storedUke(u) })),
   ];
-  /** 読めたレセプトだけ（点検・患者マスタ・照合が使う）。読み直しで読めなかったレセプト（unreadable）は入れない */
-  const ukeFiles = (): UkeFile[] => named().flatMap((u) => (u.file ? [{ ...u.file, receipts: u.file.receipts.filter((r) => !r.unreadable) }] : []));
-  /** 一覧にあるレセプトをすべて（読み直しで読めなかったものも含む。請求 id と患者の情報は持っている） */
+  /**
+   * 診療年月の版で読めたレセプトだけ（点検・患者マスタ・照合・通知の対応づけが使う）。
+   * 読み直しで読めなかったレセプト（unreadable）と、診療年月に版がないレセプト（noRevision。design.md §11-12）は入れない
+   */
+  const ukeFiles = (): UkeFile[] => named().flatMap((u) => (u.file ? [{ ...u.file, receipts: u.file.receipts.filter((r) => !r.unreadable && !r.noRevision) }] : []));
+  /** 一覧にあるレセプトをすべて（読み直しで読めなかったもの・版のないものも含む。請求 id と患者の情報は持っている） */
   const ukeReceipts = (): UkeReceipt[] => named().flatMap((u) => u.file?.receipts ?? []);
-  /** 一覧にあるレセプト 1 件（取り込んだレセプトの点検が使う）。uploaded は、見本ではなくアップロードで受け取ったものか */
-  function receiptOf(claimId: string): { receipt: UkeReceipt; uploaded: boolean } {
-    for (const u of named()) {
-      const receipt = u.file?.receipts.find((x) => x.claimId === claimId);
-      if (receipt) return { receipt, uploaded: u.uploaded };
+  /**
+   * 一覧にあるレセプト 1 件（取り込んだレセプトの点検と試算が使う。版のないものも含む）。uploaded は、見本ではなくアップロードで受け取ったものか。
+   * file は、そのレセプトだけを持つファイル（審査支払機関・都道府県を請求にするときに使う）。
+   * claim は、形式だけを読んだレセプト（コードと単位のまま。版を見ない）。試算が、選んだ版で区分に引く。呼ぶまで読まない
+   */
+  function receiptOf(claimId: string): { receipt: UkeReceipt; uploaded: boolean; file: UkeFile; claim: () => UkeClaim } {
+    for (const [i, u] of named().entries()) {
+      const n = u.file?.receipts.findIndex((x) => x.claimId === claimId) ?? -1;
+      if (!u.file || n < 0) continue;
+      const receipt = u.file.receipts[n];
+      // 見本は named() の先頭に、UKE_FILES と同じ並びで入っている。レセプトの並びは、ファイルの中の並びのまま
+      const bytes = () => (u.uploaded ? readFileSync(path.join(uploadDir(), u.name)) : sampleBytes()[i]);
+      return { receipt, uploaded: u.uploaded, file: { ...u.file, receipts: [receipt] }, claim: () => parseUke(bytes()).claims[n] };
     }
     throw notFound("UKE にないレセプトです");
   }
@@ -97,7 +109,8 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
       billingMonth: u?.billingMonth ?? null,
       /**
        * patientNo は UKE の「カルテ番号等」（取り込んだ UKE だけ）。sameMonth は「同じ月のレセプトがすでにあります」（別のファイルに、同じ患者・同じ診療年月・同じレセプト種別のレセプトがある）。
-       * otherRows は点検の対象外の行の数。unreadable は、読み直しで読めなかったレセプトの理由（読めれば null）
+       * otherRows は点検の対象外の行の数。unreadable は、読み直しで読めなかったレセプトの理由（読めれば null）。
+       * revisionId は、診療年月から決まる版。null は「この診療年月の版はありません（試算できます）」：月末の点検・提出には並ばない（design.md §11-12）
        */
       receipts: (u?.receipts ?? []).map((x) => ({
         claimId: x.claimId,
@@ -106,6 +119,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
         sameMonth: (filesWith.get(sameMonthKey(x)) ?? 0) > 1,
         otherRows: (x.others ?? []).reduce((s, o) => s + o.codes.length, 0),
         unreadable: x.unreadable?.reason ?? null,
+        revisionId: !x.noRevision && hasRevision(x.yearMonth) ? resolveRevision(x.yearMonth).id : null,
       })),
       imported: u !== null && done.includes(name),
     }));
@@ -131,7 +145,8 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
    * 断る理由は行番号つきの定型文で、ファイルの中の値（氏名・番号・コード）は返さない。
    * 保存は、クリニックごとの場所に、内容のハッシュを名前にして行う（請求 id やファイル名をパスに使わない）。
    *
-   * 読み込みを通ったものは、見本と違う内容でも受け取る。対応していないコードの行は断らず、点検の対象外として残す。請求 id はアプリが振る（U<取り込みの連番>-<通し番号>。design.md §11-11）ので、
+   * 読み込みを通ったものは、見本と違う内容でも受け取る。対応していないコードの行は断らず、点検の対象外として残す。
+   * 診療年月に版がないレセプトも断らない：一覧には出すが、月末の点検・提出には並べず、版を選んで試算する（design.md §11-12）。請求 id はアプリが振る（U<取り込みの連番>-<通し番号>。design.md §11-11）ので、
    * 同じ患者の別の月・同じファイルの 2 枚目・カルテ番号が空のレセプトも受け取れる。カルテ側の事実を持たないまま点検に並ぶ（src/server/app/cases.ts）。
    * 断るのは、同じファイル（同じ内容のハッシュ）の取り込み直しだけ。見本と同じ内容のファイルは、見本として取り込む（請求 id は症例の番号のまま）
    */
@@ -163,8 +178,9 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return importUke(clerkId, nameOf(upload));
   }
 
-  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象）。読み直しで読めなかったレセプトは並べない */
-  const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.filter((x) => x.unreadable === null).map((x) => x.claimId));
+  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象）。読み直しで読めなかったレセプトと、診療年月に版がないレセプトは並べない */
+  const importedClaims = (clerkId: string): string[] =>
+    ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.filter((x) => x.unreadable === null && x.revisionId !== null).map((x) => x.claimId));
   function patientOf(claimId: string): UkePatient {
     const r = ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
     if (!r) throw notFound(`UKE にないレセプト: ${claimId}`);

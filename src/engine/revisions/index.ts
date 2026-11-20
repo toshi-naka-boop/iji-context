@@ -84,6 +84,11 @@ assertCompareRevisions(COMPARE_REVISIONS, REVISIONS);
 /** 比較と試算で選べる版（古い順）。id から版を引く。ない id は undefined */
 export const SELECTABLE_REVISIONS: Revision[] = [...COMPARE_REVISIONS, ...REVISIONS];
 export const revisionById = (id: string): Revision | undefined => SELECTABLE_REVISIONS.find((r) => r.id === id);
+/**
+ * 取り込んだ UKE の試算で選べる版（古い順。design.md §11-12）：診療行為コードの表を持つ版だけ。
+ * コードの表が空の版（比較用の版）で読むと全部の行が対象外になり、空の結果が「問題なし」に見えるので、選ばせない
+ */
+export const UKE_TRIAL_REVISIONS: Revision[] = SELECTABLE_REVISIONS.filter((r) => Object.keys(r.codes).length > 0);
 
 /** 区分が、同梱のどれかの版の点数表にあるか（知識・公的文書の区分のキーの検査に使う。design.md §3） */
 export const isKnownKubun = (kubun: string): boolean => REVISIONS.some((r) => Object.hasOwn(r.points, kubun));

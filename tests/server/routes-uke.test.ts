@@ -1,4 +1,5 @@
-// UKE のアップロードと見本のダウンロード（spec FR-106〜109）、取り込んだレセプトの点検（design.md §11-11）。実際のルート（app/api/uke/**/route.ts）を呼んで確かめる
+// UKE のアップロードと見本のダウンロード（spec FR-106〜109）、取り込んだレセプトの点検（design.md §11-11）、版のない診療年月のレセプトと試算（§11-12）。実際のルート（app/api/uke/**/route.ts）を呼んで確かめる
+import Database from "better-sqlite3";
 import iconv from "iconv-lite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -7,7 +8,10 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
-import { pointsOf, resolveRevision } from "../../src/engine/revisions";
+import { pointsOf, resolveRevision, UKE_TRIAL_REVISIONS } from "../../src/engine/revisions";
+import type { EngineResult } from "../../src/engine/types";
+import type { Notice } from "../../src/notice/notice";
+import type { Question } from "../../src/practice/practice";
 import { UKE_CLAIM_ID, UKE_LIMITS } from "../../src/uke/limits";
 import type { UkeFile, UkePatient } from "../../src/uke/types";
 import { readUke, writeUke } from "../../src/uke/uke";
@@ -64,7 +68,7 @@ type Listed = {
   uploaded: boolean;
   imported: boolean;
   unreadable: { reason: string } | null;
-  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null }[];
+  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null; revisionId: string | null }[];
 }[];
 
 describe("UKE のアップロード", () => {
@@ -98,7 +102,6 @@ describe("UKE のアップロード", () => {
       ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
       ["版の点数表と合わない点数", withCell(5, 5, "131"), "5 行目：点数が診療年月の版の点数表と合わない"],
       ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
-      ["版のない診療年月", withCell(2, 3, "202503"), "2 行目：診療年月に当たる版がない"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
       ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "末尾に EOF(0x1A) がない"],
     ];
@@ -501,5 +504,200 @@ describe("取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/c
     const del = await (await import("../../app/api/uke/uploads/[sha256]/route")).DELETE(new Request(`http://localhost/api/uke/uploads/${sha256}`, { method: "DELETE", headers: { cookie } }), { params: Promise.resolve({ sha256 }) });
     expect([del.status, await del.json()]).toEqual([200, { deleted: sha256, claims: 2 }]);
     expect(stored(owner)).toEqual([]);
+  });
+});
+
+describe("版のない診療年月のレセプトと試算（GET /api/uke/claims/[claimId]/trial。design.md §11-12 完了条件 (a)(b)(e)）", () => {
+  type Check = { claimId: string; yearMonth: string; patientNo: string | null; unreadable: null; revisionId: string | null; revisions: { id: string; label: string }[]; subtotal?: number | null; findings?: unknown[]; missing?: unknown[]; lines?: unknown[]; declared?: unknown; comments?: unknown[] };
+  type Trial = {
+    claimId: string;
+    yearMonth: string;
+    patientNo: string | null;
+    total: number | null;
+    trial: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
+    rulesAvailable: boolean;
+    ownRevisionId: string | null;
+    revisionLabel: string;
+    revisions: { id: string; label: string }[];
+    declared: { ho: number | null; ko: number[] };
+    lines: { kubun: string; name: string; count: number; dates: string[]; points: number | null }[];
+    subtotal: number | null;
+    others: unknown[];
+    partial: boolean;
+    pointDiffs: { kubun: string[]; name: string; ukePoints: number; revPoints: number; count: number }[];
+    findings: { ruleId: string; kind: string; messageKey: string; params?: Record<string, string> }[];
+    commentMissingCount: number;
+    missing: { kind: string }[];
+    comments: unknown[];
+  };
+  const trialOf = async (id: string, rev: string | null, cookie: string | null) =>
+    (await import("../../app/api/uke/claims/[claimId]/trial/route")).GET(get(`/api/uke/claims/${encodeURIComponent(id)}/trial${rev === null ? "" : `?rev=${rev}`}`, cookie), { params: Promise.resolve({ claimId: id }) });
+  /** 改定前の診療年月の合成の UKE（EM 5-1。診療年月は基準月の 7 か月前） */
+  const OLD = month(-7);
+  const KS = ["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId);
+  const [r2026, latest] = [resolveRevision(YM), UKE_TRIAL_REVISIONS.at(-1)!];
+  const noticeOf = () => JSON.parse(readFileSync(path.join(repo, "fixtures", "notices", "K6-2026-09-satei.json"), "utf8")) as Notice;
+  /** DB の全表の中身（監査ログを除く） */
+  const dump = (u: User): Record<string, string> => {
+    const db = new Database(instance.tenantPaths(u.tenantId).dbFile, { readonly: true });
+    try {
+      const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name).filter((t) => t !== "audit_log");
+      return Object.fromEntries(tables.map((t) => [t, JSON.stringify(db.prepare(`SELECT * FROM ${t}`).all())]));
+    } finally {
+      db.close();
+    }
+  };
+  const start = async (login: string) => {
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    resetLimits();
+    const owner = auth().register(login, "やまだ", "password123");
+    return { owner, cookie: cookieOf(owner), me: instance.clerkIdOf(owner), r: await routes() };
+  };
+
+  it("(a) 版のない診療年月の UKE が 1 件入っていても、請求の一覧・K1〜K7 の点検・通知の対応づけ・防いだ額・会議の整理が今までどおり動く。その請求は、月末の点検・提出に並ばない", async () => {
+    const { owner, cookie, me, r } = await start("uke_trial_a");
+    const casesRoute = (await import("../../app/api/cases/route")).GET;
+    const snapshot = async () => ({
+      checks: await Promise.all(KS.map(async (id) => (await check(id, cookie)).json())),
+      cases: await (await casesRoute(get("/api/cases", cookie))).json(),
+      notice: instance.runAs(owner, () => instance.getApp().resolveNoticeItems(noticeOf())),
+    });
+    const before = await snapshot();
+    expect((before.cases as { claimId: string }[]).map((c) => c.claimId)).toEqual(KS);
+
+    // 取り込みで断らない。一覧には、版がない（revisionId が null）として出る。読めないレセプト（unreadable）ではない
+    const up = await r.upload(upload(cookie, sample("kaiteimae.UKE")));
+    expect(up.status).toBe(200);
+    const list = (await up.json()) as Listed;
+    expect(list.map((u) => [u.uploaded, u.imported, u.unreadable, u.receipts.map((x) => [x.claimId, x.revisionId, x.unreadable, x.patientNo])])).toEqual([
+      [false, false, null, KS.slice(0, 6).map((id) => [id, r2026.id, null, null])],
+      [false, false, null, [[KS[6], r2026.id, null, null]]],
+      [true, true, null, [["U1-1", null, null, "100022"]]],
+    ]);
+    expect(await (await (await r.list(get("/api/uke", cookie))).json())).toEqual(list);
+
+    // 請求の一覧・K1〜K7 の点検（合計を含む）・通知の対応づけは、取り込む前と同じ
+    expect(await snapshot()).toEqual(before);
+    expect((before.checks as Check[]).map((c) => c.subtotal)).toEqual(KS.map((id) => (id === claimId("K6") ? 274 : expect.any(Number))));
+    expect(before.notice).toMatchObject([{ claimId: claimId("K6"), problems: [] }]);
+
+    // その請求の点検は、版がないことだけを返す（近い版で点検しない）。選べる版に、令和6年度の版はない
+    const c = (await (await check("U1-1", cookie)).json()) as Check;
+    expect(c).toEqual({ claimId: "U1-1", yearMonth: OLD, patient: "架空　敏子", patientNo: "100022", unreadable: null, revisionId: null, revisions: UKE_TRIAL_REVISIONS.map((x) => ({ id: x.id, label: x.label })) });
+
+    await instance.runAs(owner, async () => {
+      const a = instance.getApp();
+      // 月末の点検（行を入力する問題）に並ばない。問題を作れないので、提出を確定できない
+      expect(a.importedClaims(me)).toEqual([]);
+      for (const name of ["kokuhoren.UKE", "shiharaikikin.UKE"]) a.importUke(me, name);
+      expect(a.importedClaims(me)).toEqual(KS);
+      expect(() => a.caseOf("U1-1")).toThrow(/症例がない/);
+      expect(() => a.start(me, "U1-1")).toThrow(/症例がない/);
+      expect(() => a.patientProfile("U1-1")).toThrow();
+      expect(a.patients().map((p) => p.claimId)).not.toContain("U1-1");
+      // 見本の請求は、今までどおり確定でき、提出結果の取り込み・会議の整理・防いだ額が動く
+      const q = a.start(me, claimId("K1"));
+      const lines = a.caseFor(q).lines;
+      expect(a.confirm(q.id, lines).confirmed?.result.total).toBe(14806);
+      a.importClaimResult({ resultId: "r-trial-a", submissionId: q.id, kind: "原審査", outcome: "通過", kubun: [] });
+      expect(() => a.runMeeting()).not.toThrow();
+      expect(Array.isArray(a.agenda().items)).toBe(true);
+      expect(() => [a.personal(me, true), a.manager()]).not.toThrow();
+    });
+    // DB のどの表にも、その請求の id は入っていない（問題・提出・適用記録を作っていない）。取り込みの一覧（app_settings）は連番とハッシュだけ
+    expect(Object.entries(dump(owner)).filter(([, rows]) => /U1-1/.test(rows)).map(([t]) => t)).toEqual([]);
+
+    // 試算を開いたあとでも、事務長がファイルごと消せて、その患者はどの表にも残らない
+    expect((await trialOf("U1-1", latest.id, cookie)).status).toBe(200);
+    expect(JSON.stringify(dump(owner))).toMatch(/敏子/);
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    const sha256 = createHash("sha256").update(sample("kaiteimae.UKE")).digest("hex");
+    const del = await (await import("../../app/api/uke/uploads/[sha256]/route")).DELETE(new Request(`http://localhost/api/uke/uploads/${sha256}`, { method: "DELETE", headers: { cookie } }), { params: Promise.resolve({ sha256 }) });
+    expect([del.status, await del.json()]).toEqual([200, { deleted: sha256, claims: 1 }]);
+    expect(JSON.stringify(dump(owner))).not.toMatch(/敏子|100022|00000022/);
+    expect(stored(owner)).toEqual([]);
+  });
+
+  it("(b) その UKE を最新の版で試算すると、UKE の点数とその版の点数の違いが並ぶ。行と小計はその版の点数で、UKE の合計は書いてあるまま。何も保存しない", async () => {
+    const { owner, cookie, r } = await start("uke_trial_b");
+    expect((await r.upload(upload(cookie, sample("kaiteimae.UKE")))).status).toBe(200);
+    // 1 回目の試算で患者マスタに患者が入る（ほかの取り込んだレセプトと同じ扱い）。それより後は、試算で DB は変わらない
+    expect((await trialOf("U1-1", latest.id, cookie)).status).toBe(200);
+    const before = dump(owner);
+
+    const res = await trialOf("U1-1", latest.id, cookie);
+    expect(res.status).toBe(200);
+    const t = (await res.json()) as Trial;
+    expect([t.claimId, t.yearMonth, t.patientNo, t.ownRevisionId, t.revisionLabel]).toEqual(["U1-1", OLD, "100022", null, latest.label]);
+    expect(t.trial).toEqual({ revisionId: latest.id, claimYearMonth: OLD, inPeriod: false });
+    expect(t.rulesAvailable).toBe(true);
+    expect(t.pointDiffs).toEqual([
+      { kubun: ["C001_1I"], name: expect.stringContaining("訪問診療料"), ukePoints: 888, revPoints: 890, count: 2 },
+      { kubun: ["O001_3I"], name: expect.stringContaining("ベースアップ評価料"), ukePoints: 28, revPoints: pointsOf(latest, "O001_3I"), count: 2 },
+    ]);
+    // 試算の型：判定に使った版（revisionId）と当たったルール（applied）を持たない
+    expect(["revisionId" in t, "applied" in t]).toEqual([false, false]);
+
+    // 令和8年度改定後の版（基準月の版）でも試算できる：888／890 と 28／79
+    const t8 = (await (await trialOf("U1-1", r2026.id, cookie)).json()) as Trial;
+    expect(t8.pointDiffs.map((d) => [d.kubun, d.ukePoints, d.revPoints, d.count])).toEqual([[["C001_1I"], 888, 890, 2], [["O001_3I"], 28, 79, 2]]);
+    expect(t8.declared).toEqual({ ho: 6013, ko: [] });
+    expect(t8.lines[0]).toEqual({ kubun: "C001_1I", no: expect.any(String), name: expect.stringContaining("訪問診療料"), count: 2, dates: [`${OLD}-14`, `${OLD}-28`], points: 890 });
+    // 小計は、その版の点数で数える：6,013 ＋ (890−888)×2 ＋ (79−28)×2。対象外の行はないので、合計も出る
+    expect([t8.partial, t8.others, t8.subtotal, t8.total]).toEqual([false, [], 6013 + 2 * 2 + 51 * 2, 6119]);
+    // 指摘：コメントのない UKE なので、令和8年度の必須の記載（訪問日・算定開始日・包括的支援加算の状態）が記載もれとして出る。足りない事実は情報不足
+    expect(t8.findings.map((f) => [f.ruleId, f.kind, f.params?.rule]).sort()).toEqual([["R17", "記載もれ", "T176-date"], ["R17", "記載もれ", "T177-first"], ["R17", "記載もれ", "T178-state"]]);
+    expect(t8.commentMissingCount).toBe(3);
+    expect(t8.missing.length).toBeGreaterThan(0);
+    expect(t8.comments).toEqual([]);
+
+    expect(dump(owner)).toEqual(before);
+    // 試算の結果は、提出の確定などの入口に渡せない（型検査が落とす。既存の歯止め＝tests/engine/compare.test.ts の (c) が、UKE の試算にも効く）
+    const result = instance.runAs(owner, () => instance.getApp().ukeTrial("U1-1", r2026.id));
+    // @ts-expect-error UKE の試算の結果は EngineResult ではない（revisionId・applied がない）
+    const asEngine: EngineResult = result;
+    // @ts-expect-error 確定の記録に試算の結果は入らない
+    const confirmed: NonNullable<Question["confirmed"]> = { lines: [], result, at: "" };
+    expect([asEngine, confirmed]).toHaveLength(2);
+  });
+
+  it("(e) 選べるのはコードの表を持つ版だけ：令和6年度の版・知らない版・版の指定なしは 400。未ログインは 401、医師は 403、一覧にないレセプトは 404", async () => {
+    const { cookie, r } = await start("uke_trial_c");
+    expect((await r.upload(upload(cookie, sample("kaiteimae.UKE")))).status).toBe(200);
+    for (const rev of ["r2024", "r9999", "", null]) {
+      const res = await trialOf("U1-1", rev, cookie);
+      expect([rev, res.status, ((await res.json()) as { fields?: string[] }).fields]).toEqual([rev, 400, ["rev"]]);
+    }
+    const c = (await (await check("U1-1", cookie)).json()) as Check;
+    expect(c.revisions.map((x) => x.id)).toEqual(UKE_TRIAL_REVISIONS.map((x) => x.id));
+    expect(c.revisions.map((x) => x.id)).not.toContain("r2024");
+    expect((await trialOf("U1-1", latest.id, null)).status).toBe(401);
+    expect((await trialOf("U9-9", latest.id, cookie)).status).toBe(404);
+    expect((await trialOf("../x", latest.id, cookie)).status).toBe(400);
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    expect((await trialOf("U1-1", latest.id, cookie)).status).toBe(200);
+    expect((await switchTo(cookie, "doctor")).status).toBe(200);
+    expect((await trialOf("U1-1", latest.id, cookie)).status).toBe(403);
+  });
+
+  it("版のある請求でも試算できる：診療年月の版を選べば点検と同じ指摘・小計で、点数の違いはない。違う版を選べば、その版の点数との違いが並ぶ。点検（版を省いた呼び出し）は変わらない", async () => {
+    const { cookie } = await start("uke_trial_d");
+    const id = claimId("K2");
+    const c = (await (await check(id, cookie)).json()) as Check;
+    expect([c.revisionId, c.revisions.map((x) => x.id)]).toEqual([r2026.id, UKE_TRIAL_REVISIONS.map((x) => x.id)]);
+    const same = (await (await trialOf(id, r2026.id, cookie)).json()) as Trial;
+    expect([same.ownRevisionId, same.trial, same.pointDiffs]).toEqual([r2026.id, { revisionId: r2026.id, claimYearMonth: YM, inPeriod: true }, []]);
+    expect([same.findings, same.missing, same.lines, same.subtotal, same.declared, same.comments]).toEqual([c.findings, c.missing, c.lines, c.subtotal, c.declared, c.comments]);
+    expect(same.subtotal).toBe(6372);
+    // 値の変更の版（適用期間の外）：ベースアップ評価料(Ⅰ) と物価対応料の点数が違う
+    const next = (await (await trialOf(id, latest.id, cookie)).json()) as Trial;
+    expect(next.trial.inPeriod).toBe(false);
+    expect(next.pointDiffs.map((d) => [d.kubun, d.ukePoints, d.revPoints, d.count])).toEqual([
+      [["O001_3I"], 79, pointsOf(latest, "O001_3I"), 2],
+      [["O100_1HA"], 3, pointsOf(latest, "O100_1HA"), 2],
+    ]);
+    expect(next.declared).toEqual({ ho: 6372, ko: [] });
+    // 点検は、試算のあとも同じ
+    expect(await (await check(id, cookie)).json()).toEqual(c);
   });
 });
