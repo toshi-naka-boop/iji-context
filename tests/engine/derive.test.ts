@@ -488,6 +488,92 @@ describe("不変条件（§2-8）", () => {
   });
 });
 
+describe("不変条件：段 5 で足した事実の全組み合わせ（design.md §11-8 完了条件 11）", () => {
+  const D = day(14);
+  const RX = day(28);
+  const tri = [unknown, yes, no] as const;
+  /** 日付ごとの事実の 3 通り（答えなし・真・偽） */
+  const table = (d: string) => [sep({}), sep({ [d]: true }), sep({ [d]: false })];
+  const levels = (...ns: number[]) => [unknown, ...ns.map((n) => ({ known: true, value: n }) as const)];
+  /** 保留・未対応がなければ、足した事実に関わるルールの指摘は 1 件も出ない。保留があっても、区分誤り・取り忘れは出ない */
+  function check(c: ClaimContext, choices: Record<string, string>, label: string) {
+    const r = derive(c, { choices });
+    const findings = judge(c, r).findings;
+    expect(wrongOrMissed(findings), label).toEqual([]);
+    if (r.pending.length === 0 && r.unsupported.length === 0) expect(findings.filter((f) => ["R03", "R07", "R08", "R09", "R10", "R15"].includes(f.ruleId)), label).toEqual([]);
+    return r;
+  }
+  it("管理料の月：要介護度 × 障害支援区分 × ほかの状態 × 同じ日の 2 つの答え × 文書提供 × 要選択の答え", () => {
+    const base = withEvents(K2, { type: "oushin", date: D, kind: "normal" });
+    let n = 0;
+    let decided = 0;
+    for (const care of levels(2, 3))
+      for (const level of levels(0, 2))
+        for (const other of tri)
+          for (const separate of table(D))
+            for (const afterVisit of table(D))
+              for (const doc of tri)
+                for (const pick of ["visit", "oushin"]) {
+                  const facts = { ...base.facts, careLevel: care, disabilitySupportLevel: level, table8_3Other: other, sameDaySeparate: separate, sameDayOushinAfterVisit: afterVisit, contactDocProvided: doc };
+                  const r = check({ ...base, facts }, { [`D01-encounter:${D}`]: pick }, JSON.stringify({ care, level, other, separate, afterVisit, doc, pick }));
+                  n++;
+                  if (r.pending.length === 0) decided++;
+                }
+    expect(n).toBe(3 * 3 * 3 * 3 * 3 * 3 * 2);
+    // 空振りしていない：保留なしで決まる組み合わせが実際にある
+    expect(decided).toBeGreaterThan(100);
+  });
+  it("管理料のない月：内服の種類数 × 対象の薬が含まれるか × 長期処方か × 同じ日の 2 つの答え", () => {
+    const base = withEvents(withFact(K2, "comprehensiveCare", no), { type: "oushin", date: RX, kind: "normal" });
+    let decided = 0;
+    for (const oralKinds of [5, 7])
+      for (const psychotropic of [null, true, false])
+        for (const long of table(RX))
+          for (const separate of table(RX))
+            for (const afterVisit of table(RX))
+              for (const pick of ["visit", "oushin"]) {
+                const c: ClaimContext = {
+                  ...base,
+                  facts: { ...base.facts, rxLongPsychotropic: long, sameDaySeparate: separate, sameDayOushinAfterVisit: afterVisit },
+                  events: base.events.map((e) => (e.type === "prescription" ? { ...e, oralKinds, psychotropic } : e)),
+                };
+                const r = check(c, { [`D01-encounter:${RX}`]: pick }, JSON.stringify({ oralKinds, psychotropic, long, separate, afterVisit, pick }));
+                if (r.pending.length === 0) {
+                  decided++;
+                  // 決まったときは、処方箋料がどちらかの区分で 1 回立っている
+                  expect([C.rx.other, C.rx.many].filter((k) => kubunOf(r).includes(k))).toHaveLength(1);
+                } else if (r.pending.some((p) => p.kind === "事実不足" && p.need === "rxLongPsychotropic")) {
+                  // 長期処方かが不明の間は、処方箋料をどちらの区分でも立てない
+                  for (const k of [C.rx.other, C.rx.many]) expect(kubunOf(r)).not.toContain(k);
+                }
+              }
+    expect(decided).toBeGreaterThan(50);
+  });
+  it("看取りの月：同じ日の 2 つの答え × 退院時共同指導料1 × ターミナルケア加算を選ぶか", () => {
+    const DAY = day(21);
+    const DEATH = day(22);
+    const base: ClaimContext = { ...K5, events: [{ type: "visit", date: DAY, sameBuildingCount: 1 }, { type: "oushin", date: DAY, kind: "normal" }, { type: "death", date: DEATH }], lines: [] };
+    let billed = 0;
+    for (const separate of table(DAY))
+      for (const afterVisit of table(DAY))
+        for (const guidance of tri)
+          for (const pick of ["visit", "oushin"])
+            for (const terminal of ["yes", "no"]) {
+              const facts = { ...base.facts, sameDaySeparate: separate, sameDayOushinAfterVisit: afterVisit, dischargeJointGuidance: guidance };
+              const choices = { [`D01-encounter:${DAY}`]: pick, [`D11-mitori:${DEATH}`]: "mitori", [`D12-terminal:${DEATH}`]: terminal };
+              const label = JSON.stringify({ separate, afterVisit, guidance, pick, terminal });
+              const c = { ...base, facts };
+              const r = check(c, choices, label);
+              // ターミナルケア加算を立てたなら、保留が残っていても、検証で要件不足にならない（導出と R09 が同じ述語を使う）
+              if (kubunOf(r).includes(C.terminal.terminal)) {
+                billed++;
+                expect(judge(c, r).findings.filter((f) => f.ruleId === "R09"), label).toEqual([]);
+              }
+            }
+    expect(billed).toBeGreaterThan(10);
+  });
+});
+
 describe("ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
   const D = day(21);
   const DEATH = day(22);
