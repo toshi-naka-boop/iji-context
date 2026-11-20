@@ -4,6 +4,7 @@ import type { Revision } from "../../engine/revisions/types";
 import type { ClaimLine } from "../../engine/types";
 import { evaluateGeneric, unitsOfLines } from "../../generic";
 import { rowNamesOf } from "../../generic/lookup";
+import { genericScopeOf } from "../../generic/scope";
 import { genericView, type GenericView } from "../../generic/view";
 import { withMasters } from "../../masters/db";
 
@@ -11,6 +12,10 @@ import { withMasters } from "../../masters/db";
 export function genericOfLines(lines: Pick<ClaimLine, "kubun">[], rev: Revision, yearMonth: string): GenericView & { skippedLines: number } {
   const claim = unitsOfLines(lines, rev);
   const about = { yearMonth, generation: rev.generation };
-  const view = withMasters((db) => genericView(evaluateGeneric(claim, db, about), db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null));
+  const view = withMasters((db) => {
+    const result = evaluateGeneric(claim, db, about);
+    // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
+    return { ...genericView(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null), scope: genericScopeOf(claim, db, about, result) };
+  });
   return { ...view, skippedLines: lines.length - claim.units.length };
 }

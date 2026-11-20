@@ -11,6 +11,8 @@ import { trial } from "../../engine/trial";
 import type { ClaimContext, ClaimLine, Finding } from "../../engine/types";
 import { evaluateGeneric } from "../../generic";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
+import { genericScopeOf } from "../../generic/scope";
+import type { GenericAboutMore } from "../../generic/types";
 import { genericView } from "../../generic/view";
 import { withMasters } from "../../masters/db";
 import { diseaseCodeOf } from "../../uke/diseases";
@@ -58,8 +60,10 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
  * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
  * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない
  */
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside">, all: Finding[]) {
-  const about = { yearMonth: claim.yearMonth, generation: rev.generation };
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, all: Finding[]) {
+  // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
+  // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
+  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}) };
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
   return withMasters((db) => {
     const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
@@ -67,7 +71,10 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesOf(db, about) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
-      generic: genericView(evaluateGeneric(claim, db, about), names),
+      generic: (() => {
+        const result = evaluateGeneric(claim, db, about);
+        return { ...genericView(result, names), scope: genericScopeOf(claim, db, about, result) };
+      })(),
       stopped: rev.rules.flatMap((rule) => {
         const by = partialBy(rule, rev, ctx);
         if (by === null) return [];
