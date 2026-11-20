@@ -12,6 +12,7 @@ export function makeR02(c: RevisionConsts): Rule {
     kubun: [...kanriKubun(c), HOKATSU],
     reference: "C002 2イ・C002-2 2イ（別に厚生労働大臣が定める状態＝別表第八の二）・C002 注10",
     recordFindings: [],
+    soundWhenPartial: [],
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: (ctx) => (expectedKanri(ctx, c).visits >= 2 ? ["table8_2"] : []),
     check(ctx) {

@@ -12,6 +12,7 @@ export function makeR01(c: RevisionConsts): Rule {
     kubun: [...kanriKubun(c), ...c.visitKubun],
     reference: "C002・C002-2（月の訪問診療料の回数による区分）・C002 注16",
     recordFindings: [],
+    soundWhenPartial: [],
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     // 注16 を聞くのは、回数 2 以上・重症でないと分かっていて、行がロ かニ のときだけ
     needs(ctx) {

@@ -10,6 +10,7 @@ function fakeRule(kubun: string, maxCount: number): Rule {
     kubun: [kubun],
     reference: "作り物のルール",
     recordFindings: [],
+    soundWhenPartial: [],
     appliesTo: (ctx) => ctx.lines.some((l) => l.kubun === kubun),
     needs: () => [],
     check(ctx) {

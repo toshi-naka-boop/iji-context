@@ -140,6 +140,11 @@ export type ClaimContext = {
    * コメントを持たない作り方（練習問題・選択モード・同梱の症例の JSON・カルテからの下書き・コメントの載らない連携）は偽で、空のコメントを「なかった」と読まない
    */
   commentsKnown: boolean;
+  /**
+   * 点検の対象外の単位（引けないコードを含む算定単位）が 1 つ以上ある請求か（design.md §11-11）。真の請求では、lines は請求の一部でしかない：
+   * ほかの行の有無や回数で決まる指摘は当てにならないので、evaluate は Rule.soundWhenPartial に申告のある種類の指摘だけを出し、合計を出さない。省くと偽
+   */
+  partial?: boolean;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
   /** 連携で読んだ行のうち、版のコードの表に対応がなかったもの。判定の対象外（FR-111） */
@@ -153,7 +158,7 @@ export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること（どちらも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること、"unsupportedLines" は、点検の対象外の行がある請求（partial）で決められない指摘があること（どれも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
   /** 文言に埋める値（R17：何の記載か、足りない日・多い日） */
@@ -165,8 +170,10 @@ export type EngineResult = {
   claimId: string;
   /** 判定に使った版 */
   revisionId: string;
-  /** 点数未収載の行、または判定の対象外の行（excluded）があれば null */
+  /** 点数未収載の行、判定の対象外の行（excluded）、点検の対象外の単位（partial）があれば null */
   total: number | null;
+  /** 点検の対象外の単位がある請求（partial）でだけ持つ：点検した行の小計（請求の合計ではない。点数未収載の行があれば null） */
+  subtotal?: number | null;
   byLine: { kubun: string; points: number | null }[];
   findings: Finding[];
   /** appliesTo が真だったルール ID（違反の有無によらない。X-3） */
@@ -185,6 +192,12 @@ export type Rule = {
    * カルテ側の記録がない請求（recordsKnown が偽）では、evaluate がこの種類の指摘を捨て、情報不足（chartRecord）を 1 件返す（design.md §11-6）
    */
   recordFindings: string[];
+  /**
+   * このルールの指摘の種類のうち、いまある行と確かめた事実だけから言えるもの（許可の一覧。design.md §11-11）。
+   * 点検の対象外の単位がある請求（partial）では、evaluate がここにない種類の指摘を捨て、情報不足（unsupportedLines）を 1 件返す。
+   * 申告のない種類は出ない（申告漏れは見逃しに倒れ、誤った指摘には倒れない）。申告が正しいことは tests/engine/partial.test.ts が縛る
+   */
+  soundWhenPartial: string[];
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];
