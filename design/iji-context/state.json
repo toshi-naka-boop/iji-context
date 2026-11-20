@@ -1,6 +1,6 @@
 {
-  "currentNode": "完了",
-  "status": "awaiting_user",
+  "currentNode": "起草",
+  "status": "in_progress",
   "designVersion": "v23",
   "approvedDesignVersion": "v23",
   "approvedDesignSha256": "7428610f1a42fbff06077897f0b02e027ff8d274f7d72e04d51bdc422d3e5d02",
@@ -9,14 +9,12 @@
   "requiredApprovalFingerprint": "v23:7428610f1a42",
   "baseline": "feat/integration（PR #16、8aa200a）",
   "criticRound": 28,
-  "openIssueIds": [
-    "S-7"
-  ],
+  "openIssueIds": [],
   "requiredReads": [
     "design.md（§11）",
     "ledger.md"
   ],
-  "nextAction": "利用者の判断待ち：S-7（カルテを消したときの医師確認の写し）。公開版のデータの作り直しは実行前に承認を取る。main へのマージは利用者が行う",
+  "nextAction": "全行の点検（マスター駆動）の調査の結果を受けて v24 を起草 → 批評 → 承認CP。v23 の実装は feat/integration で完了（承認の指紋は v23 のまま。design.md を変えた時点で承認を外す）",
   "lastUpdated": "2026-11-20",
   "delegation": {
     "実装": "claude サブエージェント",
