@@ -72,6 +72,10 @@ export const GENERIC_TEXT: Record<string, string> = {
   "G03.hospital_only": "コード {code}（{name}）は、マスターでは病院に限るコードです。診療所で算定できるか、告示・通知を確かめてください{later}",
   "G03.clinic_only": "コード {code}（{name}）は、マスターでは診療所に限るコードです。病院で算定できるか、告示・通知を確かめてください{later}",
   "G03.age": "コード {code}（{name}）は、マスターの年齢の範囲（{range}）の外です（診療年月の初日は {ageFrom} 歳、末日は {ageTo} 歳）。生年月日とコードを確かめてください{later}",
+  // G07・G08（段 13）。{comment} は、コメントマスターの名称（定型文）とコメントコード。{sheet}{kouban} は、記載要領の表と項番。G08 は言い切りに上げない（言い切りの文を持たない）
+  "G07.missing": "摘要欄に{comment}の記載が見当たりません。コード {code} を算定するときに要る記載として、コメント関連テーブルに載っています（記載要領 {sheet} 項番 {kouban}）。記載要領を確かめてください",
+  "G07.missing_any": "摘要欄に、次のどれかの記載が要りますが、どれも見当たりません：{comment}。コード {code} を算定するときに要る記載として、コメント関連テーブルに載っています（記載要領 {sheet} 項番 {kouban}）。記載要領を確かめてください",
+  "G08.no_target": "コード {code}（{name}）は、対象の傷病名が要る項目ですが、傷病名マスターで{what}の対象とされている傷病名が、このレセプトの傷病名に見当たりません。傷病名と、告示（特掲診療料の施設基準等の別表）を確かめてください",
 };
 /** 言い切り（確定）に上げた指摘は、言い切りの文（GENERIC_TEXT_CERTAIN）があればそれを使う。ほかは、言い切らない文 */
 export const genericText = (f: Pick<GenericFinding, "messageKey" | "params"> & { certainty?: GenericFinding["certainty"] }): string =>
@@ -125,6 +129,9 @@ export const GENERIC_TEXT_CERTAIN: Record<string, string> = {
   "G03.hospital_only": "コード {code}（{name}）は、病院に限るコードです。診療所では算定できません",
   "G03.clinic_only": "コード {code}（{name}）は、診療所に限るコードです。病院では算定できません",
   "G03.age": "コード {code}（{name}）は、年齢の範囲（{range}）の外なので算定できません（診療年月の初日は {ageFrom} 歳、末日は {ageTo} 歳）",
+  // 段 13（G07）
+  "G07.missing": "摘要欄に{comment}の記載がありません。コード {code} を算定するときは、必ず要る記載です（記載要領 {sheet} 項番 {kouban}）",
+  "G07.missing_any": "摘要欄に、次のどれかの記載が要りますが、どれもありません：{comment}（コード {code}。記載要領 {sheet} 項番 {kouban}）",
 };
 
 /** G04〜G06 が点検していないこと（点検の範囲の説明に、その点検が動いたときに出す。design.md §12-3） */
