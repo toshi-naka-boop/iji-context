@@ -12,6 +12,9 @@
     "check:dates": "tsx scripts/check-dates.ts",
     "check:banned-words": "tsx scripts/check-banned-words.ts",
     "check:codes": "tsx scripts/check-no-fictional-codes.ts",
+    "check:masters": "tsx scripts/check-masters.ts",
+    "masters:fetch": "tsx scripts/fetch-masters.ts",
+    "masters:build": "tsx scripts/build-masters.ts",
     "start": "next start"
   },
   "type": "module",

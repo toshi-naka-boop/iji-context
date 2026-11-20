@@ -35,8 +35,11 @@
 4. マスターと突き合わせます。食い違いが 0 件になるまで、テストを通すために片方を直さず、原文で確かめてから EM を直します
 
 ```bash
-npx tsx scripts/check-codes.ts <医科診療行為マスターの CSV>
+npm run masters:build   # 落としたマスターから masters.db を作る。版の表と食い違えば、全部出して失敗する
+npm run check:masters   # 今ある masters.db で確かめ直す
 ```
+
+マスターの置き方は [docs/masters.md](masters.md)。
 
 区分のキーは、区分番号やコードが変わっても変えません（変わるのは点数表の `no` と、版の `codes`）。コードから区分を引く処理は、必ず先に版を決めます（同じコードが、別の版では別の区分キーに当たることがあります）。
 `src`・`scripts`・`fixtures` と同梱の UKE に、以前の作り物のコード（99 で始まる 9 桁）が残っていないことは `npm run check:codes` で確かめます。

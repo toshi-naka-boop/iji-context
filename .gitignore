@@ -11,6 +11,8 @@ tsconfig.tsbuildinfo
 
 # 本番のデータと、秘密の値を書いたファイル（API キーは Secret Manager に置く。誤ってファイルに書いたときの保険）
 data/tenants/
+# 落とした公開データと masters.db（再配布の可否が未確認。docs/masters.md）
+data/masters/
 deploy/app-settings
 *.db-shm
 *.db-wal

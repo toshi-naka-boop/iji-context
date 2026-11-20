@@ -1,6 +1,6 @@
 // 令和8年度改定後の版の診療行為コード（design.md §11-1・§11-14）。値は evidence-master（EM）§2-8 の行だけ（マスターは同梱しない）。
 // EM にない・1 つに決まらない区分は、ここに書かずに版の uncoded に理由つきで載せる。
-// 行の右の注はマスターの名称（EM §2-8）。照合は scripts/check-codes.ts（docs/revision-howto.md）
+// 行の右の注はマスターの名称（EM §2-8）。照合は npm run check:masters（src/masters/revision-check.ts。docs/revision-howto.md）
 import type { Bundle, CodeDef } from "./types";
 
 const one = (primary: string, more: Omit<CodeDef, "primary" | "accept"> = {}): CodeDef => ({ primary, accept: [], ...more });
