@@ -455,11 +455,18 @@ export function parseUke(buf: Buffer): UkeParsed {
     } else if (kind === "SI" || kind === "IY" || kind === "TO") {
       stage = 3;
       const layout = ITEM_LAYOUT[kind];
-      digits(c[1], line, "診療識別", /^(\d{2})?$/);
+      const shikibetsu = digits(c[1], line, "診療識別", /^(\d{2})?$/);
       const futan = digits(c[2], line, "負担区分", /^[0-9A-Z]$/);
       // 数量データ（SI。整数 8 桁）・使用量（IY は整数部 5 桁と小数部 5 桁、TO は 5 桁と 3 桁）。仕様 p16・18・19。3 つを 1 つの形で受ける。
-      // TO の単位コード・単価・商品名及び規格又はサイズ（300 バイトまで）は、読み捨てる
-      const item: UkeItem = { line, kind, code: digits(c[3], line, "コード", /^\d{9}$/), quantity: digits(c[4], line, "数量データ", /^(\d{1,8}(\.\d{1,5})?)?$/) };
+      // TO は、回数のあとに単位コード（項目 8）・単価（9）・予備・商品名及び規格又はサイズ（300 バイトまで）が入る（EM §2-10 表 4 の (g)）。単位コードと単価は持ち、商品名は読み捨てる
+      const item: UkeItem = {
+        line,
+        kind,
+        code: digits(c[3], line, "コード", /^\d{9}$/),
+        quantity: digits(c[4], line, "数量データ", /^(\d{1,8}(\.\d{1,5})?)?$/),
+        shikibetsu,
+        ...(kind === "TO" ? { unitCode: digits(c[7], line, "単位コード", /^(\d{1,3})?$/), unitPrice: digits(c[8], line, "単価", /^(\d{1,11}(\.\d{1,5})?)?$/) } : {}),
+      };
       const points = c[5] === "" ? null : int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
       // 回数も、算定日情報の 1 日の回数も 3 桁（仕様 p16〜19）
       const count = int(c[6], line, "回数", 1, UKE_LIMITS.maxDailyCount);
@@ -482,7 +489,7 @@ export function parseUke(buf: Buffer): UkeParsed {
       }
       pending.push({ item, count, days });
       if (points !== null) {
-        cur.units.push({ line, items: pending.map((p) => p.item), points, count, days, futan });
+        cur.units.push({ line, items: pending.map((p) => p.item), points, count, days, futan, shikibetsu: pending[0].item.shikibetsu });
         pending = [];
       }
     } else {
@@ -513,11 +520,18 @@ export function parseUke(buf: Buffer): UkeParsed {
  */
 export type UnitMapping = { ok: true; lines: UkeLine[]; revPoints?: number } | { ok: false; line: number; reason: string; unsupported: boolean };
 
+export type LineOrigin = { unit: number; codes: string[]; via: "primary" | "accept" | "bundle" };
+
 export type MappedClaim = {
   /** 単位ごとの結果（UkeClaim.units と同じ並び） */
   units: UnitMapping[];
   /** 引けた単位の算定行（単位の並びのまま） */
   lines: UkeLine[];
+  /**
+   * lines と同じ並びの、行とコードの対応（design.md §12-2）：その行のもとになった単位の番号（UkeClaim.units の添字）と UKE のコード、
+   * そのコードが版の表のどれだったか（primary／accept／包括の検査の項目 bundle）。エンジンの ClaimLine には入れない
+   */
+  origins: LineOrigin[];
   /** 点検の対象外の単位（対応していないコードを含む単位。単位の並びのまま） */
   others: UkeOther[];
   comments: Comment[];
@@ -605,7 +619,14 @@ export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): Mappe
     }
     return [];
   });
-  return { units, lines: units.flatMap((u) => (u.ok ? u.lines : [])), others, comments };
+  const origins = units.flatMap((u, i): LineOrigin[] => {
+    if (!u.ok) return [];
+    const items = claim.units[i].items;
+    // 包括の検査は、単位の全部の項目が 1 行になる。ほかは、項目 1 つが 1 行（mapUnit の並びのまま）
+    if (u.lines.length === 1 && u.lines[0].items) return [{ unit: i, codes: items.map((it) => it.code), via: "bundle" }];
+    return u.lines.map((l, n) => ({ unit: i, codes: [items[n].code], via: rev.codes[l.kubun].primary === items[n].code ? "primary" : "accept" }));
+  });
+  return { units, lines: units.flatMap((u) => (u.ok ? u.lines : [])), origins, others, comments };
 }
 
 /**
