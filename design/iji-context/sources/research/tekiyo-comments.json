@@ -1,0 +1,2263 @@
+{
+ "_meta": {
+  "generated": "2026-11-19",
+  "source": {
+   "別表Ⅰ": "保医発0327第2号（令和8年3月27日）別添1 別表Ⅰ（医科） https://www.mhlw.go.jp/content/12400000/001757373.pdf （page は PDF の通しページ。別表Ⅰ（医科）-n は page-106）",
+   "コメントマスター": "c_20261112.csv",
+   "コメント関連テーブル": "ck_ALL_20261112.csv https://www.hpdx.or.jp/seikyushiharai/tensuhyo/kihonmasta/kihonmasta_06.html"
+  },
+  "note": "required は別表Ⅰ の記載事項の書き方（括弧書の条件があれば「該当する場合のみ」）による。exclusive は「選択して記載」「又は」の読み（複数の同時記録が許されるかは未確認）。relationTable は関連テーブルの条件区分（01＝算定すれば必要、00＝それ以外、02＝入院／入院外、03＝複数回算定）"
+ },
+ "kubun": {
+  "C001_1I": {
+   "realCodes": [
+    "114001110"
+   ],
+   "appName": "在宅患者訪問診療料(Ⅰ)1イ 同一建物居住者以外",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "830100088",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "頻回な訪問診療を行った必要性（文字）",
+     "condition": "「1」を算定し、急性増悪等で一時的に週4回以上の訪問診療を行った場合。3つとも記載",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "頻回な在宅患者訪問診療を行った必要性（在宅患者訪問診療料（１））；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "850100094",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "必要を認めた診療年月日",
+     "condition": "同上",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "必要性を認めた診療年月日（在宅患者訪問診療料（１））",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "850100095",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "当該訪問診療を行った年月日",
+     "condition": "同上",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "訪問診療年月日（在宅患者訪問診療料（１））",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C001_1RO": {
+   "realCodes": [
+    "114030310"
+   ],
+   "appName": "在宅患者訪問診療料(Ⅰ)1ロ 同一建物居住者",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "830100088",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "頻回な訪問診療を行った必要性（文字）",
+     "condition": "「1」を算定し、急性増悪等で一時的に週4回以上の訪問診療を行った場合。3つとも記載",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "頻回な在宅患者訪問診療を行った必要性（在宅患者訪問診療料（１））；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "850100094",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "必要を認めた診療年月日",
+     "condition": "同上",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "必要性を認めた診療年月日（在宅患者訪問診療料（１））",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 167,
+     "page": 123,
+     "code": "850100095",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "当該訪問診療を行った年月日",
+     "condition": "同上",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "訪問診療年月日（在宅患者訪問診療料（１））",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C001_N13_DX": {
+   "realCodes": [
+    "114746310"
+   ],
+   "appName": "在宅医療DX情報活用加算1",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C001_N6_TERMINAL": {
+   "realCodes": [
+    "114018370",
+    "114042570"
+   ],
+   "appName": "在宅ターミナルケア加算（在支診 強化型以外）",
+   "status": "複数",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 169,
+     "page": 124,
+     "code": "850100098",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "死亡年月日",
+     "condition": null,
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "死亡年月日（在宅ターミナルケア加算）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 169,
+     "page": 124,
+     "code": "850100100",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "死亡前24時間以内に行った訪問診療の年月日",
+     "condition": "患者が在宅以外で死亡した場合",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "死亡前２４時間以内に行った訪問診療年月日（在宅ターミナルケア加算）",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 169,
+     "page": 124,
+     "code": "851100038",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同 訪問診療の時刻",
+     "condition": "同上",
+     "note": null,
+     "pattern": "851",
+     "patternMeaning": "時刻（HHMM、全角4桁）",
+     "masterText": "死亡前２４時間以内に行った訪問診療時刻（在宅ターミナルケア加算）",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C001_N7_MITORI": {
+   "realCodes": [
+    "114018570"
+   ],
+   "appName": "看取り加算",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C001_N8_SHIBOU": {
+   "realCodes": [
+    "114018670"
+   ],
+   "appName": "死亡診断加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 170,
+     "page": 124,
+     "code": "820100624",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "ICT を利用した看護師との連携による死亡診断",
+     "condition": "ガイドラインに基づく ICT 利用の死亡診断で、死亡診断加算のみを算定する場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ＩＣＴを利用した看護師との連携による死亡診断",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C000": {
+   "realCodes": [
+    "114000110"
+   ],
+   "appName": "往診料",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 162,
+     "page": 123,
+     "code": "830100086",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "患者の病状の急変等、往診が必要となった理由（文字）",
+     "condition": "在宅患者訪問診療料(Ⅰ)又は(Ⅱ)を算定した日と同一日に往診料を算定した場合",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "患者の病状の急変等往診が必要となった理由；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 162,
+     "page": 123,
+     "code": "830100814",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "訪問診療を行っている保険医療機関名（文字）",
+     "condition": "連携する他の医療機関が過去60日以内に訪問診療料等を算定している患者に往診料を算定した場合",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "訪問診療を行っている保険医療機関名；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 162,
+     "page": 123,
+     "code": "830100815",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "入所する介護保険施設等の名称（文字）",
+     "condition": "平時から連携する老健・介護医療院・特養の入所者に往診料を算定した場合",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "入所する介護保険施設等の名称；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 162,
+     "page": 123,
+     "code": "850100499",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "患家に事前に氏名を提供していない往診医による往診日",
+     "condition": "在支診・在支病で、普段から訪問診療をする患者に、事前に氏名を提供していない往診医が往診した場合（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "患家に事前に氏名を提供していない往診医による往診日",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 162,
+     "page": 123,
+     "code": "830100932",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同 往診医の氏名（文字）",
+     "condition": "同上（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "患家に事前に氏名を提供していない往診医名；",
+     "relationTable": "条件区分00（20261001〜）"
+    }
+   ]
+  },
+  "C000_N1_KINKYU": {
+   "realCodes": [
+    "114011570"
+   ],
+   "appName": "緊急往診加算（在支診 強化型以外）",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C002_2I1": {
+   "realCodes": [
+    "114032510"
+   ],
+   "appName": "在医総管 2イ(1) 重症・月2回以上",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100106",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（在医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（在医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100492",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（在医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく（アプリの区分のコードには紐づかない）",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100035",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく（1人のコードには紐づかない）",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "同上",
+     "note": "記載要領は3択をまとめて書くが、関連テーブルは 094 を施医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "C002_2RO1": {
+   "realCodes": [
+    "114032810"
+   ],
+   "appName": "在医総管 2ロ(1) 月2回以上",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100106",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（在医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（在医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100492",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（在医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく（アプリの区分のコードには紐づかない）",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100035",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく（1人のコードには紐づかない）",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "同上",
+     "note": "記載要領は3択をまとめて書くが、関連テーブルは 094 を施医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "C002_2NI1": {
+   "realCodes": [
+    "114033110"
+   ],
+   "appName": "在医総管 2ニ(1) 月1回",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100106",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（在医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（在医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100492",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（在医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく（アプリの区分のコードには紐づかない）",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100035",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく（1人のコードには紐づかない）",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（在医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "同上",
+     "note": "記載要領は3択をまとめて書くが、関連テーブルは 094 を施医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "C002_N4_IKOU": {
+   "realCodes": [
+    "114016070"
+   ],
+   "appName": "在宅移行早期加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 177,
+     "page": 124,
+     "code": "850100108",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "初回の管理料を算定した年月日（在医総管に付ける場合）",
+     "condition": null,
+     "note": "親が在医総管なら 108、施医総管なら 109 のどちらか",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "初回算定年月日（在宅移行早期加算（在医総管））",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 177,
+     "page": 124,
+     "code": "850100109",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "初回の管理料を算定した年月日（施医総管に付ける場合）",
+     "condition": null,
+     "note": "同上",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "初回算定年月日（在宅移行早期加算（施医総管））",
+     "relationTable": "条件区分01（20260601〜）"
+    }
+   ]
+  },
+  "C002_N5_HINKAI1": {
+   "realCodes": [
+    "114715910"
+   ],
+   "appName": "頻回訪問加算（初回）",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C002_N5_HINKAI2": {
+   "realCodes": [
+    "114716010"
+   ],
+   "appName": "頻回訪問加算（2回目以降）",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C002_N10_HOKATSU": {
+   "realCodes": [
+    "114043870"
+   ],
+   "appName": "包括的支援加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100626",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：1-1 要介護3",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：１－１　要介護３",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100627",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：1-2 要介護4",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：１－２　要介護４",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100628",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：1-3 要介護5",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：１－３　要介護５",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100629",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：1-4 障害支援区分2以上",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：１－４　障害支援区分２以上",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100631",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：2-1 認知症高齢者の日常生活自立度 ランクⅢa",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：２－１　ランク３ａ",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100632",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：2-2 ランクⅢb",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：２－２　ランク３ｂ",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100633",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：2-3 ランクⅣ",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：２－３　ランク４",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100634",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：2-4 ランクM",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：２－４　ランクＭ",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100635",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：3 頻回の訪問看護を受けている状態",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：３　頻回の訪問看護を受けている状態",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100636",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：4 訪問診療又は訪問看護で処置を受けている状態",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：４　訪問診療又は訪問看護において処置を受けている状態",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100637",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：5 特定施設等に入居し看護職員による処置を受けている状態",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：５　施設に入居し、看護職員による処置を受けている状態",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820101318",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：6 麻薬投薬を受けている状態",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：６　麻薬投薬を受けている状態",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100638",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：7-1 脳性麻痺等・小児慢性特定疾病・障害児の15歳未満",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：７－１　脳性麻痺等、小児慢性特定疾病、障害児に該当する１５歳未満の患者",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100639",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：7-2 出生時体重1,500g未満の1歳未満",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：７－２　出生時体重が１，５００ｇ未満であった１歳未満の患者",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100640",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：7-3 超重症児（者）等の判定スコア10以上",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：７－３　「超重症児（者）・準超重症児（者）の判定基準」による判定スコアが１０以上である患者",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 178,
+     "page": 124,
+     "code": "820100641",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "該当する状態：7-4 家族等が注射・喀痰吸引・経管栄養等の処置を行っている",
+     "condition": null,
+     "note": "留意事項 C002・C002-2 の(23) に規定する状態から該当するものを選択",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "該当する状態（包括的支援加算）：７－４　家族等患者の看護に当たる者が注射又は喀痰吸引、経管栄養等の処置を行っている患者",
+     "relationTable": "条件区分01（20260601〜）"
+    }
+   ]
+  },
+  "C002_N15_RENKEI": {
+   "realCodes": [
+    "114723810"
+   ],
+   "appName": "在宅医療情報連携加算",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C002_N2": {
+   "realCodes": [
+    "114034370"
+   ],
+   "appName": "管理料 処方箋を交付しない場合の加算",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C101_2I": {
+   "realCodes": [
+    "114040610"
+   ],
+   "appName": "在宅自己注射指導管理料 2イ",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 210,
+     "page": 127,
+     "code": "830100480",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "薬剤の支給日数（文字）",
+     "condition": "在宅自己注射に用いる薬剤を支給した場合（院外処方を除く）。薬剤名等は医薬品コードの記録で足りる",
+     "note": "関連テーブルは診療行為を特定していない（199999999）",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "薬剤支給日数（在宅自己注射指導管理料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 210,
+     "page": 127,
+     "code": "820100656",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "算定理由：緊急時",
+     "condition": "緊急時に受診した場合の注射の費用を算定する場合",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "算定理由（在宅自己注射指導管理料）：緊急時",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 210,
+     "page": 127,
+     "code": "850100133",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "緊急受診した年月日",
+     "condition": "同上",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "緊急受診した年月日（在宅自己注射指導管理料）",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C153_2": {
+   "realCodes": [
+    "114011070"
+   ],
+   "appName": "注入器用注射針加算 2",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100122",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：当月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100123",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100124",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100125",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100126",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    }
+   ]
+  },
+  "C103_2": {
+   "realCodes": [
+    "114003710"
+   ],
+   "appName": "在宅酸素療法指導管理料 2 その他",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 216,
+     "page": 127,
+     "code": "842100072",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "当該月の動脈血酸素分圧（数値）",
+     "condition": null,
+     "note": "分圧又は飽和度のどちらか",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "動脈血酸素分圧（在宅酸素療法指導管理料）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 216,
+     "page": 127,
+     "code": "842100044",
+     "required": "必須",
+     "exclusive": true,
+     "summary": "当該月の動脈血酸素飽和度（％、数値）",
+     "condition": null,
+     "note": "同上",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "動脈血酸素飽和度（％）（在宅酸素療法指導管理料）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 216,
+     "page": 127,
+     "code": "850100139",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "終夜睡眠ポリグラフィーの実施年月日",
+     "condition": "慢性心不全で適用になった患者の、初回の指導管理を行った月",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "終夜睡眠ポリグラフィーの実施年月日（在宅酸素療法指導管理料）",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 216,
+     "page": 127,
+     "code": "842100045",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "無呼吸低呼吸指数（数値）",
+     "condition": "同上",
+     "note": null,
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "無呼吸低呼吸指数（在宅酸素療法指導管理料）",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "C158": {
+   "realCodes": [
+    "114006210"
+   ],
+   "appName": "酸素濃縮装置加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100122",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：当月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100123",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100124",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100125",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100126",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    }
+   ]
+  },
+  "C157_1": {
+   "realCodes": [
+    "114006310"
+   ],
+   "appName": "酸素ボンベ加算（携帯用）",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100122",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：当月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100123",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100124",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：翌月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "翌月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100125",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    },
+    {
+     "koban": 237,
+     "page": "128-129",
+     "code": "820100126",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "当月分以外に算定した月：前々月分",
+     "condition": "1月に2回分又は3回分を算定する場合（関連テーブル：条件区分03・算定回数2以上）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "前々月分",
+     "relationTable": "条件区分03・算定回数2以上（20260601〜）"
+    }
+   ]
+  },
+  "F400_3": {
+   "realCodes": [
+    "120002910",
+    "120005010"
+   ],
+   "appName": "処方箋料 3 その他",
+   "status": "複数",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 393,
+     "page": 141,
+     "code": "830100194",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "「1」を算定しない理由（文字）",
+     "condition": "向精神薬多剤投与の除外（F100(3)ア(イ)〜(ニ)）に当たり「1」を算定しない場合",
+     "note": "関連テーブルでは非算定理由コメント＝1",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "１を算定しない理由（処方箋料）；",
+     "relationTable": "条件区分00・非算定理由（20260601〜）"
+    },
+    {
+     "koban": 393,
+     "page": 141,
+     "code": "820100741",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "複数診療科で処方",
+     "condition": "複数の診療科で異なる医師が処方した場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "複数診療科で処方",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 393,
+     "page": 142,
+     "code": "850100513",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "処方箋料を算定する年月日",
+     "condition": "緊急やむを得ず同一日に一部を院内投薬・他を院外処方箋にした場合（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "処方箋料を算定する年月日",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 393,
+     "page": 142,
+     "code": "830100948",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "その理由（文字）",
+     "condition": "同上（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "その理由；",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100203",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "臨時薬の投与の必要性（文字）",
+     "condition": "臨時薬の追加で内服薬が7種類以上になる場合（病名で判断できれば不要）",
+     "note": "関連テーブルは診療行為を特定していない（199999999）",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "臨時薬の投与の必要性（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100202",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "ビタミン剤の投与趣旨（文字）",
+     "condition": "ビタミン剤を投与した場合（病名で判断できれば不要）",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "ビタミン剤の投与趣旨（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100206",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "長期投与の理由（文字）",
+     "condition": "14日限度の薬を特殊の事情で14日を超えて投与した場合",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "長期投与理由（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "850100206",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同日に院内処方と処方箋の投薬を行った年月日",
+     "condition": "緊急やむを得ず同一日に院内投薬と処方箋の両方を行った場合",
+     "note": "同上。項番393 の 850100513・830100948 と趣旨が重なる（使い分けは未確認）",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "同日に院内処方及び処方箋による投薬を行った年月日",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100205",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同上の理由（文字）",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "同日に院内処方及び処方箋による投薬を行った理由（処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "F400_2": {
+   "realCodes": [
+    "120002710",
+    "120004810"
+   ],
+   "appName": "処方箋料 2 内服7種類以上",
+   "status": "複数",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 393,
+     "page": 141,
+     "code": "830100194",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "「1」を算定しない理由（文字）",
+     "condition": "向精神薬多剤投与の除外（F100(3)ア(イ)〜(ニ)）に当たり「1」を算定しない場合",
+     "note": "関連テーブルでは非算定理由コメント＝1",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "１を算定しない理由（処方箋料）；",
+     "relationTable": "条件区分00・非算定理由（20260601〜）"
+    },
+    {
+     "koban": 393,
+     "page": 141,
+     "code": "820100741",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "複数診療科で処方",
+     "condition": "複数の診療科で異なる医師が処方した場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "複数診療科で処方",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 393,
+     "page": 142,
+     "code": "850100513",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "処方箋料を算定する年月日",
+     "condition": "緊急やむを得ず同一日に一部を院内投薬・他を院外処方箋にした場合（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "処方箋料を算定する年月日",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 393,
+     "page": 142,
+     "code": "830100948",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "その理由（文字）",
+     "condition": "同上（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "その理由；",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100203",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "臨時薬の投与の必要性（文字）",
+     "condition": "臨時薬の追加で内服薬が7種類以上になる場合（病名で判断できれば不要）",
+     "note": "関連テーブルは診療行為を特定していない（199999999）",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "臨時薬の投与の必要性（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100202",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "ビタミン剤の投与趣旨（文字）",
+     "condition": "ビタミン剤を投与した場合（病名で判断できれば不要）",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "ビタミン剤の投与趣旨（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100206",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "長期投与の理由（文字）",
+     "condition": "14日限度の薬を特殊の事情で14日を超えて投与した場合",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "長期投与理由（薬剤料・処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "850100206",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同日に院内処方と処方箋の投薬を行った年月日",
+     "condition": "緊急やむを得ず同一日に院内投薬と処方箋の両方を行った場合",
+     "note": "同上。項番393 の 850100513・830100948 と趣旨が重なる（使い分けは未確認）",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "同日に院内処方及び処方箋による投薬を行った年月日",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 396,
+     "page": 142,
+     "code": "830100205",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "同上の理由（文字）",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "同日に院内処方及び処方箋による投薬を行った理由（処方箋料）；",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "F400_N4": {
+   "realCodes": [
+    "120005710"
+   ],
+   "appName": "特定疾患処方管理加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 394,
+     "page": 142,
+     "code": "820100742",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "隔日投与",
+     "condition": "隔日、漸増・減等で投与する場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "隔日投与",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 394,
+     "page": 142,
+     "code": "820100743",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "漸増投与",
+     "condition": "隔日、漸増・減等で投与する場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "漸増投与",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 394,
+     "page": 142,
+     "code": "820100744",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "漸減投与",
+     "condition": "隔日、漸増・減等で投与する場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "漸減投与",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 394,
+     "page": 142,
+     "code": "820100875",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "週1回投与",
+     "condition": "隔日、漸増・減等で投与する場合",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "週１回投与",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  },
+  "F400_N6_1": {
+   "realCodes": [
+    "120004270"
+   ],
+   "appName": "一般名処方加算1",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D400_1": {
+   "realCodes": [
+    "160095710"
+   ],
+   "appName": "血液採取 静脈",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D005_5": {
+   "realCodes": [
+    "160008010"
+   ],
+   "appName": "末梢血液一般検査",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D005_9": {
+   "realCodes": [
+    "160010010"
+   ],
+   "appName": "HbA1c",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D007_10": {
+   "realCodes": [],
+   "appName": "血液化学検査 10項目以上",
+   "status": "なし",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 284,
+     "page": 132,
+     "code": "850100157",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "高カロリー静脈栄養法の開始年月日",
+     "condition": "検査項目にマンガン（Mn、160173910）を含む場合に限る（D007の8）",
+     "note": "10項目以上の包括そのものへの定めはない",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "高カロリー静脈栄養法の開始年月日（Ｍｎ）",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "D008_18": {
+   "realCodes": [
+    "160162350"
+   ],
+   "appName": null,
+   "status": "旧版",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 287,
+     "page": 132,
+     "code": null,
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "（旧版の区分。実在コードは D008_19 と同じ）各々の検査の実施日（算定日情報）",
+     "condition": "BNP・NT-proBNP・ANP のうち2項目以上を実施した場合",
+     "note": null,
+     "pattern": null,
+     "patternMeaning": "算定日情報（SI の 1〜31日の情報）",
+     "masterText": null,
+     "relationTable": "コメントコードなし"
+    }
+   ]
+  },
+  "D026_3": {
+   "realCodes": [
+    "160061810"
+   ],
+   "appName": "血液学的検査判断料",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D026_4": {
+   "realCodes": [
+    "160061910"
+   ],
+   "appName": "生化学的検査(Ⅰ)判断料",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D026_5": {
+   "realCodes": [
+    "160062010"
+   ],
+   "appName": "生化学的検査(Ⅱ)判断料",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "D_GAIRAI_JINSOKU": {
+   "realCodes": [
+    "160177770"
+   ],
+   "appName": "外来迅速検体検査加算",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 248,
+     "page": 129,
+     "code": "830100111",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "加算を算定した日に行った検体検査の項目名（文字）",
+     "condition": "外来診療料（病院）を算定し、包括される検査だけに加算を算定した場合",
+     "note": "診療所は外来診療料を算定しないので当たらない",
+     "pattern": "830",
+     "patternMeaning": "定型文＋任意の文字",
+     "masterText": "検体検査名（外来迅速検体検査加算）；",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 248,
+     "page": 129,
+     "code": "820100129",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "引き続き入院",
+     "condition": "引き続き入院した場合",
+     "note": "関連テーブル：条件区分02・入院",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "引き続き入院",
+     "relationTable": "条件区分02（20260601〜）"
+    }
+   ]
+  },
+  "O100_3I": {
+   "realCodes": [
+    "180725910"
+   ],
+   "appName": null,
+   "status": "旧版",
+   "teiNashi": true,
+   "items": []
+  },
+  "O100_3RO": {
+   "realCodes": [
+    "180726010"
+   ],
+   "appName": null,
+   "status": "旧版",
+   "teiNashi": true,
+   "items": []
+  },
+  "O100_SAISHIN": {
+   "realCodes": [
+    "180725810"
+   ],
+   "appName": null,
+   "status": "旧版",
+   "teiNashi": true,
+   "items": []
+  },
+  "B000": {
+   "realCodes": [
+    "113001810"
+   ],
+   "appName": "特定疾患療養管理料",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "A_IRYOJOHO": {
+   "realCodes": [
+    "111703270",
+    "112708970"
+   ],
+   "appName": null,
+   "status": "旧版・複数",
+   "teiNashi": true,
+   "items": []
+  },
+  "A_DXSUISHIN": {
+   "realCodes": [
+    "111703670",
+    "111703770",
+    "111703870",
+    "111703470",
+    "111703570",
+    "111703370"
+   ],
+   "appName": null,
+   "status": "旧版・複数",
+   "teiNashi": true,
+   "items": []
+  },
+  "D008_19": {
+   "realCodes": [
+    "160162350"
+   ],
+   "appName": "BNP",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 287,
+     "page": 132,
+     "code": null,
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "各々の検査の実施日（算定日情報で記録。コメントコードなし）",
+     "condition": "BNP・NT-proBNP・ANP のうち2項目以上を実施した場合",
+     "note": "「紙レセのみ記載」に○。電子レセプトは算定日情報の記録で足りる",
+     "pattern": null,
+     "patternMeaning": "算定日情報（SI の 1〜31日の情報）",
+     "masterText": null,
+     "relationTable": "コメントコードなし"
+    }
+   ]
+  },
+  "O001_3I": {
+   "realCodes": [
+    "180725910"
+   ],
+   "appName": "外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時イ",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O001_3RO": {
+   "realCodes": [
+    "180726010"
+   ],
+   "appName": "外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時ロ",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O001_2": {
+   "realCodes": [
+    "180725810"
+   ],
+   "appName": "外来・在宅ベースアップ評価料(Ⅰ) 再診時等",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O001_1": {
+   "realCodes": [
+    "180725710"
+   ],
+   "appName": "外来・在宅ベースアップ評価料(Ⅰ) 初診時",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O100_1HA": {
+   "realCodes": [
+    "180820110"
+   ],
+   "appName": "外来・在宅物価対応料 訪問診療時",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O100_1RO": {
+   "realCodes": [
+    "180820010"
+   ],
+   "appName": "外来・在宅物価対応料 再診時等",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "O100_1I": {
+   "realCodes": [
+    "180819910"
+   ],
+   "appName": "外来・在宅物価対応料 初診時",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C001_N13_DX2": {
+   "realCodes": [
+    "114706510"
+   ],
+   "appName": "在宅医療DX情報活用加算2",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "A_DENSHI_RENKEI": {
+   "realCodes": [
+    "112709570"
+   ],
+   "appName": "電子的診療情報連携体制整備加算（再診時）",
+   "status": "一意",
+   "teiNashi": true,
+   "items": []
+  },
+  "C002-2_2I1": {
+   "realCodes": [
+    "114037310"
+   ],
+   "appName": "施設入居時等医学総合管理料 2イ(1) 重症・月2回以上",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100107",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（施医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（施医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100493",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（施医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100036",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "同上",
+     "note": "関連テーブルは 095・096 を在医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "C002-2_2RO1": {
+   "realCodes": [
+    "114037610"
+   ],
+   "appName": "施設入居時等医学総合管理料 2ロ(1) 月2回以上",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100107",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（施医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（施医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100493",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（施医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100036",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "同上",
+     "note": "関連テーブルは 095・096 を在医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "C002-2_2NI1": {
+   "realCodes": [
+    "114037910"
+   ],
+   "appName": "施設入居時等医学総合管理料 2ニ(1) 月1回",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100107",
+     "required": "必須",
+     "exclusive": false,
+     "summary": "当該月に往診又は訪問診療を行った年月日（施医総管）",
+     "condition": null,
+     "note": "日ごとに1件",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "往診又は訪問診療年月日（施医総管）",
+     "relationTable": "条件区分01（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "850100493",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "情報通信機器を用いた診療を行った年月日（施医総管）",
+     "condition": "情報通信機器を用いた診療を行った場合",
+     "note": "関連テーブルでは「通信機」のコードにだけ紐づく",
+     "pattern": "850",
+     "patternMeaning": "年月日（GYYMMDD、全角7桁）",
+     "masterText": "情報通信機器を用いた診療年月日（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "842100036",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "単一建物診療患者数（数字）",
+     "condition": "単一建物診療患者が2人以上の場合",
+     "note": "関連テーブルでは 2人以上のコードにだけ紐づく",
+     "pattern": "842",
+     "patternMeaning": "定型文＋数値",
+     "masterText": "単一建物診療患者数（施医総管）",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100094",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ユニット数3以下の認知症対応型共同生活介護事業所",
+     "condition": "単一建物診療患者の人数のみなしを使う場合。該当するものを選択",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ユニット数が３以下の認知症対応型共同生活介護事業所",
+     "relationTable": "条件区分00（20260601〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100095",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "患者数が建築物の戸数の10％以下",
+     "condition": "同上",
+     "note": "関連テーブルは 095・096 を在医総管のコードにだけ紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "在宅医学管理を行う患者数が当該建築物の戸数の１０％以下",
+     "relationTable": "区分のコードに紐づけなし"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100096",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "戸数20戸未満で在宅医学管理の患者が2人以下",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "当該建築物の戸数が２０戸未満で在宅医学管理を行う患者が２人以下",
+     "relationTable": "区分のコードに紐づけなし"
+    }
+   ]
+  },
+  "A001": {
+   "realCodes": [
+    "112007410"
+   ],
+   "appName": "再診料",
+   "status": "一意",
+   "teiNashi": false,
+   "items": [
+    {
+     "koban": 2,
+     "page": 107,
+     "code": "820100001",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ア 検査・画像診断の結果のみを聞きに来院",
+     "condition": "再診に附随する一連の行為を後日行い、再診日が前月である場合（再診料を算定しない場合）",
+     "note": "関連テーブルでは非算定理由コメント＝1",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ア　初診又は再診時に行った検査、画像診断の結果のみを聞きに来院",
+     "relationTable": "条件区分00・非算定理由（20240601〜）"
+    },
+    {
+     "koban": 2,
+     "page": 107,
+     "code": "820100002",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "イ 往診等の後に薬剤のみを取りに来院",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "イ　往診等の後に薬剤のみを取りに来院",
+     "relationTable": "条件区分00・非算定理由（20240601〜）"
+    },
+    {
+     "koban": 2,
+     "page": 107,
+     "code": "820100003",
+     "required": "該当する場合のみ",
+     "exclusive": true,
+     "summary": "ウ 一旦帰宅し後刻・後日に検査等を受けに来院",
+     "condition": "同上",
+     "note": "同上",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "ウ　一旦帰宅し、後刻又は後日検査、画像診断、手術等を受けに来院",
+     "relationTable": "条件区分00・非算定理由（20240601〜）"
+    },
+    {
+     "koban": 2,
+     "page": 107,
+     "code": "820101331",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "健診等とは別の受診で保険診療を実施した",
+     "condition": "健診等を実施した医療機関で、その疾病に保険診療を行う場合（令和8年10月診療分〜）",
+     "note": null,
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "健診等の実施とは別の受診において保険診療を実施した（再診料）",
+     "relationTable": "条件区分00（20261001〜）"
+    },
+    {
+     "koban": 176,
+     "page": 124,
+     "code": "820100847",
+     "required": "該当する場合のみ",
+     "exclusive": false,
+     "summary": "2人目患者の診療時間が1時間超",
+     "condition": "同一患家で2人以上を診療し、2人目以降に再診料等のみを算定し、診療が1時間を超えた場合",
+     "note": "別表Ⅰ では項番176（C002・C002-2）の行にあるが、関連テーブルは再診料・初診料に紐づける",
+     "pattern": "820",
+     "patternMeaning": "定型文（文字データなし）",
+     "masterText": "２人目患者診療時間が１時間超",
+     "relationTable": "条件区分00（20260601〜）"
+    }
+   ]
+  }
+ }
+}
