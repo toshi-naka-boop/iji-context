@@ -15,26 +15,14 @@ export type { HookCallbackMatcher, HookEvent, Options, SDKUserMessage };
 // ---------------------------------------------------------------------------
 // 誰の操作か
 
-/** 利用者のいない呼び出しの印。このファイルの外では作れない（同じ形の値を作っても、下の照合を通らない） */
-const BUNDLED = Object.freeze({ bundled: true as const });
-export type Bundled = typeof BUNDLED;
-/** 送る操作の主：セッションから作った利用者（ルートのハンドラが受け取るものをそのまま渡す）か、同梱の合成データだけを送る呼び出し */
-export type Sender = User | Bundled;
-
-/**
- * 利用者のいない呼び出し（種を作るスクリプト・評価のスクリプト）の入口。送ってよいのは同梱の合成データだけ。
- * app/ と src/server/ から読み込むことは、テストで禁じている（利用者の入力がこの入口から出ないように）
- */
-export function outboundForBundled(): Bundled {
-  return BUNDLED;
-}
+/** 送る操作の主：セッションから作った利用者（ルートのハンドラが受け取るものをそのまま渡す）。利用者のいない呼び出しの入口はない（同意を見ない道を置かない） */
+export type Sender = User;
 
 /**
  * 外部のサービス（AI・音声）へ送ってよいかを確かめる。利用者は、今の版の注意書きに同意していなければ送らずに例外にする。
  * 同意は呼ぶたびに DB から読む（呼び出し側が持っている値・ルートの申告を信じない）。音声（src/voice/）も同じ確認を使う
  */
 export function assertMaySend(by: Sender): void {
-  if (by === BUNDLED) return;
   const id = (by as Partial<User> | null | undefined)?.id;
   if (typeof id !== "string" || !getAuth().acceptedNotice(id)) throw new ConsentRequired();
 }
