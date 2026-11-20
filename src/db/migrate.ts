@@ -73,6 +73,15 @@ CREATE TABLE claim_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NO
 CREATE INDEX claim_facts_claim ON claim_facts (claim_id);
 `,
   },
+  {
+    // その人がこれまでに使った、メンターのセッション id の全部（design.md §11-11「消す」：過去のセッションの記録も消すため）。
+    // clerks.session_id は「いま続けるセッション」1 つだけで、世代が変わる・作り直すと前の id を失う。いま入っている id は写す
+    version: 7,
+    sql: `
+CREATE TABLE clerk_sessions (clerk_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (clerk_id, session_id));
+INSERT INTO clerk_sessions (clerk_id, session_id) SELECT id, session_id FROM clerks WHERE session_id IS NOT NULL AND session_id != '';
+`,
+  },
 ];
 
 /** ログインの auth.db */

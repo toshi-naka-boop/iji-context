@@ -43,7 +43,7 @@ export function openApp(paths: AppPaths) {
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
-  const { deleteUpload } = createErase(ctx, uke, patientFactsOf);
+  const { deleteUpload, forgetQueries } = createErase(ctx, uke, patientFactsOf);
   const { compareOf } = createRevision(uke, casesOf, notes);
 
   const { now, advanceClock } = clock;
@@ -115,6 +115,7 @@ export function openApp(paths: AppPaths) {
     ukeCheck,
     ukeTrial,
     deleteUpload,
+    forgetQueries,
     importedClaims,
     clerk,
     setSession,

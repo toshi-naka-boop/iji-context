@@ -42,7 +42,11 @@ export function createClerks(ctx: AppContext) {
     if (!r) throw notFound(`医療事務が登録されていない: ${id}`);
     return r;
   }
-  const setSession = (id: string, sessionId: string) => sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
+  /** いま続けるセッションを覚える。使ったセッションの id は、捨てたあとも clerk_sessions に残す（取り込んだファイルを消すとき、過去のセッションの記録も消すため） */
+  function setSession(id: string, sessionId: string) {
+    sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
+    if (sessionId !== "") sqlite.prepare("INSERT OR IGNORE INTO clerk_sessions (clerk_id, session_id) VALUES (?, ?)").run(id, sessionId);
+  }
   /** 本人がメンターを選ぶ（FR-19）。指示はセッションの初めに渡すので、キャラを変えたらセッションを作り直す */
   function chooseCharacter(id: string, characterId: string) {
     clerk(id);
