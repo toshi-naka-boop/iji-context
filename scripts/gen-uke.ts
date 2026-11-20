@@ -77,7 +77,12 @@ export function generateExtra(): Record<keyof Extra, Buffer> {
     return c.join(",");
   });
   const go = rows.findIndex((r) => r.startsWith("GO,"));
-  const text = [...rows.slice(0, go).map((r) => (r.startsWith("HO,") || r.startsWith("KO,") ? cell(r, 6, add) : r)), ...unit, cell(rows[go], 3, add), ...rows.slice(go + 1)].join("\r\n");
+  // 足した単位の日は、受診日等（JD。1 日の情報は項目 3）にも書く。もとの症例で受診のない日なら、診療実日数（HO・KO の項目 5）も 1 日増やす
+  const newDay = rows.find((r) => r.startsWith("JD,"))!.split(",")[1 + u.day] === "" ? 1 : 0;
+  const head = rows.slice(0, go).map((r) =>
+    r.startsWith("HO,") || r.startsWith("KO,") ? cell(cell(r, 6, add), 5, (v) => String(Number(v) + newDay)) : r.startsWith("JD,") ? cell(r, 2 + u.day, () => "1") : r,
+  );
+  const text = [...head, ...unit, cell(rows[go], 3, add), ...rows.slice(go + 1)].join("\r\n");
   const k = EXTRA.kisaimore;
   const file = extraFile(k);
   const dropped = { ...file, receipts: file.receipts.map((r) => ({ ...r, comments: r.comments.filter((c) => c.code !== k.dropComment) })) };

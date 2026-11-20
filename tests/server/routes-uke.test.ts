@@ -96,12 +96,12 @@ describe("UKE のアップロード", () => {
       x[n - 1][col] = value;
       return enc(`${x.map((c) => c.join(",")).join("\r\n")}\r\n`);
     };
-    /** 見本（K6）の行：1 IR・2 RE・3 HO・4 SY・5 SI・6 SI・7 GO */
+    /** 見本（K6）の行：1 IR・2 RE・3 HO・4 SN・5 JD・6 MF・7 SY・8 SI・9 SI・10 GO */
     const broken: [string, Buffer, string][] = [
-      ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "5 行目：列数が合わない"],
-      ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
-      ["版の点数表と合わない点数", withCell(5, 5, "131"), "5 行目：点数が診療年月の版の点数表と合わない"],
-      ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
+      ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "8 行目：列数が合わない"],
+      ["範囲外の数値", withCell(8, 6, "0"), "8 行目：回数が範囲の外"],
+      ["版の点数表と合わない点数", withCell(8, 5, "131"), "8 行目：点数が診療年月の版の点数表と合わない"],
+      ["上限を超える日別回数", withCell(8, 13, "999999999"), "8 行目：1 日の回数が上限を超えている"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
       ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "末尾に EOF(0x1A) がない"],
     ];

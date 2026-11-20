@@ -1,6 +1,7 @@
 // UKE の書き出しと読み込み（F4、spec FR-05・FR-06。design.md §11-14）
-// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SY→SI/IY/TO/CO)×n→GO
+// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SN→JD→MF→GR→SY→SI/IY/TO/CO→SJ)×n→GO
 // 列は記録条件仕様（医科用）令和8年8月版の主要列だけを埋め、ほかは空にする（EM §2-10 表 4）
+// 読み込みは、同仕様の医科のレコード 18 種（COLUMNS）を受け取る。入院のレセプト・臓器提供者のレセプト情報・知らないレコードは、そのレセプトだけを「読めない」にして、ファイルは断らない
 //
 // 読み込みは 2 段（design.md §11-12）：
 //   parseUke  形式だけを見る。版を見ず、点数・回数の算定単位とコードのまま返す
@@ -19,9 +20,29 @@ import { UKE_LIMITS } from "./limits";
 import type { UkeClaim, UkeComment, UkeFile, UkeItem, UkeLine, UkeOther, UkeParsed, UkeReceipt, UkeUnit } from "./types";
 
 const EOF = 0x1a;
-const PREF_CODE: Record<string, string> = { 東京都: "13" };
-/** レコードごとの列数（書き出しと同じ） */
-const COLUMNS = new Map([["IR", 10], ["RE", 38], ["HO", 15], ["KO", 12], ["SY", 8], ["SI", 44], ["IY", 44], ["TO", 48], ["CO", 5], ["GO", 4]]);
+/** 都道府県コード（別表2。01 北海道〜47 沖縄県の並び） */
+const PREFECTURES = "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 奈良県 和歌山県 鳥取県 島根県 岡山県 広島県 山口県 徳島県 香川県 愛媛県 高知県 福岡県 佐賀県 長崎県 熊本県 大分県 宮崎県 鹿児島県 沖縄県".split(" ");
+const PREF_CODE: Record<string, string> = Object.fromEntries(PREFECTURES.map((p, i) => [p, String(i + 1).padStart(2, "0")]));
+/**
+ * レコードごとの項目数（記録条件仕様（医科用）令和8年8月版 p5〜24。書き出しと同じ）。医科の請求ファイルに現れるレコードの全部：
+ * 医療機関情報 IR／レセプト共通 RE／保険者 HO／公費 KO／資格確認 SN／受診日等 JD／窓口負担額 MF／包括評価対象外理由 GR／傷病名 SY／
+ * 診療行為 SI／医薬品 IY／特定器材 TO／コメント CO／症状詳記 SJ／臓器提供医療機関情報 TI／臓器提供者レセプト情報 TR／臓器提供者請求情報 TS／診療報酬請求書 GO
+ */
+const COLUMNS = new Map([
+  ["IR", 10], ["RE", 38], ["HO", 15], ["KO", 12], ["SN", 9], ["JD", 33], ["MF", 33], ["GR", 3], ["SY", 8],
+  ["SI", 44], ["IY", 44], ["TO", 48], ["CO", 5], ["SJ", 3], ["TI", 10], ["TR", 18], ["TS", 5], ["GO", 4],
+]);
+/** 医保（国保・後期高齢者医療を含む）に請求点数のある負担区分（別表21 で「医保」に○）。HO の合計点数に入るのは、この負担区分の単位だけ */
+const INSURED_FUTAN = new Set("123EG4MNOPQVWXY9");
+/**
+ * 点数を減じる医薬品コード（医薬品マスター（令和8年度版）の金額種別が 7：減点 の 6 コード。薬剤料逓減・薬剤料減点など）。
+ * UKE には正の数で書かれ、請求の合計からは引く（手引き 令和8年10月版 p35・p63・p69）。このコードだけで 1 つの単位になる
+ */
+const DEDUCTION_CODES = new Set(["630010001", "630010002", "630010004", "630010005", "630010006", "630010007"]);
+/** 単位の請求点数（1 回分 × 回数。減じるコードの単位は負） */
+const unitTotal = (u: UkeUnit): number => (u.items.every((it) => DEDUCTION_CODES.has(it.code)) ? -1 : 1) * u.points * u.count;
+/** UKE に書いてある点数どうしの合計：HO の合計点数と突き合わせる、医保に請求する単位の合計 */
+const insuredTotal = (c: UkeClaim): number => c.units.reduce((s, u) => (INSURED_FUTAN.has(u.futan) ? s + unitTotal(u) : s), 0);
 /**
  * 診療行為（SI）・医薬品（IY）・特定器材（TO）のレコードの、コメント欄（コードと文字データの 3 対）と算定日情報（1〜31 日の回数）の始まり（0 起算の添字）。
  * SI・IY はコメントが項目 8〜13・算定日が 14〜44、TO はコメントが 12〜17・算定日が 18〜48（EM §2-10 表 4 の (d)・(g)）。
@@ -163,6 +184,12 @@ function realDays(r: UkeReceipt): number {
   return new Set(r.lines.flatMap((l) => l.dates)).size;
 }
 
+/**
+ * 書き出す合成の UKE の、資格確認・窓口負担額の設定（EM 5-1。合成の設定で、患者ごとの根拠はない）：
+ * 確認区分 01（保険医療機関・薬局窓口等。別表29）、枝番 01、窓口負担額区分 00（高額療養費の現物給付なし。別表31）
+ */
+const SYNTHETIC = { confirmation: "01", branch: "01", copay: "00" } as const;
+
 /** UKE の文字列（CRLF 区切り、EOF なし）。revOf は、書くときに使う版の決め方（既定は診療年月の版。版のない診療年月の合成の UKE を作るときだけ渡す） */
 export function formatUke(file: UkeFile, revOf: (yearMonth: string) => Revision = resolveRevision): string {
   const pref = PREF_CODE[file.prefecture];
@@ -190,14 +217,27 @@ export function formatUke(file: UkeFile, revOf: (yearMonth: string) => Revision 
     grand += total;
     const days = realDays(r);
     const futan = futanKubun(p.kohi.length);
-    // RE：13 列目（カルテ番号等）に請求 id を入れる
-    rows.push(record(38, { 1: "RE", 2: idx + 1, 3: p.receiptType, 4: ym(r.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 13: r.claimId }));
-    rows.push(record(15, { 1: "HO", 2: p.insurer.number, 3: p.insurer.symbol, 4: p.insurer.no, 5: days, 6: total }));
+    // RE：項目 14（カルテ番号等）に請求 id を入れる
+    rows.push(record(38, { 1: "RE", 2: idx + 1, 3: p.receiptType, 4: ym(r.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 14: r.claimId }));
+    // 保険者番号は 8 桁に満たなければ、先頭を空白で埋める（国保の 6 桁。仕様 p9）
+    rows.push(record(15, { 1: "HO", 2: p.insurer.number.padStart(8, " "), 3: p.insurer.symbol, 4: p.insurer.no, 5: days, 6: total }));
     for (const k of p.kohi) rows.push(record(12, { 1: "KO", 2: k.payerNo, 3: k.recipientNo, 5: days, 6: total }));
+    // 資格確認（SN）：医療機関からの請求では、保険者レコードと、負担者番号が 12 で始まる公費レコードに対応するものを書く（仕様 p2 注4・p12）。
+    // 枝番は医保だけ（後期高齢者医療は書かない）
+    const lateElderly = p.insurer.number.startsWith("39") && p.insurer.number.length === 8;
+    rows.push(record(9, { 1: "SN", 2: 1, 3: SYNTHETIC.confirmation, 7: lateElderly ? "" : SYNTHETIC.branch }));
+    p.kohi.forEach((k, i) => {
+      if (k.payerNo.startsWith("12")) rows.push(record(9, { 1: "SN", 2: i + 2, 3: SYNTHETIC.confirmation }));
+    });
+    // 受診日等（JD）：負担者ごとに 1 つ。算定のある日に「1（診療実日数に計上する受診）」（仕様 p13・別表30）
+    const visited = new Set(r.lines.flatMap((l) => l.dates.map((d) => Number(d.slice(8, 10)))));
+    for (let n = 1; n <= 1 + p.kohi.length; n++) rows.push(record(33, { 1: "JD", 2: n, ...Object.fromEntries([...visited].map((d) => [2 + d, 1])) }));
+    // 窓口負担額（MF）：当分の間、一部負担金に係る区分を書く（仕様 p2 注5・p14）
+    rows.push(record(33, { 1: "MF", 2: SYNTHETIC.copay }));
     for (const d of p.diseases) {
       // 傷病名コードがあるものは名称を書かない（名称を書くのは未コード化だけ）
       const code = d.code ?? diseaseCodeOf(d.name);
-      rows.push(record(8, { 1: "SY", 2: code, 3: d.start, 4: d.outcome ?? 1, 6: code === UNCODED_DISEASE ? d.name : "", 7: d.main ? "01" : "" }));
+      rows.push(record(8, { 1: "SY", 2: code, 3: d.start, 4: d.outcome ?? 1, 5: (d.modifiers ?? []).join(""), 6: code === UNCODED_DISEASE ? d.name : "", 7: d.main ? "01" : "", 8: d.note ?? "" }));
     }
     const co = (shikibetsu: string, c: Comment) => record(5, { 1: "CO", 2: shikibetsu, 3: futan, 4: c.code, 5: c.raw });
     // 区分に付かないコメントは、レセプト全体へのコメントとして先頭に書く（2 件目からは診療識別を書かない。EM §2-10 表 4 の (e)）
@@ -243,7 +283,10 @@ export function writeUke(file: UkeFile, revOf?: (yearMonth: string) => Revision)
  * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／
  * 算定日と回数・同じ単位の行の回数と算定日がそろっていること・単位が点数の行で終わっていること／GO の総件数。
  * 点数・回数の算定単位は、点数が書いてある行で終わる（診療識別は区切りに使わない）。点数は 1 回分で、回数は単位の各行に同じ値（EM §2-10 表 4 の (a)〜(c)）。
- * 「カルテ番号等」の欄は患者の番号として持つだけで、請求 id にしない（文字種も重複も見ない。請求 id は読む側が渡す。design.md §11-11）
+ * 「カルテ番号等」の欄は患者の番号として持つだけで、請求 id にしない（文字種も重複も見ない。請求 id は読む側が渡す。design.md §11-11）。
+ * 資格確認（SN）・受診日等（JD）・窓口負担額（MF）・包括評価対象外理由（GR）・症状詳記（SJ）は、読んで持つだけ（順は確かめない）。
+ * 入院のレセプト・臓器提供者のレセプト情報（TI・TR・TS）を含むレセプト・仕様にないレコードを含むレセプトは、断らずに読めないレセプト（UkeClaim.unsupported）にして、
+ * そのレセプトの摘要のレコードは読まない（項目数と長さだけを見る）
  */
 export function parseUke(buf: Buffer): UkeParsed {
   const fail = (line: number | null, reason: string): never => {
@@ -265,8 +308,9 @@ export function parseUke(buf: Buffer): UkeParsed {
     if (/[\u0000-\u001f\u007f]/.test(l)) fail(i + 1, "制御文字がある");
     const c = l.split(",");
     const columns = COLUMNS.get(c[0]);
-    if (columns === undefined) fail(i + 1, "未対応のレコード");
-    if (c.length !== columns) fail(i + 1, "列数が合わない");
+    // 仕様にないレコードでも、識別情報の形（英大文字 2 字）なら項目数を確かめずに通し、下でそのレセプトだけを読めないものにする（DPC のレコードなど）
+    if (columns === undefined && !/^[A-Z]{2}$/.test(c[0])) fail(i + 1, "未対応のレコード");
+    if (columns !== undefined && c.length !== columns) fail(i + 1, "列数が合わない");
     if (c.some((v) => v.length > UKE_LIMITS.maxFieldLength)) fail(i + 1, "項目が長すぎる");
     return c;
   });
@@ -306,6 +350,13 @@ export function parseUke(buf: Buffer): UkeParsed {
   const closed = () => {
     if (pending.length > 0) fail(pending[pending.length - 1].item.line, "点数のない行で単位が終わっている");
   };
+  /** いまのレセプトを、読めないものにする（理由は定型文）。そこまでの単位とコメントは捨て、次の RE までの摘要のレコードは読まない */
+  const unsupported = (claim: UkeClaim, reason: string) => {
+    claim.unsupported = reason;
+    claim.units = [];
+    claim.comments = [];
+    pending = [];
+  };
   recs.slice(1, -1).forEach((c, i) => {
     const line = i + 2;
     const kind = c[0];
@@ -313,23 +364,32 @@ export function parseUke(buf: Buffer): UkeParsed {
     if (kind === "RE") {
       closed();
       const yearMonth = month(c[3], line, "診療年月");
+      const receiptType = digits(c[2], line, "レセプト種別", /^\d{4}$/);
       cur = {
         line,
-        patientNo: c[12],
+        patientNo: c[13],
+        // レセプト種別（別表5）の 4 桁目が奇数のものは入院
+        ...(/[13579]$/.test(receiptType) ? { unsupported: UNREADABLE.inpatient } : {}),
         yearMonth,
         patient: {
           name: c[4],
           sex: int(c[5], line, "性別", 1, 2) as 1 | 2,
           birth: digits(c[6], line, "生年月日", /^\d{8}$/),
-          receiptType: digits(c[2], line, "レセプト種別", /^\d{4}$/),
+          receiptType,
           insurer: { number: "", symbol: "", no: "" },
           kohi: [],
           diseases: [],
         },
         total: null,
+        realDays: null,
         kohiTotals: [],
         units: [],
         comments: [],
+        eligibility: [],
+        visits: [],
+        copay: [],
+        dpcExclusions: [],
+        notes: [],
       };
       claims.push(cur);
       daysInMonth = new Date(Date.UTC(Number(c[3].slice(0, 4)), Number(c[3].slice(4, 6)), 0)).getUTCDate();
@@ -341,15 +401,40 @@ export function parseUke(buf: Buffer): UkeParsed {
       if (stage > 1) fail(line, `${kind} の位置が不正（SY・SI の後）`);
       stage = 1;
       // 番号の桁数・検証番号はここでは断らない（患者情報チェック P01 が指摘として返す）。実日数と点数は数字であることだけを見る
-      int(c[4], line, "診療実日数", 0, 31);
+      const realDays = int(c[4], line, "診療実日数", 0, 31);
       const declared = int(c[5], line, "合計点数", 0, UKE_LIMITS.maxPoints);
       if (kind === "HO") {
         cur.total = { line, points: declared };
-        cur.patient.insurer = { number: c[1], symbol: c[2], no: c[3] };
+        cur.realDays = realDays;
+        // 8 桁に満たない保険者番号は、先頭が空白で埋めてある（仕様 p9）
+        cur.patient.insurer = { number: c[1].trimStart(), symbol: c[2], no: c[3] };
       } else {
         cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
         cur.kohiTotals.push(declared);
       }
+    } else if (cur.unsupported !== undefined) {
+      // 読めないレセプトの残りのレコードは、形式（項目数・長さ）だけを見て読み飛ばす
+    } else if (kind === "TI" || kind === "TR" || kind === "TS") {
+      // 臓器提供者のレセプト情報（仕様 p21〜23）。この後の SY・SI などは提供者のもので、受容者のレセプトの合計に入らない
+      unsupported(cur, UNREADABLE.donor);
+    } else if (!COLUMNS.has(kind)) {
+      unsupported(cur, UNREADABLE.record);
+    } else if (kind === "SN") {
+      // 資格確認（仕様 p12）。保険者番号等・記号・番号・受給者番号は一次請求では記録されない。枝番は持たない
+      cur.eligibility.push({ payerKind: digits(c[1], line, "負担者種別", /^[1-5]$/), confirmation: digits(c[2], line, "確認区分", /^\d{2}$/) });
+    } else if (kind === "JD") {
+      // 受診日等（仕様 p13）
+      cur.visits.push({ payerKind: digits(c[1], line, "負担者種別", /^[1-5]$/), days: c.slice(2).map((v) => Number(digits(v, line, "受診等区分", /^\d?$/))) });
+    } else if (kind === "MF") {
+      // 窓口負担額（仕様 p14）。区分のほかは予備
+      cur.copay.push(digits(c[1], line, "窓口負担額区分", /^\d{2}$/));
+    } else if (kind === "GR") {
+      // 包括評価対象外理由（仕様 p14）
+      cur.dpcExclusions.push({ reason: digits(c[1], line, "医科点数表算定理由", /^\d{2}$/), dpcCode: c[2] });
+    } else if (kind === "SJ") {
+      // 症状詳記（仕様 p20）。区分を省略した行は、前の行の続き
+      const noteKind = digits(c[1], line, "症状詳記区分", /^(\d{2})?$/);
+      cur.notes.push({ kind: noteKind || (cur.notes[cur.notes.length - 1]?.kind ?? ""), text: c[2] });
     } else if (kind === "SY") {
       if (stage > 2) fail(line, "SY の位置が不正（SI の後）");
       stage = 2;
@@ -357,24 +442,32 @@ export function parseUke(buf: Buffer): UkeParsed {
       const outcome = int(c[3], line, "転帰", 1, 4);
       // 未コード化は名称を読む。表にあるコードは表の名称にする。ほかのコードは、コードを保持して名称を持たない
       const known = diseaseNameOf(code);
+      // 修飾語コードは 4 桁ずつ、20 個まで（仕様 p15）
+      const modifiers = digits(c[4], line, "修飾語コード", /^([0-9A-Za-z]{4}){0,20}$/).match(/.{4}/g);
       cur.patient.diseases.push({
         ...(code === UNCODED_DISEASE ? { name: c[5] } : known !== null ? { name: known } : { name: "", code }),
         start: digits(c[2], line, "診療開始日", /^\d{8}$/),
         ...(c[6] === "01" ? { main: true } : {}),
         ...(outcome !== 1 ? { outcome: outcome as 2 | 3 | 4 } : {}),
+        ...(modifiers ? { modifiers } : {}),
+        ...(c[7] !== "" ? { note: c[7] } : {}),
       });
     } else if (kind === "SI" || kind === "IY" || kind === "TO") {
       stage = 3;
       const layout = ITEM_LAYOUT[kind];
       digits(c[1], line, "診療識別", /^(\d{2})?$/);
+      const futan = digits(c[2], line, "負担区分", /^[0-9A-Z]$/);
+      // 数量データ（SI。整数 8 桁）・使用量（IY は整数部 5 桁と小数部 5 桁、TO は 5 桁と 3 桁）。仕様 p16・18・19。3 つを 1 つの形で受ける。
+      // TO の単位コード・単価・商品名及び規格又はサイズ（300 バイトまで）は、読み捨てる
       const item: UkeItem = { line, kind, code: digits(c[3], line, "コード", /^\d{9}$/), quantity: digits(c[4], line, "数量データ", /^(\d{1,8}(\.\d{1,5})?)?$/) };
       const points = c[5] === "" ? null : int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
-      const count = int(c[6], line, "回数", 1, 31 * UKE_LIMITS.maxDailyCount);
+      // 回数も、算定日情報の 1 日の回数も 3 桁（仕様 p16〜19）
+      const count = int(c[6], line, "回数", 1, UKE_LIMITS.maxDailyCount);
       const days: number[] = [];
       for (let d = 1; d <= 31; d++) {
         const v = c[layout.days + d - 1];
         // 1 日の回数は上限まで（大きな数で日付の並びを膨らませない）
-        if (v !== "" && (!/^\d$/.test(v) || Number(v) > UKE_LIMITS.maxDailyCount)) fail(line, "1 日の回数が上限を超えている");
+        if (v !== "" && (!/^\d{1,3}$/.test(v) || Number(v) > UKE_LIMITS.maxDailyCount)) fail(line, "1 日の回数が上限を超えている");
         if (Number(v) > 0 && d > daysInMonth) fail(line, "診療年月にない日に回数がある");
         days.push(Number(v));
       }
@@ -389,7 +482,7 @@ export function parseUke(buf: Buffer): UkeParsed {
       }
       pending.push({ item, count, days });
       if (points !== null) {
-        cur.units.push({ line, items: pending.map((p) => p.item), points, count, days });
+        cur.units.push({ line, items: pending.map((p) => p.item), points, count, days, futan });
         pending = [];
       }
     } else {
@@ -492,11 +585,12 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
  */
 export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): MappedClaim {
   // 算定日の列は「日ごとの回数 × 数量データ」個できる。作る前に数え、レセプト 1 件の上限を超えた単位からは行にしない
-  // （小さなファイルでも、回数と数量を掛けると数億個になり得る。取り込みでも、保存済みの読み直しでも、試算でも同じ）
+  // （小さなファイルでも、回数と数量を掛けると数億個になり得る。取り込みでも、保存済みの読み直しでも、試算でも同じ）。
+  // 医薬品・特定器材を含む単位は行にしない（対象外の単位として、1〜31 日の回数のまま持つ）ので、数えない
   let budget: number = UKE_LIMITS.maxClaimCount;
   const units = claim.units.map((u): UnitMapping => {
-    const quantity = Math.max(1, ...u.items.map((it) => (/^\d{1,3}$/.test(it.quantity) ? Number(it.quantity) : 1)));
-    budget -= u.days.reduce((s, n) => s + n, 0) * quantity * u.items.length;
+    const quantity = u.items.some((it) => it.kind !== "SI") ? 0 : Math.max(1, ...u.items.map((it) => (/^\d{1,3}$/.test(it.quantity) ? Number(it.quantity) : 1))) * u.items.length;
+    budget -= u.days.reduce((s, n) => s + n, 0) * quantity;
     if (budget < 0) return { ok: false, line: u.items[0]?.line ?? 0, reason: "算定回数の合計が多すぎる", unsupported: false };
     return mapUnit(u, claim.yearMonth, rev, lenient);
   });
@@ -523,7 +617,9 @@ export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): Mappe
 function receiptOf(c: UkeClaim, claimId: string, revs: Revision[]): { ok: true; receipt: UkeReceipt } | { ok: false; line: number; reason: string } {
   const head = { claimId, patientNo: c.patientNo, yearMonth: c.yearMonth, patient: c.patient };
   const declared = { ho: c.total?.points ?? null, ko: c.kohiTotals };
-  const totalBad = c.total && c.total.points !== c.units.reduce((s, u) => s + u.points * u.count, 0) ? ({ ok: false, line: c.total.line, reason: "合計点数が行の合計と合わない" } as const) : null;
+  // 読めないレセプト（入院など）は、断らずに理由だけを持たせる。同じファイルのほかのレセプトは読む
+  if (c.unsupported !== undefined) return { ok: true, receipt: { ...head, lines: [], declared, comments: [], commentsKnown: true, unreadable: { reason: c.unsupported } } };
+  const totalBad = c.total && c.total.points !== insuredTotal(c) ? ({ ok: false, line: c.total.line, reason: "合計点数が行の合計と合わない" } as const) : null;
   // 合計の検査は版によらない（UKE に書いてある点数どうしを比べる）ので、版のないレセプトでも行う
   if (!hasRevision(c.yearMonth, revs)) return totalBad ?? { ok: true, receipt: { ...head, lines: [], declared, comments: [], commentsKnown: true, noRevision: true } };
   const mapped = mapClaim(c, resolveRevision(c.yearMonth, revs));
@@ -560,14 +656,18 @@ export function readUke(buf: Buffer, claimId: ClaimIdOf = patientNoAsId, revs: R
     if (r.ok === false) throw new UkeError(r.line, r.reason);
     return r.receipt;
   });
-  const grand = parsed.claims.reduce((s, c) => s + c.units.reduce((t, u) => t + u.points * u.count, 0), 0);
+  // GO の総合計点数は、各レセプトの主保険の合計点数（HO。HO のないレセプトは 1 件目の KO）の合計（仕様 p24）
+  const grand = parsed.claims.reduce((s, c) => s + (c.total?.points ?? c.kohiTotals[0] ?? 0), 0);
   if (parsed.total.points !== grand) throw new UkeError(parsed.total.line, "GO の総合計点数と計算が合わない");
   return { payer: parsed.payer, prefecture: parsed.prefecture, clinic: parsed.clinic, billingMonth: parsed.billingMonth, receipts };
 }
 
-/** 読み直しで読めなかったレセプトの理由（画面に出す文。design.md §11-12） */
+/** 読めなかったレセプトの理由（画面に出す文）。changed は読み直しで（design.md §11-12）、ほかは形式の読み取りで決まる（UkeClaim.unsupported） */
 export const UNREADABLE = {
   changed: "取り込んだ後に表が変わり、点数が合わなくなりました",
+  inpatient: "入院のレセプトは未対応です",
+  donor: "臓器提供者のレセプト情報を含むレセプトは未対応です",
+  record: "未対応のレコードを含むレセプトです",
 } as const;
 
 /**
