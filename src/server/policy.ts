@@ -46,6 +46,9 @@ export const POLICY = {
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),
   "POST /api/doctor/[id]/answer": row(["doctor"], "none", true),
   "POST /api/doctor/[id]/approve": row(["doctor"], "none", true),
+  // 医師に確かめてほしい項目（医師あての情報不足）の一覧と、決められなかった答え（その他・判定不能）の記録。医師の役割だけ
+  "GET /api/doctor/facts": row(["doctor"], "none", true),
+  "POST /api/doctor/facts": row(["doctor"], "none", true),
 
   // 算定・練習問題
   "POST /api/questions": row(WORK, "none", true),
@@ -84,7 +87,8 @@ export const POLICY = {
   "POST /api/chart/soap": row(WORK, "ai", true),
   "GET /api/patients": row(WORK, "none", true),
   "GET /api/patients/[claimId]/facts": row(WORK, "none", true),
-  "POST /api/patients/[claimId]/facts": row(WORK, "none", true),
+  // 患者ごとの事実。医師の役割は、医師あての項目（別表第七など）だけを残せる（項目ごとの宛先は処理の中で分ける。src/server/app/patients.ts）
+  "POST /api/patients/[claimId]/facts": row([...WORK, "doctor"], "none", true),
   // 請求ごとに確かめた事実（情報不足の項目への答え）。医師あての事実は医師の役割だけが残せるので、医師にも開ける（事実ごとの宛先はハンドラの中で分ける）
   "GET /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
   "POST /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),

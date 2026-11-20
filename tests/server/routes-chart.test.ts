@@ -449,7 +449,11 @@ describe("一覧・照合・UKE", () => {
     expect((await (await import("../../app/api/master/route")).GET(get("/api/master", docCookie))).status).toBe(200);
     expect((await (await import("../../app/api/cases/route")).GET(get("/api/cases", docCookie))).status).toBe(403);
     expect((await (await import("../../app/api/uke/route")).POST(post("/api/uke", { name: "kokuhoren.UKE" }, docCookie))).status).toBe(403);
-    expect((await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, { fact: { key: "table7", value: true, source: "カルテ", validUntil: null } }, docCookie), params({ claimId: claimId("K1") }))).status).toBe(403);
+    // 患者ごとの事実：医師の役割は、医師あての項目（別表第七など）だけを残せる。医療事務あての項目（要介護度・居住の場所）は 403
+    const patientFact = async (fact: Record<string, unknown>) => (await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, { fact }, docCookie), params({ claimId: claimId("K1") }))).status;
+    expect(await patientFact({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(6, 1) })).toBe(403);
+    expect(await patientFact({ key: "residence", value: "居宅", source: "カルテ", validUntil: null })).toBe(403);
+    expect(await patientFact({ key: "table7", value: true, source: "医師に確認", validUntil: null })).toBe(200);
   });
 
   it("照合：本人の id は受け取らない（クエリでも本文でも 400）。日付の形でない asOf は 400", async () => {

@@ -7,6 +7,7 @@ import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
+import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
@@ -45,6 +46,7 @@ export function openApp(paths: AppPaths) {
   const prevented = createPrevented(questions, doctor);
   const { deleteUpload, forgetQueries } = createErase(ctx, uke, patientFactsOf);
   const { compareOf } = createRevision(uke, casesOf, notes);
+  const { doctorFacts, noteDoctorFact } = createDoctorFacts(ctx, clock, clerks, casesOf);
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
@@ -140,6 +142,8 @@ export function openApp(paths: AppPaths) {
     setSetting,
     importClaimResult,
     doctorQueries,
+    doctorFacts,
+    noteDoctorFact,
     answerDoctor,
     approveDoctor,
     agenda,

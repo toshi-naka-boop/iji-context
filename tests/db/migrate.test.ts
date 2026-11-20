@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_facts", "claim_results", "clerk_sessions", "clerks", "digest_items", "patient_coverages", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
+const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_facts", "claim_results", "clerk_sessions", "clerks", "digest_items", "doctor_fact_notes", "patient_coverages", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -107,7 +107,7 @@ describe("migrate", () => {
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
     expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
     // 患者マスタの表は 4 番、請求ごとに確かめた事実の表は 6 番で足す
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions"));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes"));
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
   });
@@ -120,7 +120,7 @@ describe("migrate", () => {
     ins.run("01139999-00000006", "table7", "true", "カルテ", null, "2025-03-11T09:00:00+09:00", "new1");
     ins.run("39139999-00000004", "homeOxygen", "false", "カルテ", null, "2025-03-12T09:00:00+09:00", "new1");
     expect(migrate(db, APP_MIGRATIONS.slice(0, 4))).toBe(4);
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions"));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes"));
     // 同じ鍵の記録は同じ患者に寄り、ほかの列は変わらない
     expect(db.prepare("SELECT patient_id, fact_key, value, valid_until, checked_by FROM patient_facts ORDER BY id").all()).toEqual([
       { patient_id: "P0001", fact_key: "careLevel", value: "2", valid_until: "2025-05-31", checked_by: "new1" },

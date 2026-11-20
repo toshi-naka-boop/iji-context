@@ -113,7 +113,7 @@ export function FactInput(props: { claimId: string; finding: Finding; patientHre
     );
   }
   if (!isClaimFactKey(m.field) || role === null) return null;
-  if (!canSave(role, m.target)) return m.target === "doctor" ? <div className="muted">医師に確認が要ります。医師の役割の利用者が、確かめた答えを残します。</div> : null;
+  if (!canSave(role, m.target)) return m.target === "doctor" ? <div className="muted">医師に確認が要ります。医師確認の画面の「確かめてほしい項目」に出ています。医師の役割の利用者が、確かめた答えを残します。</div> : null;
   return <div style={{ marginTop: 6 }}><FactForm claimId={props.claimId} factKey={m.field} date={m.date ?? null} onSaved={props.onSaved} /></div>;
 }
 

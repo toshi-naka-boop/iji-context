@@ -5,7 +5,9 @@ import { isExpired, validatePatientFact, type PatientFact, type PatientFactInput
 import { BURDEN_RATIOS, COVERAGE_SOURCES, factsFromPatient, recordOfUke, toHalfWidth, type Coverage, type CoverageInfo, type CoverageSource, type PatientProfile, type PatientRecord } from "../../patient/profile";
 import { patientFindingText } from "../../messages";
 import type { UkePatient, UkeReceipt } from "../../uke/types";
-import { badRequest, notFound } from "../errors";
+import { targetOfNeed } from "../../engine";
+import { badRequest, forbidden, notFound } from "../errors";
+import type { Role } from "../roles";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
@@ -176,8 +178,10 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     const patientId = patientIdOf(claimId);
     return { patientId, facts: latestPatientFacts(patientId).map((f) => ({ ...f, expired: isExpired(f, now()) })) };
   }
-  function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput) {
+  /** role を渡すと宛先を守る：医師の役割が残せるのは、医師あての項目（別表第七など。エンジンの宛先の表）だけ。医療事務は、今までどおりどの項目も残せる（医師あての項目は「医師に確認」を根拠に） */
+  function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput, role?: Role) {
     clerk(clerkId);
+    if (role === "doctor" && targetOfNeed(f.key) !== "doctor") throw forbidden("これは医療事務が確かめる項目です。事務・ベテランの役割で残します");
     // 入力の検査で落ちたものは、利用者に文言を返す（検査は src/patient/facts.ts）
     try {
       validatePatientFact(f, now());
