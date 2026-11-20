@@ -131,7 +131,8 @@ describe("請求ごとに確かめた事実のルート", () => {
 
     // 15 日は「あとの往診」：往診料は立ち、訪問診療料の側の文書の提供を聞かれる
     expect((await save(fact("sameDayOushinAfterVisit", true, d15))).status).toBe(200);
-    expect(check("R10")).toEqual({ missing: ["contactDocProvided@:clerk"], findings: [] });
+    // 5 日の確定した指摘は、15 日の確認が残っていても出る（1 つの不明でほかの判定を止めない：反証 round-28）
+    expect(check("R10")).toEqual({ missing: ["contactDocProvided@:clerk"], findings: ["R10.oushin_not_after_visit"] });
     // 文書を提供していない：15 日の訪問診療料が要件不足。5 日の指摘も出る
     expect((await save(fact("contactDocProvided", false))).status).toBe(200);
     expect(check("R10")).toEqual({ missing: [], findings: ["R10.oushin_not_after_visit", "R10.same_day_as_visit"] });

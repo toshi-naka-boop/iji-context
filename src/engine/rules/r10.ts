@@ -23,20 +23,19 @@ export function makeR10(c: RevisionConsts): Rule {
     kubun: [OUSHIN, KINKYU, ...c.visitKubun],
     reference: "C000 注1・C001 注1・注10（留意事項 C001 (11)(21)）",
     recordFindings: [],
-    // kinkyu_not_eligible は申告しない：同じ日・翌日の訪問診療料の行があると文書提供を先に聞いて止まる（needs）ので、その行が対象外に移ると、指摘が新しく出る
-    soundWhenPartial: [],
+    // 緊急往診加算の対象患者かは、加算の行と確かめた事実だけで決まる（ほかの行に依らない）。同じ日・翌日の判定は、ほかの行の有無に依るので申告しない
+    soundWhenPartial: ["kinkyu_not_eligible"],
     appliesTo: (ctx) => has(ctx, OUSHIN) || has(ctx, KINKYU),
-    needs(ctx) {
-      const out: NeedKey[] = [];
-      if (has(ctx, KINKYU)) out.push("emergencyEligible");
-      // 文書提供を聞くのは、在支診で、往診料を立てられる同じ日（訪問診療のあとの往診）か翌日の組があるときだけ
-      if (ctx.facility.zaishishin && (pairsOf(ctx, "after").length > 0 || dayAfterVisits(ctx).length > 0)) out.push("contactDocProvided");
-      return out;
-    },
+    // 不明な事実は、判定ごとに check が情報不足で返す（needs に入れると、1 つの不明でほかの判定まで止まる。
+    // 文書提供が不明なだけで、確定している緊急往診加算の要件不足を見逃した：反証 round-28）
+    needs: () => [],
     check(ctx) {
       const out: Finding[] = [];
-      if (has(ctx, KINKYU) && ctx.facts.emergencyEligible.known && !ctx.facts.emergencyEligible.value)
-        out.push(finding(this, "要件不足", [KINKYU], "kinkyu_not_eligible"));
+      const ask = (field: NeedKey, lineRefs: string[]): Finding => ({ ruleId: this.id, kind: "情報不足", lineRefs, missing: { target: "clerk", field }, messageKey: `${this.id}.missing_fact`, reference: this.reference });
+      if (has(ctx, KINKYU)) {
+        if (!ctx.facts.emergencyEligible.known) out.push(ask("emergencyEligible", [KINKYU]));
+        else if (!ctx.facts.emergencyEligible.value) out.push(finding(this, "要件不足", [KINKYU], "kinkyu_not_eligible"));
+      }
       const refs = (days: string[]) => [...new Set(days.flatMap((d) => visitKubunOn(ctx, c, d)))];
       // A：関係が決まらない日ごとに、次に確かめる事実の情報不足を返す（背反とは言わない。ある日の答えはほかの日に効かない）
       for (const d of sameDayPairs(ctx, c)) {
@@ -50,10 +49,14 @@ export function makeR10(c: RevisionConsts): Rule {
       // 別々の診療でも、訪問診療のあとに急変などで行った往診でなければ、同じ日の往診料は立てられない（EM #7-8 改）
       if (pairsOf(ctx, "not_after").length) out.push(finding(this, "要件不足", [OUSHIN], "oushin_not_after_visit"));
       // C・D：制限の判定。算定しないのは訪問診療の費用（告示 C001 注10）
-      if (visitBillable(ctx) !== true) {
-        const c1 = pairsOf(ctx, "after");
+      const c1 = pairsOf(ctx, "after");
+      const d1 = dayAfterVisits(ctx);
+      const billable = visitBillable(ctx);
+      // 文書提供を聞くのは、在支診で、往診料を立てられる同じ日（訪問診療のあとの往診）か翌日の組があるときだけ
+      if (billable === "unknown") {
+        if (c1.length || d1.length) out.push(ask("contactDocProvided", refs([...c1, ...d1])));
+      } else if (billable === false) {
         if (c1.length) out.push(finding(this, "要件不足", refs(c1), "same_day_as_visit"));
-        const d1 = dayAfterVisits(ctx);
         if (d1.length) out.push(finding(this, "要件不足", refs(d1), "visit_day_after_oushin"));
       }
       return out;
