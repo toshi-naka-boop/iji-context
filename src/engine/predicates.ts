@@ -73,19 +73,21 @@ export type KanriExpect = {
 
 /**
  * 管理料の期待される族と区分（§2-3-3）。R01・R02・R03・R16 が同じ答えを使う。
- * 区分を決める順は 回数 → 重症 → 注16。不明な事実を聞くのは、その答えで区分が変わるときだけ
+ * 区分を決める順は 回数 → 重症 → 注16。不明な事実を聞くのは、その答えで区分が変わるときだけ。
+ * 注16 のない版（note16.enabled が偽）では、施設の設定を読まず、月 2 回以上は 2ロ（design.md §11-2）
  */
 export function expectedKanri(ctx: ClaimContext, c: RevisionConsts): KanriExpect {
   const visits = visitCount(ctx, c);
   const res = ctx.facts.residence;
   const family: Fact<KanriFamily> = res.known ? { known: true, value: c.kanri.familyOf[res.value] } : { known: false };
-  const { from, to } = c.kanri.note16;
+  const { enabled, from, to } = c.kanri.note16;
   const tier = ((): KanriExpect["tier"] => {
     if (visits === 0) return { known: true, value: "none" };
     if (visits === 1) return { known: true, value: "ニ" };
     const severe = ctx.facts.table8_2;
     if (!severe.known) return { known: false, need: "table8_2", candidates: ["イ", "ロ", "ニ"] };
     if (severe.value) return { known: true, value: "イ" };
+    if (!enabled) return { known: true, value: "ロ" };
     const met = ctx.facility.note16Met;
     if (!met.known) return { known: false, need: "facility.note16Met", candidates: [from, to] };
     return { known: true, value: met.value ? from : to };
@@ -183,12 +185,15 @@ export function rxKubunOn(
  * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す。
  * 別の経路（EM #7-11）：回数が足りなくても、退院時共同指導料1 を算定し、訪問診療を実施していれば満たす。
  * 退院時共同指導料1 を聞く（askGuidance）のは、回数が足りないと決まり、訪問診療が 1 回以上あるときだけ。
- * 死亡日の出来事は、死亡の前後を問わず数える（死亡後だけの診療を入れるかは未確認。要件不足を出さない側に倒れる。design.md L-49）
+ * 死亡日の出来事は、死亡の前後を問わず数える（死亡後だけの診療を入れるかは未確認。要件不足を出さない側に倒れる。design.md L-49）。
+ * 回数の要件（days・minVisits）を持たない版では呼ばない（例外。導出は呼ぶ前に確かめる）
  */
 export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[]; askGuidance: boolean } {
+  const { days, minVisits } = c.terminal;
+  if (days === undefined || minVisits === undefined) throw new Error("この版は、ターミナルケア加算の回数の要件を持たない");
   const death = eventsOf(ctx, "death")[0];
   if (!death) return { ok: false, ask: [], askGuidance: false };
-  const from = addDays(death.date, -c.terminal.days);
+  const from = addDays(death.date, -days);
   const done = [...eventsOf(ctx, "visit"), ...eventsOf(ctx, "oushin")].filter((e) => e.date >= from && e.date <= death.date);
   let min = 0;
   let max = 0;
@@ -203,8 +208,8 @@ export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: bo
   }
   const guidance = ctx.facts.dischargeJointGuidance;
   const visited = done.some((e) => e.type === "visit");
-  if (min >= c.terminal.minVisits || (visited && guidance.known && guidance.value)) return { ok: true, ask: [], askGuidance: false };
-  if (max < c.terminal.minVisits) return visited && !guidance.known ? { ok: "unknown", ask: [], askGuidance: true } : { ok: false, ask: [], askGuidance: false };
+  if (min >= minVisits || (visited && guidance.known && guidance.value)) return { ok: true, ask: [], askGuidance: false };
+  if (max < minVisits) return visited && !guidance.known ? { ok: "unknown", ask: [], askGuidance: true } : { ok: false, ask: [], askGuidance: false };
   return { ok: "unknown", ask, askGuidance: false };
 }
 

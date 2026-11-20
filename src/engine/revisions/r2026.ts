@@ -97,7 +97,7 @@ const consts: RevisionConsts = {
     },
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16：基準を満たさない施設は 2ロ に代えて 2ニ を算定する（R8-17。重症区分の 2イ は対象外）
-    note16: { from: "ロ", to: "ニ" },
+    note16: { enabled: true, from: "ロ", to: "ニ" },
   },
   hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, disabilityLevelMin: 2, tiers: ["ロ", "ニ"] },
   shidoKanriKubun: ["C101_2I", "C103_2"],
