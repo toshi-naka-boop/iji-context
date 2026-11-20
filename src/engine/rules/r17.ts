@@ -15,8 +15,9 @@ export function makeR17(spec: CommentSpec): Rule {
     reference: "診療報酬請求書等の記載要領 別表Ⅰ（摘要欄への記載事項）",
     // 死亡年月日の突き合わせだけが、出来事（死亡の記録）を読む。算定開始月の突き合わせは、記録になければ比べない
     recordFindings: ["comment_mismatch_deathDate"],
-    // 点検の対象外の行がある請求で出すのは、必ず要る記載（when が always）の記載もれと、形式だけ。条件つきの記載と日付の突き合わせは申告しない（design.md §11-11）
-    soundWhenPartial: ["comment_missing", "comment_format"],
+    // 点検の対象外の行がある請求で出すのは、必ず要る記載（when が always）の記載もれと、形式、包括的支援加算の状態と確かめた事実の食い違い
+    // （コメントと事実だけで決まる。対象外の行が増えても解消しない：反証 round-28）。条件つきの記載と日付の突き合わせは申告しない（design.md §11-11）
+    soundWhenPartial: ["comment_missing", "comment_format", "comment_mismatch_hokatsuState"],
     appliesTo: (ctx) => ctx.commentsKnown && present(ctx, kubun).length > 0,
     // 条件を決める事実の不明は、記載ごとに check が情報不足で返す（needs に入れると、ほかの記載の点検まで止まる）
     needs: () => [],

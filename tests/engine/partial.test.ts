@@ -102,8 +102,10 @@ describe("申告を縛る：partial で出た指摘は、行を移す前の入�
       "R05.bundled",
       "R06.excluded_disease",
       "R09.mitori_with_shibou",
+      "R10.kinkyu_not_eligible",
       "R12.same_month",
       "R17.comment_format",
+      "R17.comment_mismatch_hokatsuState",
       "R17.comment_missing",
     ]);
   });
@@ -135,14 +137,13 @@ describe("申告しなかった種類（design.md §11-11 の一覧にあるが�
     expect(flaggedBefore(c, ["R02", "R03"], "C002_N10_HOKATSU")).toEqual(["R02.severe_with_hokatsu"]);
   });
 
-  it("R10.kinkyu_not_eligible：同じ日の訪問診療料があって文書提供が不明のあいだ、R10 は情報不足で止まる。訪問診療料の行が対象外に移ると、緊急往診加算の指摘が出る", () => {
+  it("R10.kinkyu_not_eligible：文書提供が不明でも、対象でない患者の緊急往診加算は指摘する。行を対象外に移しても新しく出る指摘ではないので、申告できる（反証 round-28）", () => {
     const d = visit.dates[0];
     const c = withFact(withFact(withFact(withLines(K1, line("C000", 1, [d]), line("C000_N1_KINKYU", 1, [d])), "emergencyEligible", no), "sameDayOushinAfterVisit", { known: true, value: { [d]: true } }), "contactDocProvided", { known: false });
     expect(violations([{ name: "緊急往診加算", ctx: c }])).toEqual([]);
-    const bad = violations([{ name: "緊急往診加算", ctx: c }], declare("R10", "kinkyu_not_eligible"));
-    expect(bad.length).toBeGreaterThan(0);
-    expect(bad.every((b) => b.includes("R10.kinkyu_not_eligible（C000_N1_KINKYU）"))).toBe(true);
-    expect(flaggedBefore(c, ["R10"], "C000_N1_KINKYU")).toEqual(["R10:情報不足:contactDocProvided"]);
+    const r10 = evaluate(c).findings.filter((f) => f.ruleId === "R10");
+    expect(r10.map((f) => f.messageKey)).toContain("R10.kinkyu_not_eligible");
+    expect(r10.some((f) => f.kind === "情報不足" && f.missing?.field === "contactDocProvided")).toBe(true);
   });
 });
 
