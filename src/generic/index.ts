@@ -8,11 +8,17 @@ import { checkReady, type MastersDb } from "../masters/db";
 import { g01 } from "./g01";
 import { g02 } from "./g02";
 import { g03 } from "./g03";
+import { g04 } from "./g04";
+import { g05 } from "./g05";
+import { g06 } from "./g06";
 import { GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
 
 const CHECKS: GenericCheck[] = [g01];
 CHECKS.push(g02);
 CHECKS.push(g03);
+CHECKS.push(g04);
+CHECKS.push(g05);
+CHECKS.push(g06);
 
 /**
  * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。

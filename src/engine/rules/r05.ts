@@ -20,6 +20,8 @@ export function makeR05(c: RevisionConsts): Rule {
     reads() {
       return this.kubun;
     },
+    // 管理料と、その月に含まれる項目の組（電子点数表では同一月内の包括）。処方箋を交付しない場合の加算（no_rx_addition_with_rx）は、表に載らないので申告しない
+    covers: () => ({ kind: "包括", finding: "bundled", kubun: kanriKubun(c).flatMap((k) => BUNDLED.map((b) => [k, b])) }),
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

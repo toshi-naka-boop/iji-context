@@ -172,10 +172,10 @@ describe("段 10b：実データの masters.db で", () => {
         expect(c.others.flatMap((o) => o.codes).filter((code) => !c.names.items[code]), id).toEqual([]);
         expect(c.comments.filter((x) => !c.names.comments[x.code]), id).toEqual([]);
         expect(c.diseases.filter((d) => d.name === null), id).toEqual([]);
-        expect([c.generic.ran.map((x) => x.check), c.generic.findings], id).toEqual([["G01", "G02", "G03"], []]);
-      // 段 11：検算の数（対象外は、合っている側に数えない）と、していないことが、点検の範囲に付く
-      expect(c.generic.scope!.recalc!.matched, id).toBe(c.generic.scope!.recalc!.checked);
-      expect(c.generic.scope!.notDone, id).toHaveLength(1);
+        expect([["G01", "G02", "G03"].every((id2) => c.generic.ran.some((x) => x.check === id2)), c.generic.findings], id).toEqual([true, []]);
+        // 段 11：検算の数（対象外は、合っている側に数えない）と、していないことが、点検の範囲に付く
+        expect(c.generic.scope!.recalc!.matched, id).toBe(c.generic.scope!.recalc!.checked);
+        expect(c.generic.scope!.notDone, id).toHaveLength(1);
         expect(c.stopped.every((s) => !s.all), id).toBe(true);
         expect(c.stopped.length, id).toBeLessThan(rev.rules.length);
       }

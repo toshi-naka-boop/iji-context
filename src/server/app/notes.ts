@@ -118,13 +118,15 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
     const ctx: ClaimContext = { ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true };
     const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
-    // データで動く点検（G01〜。design.md §12-5）：導出した行の区分をコードに直して掛ける。試算では、選んだ版の世代のマスターで
-    const generic = genericOfLines(derived.lines, rev, base.yearMonth);
+    // データで動く点検（G01〜。design.md §12-5）：導出した行の区分をコードに直して掛ける。試算では、選んだ版の世代のマスターで。
+    // 重なりの規則には、月の途中で外す前の手書きの結果を渡す（外した指摘と同じことを、データの側から出さない）
     if (revId === undefined) {
       const result = evaluate(ctx);
+      const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
       return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic };
     }
     const result = trial(ctx, rev);
+    const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
     const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
     return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
   }

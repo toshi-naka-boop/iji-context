@@ -18,22 +18,24 @@ const OUSHIN = r2026.codes.C000.primary;
 /** どのマスターにもないコード（作り物） */
 const UNKNOWN = "100000000";
 const claimOf = (...units: [kind: "SI" | "IY" | "TO", code: string][][]): GenericClaim => ({ units: units.map((items) => ({ items: items.map(([kind, code]) => ({ kind, code })) })) });
-const NOT_BUILT = ["G04", "G05", "G06", "G07", "G08", "G09"];
+/** 入っている点検（G01、段 11 の G02・G03、段 12 の G04〜G06）。ほかは「まだ入っていない」 */
+const BUILT = ["G01", "G02", "G03", "G04", "G05", "G06"];
+const ALL = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"];
 
 describe("evaluateGeneric の骨組み", () => {
   it("masters.db がなければ、どの点検も動かさない。「指摘なし」ではなく、動かさなかった点検と理由を返す", () => {
     const r = evaluateGeneric(claimOf([["SI", UNKNOWN]]), null, about);
     expect(r.findings).toEqual([]);
     expect(r.ran).toEqual([]);
-    expect(r.notRun.map((n) => [n.check, n.reason])).toEqual([["G01", "noMasters"], ["G02", "noMasters"], ["G03", "noMasters"], ...NOT_BUILT.map((c) => [c, "notBuilt"])]);
+    expect(r.notRun.map((n) => [n.check, n.reason])).toEqual(ALL.map((c) => [c, BUILT.includes(c) ? "noMasters" : "notBuilt"]));
     expect(genericView(r, null).notRun[0]).toEqual({ check: "G01", kind: "コード", reason: "noMasters", text: "マスターが入っていないので、していません" });
   });
 
-  it("手作りの表で準備ができているのは G01 だけ。G02・G03 は「準備ができていない」、G04〜G09 は「まだ入っていない」として返す（動いたことにしない）", () => {
+  it("入っていない点検は「まだ入っていない」、準備ができていない・準備の行がない点検（小さな表の G02〜G06）は「準備ができていない」として返す（動いたことにしない）", () => {
     const db = smallMasters();
     const r = evaluateGeneric(claimOf([["SI", HOUMON]]), db, about);
     expect(r.ran).toEqual([{ check: "G01", kind: "コード" }]);
-    expect(r.notRun.map((n) => [n.check, n.reason])).toEqual([["G02", "notReady"], ["G03", "notReady"], ...NOT_BUILT.map((c) => [c, "notBuilt"])]);
+    expect(r.notRun.map((n) => [n.check, n.reason])).toEqual(ALL.slice(1).map((c) => [c, BUILT.includes(c) ? "notReady" : "notBuilt"]));
   });
 
   it("準備ができていない点検（checks_ready が偽・行がない）と、診療年月の世代の 1 枚がない点検は動かさない", () => {

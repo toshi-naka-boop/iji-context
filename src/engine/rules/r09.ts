@@ -17,6 +17,8 @@ export function makeR09(c: RevisionConsts): Rule {
     reads() {
       return this.kubun;
     },
+    // 看取り加算と死亡診断加算の組（注8。電子点数表では同一月内の背反）。在宅ターミナルケア加算の回数（terminal_visits）は、表に載らないので申告しない
+    covers: () => ({ kind: "背反", finding: "mitori_with_shibou", kubun: [[MITORI, SHIBOU]] }),
     appliesTo: (ctx) => [MITORI, SHIBOU, TERMINAL].some((k) => has(ctx, k)),
     needs: () => [],
     check(ctx) {
