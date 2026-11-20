@@ -1,0 +1,54 @@
+// evaluateGeneric(claim, masters, about)：データで動く点検（design.md §12-2）。公開データ（masters.db）の行で、UKE の単位とコードのまま点検する。
+// 手書きのルール（src/engine/ の evaluate）は変えない。指摘は定型文と値だけで作り、LLM は使わない。
+// この段で入っているのは G01（コード）だけ。あとの段は、CHECKS に点検を足す
+import raw from "../../config/generic-checks.json";
+import type { Revision } from "../engine/revisions/types";
+import type { ClaimLine } from "../engine/types";
+import { checkReady, type MastersDb } from "../masters/db";
+import { g01 } from "./g01";
+import { GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
+
+const CHECKS: GenericCheck[] = [g01];
+
+/**
+ * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。
+ * 一覧にない種類は、点検がどう判定しても条件つきで出る（design.md §12-3）。出荷の時点では空
+ */
+export const CERTAIN: ReadonlySet<string> = new Set((raw.certain as { messageKey: string; verifiedIn: string }[]).map((c) => c.messageKey));
+
+/**
+ * masters が null（masters.db がない）・点検の準備ができていない（checks_ready）・診療年月の世代の 1 枚がない点検は動かさず、notRun に理由つきで返す。
+ * 「指摘なし」は、ran に入っている点検についてだけ言える。checks と certain は、テストが作り物の点検を入れるための引数
+ */
+export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, about: GenericAbout, checks: GenericCheck[] = CHECKS, certain: ReadonlySet<string> = CERTAIN): GenericResult {
+  const result: GenericResult = { findings: [], ran: [], notRun: [] };
+  for (const { id, kind } of GENERIC_CHECKS) {
+    const skip = (reason: GenericResult["notRun"][number]["reason"], detail = "") => result.notRun.push({ check: id, kind, reason, detail });
+    const check = checks.find((c) => c.id === id);
+    if (!check) skip("notBuilt");
+    else if (masters === null) skip("noMasters");
+    else {
+      const ready = checkReady(masters, id);
+      if (!ready?.ready) {
+        skip("notReady", ready?.reason ?? "");
+        continue;
+      }
+      const found = check.run(claim, masters, about);
+      if (!Array.isArray(found)) {
+        skip("noSnapshot", found.skip);
+        continue;
+      }
+      result.ran.push({ check: id, kind });
+      result.findings.push(...found.map((f) => ({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? ("確定" as const) : ("条件つき" as const) })));
+    }
+  }
+  return result;
+}
+
+/**
+ * 区分キーの算定行（月末の点検で入力した行・カルテから導いた行）を、点検に渡す形にする（design.md §12-2）：区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。
+ * コードに直せない区分（uncoded）と、項目のコードが行に載っていない包括の検査の区分は、掛けない
+ */
+export function unitsOfLines(lines: Pick<ClaimLine, "kubun">[], rev: Revision): GenericClaim {
+  return { units: lines.flatMap((l) => (Object.hasOwn(rev.codes, l.kubun) ? [{ items: [{ kind: "SI" as const, code: rev.codes[l.kubun].primary }] }] : [])) };
+}
