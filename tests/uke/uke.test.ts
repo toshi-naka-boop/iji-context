@@ -29,7 +29,7 @@ describe("2 本を読む", () => {
     for (const k of CASES) {
       const want = loadCase(k);
       const file = want.payer === "国保連" ? files.国保連 : files.支払基金;
-      const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+      const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       expect(got.lines).toEqual(want.lines);
       expect(got.comments).toEqual(want.comments ?? []);
       expect([got.yearMonth, got.payer, got.prefecture]).toEqual([want.yearMonth, want.payer, want.prefecture]);
@@ -43,7 +43,7 @@ describe("2 本を読む", () => {
     const want = loadCase("K2");
     const twice = { ...k2, lines: [...k2.lines, { kubun: "D026_3", count: 1, dates: [day(28)] }] };
     const file = parseUke(writeUke(buildUkeFiles([twice], src, BILLING_MONTH).国保連));
-    const got = toClaimContext(file, k2.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+    const got = toClaimContext(file, k2.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
     expect(got.lines.filter((l) => l.kubun === "D026_3")).toHaveLength(2);
     expect(evaluate(got).findings.map((f) => f.messageKey)).toEqual(["R11.judgement_once_a_month"]);
   });

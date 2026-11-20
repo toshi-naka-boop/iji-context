@@ -11,6 +11,7 @@ export function makeR03(c: RevisionConsts): Rule {
     id: "R03",
     kubun: [...kanriKubun(c), HOKATSU],
     reference: "C002 注10 包括的支援加算（C002-2 注5 で施設入居時等医学総合管理料に準用）",
+    recordFindings: [],
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs(ctx) {
       if (!hokatsuInScope(ctx, c)) return [];

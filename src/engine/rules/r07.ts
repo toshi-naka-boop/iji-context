@@ -11,6 +11,8 @@ export function makeR07(c: RevisionConsts): Rule {
     id: "R07",
     kubun: [OTHER, MANY],
     reference: "F400 処方箋料 2・3",
+    // どの指摘も、その日の処方の出来事と比べて決める
+    recordFindings: ["use_seven_or_more", "use_long_psychotropic", "not_seven_or_more", "no_rx_record"],
     appliesTo: (ctx) => has(ctx, OTHER) || has(ctx, MANY),
     needs: () => [],
     check(ctx) {

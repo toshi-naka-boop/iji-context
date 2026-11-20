@@ -152,6 +152,7 @@
       "sameBuildingCount": 1
     }
   ],
+  "recordsKnown": true,
   "lines": [
     {
       "kubun": "C001_1I",

@@ -9,6 +9,8 @@ export function makeR06(c: RevisionConsts): Rule {
     id: "R06",
     kubun: [KUBUN],
     reference: "F400 注4 特定疾患処方管理加算",
+    // 処方の日数は出来事から読む（対象外の主病 excluded_disease は事実だけで決まる）
+    recordFindings: ["under_28_days"],
     appliesTo: (ctx) => has(ctx, KUBUN),
     needs: () => ["mainDisease"],
     check(ctx) {

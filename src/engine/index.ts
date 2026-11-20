@@ -69,6 +69,16 @@ export function evaluate(input: ClaimContext, revs: Revision[] = REVISIONS): Eng
   for (const rule of rev.rules) {
     if (!rule.appliesTo(ctx)) continue;
     applied.push(rule.id);
+    // 記録がないので決められない指摘があることを、情報不足として 1 件返す。入力では消えない（この請求に記録を足す手段がない）
+    if (!ctx.recordsKnown && rule.recordFindings.length > 0)
+      findings.push({
+        ruleId: rule.id,
+        kind: "情報不足",
+        lineRefs: rule.kubun.filter((k) => ctx.lines.some((l) => l.kubun === k)),
+        missing: { target: "clerk", field: "chartRecord" },
+        messageKey: `${rule.id}.missing_fact`,
+        reference: rule.reference,
+      });
     const unknown = rule.needs(ctx).find((k) => !knownNeed(ctx, k));
     if (unknown) {
       findings.push({
@@ -82,7 +92,9 @@ export function evaluate(input: ClaimContext, revs: Revision[] = REVISIONS): Eng
       });
       continue;
     }
-    findings.push(...rule.check(ctx));
+    const found = rule.check(ctx);
+    // カルテ側の記録がない請求：出来事を読んで決める指摘は捨てる（空の出来事を「なかった」と読まない）。行と事実だけで決まる指摘はそのまま出す
+    findings.push(...(ctx.recordsKnown ? found : found.filter((f) => !rule.recordFindings.includes(f.messageKey.slice(rule.id.length + 1)))));
   }
   return { claimId: ctx.claimId, revisionId: rev.id, total, byLine, findings, applied, excludedCount };
 }

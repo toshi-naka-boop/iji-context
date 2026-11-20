@@ -22,6 +22,7 @@ export function makeR10(c: RevisionConsts): Rule {
     id: "R10",
     kubun: [OUSHIN, KINKYU, ...c.visitKubun],
     reference: "C000 注1・C001 注1・注10（留意事項 C001 (11)(21)）",
+    recordFindings: [],
     appliesTo: (ctx) => has(ctx, OUSHIN) || has(ctx, KINKYU),
     needs(ctx) {
       const out: NeedKey[] = [];

@@ -49,7 +49,7 @@ export function buildUkeFiles(cases: ClaimContext[], src: UkeSources, billingMon
 export function toClaimContext(
   file: UkeFile,
   claimId: string,
-  extras: { facility: Facility; facts: ClaimContext["facts"]; events: ClaimContext["events"]; history?: ClaimContext["history"] },
+  extras: { facility: Facility; facts: ClaimContext["facts"]; events: ClaimContext["events"]; recordsKnown: boolean; history?: ClaimContext["history"] },
 ): ClaimContext {
   const r = file.receipts.find((x) => x.claimId === claimId);
   if (!r) throw new Error(`UKE にないレセプト: ${claimId}`);
@@ -61,6 +61,7 @@ export function toClaimContext(
     prefecture: file.prefecture,
     facts: extras.facts,
     events: extras.events,
+    recordsKnown: extras.recordsKnown,
     lines: r.lines,
     comments: r.comments,
     ...(extras.history ? { history: extras.history } : {}),

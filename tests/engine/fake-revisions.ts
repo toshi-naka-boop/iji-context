@@ -9,6 +9,7 @@ function fakeRule(kubun: string, maxCount: number): Rule {
     id: "F01",
     kubun: [kubun],
     reference: "作り物のルール",
+    recordFindings: [],
     appliesTo: (ctx) => ctx.lines.some((l) => l.kubun === kubun),
     needs: () => [],
     check(ctx) {

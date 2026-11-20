@@ -119,6 +119,8 @@ export function findingText(f: Finding): string {
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
+    // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
+    if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
     // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
     if (f.missing.field === "rxRecord") return `処方箋料の行${day}に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください`;
     const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;

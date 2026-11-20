@@ -112,6 +112,11 @@ export type ClaimContext = {
   prefecture: string;
   facts: Facts;
   events: ClaimEvent[];
+  /**
+   * カルテ側の記録（出来事）があるか。偽の請求（見本以外の UKE）では、空の出来事を「なかった」と読まない：
+   * 出来事を読んで決める指摘（Rule.recordFindings）は出さず、情報不足（chartRecord）を返す（design.md §11-6）
+   */
+  recordsKnown: boolean;
   lines: ClaimLine[];
   /** 摘要コメント（UKE の CO レコードから F4 が作る。コードは架空）。載っていないものは「なかった」 */
   comments?: { kubun: string; code: string }[];
@@ -127,7 +132,7 @@ export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと（事実のキーではない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること（どちらも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
   reference: string;
@@ -152,6 +157,11 @@ export type Rule = {
   /** 対象区分（§4-4 で「関係あり」の判定に使う。C-6） */
   kubun: string[];
   reference: string;
+  /**
+   * このルールの指摘の種類（messageKey の「ルール id.」より後ろ）のうち、出来事を読んで決めるもの。
+   * カルテ側の記録がない請求（recordsKnown が偽）では、evaluate がこの種類の指摘を捨て、情報不足（chartRecord）を 1 件返す（design.md §11-6）
+   */
+  recordFindings: string[];
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];

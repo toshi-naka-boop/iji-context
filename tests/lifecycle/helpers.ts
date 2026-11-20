@@ -83,6 +83,7 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
     prefecture: "東京都",
     facts: makeFacts(),
     events: [],
+    recordsKnown: true,
     lines,
     ...rest,
   };
