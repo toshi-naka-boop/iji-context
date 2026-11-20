@@ -72,6 +72,8 @@ export const POLICY = {
   // カルテ・患者情報・UKE
   "POST /api/chart": row(WORK, "ai", true),
   "POST /api/chart/[id]": row(WORK, "none", true),
+  // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
+  "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
   "GET /api/chart/[id]/claim": row(WORK, "none", true),
   // 改定の比較（design.md §11-2）：同じ記録を 2 つの版で導出して並べる。読むだけ。全ロール

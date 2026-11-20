@@ -54,7 +54,7 @@ export function openApp(paths: AppPaths) {
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
   const { ukeCheck, ukeTrial } = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, noteOf, confirmNote, patients, visits } = notes;
+  const { saveNote, noteOf, confirmNote, deleteNote, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
     const claim = notes.claimOfNote(noteId, choices, revId);
@@ -89,6 +89,7 @@ export function openApp(paths: AppPaths) {
     saveNote,
     noteOf,
     confirmNote,
+    deleteNote,
     chartClaim,
     compareOf,
     patients,

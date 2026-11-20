@@ -11,7 +11,8 @@ import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../patient/profile";
 import type { Chart } from "../../uke/crosscheck";
 import { commentOf } from "../../uke/uke";
-import { badRequest, conflict, notFound } from "../errors";
+import { badRequest, conflict, forbidden, notFound } from "../errors";
+import type { Role } from "../roles";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
 import { chartFileOf } from "./case-files";
 import type { Cases } from "./cases";
@@ -55,6 +56,17 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
     sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
     return { claimId: r.claim_id, date: r.date };
+  }
+  /**
+   * 訪問カルテを消す（design.md §11-11「消す」）。消せるのは、書いた本人と事務長だけ（ロールは権限表が先に絞る。ここでは本人かどうかを照合する）。
+   * 消えるのは、そのカルテの行（本文と、そこから確かめた事実）。訪問の出来事と算定行は保存しておらず、残りのカルテから毎回作り直すので、消したカルテの分は次の計算から外れる。
+   * 返すのは消したカルテの id だけ（本文・請求の中身は返さない）
+   */
+  function deleteNote(id: number, clerkId: string, role: Role): { deleted: number } {
+    const r = noteRow(id);
+    if (r.clerk_id !== clerkId && role !== "manager") throw forbidden("このカルテを消せるのは、書いた本人と事務長だけです");
+    sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
+    return { deleted: id };
   }
   /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
   function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
@@ -147,7 +159,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, deleteNote, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

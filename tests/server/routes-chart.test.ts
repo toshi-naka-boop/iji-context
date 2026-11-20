@@ -1,5 +1,6 @@
 // カルテ・患者・症例・UKE のルート（app/api/**/route.ts）を実際に呼んで確かめる：ログイン・スキーマ・請求 id の形・画像の大きさ・監査ログ。
 // LLM（Agent SDK）は呼ばない。SDK の query を差し替える（llm.runOnce が返した値の structured が、モデルの返事になる）
+import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -231,6 +232,93 @@ describe("訪問カルテ", () => {
     expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent(JSON.stringify({ "D11-mitori:x": "mitori" }))}`), at)).status).toBe(200);
     // 読むだけなので、監査ログには残らない
     expect(auditRows(before)).toEqual([]);
+  });
+
+  it("カルテを消す（design.md §11-11）：書いた本人と事務長だけ。消したあと、本文はどの表にも残らず、算定プレビューは残りのカルテから計算し直される。監査ログにはカルテの id だけ", async () => {
+    const chart = (await import("../../app/api/chart/route")).POST;
+    const { POST: confirm, DELETE: remove } = await import("../../app/api/chart/[id]/route");
+    const claim = (await import("../../app/api/chart/[id]/claim/route")).GET;
+    // 別のクリニックで確かめる：持ち主（事務）が書き、招待で入ったベテラン・事務長・医師が消そうとする
+    const a = instance.getAuth();
+    const owner = a.register("chart_erase_owner", "かるて", "password123");
+    const invites = (["veteran", "manager", "doctor"] as const).map((role) => a.createInvite(owner, role).code);
+    const [veteran, manager, doctor] = invites.map((code, i) => a.registerWithInvite(`chart_erase_${i}`, "どうりょう", "password123", code));
+    const cookieOf = (u: User) => `resemen_session=${a.createSession(u.id).token}`;
+    const [mine, vet, mgr, doc] = [owner, veteran, manager, doctor].map(cookieOf);
+    const del = (id: number | string, c: string | null) => remove(new Request(`http://localhost/api/chart/${id}`, { method: "DELETE", headers: c ? { cookie: c } : {} }), params({ id: String(id) }));
+    /** DB の全表の中身（監査ログも含む） */
+    const dump = (): Record<string, string> => {
+      const db = new Database(instance.tenantPaths(owner.tenantId).dbFile, { readonly: true });
+      try {
+        const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name);
+        expect(tables).toEqual(expect.arrayContaining(["audit_log", "chart_notes", "questions"]));
+        return Object.fromEntries(tables.map((t) => [t, JSON.stringify(db.prepare(`SELECT * FROM ${t}`).all())]));
+      } finally {
+        db.close();
+      }
+    };
+    const tablesWith = (text: string) => Object.entries(dump()).filter(([, rows]) => rows.includes(text)).map(([t]) => t);
+
+    // 消すカルテ（往診。本文に目印）と、残すカルテ（訪問診療）を、同じ請求・同じ日に書いて確定する
+    const GONE = { s: "消す主訴の目印", o: "消す所見の目印", a: "消す評価の目印", p: "消す計画の目印", rx: "消す処方の目印" };
+    const STAY = { s: "残す主訴の目印", o: "", a: "", p: "", rx: "" };
+    const write = async (kind: string, note: typeof GONE, facts: unknown[]) => {
+      llm.runOnce.mockResolvedValue({ structured: { facts }, sessionId: "", stats: {} });
+      const w = (await (await chart(post("/api/chart", { claimId: claimId("K2"), kind, note }, mine))).json()) as { id: number; facts: unknown[] };
+      expect((await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }, mine), params({ id: String(w.id) }))).status).toBe(200);
+      return w.id;
+    };
+    const gone = await write("往診", GONE, [{ kind: "処方", value: "目印の薬", quote: "消す処方の目印" }]);
+    const stay = await write("訪問診療", STAY, []);
+    const third = await write("往診", { ...STAY, s: "事務長が消す目印" }, []);
+    const preview = async () => {
+      const c = (await (await claim(get(`/api/chart/${stay}/claim`, mine), params({ id: String(stay) }))).json()) as { lines: { kubun: string }[]; pending: { id: string }[] };
+      return { lines: c.lines.map((l) => l.kubun), pending: c.pending.map((p) => p.id) };
+    };
+    // 消す前：往診のカルテが同じ日の訪問診療に重なり、「訪問診療のあとに往診したか」が決まるまで算定行が保留になっている。本文と確かめた事実は chart_notes にだけある
+    expect(await preview()).toEqual({ lines: [], pending: [`D01-sameDay:${day(13)}`] });
+    for (const text of [...Object.values(GONE), "目印の薬"]) expect([text, tablesWith(text)]).toEqual([text, ["chart_notes"]]);
+    const before = instance.runAs(owner, () => instance.getApp().audit.list(500)).length;
+
+    // 未ログインは 401、形の違う id は 400、ないカルテは 404、医師は 403（権限表）、書いた本人でないベテランは 403（本人の照合）。どれも消えない
+    expect((await del(gone, null)).status).toBe(401);
+    expect((await del("abc", mine)).status).toBe(400);
+    expect((await del(9999, mine)).status).toBe(404);
+    expect((await del(gone, doc)).status).toBe(403);
+    const refused = await del(gone, vet);
+    expect([refused.status, ((await refused.json()) as { error: string }).error]).toEqual([403, "このカルテを消せるのは、書いた本人と事務長だけです"]);
+    expect(tablesWith(GONE.s)).toEqual(["chart_notes"]);
+
+    // 事務長は、ほかの人が書いたカルテを消せる。書いた本人は、自分のカルテを消せる。返すのは id だけ
+    const byManager = await del(third, mgr);
+    expect([byManager.status, await byManager.json()]).toEqual([200, { deleted: third }]);
+    const res = await del(gone, mine);
+    expect([res.status, await res.json()]).toEqual([200, { deleted: gone }]);
+    expect((await del(gone, mine)).status).toBe(404);
+
+    // 全表の走査：消したカルテの本文・確かめた事実は、どの表にも（監査ログにも）残っていない。残したカルテはそのまま
+    for (const text of [...Object.values(GONE), "目印の薬", "事務長が消す目印"]) expect([text, tablesWith(text)]).toEqual([text, []]);
+    expect(tablesWith(STAY.s)).toEqual(["chart_notes"]);
+    // 算定プレビューは、残りのカルテから計算し直される（往診料の行がなくなる）。消したカルテのプレビューは 404
+    const after = await preview();
+    expect(after.pending).toEqual([]);
+    expect(after.lines).toContain("C001_1I");
+    expect(after.lines).not.toContain("C000");
+    expect((await claim(get(`/api/chart/${gone}/claim`, mine), params({ id: String(gone) }))).status).toBe(404);
+    const visits = (await (await (await import("../../app/api/visits/route")).GET(get("/api/visits", mine))).json()) as { claimId: string; date: string; type: string; written: boolean }[];
+    expect(visits.filter((v) => v.claimId === claimId("K2") && v.date === day(13)).map((v) => v.type)).toEqual(["visit"]);
+
+    // 監査ログ：操作の名前・カルテの id・結果だけ
+    const log = instance.runAs(owner, () => instance.getApp().audit.list(500)).reverse().slice(before);
+    expect(log.map((r) => [r.action, r.target, r.result, r.role])).toEqual([
+      ["DELETE /api/chart/[id]", null, "invalid", "clerk"],
+      ["DELETE /api/chart/[id]", "9999", "rejected", "clerk"],
+      ["DELETE /api/chart/[id]", String(gone), "denied", "doctor"],
+      ["DELETE /api/chart/[id]", String(gone), "denied", "veteran"],
+      ["DELETE /api/chart/[id]", String(third), "ok", "manager"],
+      ["DELETE /api/chart/[id]", String(gone), "ok", "clerk"],
+      ["DELETE /api/chart/[id]", String(gone), "rejected", "clerk"],
+    ]);
   });
 
   it("SOAP に整える：空・4000 字超は 400。整えた欄を返す", async () => {
