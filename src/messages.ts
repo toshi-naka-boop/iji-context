@@ -66,6 +66,12 @@ export const GENERIC_TEXT: Record<string, string> = {
   "G01.not_in_any": "コード {code}（{what}）は、持っているどの版のマスターにもありません。打ち間違いか、マスターの更新もれを確かめてください",
   "G01.only_before": "コード {code}（{what}）は、持っているマスターのうち、診療年月の前の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
   "G01.only_after": "コード {code}（{what}）は、持っているマスターのうち、診療年月の後の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
+  // G02・G03（段 11）。{later} は、後の版のマスターで点検していて、その行が診療年月の後に変更されているときの断り書き（なければ空）。言い切りに上げていないので、確かめてもらう書き方
+  "G02.points": "この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は {uke} 点、再計算は {calc} 点。{formula}）。コード・数量・点数を確かめてください{later}",
+  "G03.inpatient_only": "コード {code}（{name}）は、マスターでは入院のレセプトに限るコードです。入院外のレセプトで算定できるか、告示・通知を確かめてください{later}",
+  "G03.hospital_only": "コード {code}（{name}）は、マスターでは病院に限るコードです。診療所で算定できるか、告示・通知を確かめてください{later}",
+  "G03.clinic_only": "コード {code}（{name}）は、マスターでは診療所に限るコードです。病院で算定できるか、告示・通知を確かめてください{later}",
+  "G03.age": "コード {code}（{name}）は、マスターの年齢の範囲（{range}）の外です（診療年月の初日は {ageFrom} 歳、末日は {ageTo} 歳）。生年月日とコードを確かめてください{later}",
 };
 export const genericText = (f: Pick<GenericFinding, "messageKey" | "params">): string => (GENERIC_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params[k] ?? "");
 
