@@ -10,7 +10,9 @@ export type ConfirmedNote = { date: string; kind: VisitKind; note: ChartNote; fa
 
 /**
  * カルテ→出来事（1 か所。訪問の記録と算定行の導出で共有する。design.md §2-8）。
- * 訪問診療・往診の出来事を足す。同じ日の同じ種類の訪問がすでにあれば足さない。急性増悪の記載があれば、その月の急性増悪を「あり」にする
+ * 訪問診療・往診の出来事を足す。同じ日の同じ種類の訪問がすでにあれば足さない。急性増悪の記載があれば、その月の急性増悪を「あり」にする。
+ * 不安・不眠の薬（本人が確かめた「あり」「なし」）は、その日の既存の処方の出来事（psychotropic）に重ねる。処方の出来事は作らない（その日に処方の出来事がなければ何もしない）。
+ * 「あり」は真にする。「なし」は、記録が分からない（null）ときだけ偽にする（記録やほかのカルテが「あり」の日を、偽で上書きしない。偽は医師への確認を省くので、安全側に倒す）
  */
 export function eventsFromNotes(events: ClaimEvent[], facts: Facts, notes: ConfirmedNote[]): { events: ClaimEvent[]; facts: Facts } {
   const out = [...events];
@@ -23,7 +25,11 @@ export function eventsFromNotes(events: ClaimEvent[], facts: Facts, notes: Confi
     } else out.push({ type: "oushin", date: n.date, kind: "normal" });
   }
   const acute = notes.some((n) => n.facts.some((f) => f.kind === "急性増悪"));
-  return { events: out, facts: acute ? { ...facts, acuteExacerbation: { known: true, value: true } } : facts };
+  /** 日付 → その日のカルテのどれかが「あり」か */
+  const psychotropic = new Map<string, boolean>();
+  for (const n of notes) for (const f of n.facts) if (f.kind === "不安・不眠の薬") psychotropic.set(n.date, psychotropic.get(n.date) === true || f.value === "あり");
+  const overlaid = out.map((e) => (e.type === "prescription" && psychotropic.has(e.date) ? { ...e, psychotropic: psychotropic.get(e.date) === true ? true : (e.psychotropic ?? false) } : e));
+  return { events: overlaid, facts: acute ? { ...facts, acuteExacerbation: { known: true, value: true } } : facts };
 }
 
 /**
