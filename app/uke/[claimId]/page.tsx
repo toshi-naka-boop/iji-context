@@ -1,12 +1,13 @@
 "use client";
 // 取り込んだレセプトの点検（design.md §11-11・§11-13）：UKE に書いてあるとおりのまま（行もコメントも入れ替えずに）点検した結果を見せる。
 // 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → 点検した行と小計 → 対象外の行 → UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
-// 読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。月末の点検（行を入力する問題）とは別の画面
+// 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
 import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
+import { CheckedFacts, FactInput } from "../../fact-input";
 import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
@@ -41,10 +42,12 @@ export default function UkeClaimCheck() {
   const { claimId } = useParams<{ claimId: string }>();
   const [check, setCheck] = useState<Check | null>(null);
   const [err, setErr] = useState("");
+  /** 情報不足の項目に答えを残すたびに増やし、点検をやり直す */
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!user) return;
     getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`).then(setCheck).catch((e: Error) => setErr(e.message));
-  }, [user, claimId]);
+  }, [user, claimId, tick]);
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -57,7 +60,7 @@ export default function UkeClaimCheck() {
     <main className="shell">
       <TopBar />
       <PageGuide who="yusti" title="取り込んだレセプトの点検" tag="RULE ENGINE">
-        取り込んだ UKE に書いてあるとおりのまま、決まった規則で点検した結果です。行もコメントも入れ替えていません。何も記録しません。
+        取り込んだ UKE に書いてあるとおりのまま、決まった規則で点検した結果です。行もコメントも入れ替えていません。点検の結果は記録しません。「情報不足」の項目に、確かめた答えを残すと、その答えだけが残り、点検をやり直します。
       </PageGuide>
       <p style={{ margin: "0 0 12px" }}><a href="/uke">← UKE 取り込みに戻る</a></p>
       {err && <div className="notice warn">{err}</div>}
@@ -101,8 +104,10 @@ export default function UkeClaimCheck() {
                 <div key={i} className="notice">
                   <span className="badge">{f.ruleId}</span> {findingText(f)}
                   {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map(nameOf).join("、")}</div>}
+                  <FactInput claimId={c.claimId} finding={f} patientHref="/work" onSaved={() => setTick((t) => t + 1)} />
                 </div>
               ))}
+              <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />
 
               <h3 style={{ margin: 0 }}>点検した行</h3>
               <table className="emr-table">

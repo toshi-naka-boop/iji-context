@@ -7,13 +7,20 @@ import { runOnce, type Sender } from "../llm/outbound";
 /** 本人が書くカルテ（1 回の訪問） */
 export type ChartNote = { s: string; o: string; a: string; p: string; rx: string };
 
-/** 取り出す事実。処方は分類名（DOAC など）、病名はカルテに書かれた名前、急性増悪は書かれているときだけ */
+/**
+ * 取り出す事実。処方は分類名（DOAC など）、病名はカルテに書かれた名前、急性増悪は書かれているときだけ。
+ * 不安・不眠の薬は、その日の処方に、処方箋料の区分 2 の対象になる不安・不眠の薬（EM #7-15）が含まれるか（value は「あり」か「なし」）。
+ * 本人が確かめたうえで、その日の処方の出来事（psychotropic）に重ねる（src/chart/notes.ts。design.md §11-5）。長期処方に当たるかは読まない（医師が確かめる）
+ */
 export type ExtractedFact =
   | { kind: "処方"; value: string; quote: string }
   | { kind: "病名の記載"; value: string; quote: string }
-  | { kind: "急性増悪"; value: string; quote: string };
+  | { kind: "急性増悪"; value: string; quote: string }
+  | { kind: "不安・不眠の薬"; value: string; quote: string };
 
-export const FACT_KINDS = ["処方", "病名の記載", "急性増悪"] as const;
+export const FACT_KINDS = ["処方", "病名の記載", "急性増悪", "不安・不眠の薬"] as const;
+/** 「不安・不眠の薬」の値 */
+export const PSYCHOTROPIC_VALUES = ["あり", "なし"];
 
 export const EXTRACT_SCHEMA = {
   type: "object",
@@ -34,10 +41,11 @@ export const EXTRACT_SCHEMA = {
 
 export const EXTRACT_PROMPT = [
   "あなたは在宅医療のカルテから、医療事務が算定に使う事実を取り出します。判定や助言はしない。",
-  "取り出すのは次の 3 種類だけ：",
+  "取り出すのは次の 4 種類だけ：",
   "- 処方：処方されている薬の分類名（例：DOAC、利尿薬、インスリン）。薬の名前で書かれていても分類名で value に入れる",
   "- 病名の記載：A（評価）などに書かれた病名や略語。value は書かれたとおり（略語を言い換えない）",
   "- 急性増悪：急性増悪・急変と書かれているときだけ。value は「あり」",
+  "- 不安・不眠の薬：処方の欄に薬が書かれているときだけ。その日の処方に、不安や不眠に対して出される薬が含まれていれば value は「あり」、書かれている薬のどれも当たらなければ「なし」。quote は、もとにした処方の記載。いつから続いているか（長期の処方か）は判断しない",
   "どの事実にも quote を付ける。quote はカルテに書かれた文字をそのまま写した短い部分（言い換え・要約をしない）。",
   "書かれていないことは出さない。推測で病名・病型・処方を足さない。何もなければ facts は空にする。",
 ].join("\n");
@@ -64,6 +72,7 @@ export function validateFacts(raw: unknown, note: ChartNote): { facts: Extracted
     if (!o || typeof o.value !== "string" || typeof o.quote !== "string" || !o.value.trim() || !o.quote.trim()) dropped.push({ fact: f, why: "形が違う" });
     else if (!(FACT_KINDS as readonly string[]).includes(o.kind as string)) dropped.push({ fact: f, why: "取り出す種類の外" });
     else if (!text.includes(squash(o.quote))) dropped.push({ fact: f, why: "カルテにない言葉から取っている" });
+    else if (o.kind === "不安・不眠の薬" && !PSYCHOTROPIC_VALUES.includes(o.value.trim())) dropped.push({ fact: f, why: "不安・不眠の薬は「あり」か「なし」で入れる" });
     else facts.push({ kind: o.kind as ExtractedFact["kind"], value: o.value.trim(), quote: o.quote.trim() });
   }
   return { facts, dropped };

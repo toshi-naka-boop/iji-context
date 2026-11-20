@@ -11,6 +11,7 @@ import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { unlockAudio, Welcome } from "../welcome";
 import { SignIn, useClerk } from "../clerk";
 import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-check";
+import { CheckedFacts, FactInput } from "../fact-input";
 import { PatientPanel } from "./patient-panel";
 import { Board } from "./board";
 
@@ -82,6 +83,8 @@ export default function Work() {
   // 公的文書の条件を確かめた後に、ローカルルール欄を読み直す
   const [rulesTick, setRulesTick] = useState(0);
   const checkRights = useCheckRights();
+  /** 情報不足の項目に答えを残すたびに増やし、残した答えの一覧を読み直す */
+  const [factTick, setFactTick] = useState(0);
   // 明細が変わるたびに、当てはまるローカルルールを当てはめ直す（決まった規則。AI は使わない）
   useEffect(() => {
     if (!q) return setLocalRules([]);
@@ -529,8 +532,10 @@ export default function Work() {
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>
                     {findingText(f)}<br />
                     <span className="muted">{f.ruleId}・{f.kind}・根拠：{f.reference}</span>
+                    {!q.drill && <FactInput claimId={q.claimId} finding={f} patientHref="#patient-info" onSaved={() => setFactTick((t) => t + 1)} />}
                   </div>
                 ))}
+                {!q.drill && <CheckedFacts claimId={q.claimId} tick={factTick} onSaved={() => setFactTick((t) => t + 1)} note="確定した判定は、そのまま残ります。残した答えは、次にこの請求を点検するときから使います。" />}
                 {/* 摘要欄の記載（R17）の範囲。問題の判定は、行を入れ直すので摘要欄を見ない（src/server/app/question-case.ts） */}
                 {!q.drill && !q.asOf && <p className="muted">{COMMENT_CHECK_NOTE}この画面の判定は、明細を入れ直すので摘要欄の記載を見ていません（カルテの算定の見込みで点検します）。</p>}
                 {q.phase === "判定" && <button className="primary" onClick={() => explanation()} disabled={busy}>解説を聞く</button>}

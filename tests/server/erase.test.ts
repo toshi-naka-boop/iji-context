@@ -96,6 +96,9 @@ describe("取り込んだファイルを消す", () => {
         // 医師確認、確かめた患者情報、加入情報の確認
         out[`query:${id}`] = a.proxySubmit(id, "下書き", { text: "整えた文", missing: [] }).query!.id;
         a.savePatientFact(id, me, { key: "table7", value: true, source: "カルテ", validUntil: null });
+        // 請求ごとに確かめた事実（日付ごとの事実と、そうでない事実）
+        a.saveClaimFact(id, me, "clerk", { key: "sameDayOushinAfterVisit", date: day(5), value: true, source: "カルテ" });
+        a.saveClaimFact(id, me, "clerk", { key: "contactDocProvided", date: null, value: true, source: "カルテ" });
         a.confirmCoverage(id, me, { coverageId: a.patientProfile(id).coverages[0].coverageId, source: "保険証・資格確認書" });
         out[`patient:${id}`] = a.patientFacts(id).patientId;
         out[`question:${id}`] = q.id;
@@ -113,7 +116,7 @@ describe("取り込んだファイルを消す", () => {
 
     // 走査が効いていること：消す前は、請求 id・患者 id がいくつもの表にある
     const before = dump(dbFile);
-    expect(tablesWith(before, "U1-1")).toEqual(expect.arrayContaining(["chart_notes", "peer_questions", "questions", "submissions"]));
+    expect(tablesWith(before, "U1-1")).toEqual(expect.arrayContaining(["chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(before, made["question:U1-1"])).toEqual(expect.arrayContaining(["applications", "claim_results", "questions", "submissions"]));
     expect(tablesWith(before, goes)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));
     const queryFiles = () => readdirSync(instance.tenantPaths(owner.tenantId).queryLogDir);
@@ -144,7 +147,7 @@ describe("取り込んだファイルを消す", () => {
     const after = dump(dbFile);
     for (const id of ["U1-1", "U1-2", made["question:U1-1"], made["question:U1-2"], goes, sha(bytesA)]) expect([id, tablesWith(after, id)]).toEqual([id, []]);
     // 別のファイルの請求と、そこに残る患者（消したファイルにもいた人）は残る
-    expect(tablesWith(after, "U2-1")).toEqual(expect.arrayContaining(["chart_notes", "peer_questions", "questions", "submissions"]));
+    expect(tablesWith(after, "U2-1")).toEqual(expect.arrayContaining(["chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(after, stays)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));
     // ファイル：原本、医師確認の記録、メンターの作業場所とやり取り
     expect(readdirSync(ukeDir)).toEqual([`${sha(bytesB)}.UKE`]);
@@ -165,6 +168,7 @@ describe("取り込んだファイルを消す", () => {
       expect(a.cases().map((c) => c.claimId).filter((id) => id.startsWith("U"))).toEqual(["U2-1"]);
       expect(a.doctorQueries().map((q) => q.claimId)).toEqual(["U2-1"]);
       expect(a.patientFacts("U2-1")).toMatchObject({ patientId: stays, facts: [{ key: "table7" }] });
+      expect(a.claimFacts("U2-1").facts.map((f) => f.key)).toEqual(["sameDayOushinAfterVisit", "contactDocProvided"]);
       // 残った請求は、今までどおり点検できる。同梱の症例も動く
       const q = a.start(me, "U2-1");
       expect(a.confirm(q.id, a.caseFor(q).lines).confirmed).not.toBeNull();

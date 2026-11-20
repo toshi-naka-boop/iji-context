@@ -211,7 +211,7 @@ export default function Chart() {
             {ex && !confirmed && (
               <div>
                 <h3>読み取った事実（確かめてください）</h3>
-                <p className="muted">AI が読み取ったものです。違うものは外し、分類は直せます。どれもカルテに書かれた言葉から取っています。判定はこのあとユスティが行います。</p>
+                <p className="muted">AI が読み取ったものです。違うものは外し、分類は直せます。どれもカルテに書かれた言葉から取っています。「不安・不眠の薬」は、その日の処方に含まれるかを「あり」「なし」で確かめます。判定はこのあとユスティが行います。</p>
                 {rows.length === 0 && <div className="muted">算定に要る事実は見つかりませんでした（訪問の記録としては残ります）。</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="notice">
