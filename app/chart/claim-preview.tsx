@@ -3,7 +3,9 @@
 // 算定行はコードで導出したもの（GET /api/chart/[id]/claim）。試算で選べる版の一覧も、同じ応答に入っている。看取り加算などは本人が選ぶまで行にしない。宛先は医療事務（医師向けの画面には出さない）
 import { useEffect, useState, type ReactNode } from "react";
 import type { ClaimPreview as Preview } from "../../src/chart/claim";
+import type { GenericView } from "../../src/generic/view";
 import { COMMENT_CHECK_NOTE } from "../../src/messages";
+import { GenericFindings } from "../generic-findings";
 
 type PatientFinding = { checkId: string; kind: string; text: string };
 /** trial・rulesAvailable・notInRevision は、版を選んだ試算のときだけ付く（design.md §11-12） */
@@ -16,6 +18,8 @@ type Claim = Preview & {
   trial?: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
   rulesAvailable?: boolean;
   notInRevision?: string[];
+  /** データで動く点検（G01〜）を、導出した行の区分をコードに直して掛けた結果（design.md §12-5） */
+  generic: GenericView & { skippedLines: number };
 };
 type Rev = { id: string; label: string; own: boolean };
 
@@ -179,6 +183,8 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
           {f.lines.length > 0 && <div className="muted">対象の行：{f.lines.join("、")}</div>}
         </div>
       ))}
+
+      <GenericFindings generic={claim.generic} scope="line" skippedLines={claim.generic.skippedLines} />
 
       <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
       {claim.patientFindings.length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}

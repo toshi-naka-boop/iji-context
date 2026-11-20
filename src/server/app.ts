@@ -67,7 +67,7 @@ export function openApp(paths: AppPaths) {
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
-  const { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
+  const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
   const { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
   const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf, checkOfficial } = knowledge;
   const { importClaimResult, agenda, answerAgenda, runMeeting } = meeting;
@@ -133,6 +133,7 @@ export function openApp(paths: AppPaths) {
     pick,
     draft,
     confirm: confirmQ,
+    questionGeneric: genericOf,
     explain,
     done,
     question: loadQ,
