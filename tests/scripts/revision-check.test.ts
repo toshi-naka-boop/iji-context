@@ -1,38 +1,24 @@
-// scripts/check-codes.ts（版のコードと医科診療行為マスターの突き合わせ。design.md §11-1）。マスターは同梱しないので、版から作った合成の CSV で確かめる
+// 版の表と医科診療行為マスターの突き合わせ（src/masters/revision-check.ts。design.md §11-1・§12-1）。マスターは同梱しないので、版から作った合成の行で確かめる
 import { describe, expect, it } from "vitest";
-import { checkCodes, emNames, parseMaster } from "../../scripts/check-codes";
 import { r2026 } from "../../src/engine/revisions/r2026";
 import { r2027_06 } from "../../src/engine/revisions/r2027-06";
+import { checkCodes, emNames, type MasterRow } from "../../src/masters/revision-check";
 
-type Over = { name?: string; pointKind?: string; points?: number; bundled?: string; changedOn?: string; abolishedOn?: string };
+type Over = Partial<MasterRow>;
 
-/** マスターの 1 行（列は 1 起算で、3 コード・5 名称・11 点数識別・12 点数・16 包括対象検査・87 変更年月日・88 廃止年月日） */
-function row(code: string, points: number, over: Over = {}): string {
-  const c = Array.from({ length: 88 }, () => '"0"');
-  const set = (n: number, v: string) => (c[n - 1] = `"${v}"`);
-  set(3, code);
-  set(5, over.name ?? `名称${code}`);
-  set(11, over.pointKind ?? "3");
-  set(12, (over.points ?? points).toFixed(2));
-  set(16, over.bundled ?? "0");
-  set(87, over.changedOn ?? `${r2026.effectiveFrom.replace("-", "")}01`);
-  set(88, over.abolishedOn ?? "99999999");
-  return c.join(",");
-}
-
-/** r2026 のコードをすべて持つ合成のマスター。over は、コードごとの差し替え */
+/** r2026 のコードをすべて持つ合成のマスター。over は、コードごとの差し替え（null はその行をなくす） */
 function master(over: Record<string, Over | null> = {}) {
-  const lines: string[] = [];
+  const rows = new Map<string, MasterRow>();
   const add = (code: string, points: number, base: Over = {}) => {
-    if (over[code] !== null) lines.push(row(code, points, { ...base, ...over[code] }));
+    if (over[code] !== null) rows.set(code, { name: `名称${code}`, pointKind: "3", points, bundled: "0", changedOn: `${r2026.effectiveFrom.replace("-", "")}01`, abolishedOn: "99999999", ...base, ...over[code] });
   };
   for (const [kubun, def] of Object.entries(r2026.codes)) for (const code of [def.primary, ...def.accept]) add(code, r2026.points[kubun].points!);
   for (const code of r2026.bundles[0].members) add(code, 11, { bundled: "1" });
-  return parseMaster(`${lines.join("\r\n")}\r\n`);
+  return rows;
 }
 const names = (m: ReturnType<typeof master>) => new Map([...m].map(([code, r]) => [code, r.name]));
 
-describe("check-codes", () => {
+describe("版の表とマスターの突き合わせ", () => {
   const C000 = r2026.codes.C000.primary;
   const member = r2026.bundles[0].members[0];
 
