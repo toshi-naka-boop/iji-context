@@ -1,6 +1,7 @@
 "use client";
 // ログイン・登録（spec FR-72）。登録は招待制（FR-137）。招待コードで、招待されたクリニックに入る
 import { useState } from "react";
+import { Notice } from "../consent";
 
 export default function Login() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -49,6 +50,7 @@ export default function Login() {
           <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>ログイン</button>
           <button role="tab" aria-selected={mode === "register"} className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>はじめて使う</button>
         </div>
+        <Notice />
         <form onSubmit={submit} className="chart-field" style={{ gap: 10 }}>
           <label className="chart-field">
             <span>ログイン ID（英数字と _ . - の 3〜32 文字）</span>
@@ -74,7 +76,7 @@ export default function Login() {
         </form>
         {err && <div className="notice warn">{err}</div>}
         {mode === "register" && (
-          <p className="muted">招待コードで登録すると、招待されたクリニック（合成データ）に入ります。ほかのクリニックの操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
+          <p className="muted">招待コードで登録すると、招待されたクリニックに入ります。ほかのクリニックの操作とは混ざりません。同梱のデータは合成データです。</p>
         )}
       </div>
     </main>

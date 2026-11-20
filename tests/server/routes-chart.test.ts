@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import { claimId, dateIn, day, month, YM } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 const llm = vi.hoisted(() => ({ runOnce: vi.fn() }));
 vi.mock("../../src/mentor/run", () => llm);
@@ -32,6 +33,7 @@ beforeAll(async () => {
   process.env.RESEMEN_DATA = tmp;
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
   user = instance.getAuth().register("chart_owner", "かるて", "password123");
   cookie = `resemen_session=${instance.getAuth().createSession(user.id).token}`;
 });

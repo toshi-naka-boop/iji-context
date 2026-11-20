@@ -83,6 +83,14 @@ CREATE TABLE invites (code_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, role 
 CREATE TABLE auth_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, event TEXT NOT NULL, result TEXT NOT NULL, user_id TEXT, tenant_id TEXT, ip TEXT);
 `,
   },
+  {
+    // 注意書きへの同意（design.md §11-11）：利用者ごとに、同意した注意書きの版と時刻。それまでの利用者は空（次の操作で聞かれる）
+    version: 3,
+    sql: `
+ALTER TABLE users ADD COLUMN accepted_notice_version TEXT;
+ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

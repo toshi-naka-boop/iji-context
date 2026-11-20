@@ -9,4 +9,6 @@ export const roleBody = z.strictObject({ role: z.enum(ROLES) });
 export const inviteBody = z.strictObject({ role: z.enum(ROLES) });
 /** 招待の id（src/server/auth.ts の inviteId が作る形。招待コードでもそのハッシュでもない） */
 export const inviteParams = z.strictObject({ id: z.string().regex(/^[0-9a-f]{16}$/) });
+/** 注意書きへの同意。画面が見せた注意書きの版（config/notice.json の version） */
+export const consentBody = z.strictObject({ version: z.string().min(1).max(32) });
 export const auditQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(500).optional() });

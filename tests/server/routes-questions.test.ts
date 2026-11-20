@@ -8,6 +8,7 @@ import type { ClaimContext } from "../../src/engine/types";
 import type { Question } from "../../src/practice/practice";
 import type { User } from "../../src/server/auth";
 import { claimId, day, YM } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -19,6 +20,7 @@ beforeAll(async () => {
   process.env.RESEMEN_DATA = tmp;
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
   user = instance.getAuth().register("clinic_questions", "やまだ", "password123");
   cookie = `resemen_session=${instance.getAuth().createSession(user.id).token}`;
 });

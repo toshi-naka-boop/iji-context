@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
 import { payerLabel } from "../../src/messages";
+import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
 /** 会議室の絵（public/characters/ にあればそれを使い、なければ全員の絵を並べる。2026-11-08） */
@@ -117,6 +118,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
     <div className="panel" style={{ marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>査定・返戻の通知を読む</h3>
       <p className="muted">通知に書かれていることを取り出し、確かめた項目だけを知識の候補にします。</p>
+      <NoticeText />
       <p>
         <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・前の月の査定）を読む</button>{" "}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

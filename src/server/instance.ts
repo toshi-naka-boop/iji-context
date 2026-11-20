@@ -18,21 +18,15 @@ import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
 import { defaultPaths, openApp, storeOptionsOf, type App, type AppPaths } from "./app";
-import { openAuth, type Auth, type User } from "./auth";
+import type { User } from "./auth";
+import { dataDir, getAuth } from "./auth-db";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
 import { notFound } from "./errors";
 
 let app: App | null = null;
 
-/** データの置き場所（本番はディスクを付けた場所を RESEMEN_DATA で渡す） */
-export const dataDir = () => path.resolve(process.env.RESEMEN_DATA ?? path.join(process.cwd(), "data"));
-
-let auth: Auth | null = null;
-export function getAuth(): Auth {
-  auth ??= openAuth(path.join(dataDir(), "auth.db"));
-  return auth;
-}
+export { dataDir, getAuth };
 
 /** いまの呼び出しが、どの利用者（tenant）のものか */
 const current = new AsyncLocalStorage<User>();

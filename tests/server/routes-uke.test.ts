@@ -12,6 +12,7 @@ import { UKE_LIMITS } from "../../src/uke/limits";
 import type { UkeFile, UkePatient } from "../../src/uke/types";
 import { readUke, writeUke } from "../../src/uke/uke";
 import { claimId, YM } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -23,6 +24,7 @@ beforeAll(async () => {
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   delete process.env.RESEMEN_OPEN_SIGNUP;
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });

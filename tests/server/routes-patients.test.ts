@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
 import { claimId, dateIn } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -16,6 +17,7 @@ beforeAll(async () => {
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   delete process.env.RESEMEN_OPEN_SIGNUP;
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });

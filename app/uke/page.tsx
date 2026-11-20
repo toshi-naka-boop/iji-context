@@ -6,6 +6,7 @@ import { payerLabel } from "../../src/messages";
 import { UKE_LIMITS } from "../../src/uke/limits";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
+import { Notice } from "../consent";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
 
@@ -99,9 +100,10 @@ export default function UkeImport() {
         <div className="card-body">
           <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>ファイルを選んでアップロード</h2>
           <p className="muted" style={{ margin: "0 0 12px" }}>
-            受け取るのは、対応しているコードだけで作られた UKE です。実在の患者のデータは入れないでください（対応していないコードを含むファイルは、ファイルごと断ります）。
+            受け取るのは、対応しているコードだけで作られた UKE です（対応していないコードを含むファイルは、ファイルごと断ります）。
             同梱の症例にないレセプトは、カルテ側の記録（訪問・処方など）がないまま点検に並び、足りない事実は「情報不足」として出ます。同梱の症例や、すでに取り込んだ UKE と同じ請求 id で内容が違うファイルは断ります。
           </p>
+          <Notice />
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <input type="file" accept=".UKE,.uke" aria-label="アップロードする UKE のファイル" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDone(""); setErr(""); }} />
             <button className="primary" disabled={!file || busy} onClick={upload}>{busy ? "確かめています…" : "アップロードして取り込む"}</button>

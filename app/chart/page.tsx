@@ -10,6 +10,7 @@ import { MAX_CHART_TEXT } from "../../src/chart/limits";
 import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
+import { Notice } from "../consent";
 import SAMPLES from "../../fixtures/charts/samples.json";
 import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
@@ -160,6 +161,7 @@ export default function Chart() {
                 <button key={k} className={kind === k ? "primary" : ""} disabled={!!ex} onClick={() => setKind(k)}>{k}</button>
               ))}
             </div>
+            <Notice />
             <label className="chart-field">
               <span>自由に書く（AI が SOAP の欄に振り分けます）</span>
               <textarea rows={4} value={free} disabled={!!ex} onChange={(e) => setFree(e.target.value)} />
