@@ -19,7 +19,7 @@ type Rule = {
   /** 遷移に付随する更新（meta の浅いコピーに対して行う） */
   apply?: (meta: KnowledgeMeta, event: LifecycleEvent, now: string) => void;
   effects?: (meta: KnowledgeMeta, event: LifecycleEvent) => Effect[];
-  /** 状態が変わらなくても history に残す（OFFICIAL_BASELINE。status_since は変えない） */
+  /** 状態が変わらなくても history に残す（OFFICIAL_BASELINE・OFFICIAL_CHECK。status_since は変えない） */
   record?: boolean;
   actor: (event: LifecycleEvent) => Actor;
 };
@@ -48,6 +48,11 @@ const touchUsed = (m: KnowledgeMeta, _e: LifecycleEvent, now: string): void => {
 /** イベントに付いた公的文書の鍵を、確認済み（official_seen）に和集合で足す（v22。§4-3） */
 const seeOfficial = (m: KnowledgeMeta, e: LifecycleEvent): void => {
   if ("officialKeys" in e && e.officialKeys) m.official_seen = [...new Set([...m.official_seen, ...e.officialKeys])].sort();
+};
+
+/** 人の確認を、文書の鍵ごとに残す。同じ鍵に答え直すと上書きする（history には両方残る。§11-3） */
+const checkOfficial = (m: KnowledgeMeta, e: LifecycleEvent, now: string): void => {
+  if (e.type === "OFFICIAL_CHECK") m.official_checks = { ...m.official_checks, [e.key]: { applies: e.applies, by: e.by, at: now } };
 };
 
 const disposal =
@@ -81,6 +86,12 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
             effects: (m) => [{ type: "CREATE_REEXAM_ALLOWED", sourceId: m.id }],
             actor: sys,
           };
+    // 停止・保管では受けない（表にないので例外。画面からの操作は、呼び出し側が先に利用者の誤りとして断る）
+    case "未検証|OFFICIAL_CHECK":
+    case "承認済み|OFFICIAL_CHECK":
+    case "contested|OFFICIAL_CHECK":
+    case "要再検証|OFFICIAL_CHECK":
+      return { to: status, apply: checkOfficial, record: true, actor: (e) => (e.type === "OFFICIAL_CHECK" ? e.actor : "system") };
     case "承認済み|TRIGGER":
       return {
         to: "要再検証",
@@ -135,6 +146,8 @@ export function eventLabel(event: LifecycleEvent): string {
       return `RECHECK_PASS{${event.via}}`;
     case "REEXAM_RESULT":
       return `REEXAM_RESULT{${event.result}}`;
+    case "OFFICIAL_CHECK":
+      return `OFFICIAL_CHECK{${event.applies ? "applies" : "not-applies"}}`;
     default:
       return event.type;
   }
