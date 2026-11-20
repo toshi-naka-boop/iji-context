@@ -471,6 +471,7 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
       // きざみで算定する区分：数量データが項目数で、行の回数は 項目数 × 回数（同じ日を項目数だけ重ねる）
       if (!/^[1-9]\d{0,2}$/.test(it.quantity)) return no(it.line, "数量データが項目数として読めない");
       const n = Number(it.quantity);
+      if (n > UKE_LIMITS.maxQuantity) return no(it.line, "数量データが大きすぎる");
       expected += listed * n;
       lines.push({ kubun, count: unit.count * n, dates: datesOf(yearMonth, unit.days, n) });
     } else {
@@ -490,7 +491,15 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
  * ほかの食い違い（数量データが読めないなど）の単位は、点検の対象外の単位として others に残す
  */
 export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): MappedClaim {
-  const units = claim.units.map((u) => mapUnit(u, claim.yearMonth, rev, lenient));
+  // 算定日の列は「日ごとの回数 × 数量データ」個できる。作る前に数え、レセプト 1 件の上限を超えた単位からは行にしない
+  // （小さなファイルでも、回数と数量を掛けると数億個になり得る。取り込みでも、保存済みの読み直しでも、試算でも同じ）
+  let budget: number = UKE_LIMITS.maxClaimCount;
+  const units = claim.units.map((u): UnitMapping => {
+    const quantity = Math.max(1, ...u.items.map((it) => (/^\d{1,3}$/.test(it.quantity) ? Number(it.quantity) : 1)));
+    budget -= u.days.reduce((s, n) => s + n, 0) * quantity * u.items.length;
+    if (budget < 0) return { ok: false, line: u.items[0]?.line ?? 0, reason: "算定回数の合計が多すぎる", unsupported: false };
+    return mapUnit(u, claim.yearMonth, rev, lenient);
+  });
   const comments = claim.comments.map((c: UkeComment): Comment => {
     const u = c.unit === null ? undefined : units[c.unit];
     return { code: c.code, text: normalizeCommentText(c.raw), raw: c.raw, on: u?.ok ? [...new Set(u.lines.map((l) => l.kubun))] : [] };
