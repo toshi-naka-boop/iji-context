@@ -5,6 +5,7 @@ import type { ClaimContext, EngineResult, Facts } from "../../engine/types";
 import { applyPatientFacts } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
 import { caseFileOf } from "./case-files";
+import type { ClaimFacts } from "./claim-facts";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import type { Patients } from "./patients";
@@ -37,7 +38,7 @@ const UNKNOWN_FACTS: Facts = {
   comprehensiveCare: { known: false },
 };
 
-export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients) {
+export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">) {
   const { paths, facility } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
@@ -68,7 +69,8 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
         const patientId = ingest(r.patient);
         const master = masterFacts(patientId, r.yearMonth);
         const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
-        const facts = applyPatientFacts(merged, latestPatientFacts(patientId), now());
+        // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
+        const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
         out.push(toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }));
       }
     }

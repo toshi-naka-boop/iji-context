@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { caseFileOf, chartFileOf } from "../../src/server/app/case-files";
 import { createCases } from "../../src/server/app/cases";
+import { createClaimFacts } from "../../src/server/app/claim-facts";
 import { createClerks } from "../../src/server/app/clerks";
 import { createClock } from "../../src/server/app/clock";
 import { openContext } from "../../src/server/app/context";
@@ -51,7 +52,7 @@ describe("請求 id にパスを仕込んだ UKE が読み込まれても、外�
     const clock = createClock(ctx);
     const clerks = createClerks(ctx);
     const uke = { ukeFiles: () => [file], patientOf: () => person } as unknown as Uke;
-    const cases = createCases(ctx, clock, uke, createPatients(ctx, clock, clerks, uke));
+    const cases = createCases(ctx, clock, uke, createPatients(ctx, clock, clerks, uke), createClaimFacts(ctx, clock, clerks, uke));
     return { ctx, cases, notes: createNotes(ctx, clock, clerks, uke, cases) };
   }
 

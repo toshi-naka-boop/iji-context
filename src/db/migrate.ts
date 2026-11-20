@@ -64,6 +64,15 @@ DROP TABLE patient_key_map;
 ALTER TABLE peer_questions ADD COLUMN claim_id TEXT;
 `,
   },
+  {
+    // 請求ごとに確かめた事実（その月・その日の出来事についての事実。患者ごとの patient_facts とは別。追記型で、項目と日付ごとに最新の 1 行を使う）。
+    // date は日付ごとの事実だけが持ち、ほかは空文字
+    version: 6,
+    sql: `
+CREATE TABLE claim_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, key TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_at TEXT NOT NULL);
+CREATE INDEX claim_facts_claim ON claim_facts (claim_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

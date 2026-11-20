@@ -81,6 +81,9 @@ export const POLICY = {
   "GET /api/patients": row(WORK, "none", true),
   "GET /api/patients/[claimId]/facts": row(WORK, "none", true),
   "POST /api/patients/[claimId]/facts": row(WORK, "none", true),
+  // 請求ごとに確かめた事実（情報不足の項目への答え）。医師あての事実は医師の役割だけが残せるので、医師にも開ける（事実ごとの宛先はハンドラの中で分ける）
+  "GET /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
+  "POST /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),

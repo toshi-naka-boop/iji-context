@@ -2,6 +2,7 @@
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
 import { createCases } from "./app/cases";
+import { createClaimFacts } from "./app/claim-facts";
 import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
@@ -32,7 +33,8 @@ export function openApp(paths: AppPaths) {
   const clerks = createClerks(ctx);
   const uke = createUke(ctx, clerks);
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
-  const casesOf = createCases(ctx, clock, uke, patientFactsOf);
+  const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
+  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
   const notes = createNotes(ctx, clock, clerks, uke, casesOf);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
@@ -48,6 +50,7 @@ export function openApp(paths: AppPaths) {
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
+  const { claimFacts, saveClaimFact } = claimFactsOf;
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
@@ -95,6 +98,8 @@ export function openApp(paths: AppPaths) {
     outlookOf,
     patientFacts,
     savePatientFact,
+    claimFacts,
+    saveClaimFact,
     patientProfile,
     confirmCoverage,
     checkConnectorPatient,
