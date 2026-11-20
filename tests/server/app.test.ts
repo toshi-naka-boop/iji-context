@@ -308,6 +308,9 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
       [brokenName, expect.stringContaining("いまの形式では読めない UKE"), null, [], false],
     ]);
     expect(() => app.importUke(a.id, brokenName)).toThrow("いまの形式では読めない UKE");
+    const checked = app.ukeCheck("U1-1");
+    if (!("lines" in checked)) throw new Error("読めるはずのレセプトが読めない");
+    expect([checked.lines, checked.otherRows, checked.partial, checked.subtotal, checked.declared]).toEqual([[], 2, true, 0, { ho: 274, ko: [] }]);
     expect(app.cases().map((c) => c.claimId)).toEqual([...["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId), "U1-1"]);
     app.importUke(a.id, "shiharaikikin.UKE");
     expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);

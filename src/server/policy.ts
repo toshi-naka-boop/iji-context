@@ -88,6 +88,8 @@ export const POLICY = {
   // UKE のアップロード（FR-106〜109）と、見本の UKE のダウンロード
   "GET /api/uke/sample": row(WORK, "none", false),
   "POST /api/uke/upload": row(WORK, "none", true),
+  // 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11）。一覧と同じ役割
+  "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
   "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 
