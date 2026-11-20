@@ -9,6 +9,7 @@
 // FR-56「多く取る方向の表示・誘導をしない」の趣旨は、経営の目線を持たせすぎて、取れない算定まで取りにいかせないこと。
 // ここで数えるのはルールエンジンが正しいと判定した確定版との差だけなので、この趣旨に反しない
 // 同じ区分の変化は 1 つの指摘にだけ数える（重なるルールで二重に数えない）
+// 記載もれ（摘要欄の記載。R17）には点数を付けない：金額の合計に入れず、「見つけて直した件数」だけを別に返す（design.md §11-13）
 import { period } from "../demo/period";
 import { pointsOf, resolveRevision, REVISIONS } from "../engine/revisions";
 import type { Revision } from "../engine/revisions/types";
@@ -22,12 +23,13 @@ export type PreventedItem = {
   questionId: string;
   claimId: string;
   ruleId: string;
-  kind: "取りこぼし" | "差し戻し" | "医師記載起因";
+  /** 記載もれは点数を持たない（points は 0） */
+  kind: "取りこぼし" | "差し戻し" | "医師記載起因" | "記載もれ";
   points: number;
 };
 
-// 日付ごとの情報不足（R10 の sameDaySeparate）は、日付も合わせて見分ける
-const key = (f: Finding) => `${f.ruleId}|${f.messageKey}${f.missing?.date ? `|${f.missing.date}` : ""}`;
+// 日付ごとの情報不足（R10 の sameDaySeparate）は日付も、摘要欄の記載（R17）はどの記載か（params.rule）も合わせて見分ける
+const key = (f: Finding) => `${f.ruleId}|${f.messageKey}${f.missing?.date ? `|${f.missing.date}` : ""}${f.params?.rule ? `|${f.params.rule}` : ""}`;
 const linePoints = (rev: Revision, lines: ClaimLine[], kubun: string) => {
   const l = lines.find((x) => x.kubun === kubun);
   const p = l ? pointsOf(rev, kubun) : null;
@@ -73,6 +75,11 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
         }
         continue;
       }
+      // 記載もれは、行の点数の変化を数えない（同じ区分の変化を、ほかの指摘から奪わない）
+      if (f.kind === "記載もれ") {
+        out.push({ ...base, kind: "記載もれ", points: 0 });
+        continue;
+      }
       const change = delta(d.lines, f.ruleId);
       if (change > 0) out.push({ ...base, kind: "取りこぼし", points: change });
       else if (change < 0) out.push({ ...base, kind: "差し戻し", points: -change });
@@ -86,6 +93,8 @@ export type PreventedSummary = {
   取りこぼし: { count: number; yen: number };
   差し戻し: { count: number; yen: number };
   医師記載起因: { count: number; yen: number };
+  /** 提出までに直した記載もれの件数（金額はない） */
+  記載もれ: { count: number };
 };
 
 export function summarize(items: PreventedItem[]): PreventedSummary {
@@ -96,6 +105,7 @@ export function summarize(items: PreventedItem[]): PreventedSummary {
     取りこぼし: { count: sum("取りこぼし").length, yen: yen(sum("取りこぼし")) },
     差し戻し: { count: sum("差し戻し").length, yen: yen(sum("差し戻し")) },
     医師記載起因: { count: sum("医師記載起因").length, yen: yen(sum("医師記載起因")) },
+    記載もれ: { count: sum("記載もれ").length },
   };
 }
 
