@@ -49,6 +49,20 @@ const pts = (n: number | null | undefined) => (n === null || n === undefined ? "
 const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
 const signed = (n: number) => (n > 0 ? `+${num(n)}` : num(n));
 const days = (dates: string[]) => [...new Set(dates)].map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、");
+/** 入力では消えない情報不足（カルテ側の記録がない・点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
+const SHARED_MISSING = ["chartRecord", "unsupportedLines"];
+/** 情報不足を、画面に出す形にまとめる：同じ文になる項目は最初の 1 件に寄せ、ルールと対象の行は合わせて出す。ほかの項目はそのまま */
+function groupMissing(missing: Finding[]): { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] {
+  const out: { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] = [];
+  for (const f of missing) {
+    const same = SHARED_MISSING.includes(f.missing?.field ?? "") ? out.find((g) => g.finding.missing?.field === f.missing?.field) : undefined;
+    if (same) {
+      same.ruleIds = [...new Set([...same.ruleIds, f.ruleId])];
+      same.lineRefs = [...new Set([...same.lineRefs, ...f.lineRefs])];
+    } else out.push({ finding: f, ruleIds: [f.ruleId], lineRefs: [...f.lineRefs] });
+  }
+  return out;
+}
 /** 指摘を出す順（種類ごと） */
 const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘れ", "記載もれ"];
 
@@ -175,10 +189,10 @@ export default function UkeClaimCheck() {
 
               <h3 style={{ margin: 0 }}>情報不足</h3>
               {(c.missing ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-              {(c.missing ?? []).map((f, i) => (
+              {groupMissing(c.missing ?? []).map(({ finding: f, ruleIds, lineRefs }, i) => (
                 <div key={i} className="notice">
-                  <span className="badge">{f.ruleId}</span> {findingText(f)}
-                  {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map(nameOf).join("、")}</div>}
+                  {ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)} {findingText(f)}
+                  {lineRefs.length > 0 && <div className="muted">対象の行：{lineRefs.map(nameOf).join("、")}</div>}
                   <FactInput claimId={c.claimId} finding={f} patientHref="/work" onSaved={() => setTick((t) => t + 1)} />
                 </div>
               ))}
