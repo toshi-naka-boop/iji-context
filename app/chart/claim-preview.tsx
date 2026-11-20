@@ -1,6 +1,6 @@
 "use client";
 // カルテを確定したあと、同じ画面に出す算定プレビュー（FR-101）：算定行・点数・根拠・合計・ユスティの指摘・患者情報の指摘・ローカルルール欄。
-// 算定行はコードで導出したもの（GET /api/chart/[id]/claim）。看取り加算などは本人が選ぶまで行にしない。宛先は医療事務（医師向けの画面には出さない）
+// 算定行はコードで導出したもの（GET /api/chart/[id]/claim）。試算で選べる版の一覧も、同じ応答に入っている。看取り加算などは本人が選ぶまで行にしない。宛先は医療事務（医師向けの画面には出さない）
 import { useEffect, useState, type ReactNode } from "react";
 import type { ClaimPreview as Preview } from "../../src/chart/claim";
 import { COMMENT_CHECK_NOTE } from "../../src/messages";
@@ -11,11 +11,13 @@ type Claim = Preview & {
   claimId: string;
   date: string;
   patientFindings: PatientFinding[];
+  /** 試算で選べる版（own は、この請求の診療年月の版） */
+  revisions: Rev[];
   trial?: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
   rulesAvailable?: boolean;
   notInRevision?: string[];
 };
-type Rev = { id: string; label: string };
+type Rev = { id: string; label: string; own: boolean };
 
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 const num = (n: number) => n.toLocaleString("ja-JP");
@@ -28,13 +30,8 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string[]>([]);
   const [err, setErr] = useState("");
-  /** 試算に使う版（"" は選ばない＝診療年月の版での、今までどおりの判定）と、選べる版 */
+  /** 試算に使う版（"" は選ばない＝診療年月の版での、今までどおりの判定） */
   const [rev, setRev] = useState("");
-  const [revisions, setRevisions] = useState<Rev[]>([]);
-
-  useEffect(() => {
-    fetch("/api/revision/compare").then((r) => (r.ok ? r.json() : null)).then((d) => d && setRevisions(d.revisions as Rev[])).catch(() => {});
-  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +54,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
 
   const lacks = claim.pending.filter((p) => p.kind === "事実不足");
   const asks = claim.pending.filter((p) => p.kind === "要選択");
+  const revisions = claim.revisions;
 
   return (
     <section aria-label="算定の見込み" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -71,7 +69,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
           <span className="muted">版を選んで試算する：</span>
           <select value={rev} onChange={(e) => { setRev(e.target.value); setChoices({}); setPicked([]); }} aria-label="試算に使う版">
             <option value="">選ばない（診療年月の版で判定）</option>
-            {revisions.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            {revisions.map((v) => <option key={v.id} value={v.id}>{v.label}{v.own ? "（診療年月の版）" : ""}</option>)}
           </select>
         </label>
       )}

@@ -205,7 +205,10 @@ describe("訪問カルテ", () => {
 
     const res = await claim(get(`/api/chart/${w.id}/claim`), at);
     expect(res.status).toBe(200);
-    const c = (await res.json()) as { claimId: string; date: string; totalStatus: string; total: number | null; lines: { kubun: string; count: number; dates: string[]; subtotal: number; basis: { tentative: boolean; events: string[] } | null }[]; pending: unknown[]; findings: unknown[]; patientFindings: unknown[] };
+    const c = (await res.json()) as { claimId: string; date: string; totalStatus: string; total: number | null; lines: { kubun: string; count: number; dates: string[]; subtotal: number; basis: { tentative: boolean; events: string[] } | null }[]; pending: unknown[]; findings: unknown[]; patientFindings: unknown[]; revisions: { id: string; label: string; own: boolean }[] };
+    // 試算で選べる版の一覧は、この応答に入っている（比較の API を呼ばない）。診療年月の版に印が付く
+    expect(c.revisions.map((v) => [v.id, v.own])).toEqual([["r2024", false], ["r2026", true], ["r2027-06", false]]);
+    expect(c.revisions.every((v) => v.label !== "")).toBe(true);
     // 時計の初期値（基準月の 13 日）の訪問 1 回：訪問診療料と届出の加算、管理料は月 1 回の区分（見込み）と包括的支援加算
     expect(c).toMatchObject({ claimId: claimId("K1"), date: day(13), totalStatus: "tentative", pending: [], findings: [] });
     expect(c.lines.map((l) => [l.kubun, l.count, l.dates])).toEqual([

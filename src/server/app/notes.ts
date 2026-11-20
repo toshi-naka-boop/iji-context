@@ -5,7 +5,7 @@ import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type Vi
 import { evaluate } from "../../engine";
 import { manualIn } from "../../engine/compare";
 import { deriveLines, manualLinesOf } from "../../engine/derive";
-import { resolveRevision, revisionById } from "../../engine/revisions";
+import { resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../patient/profile";
@@ -86,7 +86,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 摘要欄の記載（R17）は、導出が値まで決めた記載（ready）だけを付けて点検する。UKE のコメントは使わない（行を作り直しているので、行と合わない）。
    * 人が入れる記載（needsInput）は、付いていないので記載もれとして出る（design.md §11-13）。
    * revId を渡すと試算（design.md §11-12）：同じ記録を、名指しした版の点数表とルールで導出・判定する。日付は動かさない。
-   * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない
+   * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない。
+   * revisions は、試算で選べる版（画面の選択肢。own は、この請求の診療年月の版）
    */
   function claimOfNote(id: number, choices: Record<string, string>, revId?: string) {
     const r = noteRow(id);
@@ -103,13 +104,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const derived = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
     const ctx: ClaimContext = { ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true };
+    const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
     if (revId === undefined) {
       const result = evaluate(ctx);
-      return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
+      return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
     }
     const result = trial(ctx, rev);
     const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
-    return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
+    return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
   }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
   function patients() {

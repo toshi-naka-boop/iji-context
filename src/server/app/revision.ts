@@ -3,7 +3,7 @@
 import { eventsFromNotes } from "../../chart/notes";
 import { compareRevisions } from "../../engine/compare";
 import { manualLinesOf } from "../../engine/derive";
-import { hasRevision, resolveRevision, revisionById, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { hasRevision, resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
 import type { Notes } from "./notes";
@@ -18,10 +18,10 @@ export function createRevision(uke: Uke, casesOf: Cases, notes: Notes) {
    */
   function compareOf(clerkId: string, claimId?: string, fromId?: string, toId?: string) {
     const claims = cases().filter((c) => c.recordsKnown).map((c) => ({ claimId: c.claimId, patient: uke.patientOf(c.claimId).name }));
-    const revisions = SELECTABLE_REVISIONS.map((r) => ({ id: r.id, label: r.label }));
-    if (claimId === undefined) return { claims, revisions, result: null };
+    if (claimId === undefined) return { claims, revisions: revisionChoices(SELECTABLE_REVISIONS), result: null };
 
     const base = caseOf(claimId);
+    const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
     if (!base.recordsKnown) throw badRequest("カルテ側の記録がない請求は、比べられません（導出する元の記録がないため）");
     const own = hasRevision(base.yearMonth) ? resolveRevision(base.yearMonth) : undefined;
     const from = fromId === undefined ? SELECTABLE_REVISIONS[0] : revisionById(fromId);
