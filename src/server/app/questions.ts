@@ -13,6 +13,7 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Doctor } from "./doctor";
+import { genericOfLines } from "./generic";
 import type { Notes } from "./notes";
 import type { QuestionCase } from "./question-case";
 import { badRequest, conflict, notFound } from "../errors";
@@ -108,6 +109,11 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     saveQ(next);
     return next;
   }
+  /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛ける。読むだけで、問題には保存しない */
+  function genericOf(q: Question) {
+    const yearMonth = caseFor(q).yearMonth;
+    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth);
+  }
   function explain(id: string) {
     const cur = loadQ(id);
     inPhase(cur, "判定", "解説に進めない段階");
@@ -177,7 +183,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
   };
 
-  return { loadQ, checkLines, startDrill, start, draft, confirmQ, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
+  return { loadQ, checkLines, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
 }
 
 export type Questions = ReturnType<typeof createQuestions>;

@@ -1,6 +1,7 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
+import type { GenericFinding, GenericNotRun } from "./generic/types";
 import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
@@ -56,6 +57,31 @@ export const FINDING_TEXT: Record<string, string> = {
   "R17.comment_mismatch_hokatsuState": "摘要欄の包括的支援加算の状態の記載が、確かめた要介護度・障害支援区分と合いません",
   "R17.comment_mismatch_ikouStart": "摘要欄の初回の管理料を算定した年月日が、管理料の算定開始月と合いません",
 };
+
+/**
+ * データで動く点検（G01〜。design.md §12-2）の指摘の文。定型文と値だけ（{code} はコード、{what} は行の種類）。公開元の文章は写さない。
+ * G01 は言い切らない：持っているマスターの版のあいだの更新を、全部持っているとは確かめられない
+ */
+export const GENERIC_TEXT: Record<string, string> = {
+  "G01.not_in_any": "コード {code}（{what}）は、持っているどの版のマスターにもありません。打ち間違いか、マスターの更新もれを確かめてください",
+  "G01.only_before": "コード {code}（{what}）は、持っているマスターのうち、診療年月の前の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
+  "G01.only_after": "コード {code}（{what}）は、持っているマスターのうち、診療年月の後の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
+};
+export const genericText = (f: Pick<GenericFinding, "messageKey" | "params">): string => (GENERIC_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params[k] ?? "");
+
+/** 動かさなかった点検の理由の文（「問題なし」と区別して出す。design.md §12-1） */
+export function genericNotRunText(n: Pick<GenericNotRun, "reason" | "detail">): string {
+  switch (n.reason) {
+    case "noMasters":
+      return "マスターが入っていないので、していません";
+    case "notReady":
+      return `準備ができていないので、していません${n.detail ? `（${n.detail}）` : ""}`;
+    case "noSnapshot":
+      return `${n.detail}。この点検はしていません`;
+    case "notBuilt":
+      return "この点検は、まだ入っていません";
+  }
+}
 
 /**
  * 摘要欄の記載の点検（R17）の範囲（design.md §11-13）。checked は点検している項目（版の表＝EM §2-10 表 1 の行と同じ並び）、

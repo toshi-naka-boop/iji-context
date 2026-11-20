@@ -1,7 +1,10 @@
 // 症例（合成 UKE ＋ 合成カルテ側の事実）。アップロードで受け取った、同梱の症例にないレセプトは、カルテ側の事実を持たない
 import { evaluate } from "../../engine";
 import { facilityOf, type FacilityJson } from "../../engine/facility";
+import { resolveRevision } from "../../engine/revisions";
 import type { ClaimContext, EngineResult, Facts } from "../../engine/types";
+import { outsideOf } from "../../generic/lookup";
+import { withMasters } from "../../masters/db";
 import { applyPatientFacts } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
 import { caseFileOf } from "./case-files";
@@ -69,7 +72,12 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
     // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
     const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
-    return toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
+    const claim = toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
+    // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
+    // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）
+    if (!r.others?.length) return claim;
+    const outside = withMasters((db) => (db ? outsideOf(db, resolveRevision(r.yearMonth), r.yearMonth, r.others!.flatMap((o) => o.codes)) : undefined));
+    return outside ? { ...claim, outside } : claim;
   }
   /** 診療年月の版で読めたレセプトの請求（版のないレセプト・読み直しで読めなかったレセプトは入らない。src/server/app/uke.ts の ukeFiles） */
   const cases = (): ClaimContext[] => ukeFiles().flatMap((file) => file.receipts.map((r) => contextOf(file, r)));

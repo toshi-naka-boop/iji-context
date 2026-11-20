@@ -13,6 +13,10 @@ export function makeR14(c: RevisionConsts): Rule {
     // 退院と管理料の算定開始月の出来事で決める
     recordFindings: ["missing", "not_eligible"],
     soundWhenPartial: [],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

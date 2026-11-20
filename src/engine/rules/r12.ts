@@ -12,6 +12,10 @@ export function makeR12(c: RevisionConsts): Rule {
     reference: "C001 注13 在宅医療DX情報活用加算",
     recordFindings: [],
     soundWhenPartial: ["same_month"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => present(ctx, DX).length > 0,
     needs: () => ["facility.dxTier"],
     check(ctx) {

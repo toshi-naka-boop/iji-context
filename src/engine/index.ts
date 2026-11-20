@@ -2,7 +2,7 @@
 // 点数とルールは、診療年月から決まる改定の版のものを使う（§2-5）。該当する版がなければ例外
 import { pointsOf, resolveRevision, REVISIONS } from "./revisions";
 import type { Revision } from "./revisions/types";
-import type { ClaimContext, ClaimLine, EngineResult, FacilityFactKey, FactKey, Finding, NeedKey, Rule } from "./types";
+import type { ClaimContext, ClaimLine, EngineResult, FacilityFactKey, FactKey, Finding, NeedKey, OutsideCode, Rule } from "./types";
 
 /** その診療年月の版のルール一式。版のない年月は例外 */
 export function rulesOf(yearMonth: string, revs: Revision[] = REVISIONS): Rule[] {
@@ -49,6 +49,25 @@ function mergeLines(lines: ClaimLine[]): ClaimLine[] {
   return out;
 }
 
+/**
+ * そのルールを partial として扱うか（design.md §12-4）。null＝扱わない（対象外の単位がないか、あっても、このルールの読む区分と関係がない）。
+ * "all"＝対象外の単位があり、ルールごとには決められない（基本マスターがない／ルールに reads の申告がない／読む区分の区分番号が引けない）。
+ * 配列＝このルールを止める対象外の単位のコード：マスターにないコードと、reads の区分と同じ区分番号のコード
+ */
+export function partialBy(rule: Rule, rev: Revision, input: Pick<ClaimContext, "partial" | "outside">): "all" | OutsideCode[] | null {
+  if (!input.partial) return null;
+  const reads = rule.reads?.(rev);
+  if (!input.outside || !reads) return "all";
+  const nos = new Set<string>();
+  for (const k of reads) {
+    const no = Object.hasOwn(input.outside.noOf, k) ? input.outside.noOf[k] : [];
+    if (no.length === 0) return "all";
+    for (const n of no) nos.add(n);
+  }
+  const hit = input.outside.codes.filter((c) => !c.known || (c.no !== null && nos.has(c.no)));
+  return hit.length > 0 ? hit : null;
+}
+
 export function evaluate(input: ClaimContext, revs: Revision[] = REVISIONS): EngineResult {
   return evaluateWith(input, resolveRevision(input.yearMonth, revs));
 }
@@ -65,11 +84,13 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
   const total = excludedCount > 0 || input.partial ? null : sum;
 
   // ルールには、同じ区分の行を束ねた請求を渡す
-  const ctx: ClaimContext = { ...input, lines: mergeLines(input.lines) };
+  const merged: ClaimContext = { ...input, lines: mergeLines(input.lines) };
 
   const findings: Finding[] = [];
   const applied: string[] = [];
   for (const rule of rev.rules) {
+    // 対象外の単位がある請求でも、このルールの読む区分と関係がなければ、このルールは全部の行がある請求として判定する（design.md §12-4）
+    const ctx: ClaimContext = merged.partial && partialBy(rule, rev, merged) === null ? { ...merged, partial: false } : merged;
     if (!rule.appliesTo(ctx)) continue;
     applied.push(rule.id);
     // 記録がないので決められない指摘があることを、情報不足として 1 件返す。入力では消えない（この請求に記録を足す手段がない）
@@ -112,5 +133,5 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
       });
     findings.push(...sound);
   }
-  return { claimId: ctx.claimId, revisionId: rev.id, total, ...(input.partial ? { subtotal: sum } : {}), byLine, findings, applied, excludedCount };
+  return { claimId: input.claimId, revisionId: rev.id, total, ...(input.partial ? { subtotal: sum } : {}), byLine, findings, applied, excludedCount };
 }

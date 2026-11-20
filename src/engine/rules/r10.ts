@@ -25,6 +25,10 @@ export function makeR10(c: RevisionConsts): Rule {
     recordFindings: [],
     // 緊急往診加算の対象患者かは、加算の行と確かめた事実だけで決まる（ほかの行に依らない）。同じ日・翌日の判定は、ほかの行の有無に依るので申告しない
     soundWhenPartial: ["kinkyu_not_eligible"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => has(ctx, OUSHIN) || has(ctx, KINKYU),
     // 不明な事実は、判定ごとに check が情報不足で返す（needs に入れると、1 つの不明でほかの判定まで止まる。
     // 文書提供が不明なだけで、確定している緊急往診加算の要件不足を見逃した：反証 round-28）

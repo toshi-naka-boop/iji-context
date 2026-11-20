@@ -2,12 +2,19 @@
 // 月末の点検（利用者が行を入力する問題。src/server/app/question-case.ts）とは別の道で、何も記録しない（開くたびに計算する）。
 // 判定は、コメントを持つ請求（commentsKnown が真。摘要欄の記載の点検 R17 が動く）・カルテ側の記録がない請求（recordsKnown が偽）として行う。
 // 点検の対象外の単位があれば partial で、出るのは申告のある種類の指摘だけ。合計は、UKE に書いてある請求の合計と、点検した行の小計を別々に返す。
+// 基本マスター（masters.db）が入っていれば（design.md §12）：全部の行・コメント・傷病名に名称を付け、データで動く点検（G01〜）を掛け、partial で止めるルールを、対象外の行の区分番号でルールごとに決める。
 // 試算（ukeTrial。design.md §11-12）は、版を名指しして同じことをする：診療年月に版がないレセプトも、診療年月の版と違う版でも読める。保存しない
+import { partialBy } from "../../engine";
 import { resolveRevision, revisionById, revisionChoices, UKE_TRIAL_REVISIONS } from "../../engine/revisions";
 import type { Revision } from "../../engine/revisions/types";
 import { trial } from "../../engine/trial";
 import type { ClaimContext, ClaimLine, Finding } from "../../engine/types";
-import type { UkeOther } from "../../uke/types";
+import { evaluateGeneric } from "../../generic";
+import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
+import { genericView } from "../../generic/view";
+import { withMasters } from "../../masters/db";
+import { diseaseCodeOf } from "../../uke/diseases";
+import type { UkeClaim, UkeOther } from "../../uke/types";
 import { mapClaim } from "../../uke/uke";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
@@ -43,17 +50,46 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
   };
 }
 
+/**
+ * マスターを引いて作る部分（design.md §12-4・§12-5）。点検と試算で同じ形：
+ * names＝全部の行（対象外の単位の行も）・コメント・傷病名の名称（診療年月に使う 1 枚のマスターから。マスターがなければ持たない＝画面はコードだけ）／
+ * sheetNotes＝使う 1 枚についての断り書き（診療年月より後の 1 枚で代えている／読み方を確かめた版より新しい。design.md §12-1）／
+ * diseases＝傷病名（UKE の並びのまま。表にもマスターにもないコードは name が null）／generic＝データで動く点検の指摘と、点検の範囲／
+ * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
+ * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない
+ */
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside">, all: Finding[]) {
+  const about = { yearMonth: claim.yearMonth, generation: rev.generation };
+  const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
+  return withMasters((db) => {
+    const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
+    return {
+      ...(names ? { names } : {}),
+      ...(db ? { sheetNotes: sheetNotesOf(db, about) } : {}),
+      diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
+      generic: genericView(evaluateGeneric(claim, db, about), names),
+      stopped: rev.rules.flatMap((rule) => {
+        const by = partialBy(rule, rev, ctx);
+        if (by === null) return [];
+        const codes = Array.isArray(by) ? by.map((c) => ({ code: c.code, known: c.known, name: names?.items[c.code]?.name ?? null, no: names?.items[c.code]?.no ?? null })) : [];
+        return [{ ruleId: rule.id, all: !Array.isArray(by), codes, dropped: all.some((f) => f.ruleId === rule.id && f.missing?.field === "unsupportedLines") }];
+      }),
+    };
+  });
+}
+
 export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>) {
   function ukeCheck(claimId: string) {
-    const { receipt: r, uploaded } = uke.receiptOf(claimId);
-    const head = { claimId, yearMonth: r.yearMonth, patient: r.patient.name, patientNo: uploaded ? (r.patientNo ?? "") : null };
+    const { receipt: r, uploaded, claim } = uke.receiptOf(claimId);
+    const head ={ claimId, yearMonth: r.yearMonth, patient: r.patient.name, patientNo: uploaded ? (r.patientNo ?? "") : null };
     // 読み直しで読めなかったレセプト（表が変わって点数が合わない）は、理由だけを返す
     if (r.unreadable) return { ...head, unreadable: r.unreadable };
     // 診療年月に版がないレセプトは、点検しない（近い版で代用しない）。画面は、選べる版から選んで試算する（ukeTrial）
     if (r.noRevision) return { ...head, unreadable: null, revisionId: null, revisions: trialRevisions(r.yearMonth) };
     const rev = resolveRevision(r.yearMonth);
     // UKE に書いてあることだけで点検する：行とコメントは UKE のまま、出来事は持たない（同梱の症例でも、カルテ側の記録は使わない）
-    const result = cases.judge({ ...cases.caseOf(claimId), events: [], recordsKnown: false });
+    const ctx: ClaimContext = { ...cases.caseOf(claimId), events: [], recordsKnown: false };
+    const result = cases.judge(ctx);
     return {
       ...head,
       unreadable: null,
@@ -62,6 +98,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       /** UKE に書いてある請求の合計（HO と、KO の並び） */
       declared: r.declared ?? { ho: null, ko: [] },
       ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], result.findings),
+      ...mastersPartOf(claim(), rev, ctx, result.findings),
       /** 点検した行の小計（請求の合計ではない） */
       subtotal: result.subtotal !== undefined ? result.subtotal : result.total,
       applied: result.applied,
@@ -85,7 +122,9 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
     const parsed = claim();
     const mapped = mapClaim(parsed, rev, true);
     // 事実・施設の設定は、レセプトの側にあるものだけ（選んだ版が読む事実がなければ、情報不足になる。埋め合わせの値を作らない）。出来事は持たない
-    const { partial: _partial, ...base } = cases.trialBaseOf(claimId);
+    const { partial: _partial, outside: _outside, ...base } = cases.trialBaseOf(claimId);
+    // 対象外の単位のコードは、選んだ版の世代のマスターで引く（design.md §12-1）。マスターがなければ渡さない
+    const outside = mapped.others.length > 0 ? withMasters((db) => (db ? outsideOf(db, rev, parsed.yearMonth, mapped.others.flatMap((o) => o.codes)) : undefined)) : undefined;
     const ctx: ClaimContext = {
       ...base,
       events: [],
@@ -95,6 +134,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       comments: mapped.comments,
       commentsKnown: true,
       ...(mapped.others.length > 0 ? { partial: true } : {}),
+      ...(outside ? { outside } : {}),
     };
     const { findings, subtotal, ...result } = trial(ctx, rev);
     /** 単位ごとの、点数の違い。複数の区分がある単位は、区分ごとに分けず、単位の合算どうしを比べる（kubun・name は単位の区分を並べたもの） */
@@ -115,6 +155,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       /** UKE に書いてある請求の合計（HO と、KO の並び。UKE の点数のまま） */
       declared: { ho: parsed.total?.points ?? null, ko: parsed.kohiTotals },
       ...bodyOf(r.yearMonth, rev, mapped.lines, mapped.others, findings),
+      ...mastersPartOf(parsed, rev, ctx, findings),
       /** 点検した行の小計（選んだ版の点数で数えたもの。請求の合計ではない） */
       subtotal: subtotal !== undefined ? subtotal : result.total,
       pointDiffs,

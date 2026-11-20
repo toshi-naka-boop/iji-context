@@ -7,9 +7,12 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
+import type { RowNames } from "../../../src/generic/lookup";
+import type { GenericView } from "../../../src/generic/view";
 import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
+import { GenericFindings } from "../../generic-findings";
 import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
@@ -34,7 +37,17 @@ type Check = {
   missing?: Finding[];
   comments?: { code: string; text: string }[];
   patientFindings?: { checkId: string; kind: string; text: string }[];
+  /** マスターの名称（マスターが入っているときだけ。design.md §12-5）：行（区分番号つき）・コメント・傷病名 */
+  names?: RowNames;
+  /** 使う 1 枚についての断り書き（マスターの名前）：later＝診療年月より後の 1 枚で代えている／newer＝読み方を確かめた版より新しい */
+  sheetNotes?: { later: string[]; newer: string[] };
+  diseases?: { code: string; name: string | null; main: boolean }[];
+  /** データで動く点検（G01〜）の指摘と、点検の範囲 */
+  generic?: GenericView;
+  /** 対象外の行に左右されるルール（partial として扱ったルール）と、そうさせた行（all＝ルールごとには決められず、どのルールも） */
+  stopped?: Stopped[];
 };
+type Stopped = { ruleId: string; all: boolean; codes: { code: string; known: boolean; name: string | null; no: string | null }[] };
 /** 試算の結果。点検と同じ項目に、選んだ版と、点数の違いが付く */
 type Trial = Check & {
   trial: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
@@ -104,6 +117,19 @@ export default function UkeClaimCheck() {
   const lines = c?.lines ?? [];
   const others = c?.others ?? [];
   const nameOf = (kubun: string) => lines.find((l) => l.kubun === kubun)?.name ?? kubun;
+  /** 対象外の行に左右されるルールを、そうさせた行が同じものどうしでまとめる */
+  const stoppedGroups: { ruleIds: string[]; all: boolean; codes: Stopped["codes"] }[] = [];
+  for (const s of c?.stopped ?? []) {
+    const key = (x: { all: boolean; codes: Stopped["codes"] }) => `${x.all}:${x.codes.map((y) => y.code).join(",")}`;
+    const same = stoppedGroups.find((g) => key(g) === key(s));
+    if (same) same.ruleIds.push(s.ruleId);
+    else stoppedGroups.push({ ruleIds: [s.ruleId], all: s.all, codes: s.codes });
+  }
+  /** コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ */
+  const coded = (code: string) => {
+    const n = c?.names?.items[code];
+    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}` : code;
+  };
   return (
     <main className="shell">
       <TopBar />
@@ -168,7 +194,7 @@ export default function UkeClaimCheck() {
               {others.length > 0 && (
                 <div className="notice warn">
                   <strong>この請求には、点検の対象外の行が {c.otherRows} 行あります。</strong>
-                  <div>対応していないコードを含む行は、点検していません。ほかの行の有無や回数で決まる点は「決められません」と出し、下の小計は請求の合計ではありません。</div>
+                  <div>対応していないコードを含む行は、ユスティの点検（決まった規則）の対象外です。対象外の行に左右される点は「決められません」と出し、下の小計は請求の合計ではありません。</div>
                 </div>
               )}
               <div className="notice">カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。</div>
@@ -187,6 +213,16 @@ export default function UkeClaimCheck() {
                 </div>
               ))}
 
+              {c.generic && (
+                <>
+                  <h3 style={{ margin: 0 }}>データで動く点検</h3>
+                  <p className="muted" style={{ margin: 0 }}>公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。</p>
+                  <GenericFindings generic={c.generic} scope="full" />
+                  {(c.sheetNotes?.later ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>診療年月より前の版のマスターを持っていないので、後の版で代えています：{c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。</p>}
+                  {(c.sheetNotes?.newer ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>読み方を確かめた版より新しいデータです：{c.sheetNotes!.newer.join("、")}。</p>}
+                </>
+              )}
+
               <h3 style={{ margin: 0 }}>情報不足</h3>
               {(c.missing ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
               {groupMissing(c.missing ?? []).map(({ finding: f, ruleIds, lineRefs }, i) => (
@@ -196,6 +232,20 @@ export default function UkeClaimCheck() {
                   <FactInput claimId={c.claimId} finding={f} patientHref="/work" patientInline onSaved={() => setTick((t) => t + 1)} />
                 </div>
               ))}
+              {stoppedGroups.length > 0 && (
+                <div className="notice">
+                  <strong>対象外の行に左右されるルール</strong>
+                  <div className="muted">次のルールは、行の有無や回数で決まる点を決めていません（指摘がなくても、問題なしとは言えません）。ここにないルールは、対象外の行と関係がないので、今までどおり点検しています。</div>
+                  {stoppedGroups.map((g, i) => (
+                    <div key={i}>
+                      {g.ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)}
+                      {g.all
+                        ? "マスターが入っていない（か、ルールの読む行の区分番号を引けない）ので、対象外の行が 1 行でもあれば、どのルールもこの扱いにしています。"
+                        : g.codes.map((x) => (x.known ? `${coded(x.code)} が、ルールの読む行と同じ区分番号です。` : `${x.code} は、マスターにないコードです（何の行か分かりません）。`)).join("")}
+                    </div>
+                  ))}
+                </div>
+              )}
               <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />
 
               <h3 style={{ margin: 0 }}>点検した行</h3>
@@ -225,15 +275,15 @@ export default function UkeClaimCheck() {
               {others.length > 0 && (
                 <>
                   <h3 style={{ margin: 0 }}>点検の対象外の行（{c.otherRows} 行）</h3>
-                  <p className="muted" style={{ margin: 0 }}>対応していないコードを含む算定の単位です。UKE に書いてあるコード・点数・回数・日をそのまま出しています（名称は持っていません）。</p>
+                  <p className="muted" style={{ margin: 0 }}>対応していないコードを含む算定の単位です。UKE に書いてあるコード・点数・回数・日をそのまま出しています（{c.names ? "名称と区分番号は、マスターのものです。マスターにないコードは、コードだけを出します" : "マスターが入っていないので、名称は出せません"}）。</p>
                   <table className="emr-table">
                     <thead>
-                      <tr><th>コード</th><th>回数</th><th>日</th><th>点数（1 回分）</th></tr>
+                      <tr><th>コード{c.names ? "・名称" : ""}</th><th>回数</th><th>日</th><th>点数（1 回分）</th></tr>
                     </thead>
                     <tbody>
                       {others.map((o, i) => (
                         <tr key={i}>
-                          <td>{o.codes.join("、")}</td>
+                          <td>{c.names ? o.codes.map((code, n) => <div key={n}>{coded(code)}</div>) : o.codes.join("、")}</td>
                           <td>{o.count}</td>
                           <td>{days(o.dates)}</td>
                           <td>{o.points === null ? "—" : num(o.points)}</td>
@@ -254,10 +304,22 @@ export default function UkeClaimCheck() {
               {(c.comments ?? []).length === 0 ? <p className="muted" style={{ margin: 0 }}>コメントはありません。</p> : (
                 <table className="emr-table">
                   <thead>
-                    <tr><th>コメントコード</th><th>文字データ</th></tr>
+                    <tr><th>コメントコード</th>{c.names && <th>名称（定型文）</th>}<th>文字データ</th></tr>
                   </thead>
                   <tbody>
-                    {(c.comments ?? []).map((x, i) => <tr key={i}><td>{x.code}</td><td>{x.text}</td></tr>)}
+                    {(c.comments ?? []).map((x, i) => <tr key={i}><td>{x.code}</td>{c.names && <td>{c.names.comments[x.code] ?? "—"}</td>}<td>{x.text}</td></tr>)}
+                  </tbody>
+                </table>
+              )}
+
+              <h3 style={{ margin: 0 }}>傷病名</h3>
+              {(c.diseases ?? []).length === 0 ? <p className="muted" style={{ margin: 0 }}>傷病名はありません。</p> : (
+                <table className="emr-table">
+                  <thead>
+                    <tr><th>傷病名コード</th><th>名称</th><th>主傷病</th></tr>
+                  </thead>
+                  <tbody>
+                    {(c.diseases ?? []).map((d, i) => <tr key={i}><td>{d.code}</td><td>{d.name ?? "—（名称を出せません）"}</td><td>{d.main ? "主" : ""}</td></tr>)}
                   </tbody>
                 </table>
               )}

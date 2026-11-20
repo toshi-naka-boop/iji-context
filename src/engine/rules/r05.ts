@@ -16,6 +16,10 @@ export function makeR05(c: RevisionConsts): Rule {
     // 処方の出来事を読む指摘（記録のない請求では出さない。包括項目の bundled は行だけで決まる）
     recordFindings: ["no_rx_addition_with_rx"],
     soundWhenPartial: ["bundled"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

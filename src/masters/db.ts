@@ -19,6 +19,23 @@ export function openMasters(file: string = mastersDbPath()): MastersDb | null {
   }
 }
 
+/**
+ * masters.db を読む処理 1 つ分：開いて、fn に渡して、閉じる。ない（開けない）ときは null を渡す。
+ * 別の作り方の masters.db（表がない）は、ないものとして扱う（fn を null でやり直す。fn は読むだけにする）
+ */
+export function withMasters<T>(fn: (db: MastersDb | null) => T): T {
+  const db = openMasters();
+  if (!db) return fn(null);
+  try {
+    return fn(db);
+  } catch (e) {
+    if (e instanceof Database.SqliteError) return fn(null);
+    throw e;
+  } finally {
+    db.close();
+  }
+}
+
 /** 取り込んだファイル 1 つ。verified は、読み方を確かめた版の更新日（EM §2-11。確かめた版のないデータは null） */
 export type SourceRow = { dataset: string; snapshot: string; generation: string; tbl: string; file: string; sha256: string; rows: number; imported_at: string; verified: string | null };
 
@@ -60,6 +77,23 @@ const one = <T>(db: MastersDb, table: "shinryo" | "iyakuhin" | "tokutei", snapsh
 export const shinryoOf = (db: MastersDb, snapshot: string, code: string): ShinryoRow | null => one<ShinryoRow>(db, "shinryo", snapshot, code);
 export const iyakuhinOf = (db: MastersDb, snapshot: string, code: string): IyakuhinRow | null => one<IyakuhinRow>(db, "iyakuhin", snapshot, code);
 export const tokuteiOf = (db: MastersDb, snapshot: string, code: string): TokuteiRow | null => one<TokuteiRow>(db, "tokutei", snapshot, code);
+
+/** 名称を引ける基本マスター（データの名前と表の名前が同じもの） */
+export type NamedMaster = "shinryo" | "iyakuhin" | "tokutei" | "comment" | "shobyo";
+
+/** その 1 枚の、そのコードの名称（その 1 枚にないコードは null）。コメントマスターは定型文、傷病名マスターは傷病名 */
+export const nameOf = (db: MastersDb, table: NamedMaster, snapshot: string, code: string): string | null =>
+  (db.prepare(`SELECT name FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as { name: string } | undefined)?.name ?? null;
+
+/** そのデータの、持っている 1 枚を全部（更新日の古い順）。generation を渡せば、その世代のものだけ */
+export const snapshotsOf = (db: MastersDb, dataset: string, generation?: string): string[] =>
+  (db.prepare("SELECT DISTINCT snapshot FROM sources WHERE dataset = ? AND (? IS NULL OR generation = ?) ORDER BY snapshot").all(dataset, generation ?? null, generation ?? null) as { snapshot: string }[]).map((r) => r.snapshot);
+
+/** 点検（G01〜G09）の準備ができているか（要る表がそろい、錨が通ったか。作るのは src/masters/verify.ts）。行がなければ null */
+export function checkReady(db: MastersDb, check: string): { ready: boolean; reason: string } | null {
+  const r = db.prepare("SELECT ready, reason FROM checks_ready WHERE check_id = ?").get(check) as { ready: number; reason: string } | undefined;
+  return r ? { ready: r.ready === 1, reason: r.reason } : null;
+}
 
 /** 設定の画面「マスターの状態」に出すもの（design.md §12-5）。present が偽＝masters.db がない */
 export type MastersStatus = {
