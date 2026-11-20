@@ -3,12 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { BILLING_MONTH, loadSources } from "../../scripts/gen-uke";
 import { seed } from "../../scripts/seed-knowledge";
 import { evaluate } from "../../src/engine";
 import { consecutiveMonths, matchState } from "../../src/lifecycle/match";
 import { applyEvent, listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import type { Notice } from "../../src/notice/notice";
 import { openApp, type App } from "../../src/server/app";
+import { buildUkeFiles, toClaimContext } from "../../src/uke/cases";
+import { readUke, writeUke } from "../../src/uke/uke";
+import { loadCase } from "../engine/helpers";
 import { at, claimId, month, YM } from "../helpers/period";
 import { makeCtx, makeMeta } from "./helpers";
 
@@ -24,7 +28,7 @@ const ctx3 = (withComment: boolean) =>
       { yearMonth: month(-2), kubun: [KUBUN] },
       { yearMonth: month(-1), kubun: [KUBUN] },
     ],
-    comments: withComment ? [{ kubun: KUBUN, code: "800000001" }] : [],
+    comments: withComment ? [{ code: "800000001", text: "", raw: "", on: [KUBUN] }] : [],
   });
 
 const region = { payer: "支払基金" as const, prefecture: "東京都" };
@@ -37,6 +41,33 @@ describe("commentOn", () => {
     expect(matchState(avoid, ctx3(true), [])).toBe("nomatch");
     expect(matchState(allow, ctx3(true), [])).toBe("match");
     expect(matchState(allow, ctx3(false), [])).toBe("nomatch");
+  });
+
+  it("見るのは、その区分に付いたコメント（on）だけ。ほかの区分に付いたコメント・どの区分にも付かないコメント（レセプト全体、単位の前後）は数えない", () => {
+    const withOn = (on: string[]) => ({ ...ctx3(false), comments: [{ code: "800000001", text: "", raw: "", on }] });
+    for (const on of [[], ["C001_1I"]]) {
+      expect(matchState(avoid, withOn(on), [])).toBe("match");
+      expect(matchState(allow, withOn(on), [])).toBe("nomatch");
+    }
+    // 同じ単位にほかの区分があっても、その区分を含めば付いている
+    expect(matchState(allow, withOn(["C001_1I", KUBUN]), [])).toBe("match");
+  });
+
+  it("UKE から読んだコメントでも同じ当たり方：SI のコメント欄のコメントはその区分に付く。レセプト全体へのコメントは、どの区分にも付かない", () => {
+    const BNP = "D008_19";
+    const { cases, src } = loadSources();
+    const k6 = cases.find((c) => c.claimId === claimId("K6"))!;
+    const want = loadCase("K6");
+    const fromUke = (on: string[]) => {
+      const file = readUke(writeUke(buildUkeFiles([{ ...k6, comments: [{ code: "800000001", text: "", raw: "", on }] }], src, BILLING_MONTH).支払基金));
+      return toClaimContext(file, k6.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown });
+    };
+    const withComment = makeMeta({ id: "regional/uke-comment", polarity: "allow", match: { kubunAll: [BNP], commentOn: [{ kubun: BNP, present: true }] } });
+    const noComment = makeMeta({ id: "regional/uke-no-comment", polarity: "avoid", match: { kubunAll: [BNP], commentOn: [{ kubun: BNP, present: false }] } });
+    expect([matchState(withComment, fromUke([BNP]), []), matchState(noComment, fromUke([BNP]), [])]).toEqual(["match", "nomatch"]);
+    expect([matchState(withComment, fromUke([]), []), matchState(noComment, fromUke([]), [])]).toEqual(["nomatch", "match"]);
+    // 同梱の UKE（コメントなし）では、今までどおり「コメントなし」の側が当たる
+    expect([matchState(withComment, want, []), matchState(noComment, want, [])]).toEqual(["nomatch", "match"]);
   });
 
   it("avoid／allow の組は、コメントの有無でちょうど片方だけ当てはまる", () => {
@@ -130,7 +161,7 @@ describe("K6 の地域知識（査定の通知から作る近似の候補）", (
     const k6 = app.caseOf(K6);
     const applied = evaluate(k6).applied;
     expect(matchState(m, k6, applied)).toBe("match");
-    expect(matchState(m, { ...k6, comments: [{ kubun: BNP, code: "820100001" }] }, applied)).toBe("match");
+    expect(matchState(m, { ...k6, comments: [{ code: "820100001", text: "", raw: "", on: [BNP] }] }, applied)).toBe("match");
     expect(matchState(m, { ...k6, history: [] }, applied)).toBe("match");
     expect(matchState(m, { ...k6, facts: { ...k6.facts, mainDisease: { known: true, value: "慢性心不全" } } }, applied)).toBe("match");
     // 国保連の請求（K1 も BNP を算定している）には当たらない

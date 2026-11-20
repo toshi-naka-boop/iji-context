@@ -99,6 +99,7 @@
     }
   ],
   "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
       "kubun": "D008_19",

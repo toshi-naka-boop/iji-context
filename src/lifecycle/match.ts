@@ -35,7 +35,7 @@ export function matchState(meta: KnowledgeMeta, ctx: ClaimContext, applied: stri
   if (m.payer !== undefined && ctx.payer !== m.payer) return "nomatch";
   if (m.prefecture !== undefined && ctx.prefecture !== m.prefecture) return "nomatch";
   for (const c of m.commentOn ?? []) {
-    const has = (ctx.comments ?? []).some((x) => x.kubun === c.kubun);
+    const has = (ctx.comments ?? []).some((x) => x.on.includes(c.kubun));
     if (has !== c.present) return "nomatch";
   }
   if (m.consecutiveMonths !== undefined && consecutiveMonths(ctx, m.consecutiveMonths.kubun) < m.consecutiveMonths.min) {

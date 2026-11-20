@@ -1,6 +1,6 @@
 "use client";
 // UKE の取り込み（月末。レセコンが書き出した提出用のファイルを読み込み、提出前の点検にかける）
-// 見本の 2 本（国保連・支払基金。合成データ・架空コード）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）
+// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）
 import { useEffect, useState } from "react";
 import { payerLabel } from "../../src/messages";
 import { UKE_LIMITS } from "../../src/uke/limits";
@@ -9,7 +9,7 @@ import { SignIn, useClerk } from "../clerk";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
 
-type Uke = { name: string; uploaded: boolean; payer: string; prefecture: string; billingMonth: string; receipts: { claimId: string; patient: string }[]; imported: boolean };
+type Uke = { name: string; uploaded: boolean; outdated: boolean; payer: string | null; prefecture: string | null; billingMonth: string | null; receipts: { claimId: string; patient: string }[]; imported: boolean };
 
 export default function UkeImport() {
   const { clerk: user, ready } = useClerk();
@@ -57,11 +57,20 @@ export default function UkeImport() {
     <main className="shell">
       <TopBar />
       <PageGuide who="yusti" title="UKE 取り込み" tag="RULE ENGINE">
-        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。見本の 2 本（合成データ・架空コード）から選ぶか、ファイルを選んでアップロードします。
+        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-        {list.map((u) => (
+        {list.map((u) => u.outdated || u.payer === null ? (
+          <article key={u.name} className="card">
+            <div className="card-band" style={{ background: "var(--surface)" }} />
+            <div className="card-body">
+              <div className="chips"><span className="badge">古い形式</span></div>
+              <h2 style={{ margin: "12px 0 4px", fontSize: 18, wordBreak: "break-all" }}>アップロードした UKE（{u.name.slice(0, 8)}）</h2>
+              <p className="muted" style={{ margin: "8px 0 0" }}>古い形式の UKE です（取り込み直しが要ります）。以前の作り物のコードで作られているため、いまは開けません。点検には並びません。</p>
+            </div>
+          </article>
+        ) : (
           <article key={u.name} className="card">
             <div className="card-band" style={{ background: u.imported ? "var(--accent)" : "var(--surface)" }} />
             <div className="card-body">
@@ -90,7 +99,7 @@ export default function UkeImport() {
         <div className="card-body">
           <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>ファイルを選んでアップロード</h2>
           <p className="muted" style={{ margin: "0 0 12px" }}>
-            受け取るのは、架空コードだけで作られた合成データの UKE です。実在の患者のデータは入れないでください（架空コードの表にないコードを含むファイルは、ファイルごと断ります）。
+            受け取るのは、対応しているコードだけで作られた UKE です。実在の患者のデータは入れないでください（対応していないコードを含むファイルは、ファイルごと断ります）。
             同梱の症例にないレセプトは、カルテ側の記録（訪問・処方など）がないまま点検に並び、足りない事実は「情報不足」として出ます。同梱の症例や、すでに取り込んだ UKE と同じ請求 id で内容が違うファイルは断ります。
           </p>
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

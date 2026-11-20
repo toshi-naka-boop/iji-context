@@ -1,6 +1,8 @@
 // 画面から呼ぶ処理の層（src/server/app.ts）。設定と合成データはリポジトリのものを使い、DB・知識・記録は一時ディレクトリに置く
 import Database from "better-sqlite3";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import iconv from "iconv-lite";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -283,6 +285,37 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
     expect(app.ukeList(a.id).map((u) => [u.name, u.payer, u.imported])).toEqual([["kokuhoren.UKE", "国保連", false], ["shiharaikikin.UKE", "支払基金", true]]);
     expect(() => app.importUke(a.id, "other.UKE")).toThrow();
+  });
+  it("以前の作り物のコードで作られた取り込み済みの UKE は、一覧から落とさず「古い形式」として出し、点検には並べない。ほかのレセプトは今までどおり読める（design.md §11-1 の移行）", () => {
+    // 見本（K6）の請求 id とコードを差し替えて、以前の形式（99 で始まる作り物のコード）の UKE を置き場に置く
+    const sample = new TextDecoder("shift_jis").decode(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")).subarray(0, -1));
+    const old = sample.replace(claimId("K6"), `X9-${period.yearMonth}`).replace(/^(SI,\d+,\d+,)\d{9}/gm, `$1${"99"}0000031`);
+    const bytes = Buffer.concat([iconv.encode(old, "Shift_JIS"), Buffer.from([0x1a])]);
+    const name = `${createHash("sha256").update(bytes).digest("hex")}.UKE`;
+    mkdirSync(path.join(tmp, "uke"), { recursive: true });
+    writeFileSync(path.join(tmp, "uke", name), bytes);
+    app.setSetting("uke-uploads", JSON.stringify([name]));
+    const a = app.createClerk("審査員A");
+    expect(app.ukeList(a.id).map((u) => [u.name, u.outdated, u.payer, u.receipts.length, u.imported])).toEqual([
+      ["kokuhoren.UKE", false, "国保連", 6, false],
+      ["shiharaikikin.UKE", false, "支払基金", 1, false],
+      [name, true, null, 0, false],
+    ]);
+    expect(() => app.importUke(a.id, name)).toThrow("古い形式の UKE");
+    expect(app.cases().map((c) => c.claimId)).toEqual(["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId));
+    app.importUke(a.id, "shiharaikikin.UKE");
+    expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
+  });
+});
+
+describe("コメントを持つ請求か（commentsKnown。design.md §11-13）", () => {
+  it("UKE から作った請求は真。練習問題と選択モードの請求は偽（行を入れ替えるだけで、コメントを直さないため）", () => {
+    expect(app.cases().map((c) => c.commentsKnown)).toEqual(Array.from({ length: 7 }, () => true));
+    app.importUke("new1", "kokuhoren.UKE");
+    const normal = app.start("new1", claimId("K1"));
+    const choice = app.start("new1", claimId("K2"), "選択");
+    const drill = app.startDrill("new1", "d04");
+    expect([normal, choice, drill].map((q) => app.caseFor(q).commentsKnown)).toEqual([true, false, false]);
   });
 });
 

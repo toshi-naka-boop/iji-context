@@ -84,6 +84,7 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
     facts: makeFacts(),
     events: [],
     recordsKnown: true,
+    commentsKnown: false,
     lines,
     ...rest,
   };

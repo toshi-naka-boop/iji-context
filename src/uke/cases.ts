@@ -1,10 +1,11 @@
 // 症例（ClaimContext）と合成 UKE のあいだの変換（F4）
-// UKE が持つのは請求の中身（区分・回数・日付・コメント）と患者・保険の情報だけ。
+// UKE が持つのは請求の中身（コード・回数・日付・コメント）と患者・保険の情報だけ。
 // 事実（facts）・出来事（events）・過去月（history）は合成カルテ・受給者証・設定ファイルから来る（spec FR-07、design.md §6）
 import type { ClaimContext, Facility, Payer } from "../engine/types";
 import type { UkeClinic, UkeFile, UkePatient } from "./types";
 
-export type UkeSources = { clinic: UkeClinic; patients: Record<string, UkePatient> };
+/** bundleItems は、包括の検査の区分の行を UKE に書くときに並べる検査項目のコード（請求 id → 区分 → コード。合成の設定で、EM 5-1 の表による） */
+export type UkeSources = { clinic: UkeClinic; patients: Record<string, UkePatient>; bundleItems?: Record<string, Record<string, string[]>> };
 
 /**
  * 保険者番号から審査支払機関を決める（保険証の情報で区別する。2026-11-06 ユーザー判断）。
@@ -38,7 +39,11 @@ export function buildUkeFiles(cases: ClaimContext[], src: UkeSources, billingMon
       receipts: mine.map((c) => {
         const patient = src.patients[c.claimId];
         if (!patient) throw new Error(`患者情報がない: ${c.claimId}`);
-        return { claimId: c.claimId, yearMonth: c.yearMonth, patient, lines: c.lines, comments: c.comments ?? [] };
+        const items = src.bundleItems?.[c.claimId] ?? {};
+        const lines = c.lines.map((l) => (Object.hasOwn(items, l.kubun) ? { ...l, items: items[l.kubun] } : l));
+        // 施設に入居する患者かは、居住の場所の事実から（在宅ターミナルケア加算のコードを決める。design.md §11-14）
+        const facilityResident = c.facts.residence.known && c.facts.residence.value === "施設入居等";
+        return { claimId: c.claimId, yearMonth: c.yearMonth, patient, lines, comments: c.comments ?? [], commentsKnown: true, facilityResident };
       }),
     };
   }
@@ -62,8 +67,10 @@ export function toClaimContext(
     facts: extras.facts,
     events: extras.events,
     recordsKnown: extras.recordsKnown,
-    lines: r.lines,
+    // 検査項目のコード（items）は UKE の側の持ち物で、エンジンには渡さない
+    lines: r.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })),
     comments: r.comments,
+    commentsKnown: r.commentsKnown,
     ...(extras.history ? { history: extras.history } : {}),
   };
 }

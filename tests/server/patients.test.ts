@@ -34,7 +34,7 @@ const file = (receipts: [string, UkePatient][]): UkeFile => ({
   prefecture: "東京都",
   clinic: { code: "9999999", name: "架空在宅クリニック", phone: "0300000000" },
   billingMonth: month(1),
-  receipts: receipts.map(([claimId, patient]) => ({ claimId, yearMonth: claimId.slice(-7), patient, lines: [{ kubun: "C001_1I", count: 1, dates: [`${claimId.slice(-7)}-05`] }], comments: [] })),
+  receipts: receipts.map(([claimId, patient]) => ({ claimId, yearMonth: claimId.slice(-7), patient, lines: [{ kubun: "C001_1I", count: 1, dates: [`${claimId.slice(-7)}-05`] }], comments: [], commentsKnown: true })),
 });
 
 function setup(files: () => UkeFile[]) {

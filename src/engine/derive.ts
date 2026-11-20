@@ -123,7 +123,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const notBilled: DeriveResult["notBilled"] = [];
   const asked = new Set<string>();
   // 述語に渡す請求。行は「ここまでに立てた行」（lines は同じ配列を指す）。請求 id・審査支払機関は述語が見ないので空・仮の値
-  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, lines, history: input.history };
+  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, commentsKnown: false, lines, history: input.history };
 
   const ref = (e: EventRef): EventRef => ({ type: e.type, date: e.date });
   function add(kubun: string, dates: string[], b: { derive: string; events: EventRef[]; needs?: NeedKey[]; choice?: string; tentative?: boolean }) {

@@ -8,7 +8,8 @@ import { MOCK_PATIENT_SYSTEM } from "../fixtures/connect/mock-server";
 import { coverageCsvId, FHIR_WIRE } from "../src/connect/fhir";
 import { ORCA_WIRE } from "../src/connect/orca";
 import { claimIdOf, dateFrom, monthFrom } from "../src/demo/period";
-import { fictionalCode } from "../src/engine/codes-fictional";
+import { resolveRevision } from "../src/engine/revisions";
+import { bundleOfKubun, codeOf } from "../src/engine/revisions/codes";
 import type { ClaimContext } from "../src/engine/types";
 import type { UkeSources } from "../src/uke/cases";
 import type { Chart } from "../src/uke/crosscheck";
@@ -28,7 +29,7 @@ const kohiPeriod = () => {
 };
 
 export function generate(): Record<keyof typeof CONNECT_FILES, string> {
-  const { patients } = json<UkeSources>("fixtures/uke/patients.json");
+  const { patients, bundleItems } = json<UkeSources>("fixtures/uke/patients.json");
   const kohi = kohiPeriod();
   const orca: Record<string, unknown> = {};
   const medical: Record<string, unknown> = {};
@@ -40,19 +41,24 @@ export function generate(): Record<keyof typeof CONNECT_FILES, string> {
     const ratio = claim.facts.burdenRatio;
     const chart = json<Chart>(`fixtures/charts/${k}.json`);
 
-    // ORCA 形式：診療月診療コード情報（症例の算定行を、架空コードと算定日区分にする。同じ日に 2 回の算定は、この形では表せない）
+    // ORCA 形式：診療月診療コード情報（症例の算定行を、診療年月の版の診療行為コードと算定日区分にする。同じ日に 2 回の算定は、この形では表せない）。
+    // 包括の検査の区分は、検査項目のコード（EM 5-1。fixtures/uke/patients.json の bundleItems）を 1 行ずつ並べる
+    const rev = resolveRevision(claim.yearMonth);
+    const facilityResident = claim.facts.residence.known && claim.facts.residence.value === "施設入居等";
     medical[k] = {
       Patient_Information: { Patient_ID: k, WholeName: p.name, BirthDate: iso(p.birth), Sex: String(p.sex) },
       Perform_Date: claim.yearMonth,
-      Medical_List_Information: claim.lines.map((l) => {
+      Medical_List_Information: claim.lines.flatMap((l) => {
         const days = new Set(l.dates.map((d) => Number(d.slice(8))));
         if (days.size !== l.count || l.dates.some((d) => !d.startsWith(`${claim.yearMonth}-`))) throw new Error(`算定日区分で表せない行: ${k} ${l.kubun}`);
-        return {
-          Medication_Code: fictionalCode(l.kubun),
+        const items = bundleOfKubun(rev, l.kubun) ? bundleItems?.[claimIdOf(k)]?.[l.kubun] : [codeOf(rev, l.kubun, facilityResident)];
+        if (!items) throw new Error(`包括の検査の項目がない: ${k} ${l.kubun}`);
+        return items.map((code) => ({
+          Medication_Code: code,
           Medical_Class_code: "0",
           Perform_Total_Number: String(l.count).padStart(2, "0"),
           Perform_Calendar: Array.from({ length: 31 }, (_, i) => (days.has(i + 1) ? "1" : "0")).join(""),
-        };
+        }));
       }),
     };
 
@@ -137,7 +143,7 @@ export function generate(): Record<keyof typeof CONNECT_FILES, string> {
   const who = Object.keys(MOCK_PATIENTS).join("・");
   const out = {
     orca: {
-      _note: `模擬サーバー（ORCA API 形式）の応答。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者は fixtures/uke/patients.json の ${who}、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き。medical は診療行為（medicalgetv2 class=03）の中身で、模擬サーバーが xml2 形式にして返す。行は fixtures/cases/ の算定行、コードは架空コード（src/engine/codes-fictional.ts）`,
+      _note: `模擬サーバー（ORCA API 形式）の応答。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者は fixtures/uke/patients.json の ${who}、負担割合は fixtures/cases/ の事実から。項目名は日レセ API の公式仕様（patientgetv2）のもの。format=json のときの JSON の形（繰り返しを配列で表す）は未確認の仮定（src/connect/orca.ts の注）。公費の有効期間は架空の仮置き。medical は診療行為（medicalgetv2 class=03）の中身で、模擬サーバーが xml2 形式にして返す。行は fixtures/cases/ の算定行、コードは診療年月の版の診療行為コード（src/engine/revisions/。採用値の表にある行だけ）`,
       patients: orca,
       medical,
     },

@@ -1,21 +1,32 @@
-// 合成 UKE の書き出しと読み込み（F4、spec FR-05・FR-06）
-// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SY→SI/CO)×n→GO
-// 列は記録条件仕様（医科用）令和6年6月版の主要列だけを埋め、ほかは空にする（EM 12-1、report-A 項目12 の列番号）
-// 診療行為コードは架空（codes-fictional.ts）。実在のマスターとは無関係
+// UKE の書き出しと読み込み（F4、spec FR-05・FR-06。design.md §11-14）
+// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SY→SI/IY/TO/CO)×n→GO
+// 列は記録条件仕様（医科用）令和8年8月版の主要列だけを埋め、ほかは空にする（EM §2-10 表 4）
+//
+// 読み込みは 2 段（design.md §11-12）：
+//   parseUke  形式だけを見る。版を見ず、点数・回数の算定単位とコードのまま返す
+//   mapClaim  レセプト 1 件のコードを、版の表で区分に引く。例外にせず、単位ごとに「引けた／引けない（理由）」を返す
+// readUke は取り込みの入口で、2 つを続けて行い、診療年月に版がないレセプト・引けない単位・合計の食い違いがあればファイルごと断る
 import iconv from "iconv-lite";
-import { fictionalCode, isFictionalCode, kubunOfCode } from "../engine/codes-fictional";
 import { hasRevision, pointsOf, resolveRevision } from "../engine/revisions";
+import { bundleKubun, bundleOfCode, bundleOfKubun, codeOf, kubunOfCode } from "../engine/revisions/codes";
 import type { Revision } from "../engine/revisions/types";
-import type { ClaimLine, Payer } from "../engine/types";
+import type { ClaimLine, Comment, Payer } from "../engine/types";
+import { diseaseCodeOf, diseaseNameOf, UNCODED_DISEASE } from "./diseases";
 import { UKE_CLAIM_ID, UKE_LIMITS } from "./limits";
-import type { UkeFile, UkeReceipt } from "./types";
+import type { UkeClaim, UkeComment, UkeFile, UkeItem, UkeLine, UkeParsed, UkeReceipt, UkeUnit } from "./types";
 
 const EOF = 0x1a;
 const PREF_CODE: Record<string, string> = { 東京都: "13" };
-/** 未コード化傷病名のコード。傷病名はこのコードで名称だけを載せる（実在の傷病名コードは受け取らない） */
-const UNCODED_DISEASE = "0000999";
 /** レコードごとの列数（書き出しと同じ） */
-const COLUMNS = new Map([["IR", 10], ["RE", 38], ["HO", 15], ["KO", 12], ["SY", 8], ["SI", 44], ["CO", 5], ["GO", 4]]);
+const COLUMNS = new Map([["IR", 10], ["RE", 38], ["HO", 15], ["KO", 12], ["SY", 8], ["SI", 44], ["IY", 44], ["TO", 48], ["CO", 5], ["GO", 4]]);
+/**
+ * 診療行為（SI）・医薬品（IY）・特定器材（TO）のレコードの、コメント欄（コードと文字データの 3 対）と算定日情報（1〜31 日の回数）の始まり（0 起算の添字）。
+ * SI・IY はコメントが項目 8〜13・算定日が 14〜44、TO はコメントが 12〜17・算定日が 18〜48（EM §2-10 表 4 の (d)・(g)）。
+ * 診療識別（項目 2）・負担区分（3）・コード（4）・数量データ／使用量（5）・点数（6）・回数（7）は 3 つとも同じ位置
+ */
+const ITEM_LAYOUT = { SI: { comments: 7, days: 13 }, IY: { comments: 7, days: 13 }, TO: { comments: 11, days: 17 } } as const;
+/** レセプト全体へのコメントの診療識別（別表20） */
+const WHOLE_RECEIPT = "01";
 
 /**
  * UKE として受け取れない入力。理由は定型文で、入力の値そのもの（氏名・番号・コード）は入れない（spec FR-107）。
@@ -32,20 +43,17 @@ export class UkeError extends Error {
   }
 }
 
-/** 診療識別（別表20）。区分の先頭から決める */
-function shinryoShikibetsu(kubun: string): string {
-  if (/^C/.test(kubun)) return "14"; // 在宅
-  if (/^F400/.test(kubun)) return "25"; // 処方箋料
-  if (/^D/.test(kubun)) return "60"; // 検査
-  return "80"; // その他（ベースアップ評価料など）
-}
-
 /** 負担区分（別表21）：公費なしは 1（医保単独）、公費 1 種は 2（医保＋公費①） */
 const futanKubun = (kohiCount: number): string => (kohiCount === 0 ? "1" : "2");
 
-const ymd = (date: string) => date.replaceAll("-", "");
 const ym = (yearMonth: string) => yearMonth.replace("-", "");
 const fromYm = (s: string) => `${s.slice(0, 4)}-${s.slice(4, 6)}`;
+
+/** コメントの文字データの、全角の数字・記号を半角に寄せる（英字とかな・漢字はそのまま。design.md §11-13） */
+const normalizeCommentText = (raw: string): string => raw.replace(/[！-～]/g, (c) => (/[Ａ-Ｚａ-ｚ]/.test(c) ? c : String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
+
+// ───────────────────────────────────────────────────────────────────────────
+// 書き出し
 
 /** 列数をそろえたレコード（1 起算の列番号→値） */
 function record(n: number, cols: Record<number, string | number>): string {
@@ -60,30 +68,81 @@ function record(n: number, cols: Record<number, string | number>): string {
   return out.join(",");
 }
 
-/** その行の点数（1 回分）×回数。点数はレセプトの診療年月の版のもの */
-function linePoints(rev: Revision, l: ClaimLine): number {
-  const p = pointsOf(rev, l.kubun);
-  if (p === null) throw new Error(`点数未収載の区分は UKE に書けない: ${l.kubun}`);
-  return p * l.count;
-}
-
 /** 算定日情報（1〜31 日の回数） */
-function dayCounts(l: ClaimLine, yearMonth: string): string[] {
-  const days = Array.from({ length: 31 }, () => "");
+function dayCounts(l: ClaimLine, yearMonth: string): number[] {
+  const days = Array.from({ length: 31 }, () => 0);
   for (const d of l.dates) {
     if (!d.startsWith(`${yearMonth}-`)) throw new Error(`診療年月の外の日付: ${d}`);
-    const i = Number(d.slice(8, 10)) - 1;
-    days[i] = String(Number(days[i] || 0) + 1);
+    days[Number(d.slice(8, 10)) - 1] += 1;
   }
-  const sum = days.reduce((s, v) => s + Number(v || 0), 0);
-  // 算定日情報の合計＝回数（report-A 項目12）。1 日に複数回算定する区分は dates に同じ日を重ねる
+  const sum = days.reduce((s, v) => s + v, 0);
+  // 算定日情報の合計＝回数。1 日に複数回算定する区分は dates に同じ日を重ねる
   if (sum !== l.count) throw new Error(`算定日の合計 ${sum} と回数 ${l.count} が合わない: ${l.kubun}`);
   return days;
 }
 
-function receiptTotal(r: UkeReceipt): number {
-  const rev = resolveRevision(r.yearMonth);
-  return r.lines.reduce((s, l) => s + linePoints(rev, l), 0);
+/** 書き出す算定単位。points は 1 回分（単位の最後の行に書く）。rows の診療識別は先頭の行にだけ書く */
+type OutUnit = { kubun: string[]; rows: { code: string; quantity: string }[]; points: number; count: number; days: number[]; comments: Comment[] };
+
+/**
+ * レセプトの行を算定単位にする。行 1 つが単位 1 つ。ただし、注加算（版の codes の base）は基本の項目の単位に入れ、合算の点数を最後の行に書く。
+ * 包括の検査の区分は、行の items（検査項目のコード）を 1 行ずつ並べる。きざみで算定する区分は、同じ日に重ねた回数を数量データにする
+ */
+function unitsOf(rev: Revision, r: UkeReceipt): OutUnit[] {
+  const unitPoints = (kubun: string): number => {
+    const p = pointsOf(rev, kubun);
+    if (p === null) throw new Error(`点数未収載の区分は UKE に書けない: ${kubun}`);
+    return p;
+  };
+  const sameDates = (a: ClaimLine, b: ClaimLine) => [...a.dates].sort().join() === [...b.dates].sort().join();
+  const addOns = new Map<number, UkeLine[]>();
+  const isAddOn = new Set<UkeLine>();
+  for (const l of r.lines) {
+    const base = Object.hasOwn(rev.codes, l.kubun) ? rev.codes[l.kubun].base : undefined;
+    if (base === undefined) continue;
+    const j = r.lines.findIndex((b) => b.kubun === base && sameDates(b, l));
+    if (j < 0) throw new Error(`注加算を、基本の項目と同じ単位に書けない（同じ日の ${base} の行がない）: ${l.kubun}`);
+    addOns.set(j, [...(addOns.get(j) ?? []), l]);
+    isAddOn.add(l);
+  }
+  const units: OutUnit[] = [];
+  r.lines.forEach((l, i) => {
+    if (isAddOn.has(l)) return;
+    const days = dayCounts(l, r.yearMonth);
+    const bundle = bundleOfKubun(rev, l.kubun);
+    if (bundle) {
+      const items = l.items ?? [];
+      const ok = new Set(items).size === items.length && items.every((c) => bundle.bundle.members.includes(c)) && items.length >= bundle.min && items.length <= bundle.max;
+      if (!ok) throw new Error(`包括の検査の項目が、区分と合わない: ${l.kubun}`);
+      units.push({ kubun: [l.kubun], rows: items.map((code) => ({ code, quantity: "" })), points: unitPoints(l.kubun), count: l.count, days, comments: [] });
+      return;
+    }
+    const members = [l, ...(addOns.get(i) ?? [])];
+    for (const m of members) dayCounts(m, r.yearMonth);
+    if (rev.codes[l.kubun]?.quantity) {
+      // 同じ日に重ねた回数が項目数（数量データ）。日によって項目数が違う行は、1 つの単位に書けない
+      const perDay = [...new Set(days.filter((v) => v > 0))];
+      if (perDay.length !== 1 || members.length > 1) throw new Error(`きざみで算定する区分を 1 つの単位に書けない: ${l.kubun}`);
+      const dayCount = days.filter((v) => v > 0).length;
+      units.push({ kubun: [l.kubun], rows: [{ code: codeOf(rev, l.kubun), quantity: String(perDay[0]) }], points: unitPoints(l.kubun) * perDay[0], count: dayCount, days: days.map((v) => (v > 0 ? 1 : 0)), comments: [] });
+      return;
+    }
+    units.push({
+      kubun: members.map((m) => m.kubun),
+      rows: members.map((m) => ({ code: codeOf(rev, m.kubun, r.facilityResident), quantity: "" })),
+      points: members.reduce((s, m) => s + unitPoints(m.kubun), 0),
+      count: l.count,
+      days,
+      comments: [],
+    });
+  });
+  for (const c of r.comments) {
+    if (c.on.length === 0) continue;
+    const u = units.find((x) => c.on.every((k) => x.kubun.includes(k)));
+    if (!u) throw new Error(`コメントの付く区分の行がない: ${c.on.join(",")}`);
+    u.comments.push(c);
+  }
+  return units;
 }
 
 function realDays(r: UkeReceipt): number {
@@ -108,37 +167,49 @@ export function formatUke(file: UkeFile): string {
       10: file.clinic.phone,
     }),
   );
+  let grand = 0;
   file.receipts.forEach((r, idx) => {
     const p = r.patient;
     const rev = resolveRevision(r.yearMonth);
-    const total = receiptTotal(r);
+    const units = unitsOf(rev, r);
+    const total = units.reduce((s, u) => s + u.points * u.count, 0);
+    grand += total;
     const days = realDays(r);
+    const futan = futanKubun(p.kohi.length);
     // RE：13 列目（カルテ番号等）に請求 id を入れる
     rows.push(record(38, { 1: "RE", 2: idx + 1, 3: p.receiptType, 4: ym(r.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 13: r.claimId }));
     rows.push(record(15, { 1: "HO", 2: p.insurer.number, 3: p.insurer.symbol, 4: p.insurer.no, 5: days, 6: total }));
     for (const k of p.kohi) rows.push(record(12, { 1: "KO", 2: k.payerNo, 3: k.recipientNo, 5: days, 6: total }));
-    p.diseases.forEach((d) => {
-      rows.push(record(8, { 1: "SY", 2: "0000999", 3: d.start, 4: d.outcome ?? 1, 6: d.name, 7: d.main ? "01" : "" }));
-    });
-    for (const l of r.lines) {
-      const cols: Record<number, string | number> = {
-        1: "SI",
-        2: shinryoShikibetsu(l.kubun),
-        3: futanKubun(p.kohi.length),
-        4: fictionalCode(l.kubun),
-        6: pointsOf(rev, l.kubun) ?? "",
-        7: l.count,
-      };
-      dayCounts(l, r.yearMonth).forEach((v, i) => {
-        if (v) cols[14 + i] = v;
+    for (const d of p.diseases) {
+      // 傷病名コードがあるものは名称を書かない（名称を書くのは未コード化だけ）
+      const code = d.code ?? diseaseCodeOf(d.name);
+      rows.push(record(8, { 1: "SY", 2: code, 3: d.start, 4: d.outcome ?? 1, 6: code === UNCODED_DISEASE ? d.name : "", 7: d.main ? "01" : "" }));
+    }
+    const co = (shikibetsu: string, c: Comment) => record(5, { 1: "CO", 2: shikibetsu, 3: futan, 4: c.code, 5: c.raw });
+    // 区分に付かないコメントは、レセプト全体へのコメントとして先頭に書く（2 件目からは診療識別を書かない。EM §2-10 表 4 の (e)）
+    r.comments.filter((c) => c.on.length === 0).forEach((c, i) => rows.push(co(i === 0 ? WHOLE_RECEIPT : "", c)));
+    for (const u of units) {
+      u.rows.forEach((row, i) => {
+        const cols: Record<number, string | number> = { 1: "SI", 3: futan, 4: row.code, 5: row.quantity, 7: u.count };
+        if (i === 0) {
+          cols[2] = rev.shikibetsu[u.kubun[0]];
+          // 単位に付くコメントは、3 件まで先頭の行のコメント欄に書く
+          u.comments.slice(0, 3).forEach((c, n) => {
+            cols[8 + n * 2] = c.code;
+            cols[9 + n * 2] = c.raw;
+          });
+        }
+        if (i === u.rows.length - 1) cols[6] = u.points;
+        u.days.forEach((v, d) => {
+          if (v > 0) cols[14 + d] = v;
+        });
+        rows.push(record(44, cols));
       });
-      rows.push(record(44, cols));
-      for (const c of r.comments.filter((c) => c.kubun === l.kubun)) {
-        rows.push(record(5, { 1: "CO", 2: shinryoShikibetsu(l.kubun), 3: futanKubun(p.kohi.length), 4: c.code }));
-      }
+      // コメント欄に入りきらない分は、単位の直後の CO に書く（読み取りでは、どの単位に掛かるかが形式から決まらない置き場所）
+      for (const c of u.comments.slice(3)) rows.push(co("", c));
     }
   });
-  rows.push(record(4, { 1: "GO", 2: file.receipts.length, 3: file.receipts.reduce((s, r) => s + receiptTotal(r), 0), 4: "99" }));
+  rows.push(record(4, { 1: "GO", 2: file.receipts.length, 3: grand, 4: "99" }));
   return `${rows.join("\r\n")}\r\n`;
 }
 
@@ -147,13 +218,16 @@ export function writeUke(file: UkeFile): Buffer {
   return Buffer.concat([iconv.encode(formatUke(file), "Shift_JIS"), Buffer.from([EOF])]);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// 読み込み
+
 /**
- * UKE のバイト列を読む（spec FR-106）。受け取れない入力は、行番号つきの UkeError にする（一部だけを読んで返すことはしない）。
- * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／
- * 請求 id の文字種と重複／コードが架空コードの表にあること／診療年月に当たる版があること／算定日と回数・GO の件数と合計／
- * SI の点数が版の点数表と合うこと・HO の合計点数が行の合計と合うこと
+ * UKE のバイト列を、形式だけ見て読む（design.md §11-12・§11-14）。版を見ず、コードを区分に引かない。受け取れない入力は、行番号つきの UkeError にする。
+ * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／請求 id の文字種と重複／
+ * 算定日と回数・同じ単位の行の回数と算定日がそろっていること・単位が点数の行で終わっていること／GO の総件数。
+ * 点数・回数の算定単位は、点数が書いてある行で終わる（診療識別は区切りに使わない）。点数は 1 回分で、回数は単位の各行に同じ値（EM §2-10 表 4 の (a)〜(c)）
  */
-export function parseUke(buf: Buffer): UkeFile {
+export function parseUke(buf: Buffer): UkeParsed {
   const fail = (line: number | null, reason: string): never => {
     throw new UkeError(line, reason);
   };
@@ -204,26 +278,29 @@ export function parseUke(buf: Buffer): UkeFile {
   const payer: Payer = ir[1] === "1" ? "支払基金" : ir[1] === "2" ? "国保連" : fail(1, "審査支払機関コードが不正");
   const billingMonth = month(ir[7], 1, "請求年月");
 
-  const receipts: UkeReceipt[] = [];
+  const claims: UkeClaim[] = [];
   const claimIds = new Set<string>();
-  const hoTotals: { line: number; receipt: UkeReceipt; total: number }[] = [];
-  let cur: UkeReceipt | null = null;
-  let points: Revision["points"] = {};
+  let cur: UkeClaim | null = null;
   let daysInMonth = 31;
-  let stage = 0; // 0: RE の直後 1: HO/KO 2: SY 3: SI/CO
-  let lastKubun: string | null = null;
+  let stage = 0; // 0: RE の直後 1: HO/KO 2: SY 3: SI/IY/TO/CO
+  /** 点数の行がまだ来ていない、作りかけの単位の行 */
+  let pending: { item: UkeItem; count: number; days: number[] }[] = [];
+  /** 作りかけの単位が、点数の行なしで終わっていないか（次のレセプト・GO の前で確かめる） */
+  const closed = () => {
+    if (pending.length > 0) fail(pending[pending.length - 1].item.line, "点数のない行で単位が終わっている");
+  };
   recs.slice(1, -1).forEach((c, i) => {
     const line = i + 2;
     const kind = c[0];
     if (kind === "IR" || kind === "GO") fail(line, `${kind} の位置が不正`);
     if (kind === "RE") {
+      closed();
       const yearMonth = month(c[3], line, "診療年月");
-      // 該当する版がない診療年月は読まない（近い版で代用しない）
-      if (!hasRevision(yearMonth)) fail(line, "診療年月に当たる版がない");
       if (!UKE_CLAIM_ID.test(c[12])) fail(line, "請求 id に使えない文字がある");
       if (claimIds.has(c[12])) fail(line, "同じ請求 id のレセプトが 2 つある");
       claimIds.add(c[12]);
       cur = {
+        line,
         claimId: c[12],
         yearMonth,
         patient: {
@@ -235,14 +312,13 @@ export function parseUke(buf: Buffer): UkeFile {
           kohi: [],
           diseases: [],
         },
-        lines: [],
+        total: null,
+        units: [],
         comments: [],
       };
-      receipts.push(cur);
-      points = resolveRevision(yearMonth).points;
+      claims.push(cur);
       daysInMonth = new Date(Date.UTC(Number(c[3].slice(0, 4)), Number(c[3].slice(4, 6)), 0)).getUTCDate();
       stage = 0;
-      lastKubun = null;
       return;
     }
     if (!cur) return fail(line, `RE より前に ${kind} がある`);
@@ -252,68 +328,166 @@ export function parseUke(buf: Buffer): UkeFile {
       // 番号の桁数・検証番号はここでは断らない（患者情報チェック P01 が指摘として返す）。実日数と点数は数字であることだけを見る
       int(c[4], line, "診療実日数", 0, 31);
       const declared = int(c[5], line, "合計点数", 0, UKE_LIMITS.maxPoints);
-      // HO の合計点数は、そのレセプトの行を読み終えてから行の合計と突き合わせる（X-76）
-      if (kind === "HO") hoTotals.push({ line, receipt: cur, total: declared });
-      if (kind === "HO") cur.patient.insurer = { number: c[1], symbol: c[2], no: c[3] };
-      else cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
+      if (kind === "HO") {
+        cur.total = { line, points: declared };
+        cur.patient.insurer = { number: c[1], symbol: c[2], no: c[3] };
+      } else cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
     } else if (kind === "SY") {
       if (stage > 2) fail(line, "SY の位置が不正（SI の後）");
       stage = 2;
-      if (c[1] !== UNCODED_DISEASE) fail(line, "傷病名コードは未コード化（名称だけ）のものに限る");
+      const code = digits(c[1], line, "傷病名コード", /^\d{7}$/);
       const outcome = int(c[3], line, "転帰", 1, 4);
+      // 未コード化は名称を読む。表にあるコードは表の名称にする。ほかのコードは、コードを保持して名称を持たない
+      const known = diseaseNameOf(code);
       cur.patient.diseases.push({
-        name: c[5],
+        ...(code === UNCODED_DISEASE ? { name: c[5] } : known !== null ? { name: known } : { name: "", code }),
         start: digits(c[2], line, "診療開始日", /^\d{8}$/),
         ...(c[6] === "01" ? { main: true } : {}),
         ...(outcome !== 1 ? { outcome: outcome as 2 | 3 | 4 } : {}),
       });
-    } else if (kind === "SI") {
+    } else if (kind === "SI" || kind === "IY" || kind === "TO") {
       stage = 3;
-      // 架空コードの表にないコードは読まない（実在のデータを通さない。FR-107）
-      if (!isFictionalCode(c[3])) fail(line, "架空コードの表にないコード");
-      const kubun = kubunOfCode(c[3]);
-      // コードは表にあっても、レセプトの診療年月の版にない区分は読まない（FR-106）
-      if (!Object.hasOwn(points, kubun)) fail(line, "診療年月の版にない区分のコード");
-      const given = c[5] === "" ? null : int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
-      // 点数は診療年月の版の点数表のものに限る（合計は点数表から計算するので、食い違う点数を黙って捨てない。X-76）。
-      // 点数未収載の区分は、下の合計の確認で断る
-      const listed = points[kubun].points;
-      if (listed !== null && given !== listed) fail(line, "点数が診療年月の版の点数表と合わない");
+      const layout = ITEM_LAYOUT[kind];
+      digits(c[1], line, "診療識別", /^(\d{2})?$/);
+      const item: UkeItem = { line, kind, code: digits(c[3], line, "コード", /^\d{9}$/), quantity: digits(c[4], line, "数量データ", /^(\d{1,8}(\.\d{1,5})?)?$/) };
+      const points = c[5] === "" ? null : int(c[5], line, "点数", 0, UKE_LIMITS.maxPoints);
       const count = int(c[6], line, "回数", 1, 31 * UKE_LIMITS.maxDailyCount);
-      const dates: string[] = [];
+      const days: number[] = [];
       for (let d = 1; d <= 31; d++) {
-        const v = c[12 + d];
-        if (v === "") continue;
+        const v = c[layout.days + d - 1];
         // 1 日の回数は上限まで（大きな数で日付の並びを膨らませない）
-        if (!/^\d$/.test(v) || Number(v) > UKE_LIMITS.maxDailyCount) fail(line, "1 日の回数が上限を超えている");
+        if (v !== "" && (!/^\d$/.test(v) || Number(v) > UKE_LIMITS.maxDailyCount)) fail(line, "1 日の回数が上限を超えている");
         if (Number(v) > 0 && d > daysInMonth) fail(line, "診療年月にない日に回数がある");
-        for (let j = 0; j < Number(v); j++) dates.push(`${cur.yearMonth}-${String(d).padStart(2, "0")}`);
+        days.push(Number(v));
       }
-      if (dates.length !== count) fail(line, "算定日の合計と回数が合わない");
-      cur.lines.push({ kubun, count, dates });
-      lastKubun = kubun;
+      if (days.reduce((s, v) => s + v, 0) !== count) fail(line, "算定日の合計と回数が合わない");
+      // 同じ単位の行は、回数も算定日も同じ（EM §2-10 表 4 の (b)・(g)）
+      if (pending.length > 0 && (pending[0].count !== count || pending[0].days.join() !== days.join())) fail(line, "同じ単位の行で、回数・算定日がそろっていない");
+      for (let n = 0; n < 3; n++) {
+        const code = c[layout.comments + n * 2];
+        const raw = c[layout.comments + n * 2 + 1];
+        if (code === "" && raw === "") continue;
+        cur.comments.push({ line, code: digits(code, line, "コメントコード", /^\d{9}$/), raw, unit: cur.units.length });
+      }
+      pending.push({ item, count, days });
+      if (points !== null) {
+        cur.units.push({ line, items: pending.map((p) => p.item), points, count, days });
+        pending = [];
+      }
     } else {
-      // CO。コメントコードには架空コードの表がないので、形（数字 9 桁）だけを見る
-      if (!lastKubun) return fail(line, "CO の前に SI がない");
-      cur.comments.push({ kubun: lastKubun, code: digits(c[3], line, "コメントコード", /^\d{9}$/) });
+      // CO。コメントコードは形（数字 9 桁）だけを見る。診療行為のレコードより前にあってもよい
+      stage = 3;
+      const shikibetsu = digits(c[1], line, "診療識別", /^(\d{2})?$/);
+      // 帰属が形式から決まるのは、単位の途中（点数の行より前）にある、診療識別が空の CO だけ
+      const unit = shikibetsu === "" && pending.length > 0 ? cur.units.length : null;
+      cur.comments.push({ line, code: digits(c[3], line, "コメントコード", /^\d{9}$/), raw: c[4], unit });
     }
   });
-  let total = 0;
-  const totals = new Map<UkeReceipt, number>();
-  try {
-    for (const r of receipts) totals.set(r, receiptTotal(r));
-    total = [...totals.values()].reduce((s, t) => s + t, 0);
-  } catch {
-    fail(goLine, "点数のない区分があり、合計を確かめられない");
-  }
-  for (const h of hoTotals) if (h.total !== totals.get(h.receipt)) fail(h.line, "合計点数が行の合計と合わない");
-  if (int(go[1], goLine, "総件数", 0, UKE_LIMITS.maxLines) !== receipts.length) fail(goLine, "GO の総件数とレセプト数が合わない");
-  if (int(go[2], goLine, "総合計点数", 0, UKE_LIMITS.maxPoints * 100) !== total) fail(goLine, "GO の総合計点数と計算が合わない");
+  closed();
+  if (int(go[1], goLine, "総件数", 0, UKE_LIMITS.maxLines) !== claims.length) fail(goLine, "GO の総件数とレセプト数が合わない");
   return {
     payer,
     prefecture: pref,
     clinic: { code: ir[4], name: ir[6], phone: ir[9] },
     billingMonth,
-    receipts,
+    claims,
+    total: { line: goLine, points: int(go[2], goLine, "総合計点数", 0, UKE_LIMITS.maxPoints * 100) },
   };
+}
+
+/** 単位を区分に引いた結果。引けなければ、理由（定型文。値は入れない）と行番号 */
+export type UnitMapping = { ok: true; lines: UkeLine[] } | { ok: false; line: number; reason: string };
+
+export type MappedClaim = {
+  /** 単位ごとの結果（UkeClaim.units と同じ並び） */
+  units: UnitMapping[];
+  /** 引けた単位の算定行（単位の並びのまま） */
+  lines: UkeLine[];
+  comments: Comment[];
+};
+
+const datesOf = (yearMonth: string, days: number[], times: number): string[] =>
+  days.flatMap((n, i) => Array.from({ length: n * times }, () => `${yearMonth}-${String(i + 1).padStart(2, "0")}`));
+
+/** 単位 1 つを、版の codes・bundles で算定行にする */
+function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision): UnitMapping {
+  const no = (line: number, reason: string): UnitMapping => ({ ok: false, line, reason });
+  const other = unit.items.find((it) => it.kind !== "SI");
+  if (other) return no(other.line, "医薬品・特定器材の行は、点検の対象にしていない");
+  const unknown = unit.items.find((it) => kubunOfCode(rev, it.code) === null && bundleOfCode(rev, it.code) === null);
+  if (unknown) return no(unknown.line, "診療年月の版の表にないコード");
+  const dates = datesOf(yearMonth, unit.days, 1);
+
+  // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる
+  const bundle = bundleOfCode(rev, unit.items[0].code);
+  if (unit.items.some((it) => bundleOfCode(rev, it.code) !== bundle)) return no(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  if (bundle) {
+    const items = unit.items.map((it) => it.code);
+    if (new Set(items).size !== items.length) return no(unit.line, "包括の検査の同じ項目が、同じ単位に 2 つある");
+    if (unit.items.some((it) => it.quantity !== "")) return no(unit.line, "数量データに対応していない項目");
+    const kubun = bundleKubun(bundle, items.length);
+    if (kubun === null) return no(unit.line, "包括の検査の項目数が、算定できる数に足りない");
+    if (unit.points !== rev.points[kubun].points) return no(unit.line, "点数が診療年月の版の点数表と合わない");
+    return { ok: true, lines: [{ kubun, count: unit.count, dates, items }] };
+  }
+
+  // それ以外：コード 1 つが区分 1 つ。単位の 1 回分の点数は、引いた区分の 1 回分の点数の合計（注加算は基本の項目と合算されている）
+  const lines: UkeLine[] = [];
+  let expected = 0;
+  for (const it of unit.items) {
+    const kubun = kubunOfCode(rev, it.code)!;
+    const listed = rev.points[kubun].points;
+    if (listed === null) return no(it.line, "点数のない区分で、点数を確かめられない");
+    if (rev.codes[kubun].quantity) {
+      // きざみで算定する区分：数量データが項目数で、行の回数は 項目数 × 回数（同じ日を項目数だけ重ねる）
+      if (!/^[1-9]\d{0,2}$/.test(it.quantity)) return no(it.line, "数量データが項目数として読めない");
+      const n = Number(it.quantity);
+      expected += listed * n;
+      lines.push({ kubun, count: unit.count * n, dates: datesOf(yearMonth, unit.days, n) });
+    } else {
+      if (it.quantity !== "") return no(it.line, "数量データに対応していない項目");
+      expected += listed;
+      lines.push({ kubun, count: unit.count, dates });
+    }
+  }
+  if (unit.points !== expected) return no(unit.line, "点数が診療年月の版の点数表と合わない");
+  return { ok: true, lines };
+}
+
+/**
+ * レセプト 1 件のコードを、渡された版の表で区分に引く（design.md §11-12・§11-14）。例外にせず、単位ごとに「引けた／引けない（理由）」を返す。
+ * 引けない単位の行は lines に入れない。コメントの on は、帰属が形式から決まり、その単位が引けたときだけ埋める
+ */
+export function mapClaim(claim: UkeClaim, rev: Revision): MappedClaim {
+  const units = claim.units.map((u) => mapUnit(u, claim.yearMonth, rev));
+  const comments = claim.comments.map((c: UkeComment): Comment => {
+    const u = c.unit === null ? undefined : units[c.unit];
+    return { code: c.code, text: normalizeCommentText(c.raw), raw: c.raw, on: u?.ok ? [...new Set(u.lines.map((l) => l.kubun))] : [] };
+  });
+  return { units, lines: units.flatMap((u) => (u.ok ? u.lines : [])), comments };
+}
+
+/**
+ * UKE の取り込み（spec FR-106）。形式を読み（parseUke）、レセプトごとに診療年月の版でコードを区分に引く（mapClaim）。
+ * 診療年月に当たる版がないレセプト・引けない単位（表にないコード、点数表と合わない点数）・HO の合計点数や GO の総合計点数と行の合計の食い違いがあれば、
+ * 行番号つきの UkeError にしてファイルごと断る（一部だけを読んで返すことはしない。X-76）
+ */
+export function readUke(buf: Buffer): UkeFile {
+  const parsed = parseUke(buf);
+  const fail = (line: number, reason: string): never => {
+    throw new UkeError(line, reason);
+  };
+  let grand = 0;
+  const receipts = parsed.claims.map((c): UkeReceipt => {
+    // 該当する版がない診療年月は読まない（近い版で代用しない）
+    if (!hasRevision(c.yearMonth)) fail(c.line, "診療年月に当たる版がない");
+    const mapped = mapClaim(c, resolveRevision(c.yearMonth));
+    for (const u of mapped.units) if (u.ok === false) fail(u.line, u.reason);
+    const total = c.units.reduce((s, u) => s + u.points * u.count, 0);
+    if (c.total && c.total.points !== total) fail(c.total.line, "合計点数が行の合計と合わない");
+    grand += total;
+    return { claimId: c.claimId, yearMonth: c.yearMonth, patient: c.patient, lines: mapped.lines, comments: mapped.comments, commentsKnown: true };
+  });
+  if (parsed.total.points !== grand) fail(parsed.total.line, "GO の総合計点数と計算が合わない");
+  return { payer: parsed.payer, prefecture: parsed.prefecture, clinic: parsed.clinic, billingMonth: parsed.billingMonth, receipts };
 }

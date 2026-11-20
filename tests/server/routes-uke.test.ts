@@ -10,7 +10,7 @@ import type { Role } from "../../src/server/roles";
 import { pointsOf, resolveRevision } from "../../src/engine/revisions";
 import { UKE_LIMITS } from "../../src/uke/limits";
 import type { UkeFile, UkePatient } from "../../src/uke/types";
-import { parseUke, writeUke } from "../../src/uke/uke";
+import { readUke, writeUke } from "../../src/uke/uke";
 import { claimId, YM } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
@@ -85,7 +85,7 @@ describe("UKE のアップロード", () => {
     const broken: [string, Buffer, string][] = [
       ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "5 行目：列数が合わない"],
       ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
-      ["表にないコード", withCell(5, 3, "160000310"), "5 行目：架空コードの表にないコード"],
+      ["表にないコード", withCell(5, 3, "160000310"), "5 行目：診療年月の版の表にないコード"],
       ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
       ["文字種の外の請求 id", withCell(2, 12, "../../etc/passwd"), "2 行目：請求 id に使えない文字がある"],
       ["版のない診療年月", withCell(2, 3, "202503"), "2 行目：診療年月に当たる版がない"],
@@ -132,8 +132,8 @@ describe("UKE のアップロード", () => {
     resetLimits();
     const owner = auth().register("uke_owner_g", "やまだ", "password123");
     const cookie = cookieOf(owner);
-    // 見本のレセプトの行を借りて、架空の患者・別の請求 id のレセプトを 2 件作る（コードは架空コードの表のもの）
-    const base = parseUke(sample("kokuhoren.UKE"));
+    // 見本のレセプトの行を借りて、架空の患者・別の請求 id のレセプトを 2 件作る（コードは版のコードの表のもの）
+    const base = readUke(sample("kokuhoren.UKE"));
     const linesOf = (k: string) => base.receipts.find((x) => x.claimId === claimId(k))!.lines;
     const person = (n: number, name: string): UkePatient => ({ name, sex: 2, birth: "19440505", receiptType: "1318", insurer: { number: "39139993", symbol: "", no: `0000009${n}` }, kohi: [], diseases: [{ name: "慢性心不全", start: "20250401", main: true }] });
     const X1 = `X1-${YM}`;
@@ -142,9 +142,9 @@ describe("UKE のアップロード", () => {
       ...base,
       receipts: [
         // 在宅移行早期加算（退院・算定開始月の記録がないと決められない）を含む行
-        { claimId: X1, yearMonth: YM, patient: person(1, "架空 花子"), lines: linesOf("K2"), comments: [] },
+        { claimId: X1, yearMonth: YM, patient: person(1, "架空 花子"), lines: linesOf("K2"), comments: [], commentsKnown: true },
         // ターミナルケア加算（訪問の記録がないと決められない）を含む行
-        { claimId: X2, yearMonth: YM, patient: person(2, "架空 月子"), lines: linesOf("K5"), comments: [] },
+        { claimId: X2, yearMonth: YM, patient: person(2, "架空 月子"), lines: linesOf("K5"), comments: [], commentsKnown: true },
       ],
     };
     const bytes = writeUke(file);
@@ -201,9 +201,9 @@ describe("UKE のアップロード", () => {
     const again = await r.upload(upload(cookie, writeUke({ ...file, receipts: [{ ...file.receipts[0], patient: person(3, "架空 星子") }] })));
     expect([again.status, (await again.json()).error]).toEqual([400, expect.stringContaining("2 行目：すでに取り込んだ UKE と同じ請求 id で、内容が違う")]);
     expect(stored(owner)).toEqual([name]);
-    // 架空コードの表にないコードを 1 行でも含めば、ファイルごと断る
+    // 版のコードの表にないコードを 1 行でも含めば、ファイルごと断る
     const unknownCode = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,)\d+/m, "$1160000310"))));
-    expect([unknownCode.status, (await unknownCode.json()).error]).toEqual([400, expect.stringContaining("架空コードの表にないコード")]);
+    expect([unknownCode.status, (await unknownCode.json()).error]).toEqual([400, expect.stringContaining("診療年月の版の表にないコード")]);
     expect(stored(owner)).toEqual([name]);
 
     // ほかのクリニックには見えず、名前（ハッシュ）を知っていても取り込めない

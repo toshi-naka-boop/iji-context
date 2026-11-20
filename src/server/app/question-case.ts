@@ -15,8 +15,15 @@ export function createQuestionCase(cases: Cases, notes: Notes, doctor: Doctor) {
 
   /** 問題の請求：訪問の時点の問題なら、その日までの実施と記録だけにする（FR-68） */
   const caseAt = (claimId: string, asOf?: string, clerkId?: string): ClaimContext => (asOf ? contextAsOf(monthOf(claimId, clerkId), asOf) : caseOf(claimId));
-  /** 練習問題は、よくある間違いを入れた明細と、そのときの状況で始める（FR-75） */
+  /**
+   * 練習問題は、よくある間違いを入れた明細と、そのときの状況で始める（FR-75）。
+   * 練習問題と選択モードは、行を入れ替えるだけでコメントを直さないので、コメントを持たない請求として渡す（commentsKnown を偽にする。design.md §11-13）
+   */
   const caseFor = (q: Question): ClaimContext => {
+    const c = baseFor(q);
+    return q.drill || q.mode === "選択" ? { ...c, commentsKnown: false } : c;
+  };
+  const baseFor = (q: Question): ClaimContext => {
     if (q.drill && isDoctorDrill(q.drill)) {
       // 医師確認の練習問題：承認された回答だけを、この問題の事実に戻す（本物の患者情報は変えない。FR-76）
       const d = doctorDrillOf(q.drill);

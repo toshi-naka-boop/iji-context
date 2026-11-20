@@ -1,16 +1,17 @@
 // ORCA API 形式（日医標準レセプトソフト API）の読み取りコネクタ（spec FR-110）。読み取りだけで、書き込みの API は呼ばない。
 // 相手は同梱の模擬サーバー（fixtures/connect/mock-server.ts）。実機にはつないでいない。
 // 持っているのは患者基本情報（PatientSource）と請求（ClaimSource）。請求は診療行為の API（xml2 形式だけ）から読む（下の注）。
-// 請求で受け取るのは架空コードだけ（表にないコードが 1 つでもあれば、応答ごと受け取らない。UKE の取り込みと同じ）
+// 請求で受け取るのは、診療年月の版のコードの表にあるコードだけ（表にないコードが 1 つでもあれば、応答ごと受け取らない。UKE の取り込みと同じ）
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { z } from "zod";
-import { isFictionalCode, kubunOfCode } from "../engine/codes-fictional";
 import { hasRevision, resolveRevision } from "../engine/revisions";
-import type { ClaimLine, Payer } from "../engine/types";
+import { bundleKubun, bundleOfCode, kubunOfCode } from "../engine/revisions/codes";
+import type { Bundle } from "../engine/revisions/types";
+import type { Payer } from "../engine/types";
 import type { CoverageInfo } from "../patient/profile";
 import { payerOfInsurer } from "../uke/cases";
 import { UKE_CLAIM_ID } from "../uke/limits";
-import type { UkeFile } from "../uke/types";
+import type { UkeFile, UkeLine } from "../uke/types";
 import { connectJson, connectText, ConnectError, formatError } from "./fetch";
 import { assertQuery, monthRange, type Connector, type ConnectorPatient } from "./types";
 
@@ -45,8 +46,9 @@ export const ORCA_ID = "orca";
 //
 // 【診療行為の API に載っていないもの】（請求の境界の型 UkeFile のうち、このコネクタが埋められない項目）
 //   - 同じ日に 2 回以上の算定（算定日区分は日ごとの 0／1 だけ）。回数は「算定した日の数」として読む
+//   - 点数・回数の算定単位。包括の検査（項目数で区分が決まる）は、算定日区分が同じ項目をひとまとまりとして数える
 //   - どの保険で請求したか。保険は患者基本情報から引き、医療保険が 1 つに決まらなければ受け取らない。公費は患者基本情報にあるものを全部載せる
-//   - レセプト種別・傷病名・コメント・医療機関の情報・都道府県・請求年月。空で返す（レセプト種別と傷病名を使うチェックは働かない）
+//   - レセプト種別・傷病名・コメント・医療機関の情報・都道府県・請求年月。空で返す（レセプト種別と傷病名を使うチェックは働かない。コメントは「持たない」として返す）
 //   - 請求 id。患者番号と診療年月から「患者番号-診療年月」で作る
 //
 // 【公式仕様で未確認。実機につなぐ前に確認する】
@@ -206,7 +208,7 @@ function parseXml2(what: string, text: string): unknown {
 }
 
 /** 診療行為の応答を算定行にする。受け取れない行が 1 つでもあれば、応答ごと断る（一部だけを読んで返さない） */
-function toLines(patientId: string, yearMonth: string, raw: unknown): ClaimLine[] {
+function toLines(patientId: string, yearMonth: string, raw: unknown): UkeLine[] {
   const parsed = OrcaMedicalResponse.safeParse(raw);
   if (!parsed.success) throw formatError(ORCA_ID, "診療行為", parsed.error.issues);
   const res = parsed.data[ORCA_WIRE.xmlRoot][ORCA_WIRE.medicalRoot];
@@ -215,20 +217,42 @@ function toLines(patientId: string, yearMonth: string, raw: unknown): ClaimLine[
   if (res.Patient_Information?.Patient_ID !== patientId) throw new ConnectError(ORCA_ID, "format", "頼んだ患者と違う患者の応答が返った");
   if (res.Perform_Date !== yearMonth) throw new ConnectError(ORCA_ID, "format", "頼んだ診療年月と違う月の応答が返った");
   const refuse = (reason: string) => new ConnectError(ORCA_ID, "format", `診療行為を受け取れない（${reason}）`);
-  const points = resolveRevision(yearMonth).points;
+  // コードは、診療年月の版の表で区分に引く（版を決めてから引く。UKE の取り込みと同じ表）
+  const rev = resolveRevision(yearMonth);
   const daysInMonth = Number(monthRange(yearMonth).end.slice(8));
-  return (res.Medical_List_Information?.Medical_List_Information_child ?? []).map((m) => {
-    // 架空コードの表にないコードは読まない（実在のデータを通さない。UKE の取り込みと同じ関数で確かめる）
-    if (!isFictionalCode(m.Medication_Code)) throw refuse("架空コードの表にないコード");
-    const kubun = kubunOfCode(m.Medication_Code);
-    if (!Object.hasOwn(points, kubun)) throw refuse("診療年月の版にない区分のコード");
+  /** 包括の検査の項目：同じ包括・同じ算定日区分の行をひとまとまりにし、項目数で区分を決める */
+  const bundled = new Map<string, { bundle: Bundle; line: UkeLine & { items: string[] } }>();
+  const lines: UkeLine[] = [];
+  for (const m of res.Medical_List_Information?.Medical_List_Information_child ?? []) {
+    const kubun = kubunOfCode(rev, m.Medication_Code);
+    const bundle = bundleOfCode(rev, m.Medication_Code);
+    if (kubun === null && bundle === null) throw refuse("診療年月の版の表にないコード");
     // 包括分（別に算定しない行）を算定行に数えない。どう返るかが未確認なので、あれば断る
     if (m.Medical_Class_code === "1") throw refuse("包括分の行には未対応");
     if (m.Perform_Calendar.slice(daysInMonth).includes("1")) throw refuse("診療年月にない日に算定がある");
     const dates = [...m.Perform_Calendar].flatMap((c, i) => (c === "1" ? [`${yearMonth}-${String(i + 1).padStart(2, "0")}`] : []));
     if (dates.length === 0 || (m.Perform_Total_Number !== undefined && Number(m.Perform_Total_Number) !== dates.length)) throw refuse("算定日と算定合計数が合わない");
-    return { kubun, count: dates.length, dates };
-  });
+    if (kubun !== null) {
+      lines.push({ kubun, count: dates.length, dates });
+      continue;
+    }
+    const key = `${rev.bundles.indexOf(bundle!)}/${m.Perform_Calendar}`;
+    const group = bundled.get(key);
+    if (group?.line.items.includes(m.Medication_Code)) throw refuse("包括の検査の同じ項目が 2 つある");
+    if (group) group.line.items.push(m.Medication_Code);
+    else {
+      // 区分は、全部の行を読んでから項目数で決める（並びは最初の項目の位置）
+      const line = { kubun: "", count: dates.length, dates, items: [m.Medication_Code] };
+      bundled.set(key, { bundle: bundle!, line });
+      lines.push(line);
+    }
+  }
+  for (const { bundle, line } of bundled.values()) {
+    const kubun = bundleKubun(bundle, line.items.length);
+    if (kubun === null) throw refuse("包括の検査の項目数が、算定できる数に足りない");
+    line.kubun = kubun;
+  }
+  return lines;
 }
 
 export function createOrcaConnector(): Connector {
@@ -280,6 +304,7 @@ export function createOrcaConnector(): Connector {
             },
             lines,
             comments: [],
+            commentsKnown: false,
           });
         }
         return { files: [...files.values()], unmapped: [] };
