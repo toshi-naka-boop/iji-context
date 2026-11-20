@@ -114,7 +114,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
   }
 
   return (
-    <div>
+    <div id="patient-info">
       <h3>患者情報</h3>
       <table>
         <tbody>
