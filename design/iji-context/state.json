@@ -1,20 +1,21 @@
 {
-  "currentNode": "起草",
+  "currentNode": "批評",
   "status": "in_progress",
-  "designVersion": "v23",
-  "approvedDesignVersion": "v23",
-  "approvedDesignSha256": "7428610f1a42fbff06077897f0b02e027ff8d274f7d72e04d51bdc422d3e5d02",
-  "approvedAt": "2026-11-20T00:00:00+09:00",
-  "approvalEvidence": "v23:7428610f1a42 を承認",
-  "requiredApprovalFingerprint": "v23:7428610f1a42",
-  "baseline": "feat/integration（PR #16、8aa200a）",
-  "criticRound": 28,
+  "designVersion": "v24",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v24:d6ab1cb4c0f7",
+  "baseline": "feat/integration（PR #16、66f29e6）",
+  "criticRound": 29,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§11）",
-    "ledger.md"
+    "design.md（§12）",
+    "ledger.md",
+    "sources/research/full-coverage-research.md"
   ],
-  "nextAction": "全行の点検（マスター駆動）の調査の結果を受けて v24 を起草 → 批評 → 承認CP。v23 の実装は feat/integration で完了（承認の指紋は v23 のまま。design.md を変えた時点で承認を外す）",
+  "nextAction": "round-29 の批評（design-critic と codex）を受けて §12 を改訂し、承認CPへ",
   "lastUpdated": "2026-11-20",
   "delegation": {
     "実装": "claude サブエージェント",
