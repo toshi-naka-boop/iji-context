@@ -15,7 +15,7 @@ export type OfficialDoc = {
   issuedOn: string;
   url: string;
   scope: {
-    /** 対象区分（架空コードの表にあるキー。1 つ以上） */
+    /** 対象区分（点数表にあるキー。1 つ以上） */
     kubun: string[];
     /** null＝審査支払機関を問わない（厚労省の疑義解釈など） */
     payer: "支払基金" | "国保連" | null;

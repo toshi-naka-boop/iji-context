@@ -4,12 +4,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ruleKubun } from "../engine";
-import { isKnownKubun } from "../engine/codes-fictional";
+import { isKnownKubun } from "../engine/revisions";
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import type { OfficialDoc, OfficialInput } from "./types";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const kubun = z.string().refine(isKnownKubun, "架空コードの表にない区分");
+const kubun = z.string().refine(isKnownKubun, "点数表にない区分");
 
 /** 要旨の上限（設計パラメータ。FR-125） */
 export const SUMMARY_MAX = 200;
