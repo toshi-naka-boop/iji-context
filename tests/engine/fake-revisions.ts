@@ -34,6 +34,7 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     comments: [],
     commentCodes: {},
     rules: [fakeRule(kubun, maxCount)],
+    changes: [],
     ...over,
   };
 }

@@ -132,4 +132,18 @@ export type Revision = {
   commentCodes: Record<string, CommentCodeNote>;
   /** consts（R17 は comments・commentCodes も）から工場関数で組み立てたもの */
   rules: Rule[];
+  /** その版で、前の改定から変わった点（design.md §11-2）。人が EM を見て書く。値の変更の版は持たない（空） */
+  changes: RevisionChange[];
+};
+
+/**
+ * 前の改定から変わった点の 1 件（値は EM §2-9「変わった点」の行だけ）。
+ * target は対象の区分とルール（前の版にしかない区分も入る）。summary は要旨（120 字まで）、em は EM の出どころ
+ */
+export type RevisionChange = {
+  id: string;
+  target: { kubun?: string[]; ruleId?: string };
+  kind: "新設" | "廃止" | "点数" | "要件" | "区分の再編";
+  summary: string;
+  em: string;
 };
