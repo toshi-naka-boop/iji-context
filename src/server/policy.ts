@@ -41,6 +41,8 @@ export const POLICY = {
   "POST /api/invites/[id]/revoke": row({ roles: ["manager"], solo: true }, "none", false),
   // 監査ログの閲覧（FR-140）
   "GET /api/audit": row(["manager"], "none", false),
+  // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
+  "GET /api/masters": row(["manager"], "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),

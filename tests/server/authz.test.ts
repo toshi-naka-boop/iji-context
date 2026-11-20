@@ -257,6 +257,27 @@ describe("招待制の登録", () => {
   });
 });
 
+describe("マスターの状態", () => {
+  it("事務長だけが読める。データがなければ「入っていない」を返す", async () => {
+    const GET = (await import("../../app/api/masters/route")).GET;
+    const owner = auth().register("clinic_masters", "ますた", "password123");
+    const cookie = cookieOf(owner);
+    const get = () => GET(new Request("http://localhost/api/masters", { headers: { cookie } }));
+    expect((await get()).status).toBe(403);
+    await switchTo(cookie, "manager");
+    const before = process.env.RESEMEN_MASTER_DIR;
+    // テストのデータ置き場には masters.db を置いていない
+    delete process.env.RESEMEN_MASTER_DIR;
+    try {
+      const r = await get();
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ present: false, sources: [], checks: [], rejected: [] });
+    } finally {
+      if (before !== undefined) process.env.RESEMEN_MASTER_DIR = before;
+    }
+  });
+});
+
 describe("監査ログの閲覧", () => {
   it("事務長だけが読める", async () => {
     const GET = (await import("../../app/api/audit/route")).GET;

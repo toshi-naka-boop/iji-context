@@ -7,6 +7,7 @@ import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { PageGuide } from "../page-guide";
 import { ROLES, ROLE_LABELS, type Role } from "../../src/server/roles";
 import { Invites } from "./invites";
+import { Masters } from "./masters";
 
 export default function Settings() {
   const { clerk: user, ready } = useClerk();
@@ -52,6 +53,7 @@ export default function Settings() {
         </div>
       )}
       {me?.canInvite && <Invites />}
+      {me?.role === "manager" && <Masters />}
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>メンター</h3>
         <p className="muted">今のメンター：{choice?.current.name ?? ""}。変えると、メンターとの会話は新しく始まります。</p>
