@@ -8,6 +8,10 @@ import { LAYER_SLUG } from "../../lifecycle/layers";
  */
 export const knowledgeId = z.string().regex(new RegExp(`^(${Object.values(LAYER_SLUG).join("|")})/[a-z0-9-]{1,60}$`));
 
+/** 公的文書の条件に当たるかの確認（design.md §11-3）。key は画面に出したときの文書の鍵（<id>#<ハッシュ 8 桁>）。確かめた人の名前は受け取らない */
+export const knowledgeParams = z.strictObject({ id: knowledgeId });
+export const officialCheckBody = z.strictObject({ docId: z.string().regex(/^[A-Z0-9][A-Za-z0-9-]{0,39}$/), key: z.string().regex(/^[A-Z0-9][A-Za-z0-9-]{0,39}#[0-9a-f]{8}$/) });
+
 export const knowledgeQuery = z.strictObject({ view: z.enum(["queue"]).optional() });
 
 // 要約・本文が空白だけのときの文言は propose（src/server/app/knowledge.ts）が持つ。要約は propose が 200 文字に切る
