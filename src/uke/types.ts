@@ -24,13 +24,31 @@ export type UkeClinic = { code: string; name: string; phone: string };
 /** UKE の側の算定行。items は、包括の検査の区分の行が並べる検査項目のコード（読み取りが埋め、書き出しが使う。エンジンには渡さない） */
 export type UkeLine = ClaimLine & { items?: string[] };
 
+/**
+ * 点検の対象外の単位（design.md §11-11）：診療年月の版の表で引けないコードを 1 つでも含む算定単位。まるごと点検の対象外にして、UKE に書いてあるまま残す。
+ * unit は単位の番号（UkeClaim.units の添字）、codes は単位の行のコード（名称は持たない。マスターを同梱しない）、
+ * points は 1 回分の点数、count は回数、days は 1〜31 日の回数（どれも UKE に書いてある値）
+ */
+export type UkeOther = { unit: number; codes: string[]; points: number | null; count: number; days: number[] };
+
 /** レセプト 1 件分（コードを区分に引いたあと） */
 export type UkeReceipt = {
   claimId: string;
+  /** UKE の「カルテ番号等」の欄（患者ごとの番号。空のこともある。表示にだけ使う）。UKE から読んだレセプトだけが持つ */
+  patientNo?: string;
   /** 診療年月 YYYY-MM */
   yearMonth: string;
   patient: UkePatient;
   lines: UkeLine[];
+  /** 点検の対象外の単位。1 つでもあれば、lines は請求の一部でしかない（ClaimContext.partial になる）。なければ省く */
+  others?: UkeOther[];
+  /** UKE に書いてある請求の合計点数（HO と、KO の並び）。UKE から読んだレセプトだけが持つ。点検した行の小計とは別のもの */
+  declared?: { ho: number | null; ko: number[] };
+  /**
+   * 保存済みのレセプトを読み直したら、いまの表では読めなかった（design.md §11-12。取り込んだ後にコードの表・点数表が変わった）。
+   * 理由だけを持ち、lines・comments は空。点検には並べない（一覧には出す）
+   */
+  unreadable?: { reason: string };
   comments: Comment[];
   /** コメントを持つ出どころか（UKE は真。コメントの載らない連携は偽）。ClaimContext.commentsKnown になる */
   commentsKnown: boolean;
@@ -69,12 +87,15 @@ export type UkeComment = { line: number; code: string; raw: string; unit: number
 export type UkeClaim = {
   /** RE の行番号 */
   line: number;
-  claimId: string;
+  /** 「カルテ番号等」の欄（RE の 13 列目）。患者ごとの番号で、空でもよく、同じ患者の別の月・同じファイルの 2 枚目で重なる。請求 id にはしない（design.md §11-11） */
+  patientNo: string;
   /** 診療年月 YYYY-MM */
   yearMonth: string;
   patient: UkePatient;
   /** HO に書いてある合計点数と、その行番号（HO がなければ null） */
   total: { line: number; points: number } | null;
+  /** KO（公費）に書いてある合計点数（KO の並びの順） */
+  kohiTotals: number[];
   units: UkeUnit[];
   comments: UkeComment[];
 };

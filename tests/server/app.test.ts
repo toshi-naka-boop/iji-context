@@ -286,7 +286,7 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     expect(app.ukeList(a.id).map((u) => [u.name, u.payer, u.imported])).toEqual([["kokuhoren.UKE", "国保連", false], ["shiharaikikin.UKE", "支払基金", true]]);
     expect(() => app.importUke(a.id, "other.UKE")).toThrow();
   });
-  it("以前の作り物のコードで作られた取り込み済みの UKE は、一覧から落とさず「古い形式」として出し、点検には並べない。ほかのレセプトは今までどおり読める（design.md §11-1 の移行）", () => {
+  it("以前の作り物のコードで作られた取り込み済みの UKE は、一覧から落とさず、行をまるごと点検の対象外として出す。形式そのものが読めないファイルは「読めない」と出し、点検には並べない。ほかのレセプトは今までどおり読める（design.md §11-1 の移行・§11-12）", () => {
     // 見本（K6）の請求 id とコードを差し替えて、以前の形式（99 で始まる作り物のコード）の UKE を置き場に置く
     const sample = new TextDecoder("shift_jis").decode(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")).subarray(0, -1));
     const old = sample.replace(claimId("K6"), `X9-${period.yearMonth}`).replace(/^(SI,\d+,\d+,)\d{9}/gm, `$1${"99"}0000031`);
@@ -294,15 +294,21 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     const name = `${createHash("sha256").update(bytes).digest("hex")}.UKE`;
     mkdirSync(path.join(tmp, "uke"), { recursive: true });
     writeFileSync(path.join(tmp, "uke", name), bytes);
-    app.setSetting("uke-uploads", JSON.stringify([name]));
+    // 形式そのものが読めないファイル（末尾の EOF がない）
+    const broken = bytes.subarray(0, -1);
+    const brokenName = `${createHash("sha256").update(broken).digest("hex")}.UKE`;
+    writeFileSync(path.join(tmp, "uke", brokenName), broken);
+    app.setSetting("uke-uploads", JSON.stringify([name, brokenName]));
     const a = app.createClerk("審査員A");
-    expect(app.ukeList(a.id).map((u) => [u.name, u.outdated, u.payer, u.receipts.length, u.imported])).toEqual([
-      ["kokuhoren.UKE", false, "国保連", 6, false],
-      ["shiharaikikin.UKE", false, "支払基金", 1, false],
-      [name, true, null, 0, false],
+    expect(app.ukeList(a.id).map((u) => [u.name, u.unreadable?.reason ?? null, u.payer, u.receipts.map((x) => [x.claimId, x.otherRows, x.unreadable]), u.imported])).toEqual([
+      ["kokuhoren.UKE", null, "国保連", ["K1", "K2", "K3", "K4", "K5", "K7"].map((k) => [claimId(k), 0, null]), false],
+      ["shiharaikikin.UKE", null, "支払基金", [[claimId("K6"), 0, null]], false],
+      // 以前のコードの行（2 行）は、版の表にないコードなので、点検の対象外の行として残る
+      [name, null, "支払基金", [["U1-1", 2, null]], false],
+      [brokenName, expect.stringContaining("いまの形式では読めない UKE"), null, [], false],
     ]);
-    expect(() => app.importUke(a.id, name)).toThrow("古い形式の UKE");
-    expect(app.cases().map((c) => c.claimId)).toEqual(["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId));
+    expect(() => app.importUke(a.id, brokenName)).toThrow("いまの形式では読めない UKE");
+    expect(app.cases().map((c) => c.claimId)).toEqual([...["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId), "U1-1"]);
     app.importUke(a.id, "shiharaikikin.UKE");
     expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
   });

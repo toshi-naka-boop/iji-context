@@ -56,7 +56,13 @@ const stored = (u: User): string[] => {
   const dir = path.join(path.dirname(instance.tenantPaths(u.tenantId).dbFile), "uke");
   return existsSync(dir) ? readdirSync(dir) : [];
 };
-type Listed = { name: string; uploaded: boolean; imported: boolean; receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean }[] }[];
+type Listed = {
+  name: string;
+  uploaded: boolean;
+  imported: boolean;
+  unreadable: { reason: string } | null;
+  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null }[];
+}[];
 
 describe("UKE のアップロード", () => {
   it("未ログインは 401、医師の役割は 403。ファイルがなければ 400", async () => {
@@ -87,7 +93,7 @@ describe("UKE のアップロード", () => {
     const broken: [string, Buffer, string][] = [
       ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "5 行目：列数が合わない"],
       ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
-      ["表にないコード", withCell(5, 3, "160000310"), "5 行目：診療年月の版の表にないコード"],
+      ["版の点数表と合わない点数", withCell(5, 5, "131"), "5 行目：点数が診療年月の版の点数表と合わない"],
       ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
       ["版のない診療年月", withCell(2, 3, "202503"), "2 行目：診療年月に当たる版がない"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
@@ -100,7 +106,7 @@ describe("UKE のアップロード", () => {
       const res = await r.upload(upload(cookie, bytes));
       const body = await res.text();
       expect([what, res.status, JSON.parse(body).error]).toEqual([what, 400, `この UKE は取り込めません（${reason}）`]);
-      expect(body).not.toMatch(/160000310|六郎|01139997|999999999|PDF/);
+      expect(body).not.toMatch(/六郎|01139997|999999999|PDF|131/);
     }
     expect(stored(owner)).toEqual([]);
     const list = (await (await r.list(get("/api/uke", cookie))).json()) as Listed;
@@ -261,9 +267,9 @@ describe("UKE のアップロード", () => {
     expect([...j1.findings, ...j2.findings].some((f) => f.missing?.field === "visitsComplete")).toBe(false);
     expect(out.map((q) => q.correct)).toEqual([true, true]);
 
-    // 版のコードの表にないコードを 1 行でも含めば、ファイルごと断る
-    const unknownCode = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,)\d+/m, "$1160000310"))));
-    expect([unknownCode.status, (await unknownCode.json()).error]).toEqual([400, expect.stringContaining("診療年月の版の表にないコード")]);
+    // 対応しているコードの点数が版の点数表と合わなければ、今までどおりファイルごと断る（対応していないコードの行は断らない。下の「取り込んだレセプトの点検」）
+    const wrongPoints = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,\d+,,)890,/m, "$1891,"))));
+    expect([wrongPoints.status, (await wrongPoints.json()).error]).toEqual([400, expect.stringContaining("点数が診療年月の版の点数表と合わない")]);
     expect(stored(owner)).toEqual([name]);
 
     // ほかのクリニックには見えず、名前（ハッシュ）を知っていても取り込めない

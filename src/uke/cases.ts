@@ -98,6 +98,8 @@ export function toClaimContext(
     lines: r.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })),
     comments: r.comments,
     commentsKnown: r.commentsKnown,
+    // 点検の対象外の単位が 1 つでもあれば、行は請求の一部でしかない（design.md §11-11）
+    ...(r.others?.length ? { partial: true } : {}),
     ...(extras.history ? { history: extras.history } : {}),
   };
 }

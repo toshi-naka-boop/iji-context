@@ -5,15 +5,17 @@
 // 読み込みは 2 段（design.md §11-12）：
 //   parseUke  形式だけを見る。版を見ず、点数・回数の算定単位とコードのまま返す
 //   mapClaim  レセプト 1 件のコードを、版の表で区分に引く。例外にせず、単位ごとに「引けた／引けない（理由）」を返す
-// readUke は取り込みの入口で、2 つを続けて行い、診療年月に版がないレセプト・引けない単位・合計の食い違いがあればファイルごと断る
+// 引けないコードを含む単位は、断らずに点検の対象外の単位として残す（design.md §11-11）。
+// readUke は取り込みの入口で、2 つを続けて行い、診療年月に版がないレセプト・点数の食い違い・合計の食い違いがあればファイルごと断る。
+// readStoredUke は保存済みのファイルの読み直しで、あとから表が変わって食い違うようになったレセプトを、例外にせず unreadable として返す（§11-12）
 import iconv from "iconv-lite";
-import { hasRevision, pointsOf, resolveRevision } from "../engine/revisions";
+import { hasRevision, pointsOf, resolveRevision, REVISIONS } from "../engine/revisions";
 import { bundleKubun, bundleOfCode, bundleOfKubun, codeOf, kubunOfCode } from "../engine/revisions/codes";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine, Comment, Payer } from "../engine/types";
 import { diseaseCodeOf, diseaseNameOf, UNCODED_DISEASE } from "./diseases";
-import { UKE_CLAIM_ID, UKE_LIMITS } from "./limits";
-import type { UkeClaim, UkeComment, UkeFile, UkeItem, UkeLine, UkeParsed, UkeReceipt, UkeUnit } from "./types";
+import { UKE_LIMITS } from "./limits";
+import type { UkeClaim, UkeComment, UkeFile, UkeItem, UkeLine, UkeOther, UkeParsed, UkeReceipt, UkeUnit } from "./types";
 
 const EOF = 0x1a;
 const PREF_CODE: Record<string, string> = { 東京都: "13" };
@@ -224,9 +226,12 @@ export function formatUke(file: UkeFile): string {
   return `${rows.join("\r\n")}\r\n`;
 }
 
+/** UKE の文字列（formatUke の形）をバイト列にする（Shift_JIS、末尾 EOF） */
+export const encodeUke = (text: string): Buffer => Buffer.concat([iconv.encode(text, "Shift_JIS"), Buffer.from([EOF])]);
+
 /** UKE のバイト列（Shift_JIS、末尾 EOF） */
 export function writeUke(file: UkeFile): Buffer {
-  return Buffer.concat([iconv.encode(formatUke(file), "Shift_JIS"), Buffer.from([EOF])]);
+  return encodeUke(formatUke(file));
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -234,9 +239,10 @@ export function writeUke(file: UkeFile): Buffer {
 
 /**
  * UKE のバイト列を、形式だけ見て読む（design.md §11-12・§11-14）。版を見ず、コードを区分に引かない。受け取れない入力は、行番号つきの UkeError にする。
- * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／請求 id の文字種と重複／
+ * 確かめること：大きさと行数の上限／Shift_JIS・CRLF・EOF／レコードの種類・列数・順／数字の項目の形と範囲／1 日の回数の上限／
  * 算定日と回数・同じ単位の行の回数と算定日がそろっていること・単位が点数の行で終わっていること／GO の総件数。
- * 点数・回数の算定単位は、点数が書いてある行で終わる（診療識別は区切りに使わない）。点数は 1 回分で、回数は単位の各行に同じ値（EM §2-10 表 4 の (a)〜(c)）
+ * 点数・回数の算定単位は、点数が書いてある行で終わる（診療識別は区切りに使わない）。点数は 1 回分で、回数は単位の各行に同じ値（EM §2-10 表 4 の (a)〜(c)）。
+ * 「カルテ番号等」の欄は患者の番号として持つだけで、請求 id にしない（文字種も重複も見ない。請求 id は読む側が渡す。design.md §11-11）
  */
 export function parseUke(buf: Buffer): UkeParsed {
   const fail = (line: number | null, reason: string): never => {
@@ -290,7 +296,6 @@ export function parseUke(buf: Buffer): UkeParsed {
   const billingMonth = month(ir[7], 1, "請求年月");
 
   const claims: UkeClaim[] = [];
-  const claimIds = new Set<string>();
   let cur: UkeClaim | null = null;
   let daysInMonth = 31;
   let stage = 0; // 0: RE の直後 1: HO/KO 2: SY 3: SI/IY/TO/CO
@@ -307,12 +312,9 @@ export function parseUke(buf: Buffer): UkeParsed {
     if (kind === "RE") {
       closed();
       const yearMonth = month(c[3], line, "診療年月");
-      if (!UKE_CLAIM_ID.test(c[12])) fail(line, "請求 id に使えない文字がある");
-      if (claimIds.has(c[12])) fail(line, "同じ請求 id のレセプトが 2 つある");
-      claimIds.add(c[12]);
       cur = {
         line,
-        claimId: c[12],
+        patientNo: c[12],
         yearMonth,
         patient: {
           name: c[4],
@@ -324,6 +326,7 @@ export function parseUke(buf: Buffer): UkeParsed {
           diseases: [],
         },
         total: null,
+        kohiTotals: [],
         units: [],
         comments: [],
       };
@@ -342,7 +345,10 @@ export function parseUke(buf: Buffer): UkeParsed {
       if (kind === "HO") {
         cur.total = { line, points: declared };
         cur.patient.insurer = { number: c[1], symbol: c[2], no: c[3] };
-      } else cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
+      } else {
+        cur.patient.kohi.push({ payerNo: c[1], recipientNo: c[2] });
+        cur.kohiTotals.push(declared);
+      }
     } else if (kind === "SY") {
       if (stage > 2) fail(line, "SY の位置が不正（SI の後）");
       stage = 2;
@@ -406,14 +412,19 @@ export function parseUke(buf: Buffer): UkeParsed {
   };
 }
 
-/** 単位を区分に引いた結果。引けなければ、理由（定型文。値は入れない）と行番号 */
-export type UnitMapping = { ok: true; lines: UkeLine[] } | { ok: false; line: number; reason: string };
+/**
+ * 単位を区分に引いた結果。引けなければ、理由（定型文。値は入れない）と行番号。
+ * unsupported が真＝対応していないコードを含む単位（点検の対象外として残す）／偽＝対応しているコードだけなのに、点数・数量が版の表と食い違う単位（取り込みでは断る）
+ */
+export type UnitMapping = { ok: true; lines: UkeLine[] } | { ok: false; line: number; reason: string; unsupported: boolean };
 
 export type MappedClaim = {
   /** 単位ごとの結果（UkeClaim.units と同じ並び） */
   units: UnitMapping[];
   /** 引けた単位の算定行（単位の並びのまま） */
   lines: UkeLine[];
+  /** 点検の対象外の単位（対応していないコードを含む単位。単位の並びのまま） */
+  others: UkeOther[];
   comments: Comment[];
 };
 
@@ -422,22 +433,26 @@ const datesOf = (yearMonth: string, days: number[], times: number): string[] =>
 
 /** 単位 1 つを、版の codes・bundles で算定行にする */
 function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision): UnitMapping {
-  const no = (line: number, reason: string): UnitMapping => ({ ok: false, line, reason });
+  /** 食い違い（取り込みでは断る） */
+  const no = (line: number, reason: string): UnitMapping => ({ ok: false, line, reason, unsupported: false });
+  /** 対応していないコードを含む単位（点検の対象外として残す） */
+  const out = (line: number, reason: string): UnitMapping => ({ ok: false, line, reason, unsupported: true });
   const other = unit.items.find((it) => it.kind !== "SI");
-  if (other) return no(other.line, "医薬品・特定器材の行は、点検の対象にしていない");
+  if (other) return out(other.line, "医薬品・特定器材の行は、点検の対象にしていない");
   const unknown = unit.items.find((it) => kubunOfCode(rev, it.code) === null && bundleOfCode(rev, it.code) === null);
-  if (unknown) return no(unknown.line, "診療年月の版の表にないコード");
+  if (unknown) return out(unknown.line, "診療年月の版の表にないコード");
   const dates = datesOf(yearMonth, unit.days, 1);
 
   // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる
   const bundle = bundleOfCode(rev, unit.items[0].code);
-  if (unit.items.some((it) => bundleOfCode(rev, it.code) !== bundle)) return no(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  if (unit.items.some((it) => bundleOfCode(rev, it.code) !== bundle)) return out(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
   if (bundle) {
     const items = unit.items.map((it) => it.code);
     if (new Set(items).size !== items.length) return no(unit.line, "包括の検査の同じ項目が、同じ単位に 2 つある");
     if (unit.items.some((it) => it.quantity !== "")) return no(unit.line, "数量データに対応していない項目");
     const kubun = bundleKubun(bundle, items.length);
-    if (kubun === null) return no(unit.line, "包括の検査の項目数が、算定できる数に足りない");
+    // 包括にならない項目数（項目ごとに算定する）は、対応していない
+    if (kubun === null) return out(unit.line, "包括の検査の項目数が、包括になる数に足りない");
     if (unit.points !== rev.points[kubun].points) return no(unit.line, "点数が診療年月の版の点数表と合わない");
     return { ok: true, lines: [{ kubun, count: unit.count, dates, items }] };
   }
@@ -467,7 +482,7 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision): UnitMapping {
 
 /**
  * レセプト 1 件のコードを、渡された版の表で区分に引く（design.md §11-12・§11-14）。例外にせず、単位ごとに「引けた／引けない（理由）」を返す。
- * 引けない単位の行は lines に入れない。コメントの on は、帰属が形式から決まり、その単位が引けたときだけ埋める
+ * 引けない単位の行は lines に入れない。対応していないコードを含む単位は others に残す。コメントの on は、帰属が形式から決まり、その単位が引けたときだけ埋める
  */
 export function mapClaim(claim: UkeClaim, rev: Revision): MappedClaim {
   const units = claim.units.map((u) => mapUnit(u, claim.yearMonth, rev));
@@ -475,30 +490,85 @@ export function mapClaim(claim: UkeClaim, rev: Revision): MappedClaim {
     const u = c.unit === null ? undefined : units[c.unit];
     return { code: c.code, text: normalizeCommentText(c.raw), raw: c.raw, on: u?.ok ? [...new Set(u.lines.map((l) => l.kubun))] : [] };
   });
-  return { units, lines: units.flatMap((u) => (u.ok ? u.lines : [])), comments };
+  const others = units.flatMap((u, i): UkeOther[] => {
+    if (u.ok === false && u.unsupported) {
+      const unit = claim.units[i];
+      return [{ unit: i, codes: unit.items.map((it) => it.code), points: unit.points, count: unit.count, days: unit.days }];
+    }
+    return [];
+  });
+  return { units, lines: units.flatMap((u) => (u.ok ? u.lines : [])), others, comments };
 }
 
 /**
- * UKE の取り込み（spec FR-106）。形式を読み（parseUke）、レセプトごとに診療年月の版でコードを区分に引く（mapClaim）。
- * 診療年月に当たる版がないレセプト・引けない単位（表にないコード、点数表と合わない点数）・HO の合計点数や GO の総合計点数と行の合計の食い違いがあれば、
- * 行番号つきの UkeError にしてファイルごと断る（一部だけを読んで返すことはしない。X-76）
+ * レセプト 1 件を、診療年月の版で読む。対応していないコードを含む単位は、点検の対象外の単位として残す（design.md §11-11）。
+ * 読めないとき（診療年月に当たる版がない／対応しているコードの単位の点数・数量が版の表と合わない／HO の合計点数が、対象外の単位も含めた行の合計と合わない）は、
+ * 例外にせず、行番号と理由（定型文。値は入れない）を返す。取り込みで断るか、読み直しで unreadable にするかは、呼び出し側が決める
  */
-export function readUke(buf: Buffer): UkeFile {
-  const parsed = parseUke(buf);
-  const fail = (line: number, reason: string): never => {
-    throw new UkeError(line, reason);
+function receiptOf(c: UkeClaim, claimId: string, revs: Revision[]): { ok: true; receipt: UkeReceipt } | { ok: false; line: number; reason: string } {
+  // 該当する版がない診療年月は読まない（近い版で代用しない）
+  if (!hasRevision(c.yearMonth, revs)) return { ok: false, line: c.line, reason: "診療年月に当たる版がない" };
+  const mapped = mapClaim(c, resolveRevision(c.yearMonth, revs));
+  const bad = mapped.units.find((u) => u.ok === false && !u.unsupported);
+  if (bad && bad.ok === false) return { ok: false, line: bad.line, reason: bad.reason };
+  if (c.total && c.total.points !== c.units.reduce((s, u) => s + u.points * u.count, 0)) return { ok: false, line: c.total.line, reason: "合計点数が行の合計と合わない" };
+  return {
+    ok: true,
+    receipt: {
+      claimId,
+      patientNo: c.patientNo,
+      yearMonth: c.yearMonth,
+      patient: c.patient,
+      lines: mapped.lines,
+      ...(mapped.others.length > 0 ? { others: mapped.others } : {}),
+      declared: { ho: c.total?.points ?? null, ko: c.kohiTotals },
+      comments: mapped.comments,
+      commentsKnown: true,
+    },
   };
-  let grand = 0;
-  const receipts = parsed.claims.map((c): UkeReceipt => {
-    // 該当する版がない診療年月は読まない（近い版で代用しない）
-    if (!hasRevision(c.yearMonth)) fail(c.line, "診療年月に当たる版がない");
-    const mapped = mapClaim(c, resolveRevision(c.yearMonth));
-    for (const u of mapped.units) if (u.ok === false) fail(u.line, u.reason);
-    const total = c.units.reduce((s, u) => s + u.points * u.count, 0);
-    if (c.total && c.total.points !== total) fail(c.total.line, "合計点数が行の合計と合わない");
-    grand += total;
-    return { claimId: c.claimId, yearMonth: c.yearMonth, patient: c.patient, lines: mapped.lines, comments: mapped.comments, commentsKnown: true };
+}
+
+/** 請求 id の決め方（レセプトと、ファイルの中の通し番号（1 から）を受ける）。既定は「カルテ番号等」の欄をそのまま使う（同梱の見本は、この欄に症例の請求 id を書いてある） */
+export type ClaimIdOf = (claim: UkeClaim, n: number) => string;
+const patientNoAsId: ClaimIdOf = (c) => c.patientNo;
+
+/**
+ * UKE の取り込み（spec FR-106）。形式を読み（parseUke）、レセプトごとに診療年月の版でコードを区分に引く（mapClaim）。
+ * 対応していないコードを含む単位は、断らずに点検の対象外の単位として残す（UkeReceipt.others。design.md §11-11）。
+ * 診療年月に当たる版がないレセプト・対応しているコードの単位の点数の食い違い・HO の合計点数や GO の総合計点数と行の合計（対象外の単位も含む）の食い違いがあれば、
+ * 行番号つきの UkeError にしてファイルごと断る（X-76）。請求 id は claimId が決める（取り込んだ UKE はアプリが振る。src/uke/upload.ts）
+ */
+export function readUke(buf: Buffer, claimId: ClaimIdOf = patientNoAsId, revs: Revision[] = REVISIONS): UkeFile {
+  const parsed = parseUke(buf);
+  const receipts = parsed.claims.map((c, i): UkeReceipt => {
+    const r = receiptOf(c, claimId(c, i + 1), revs);
+    if (r.ok === false) throw new UkeError(r.line, r.reason);
+    return r.receipt;
   });
-  if (parsed.total.points !== grand) fail(parsed.total.line, "GO の総合計点数と計算が合わない");
+  const grand = parsed.claims.reduce((s, c) => s + c.units.reduce((t, u) => t + u.points * u.count, 0), 0);
+  if (parsed.total.points !== grand) throw new UkeError(parsed.total.line, "GO の総合計点数と計算が合わない");
+  return { payer: parsed.payer, prefecture: parsed.prefecture, clinic: parsed.clinic, billingMonth: parsed.billingMonth, receipts };
+}
+
+/** 読み直しで読めなかったレセプトの理由（画面に出す文。design.md §11-12） */
+export const UNREADABLE = {
+  changed: "取り込んだ後に表が変わり、点数が合わなくなりました",
+  noRevision: "この診療年月の版はありません",
+} as const;
+
+/**
+ * 保存済みの UKE の読み直し（design.md §11-12・C-95）。断るのは取り込みの時だけで、ここではレセプトごとに読む：
+ * 取り込んだ後にコードの表・点数表が変わって食い違うようになったレセプトは、例外にせず unreadable（理由つき。行とコメントは空）として返し、ほかのレセプトは今までどおり読む。
+ * 形式そのものが読めないファイル（parseUke が断るもの）だけは UkeError になる
+ */
+export function readStoredUke(buf: Buffer, claimId: ClaimIdOf = patientNoAsId, revs: Revision[] = REVISIONS): UkeFile {
+  const parsed = parseUke(buf);
+  const receipts = parsed.claims.map((c, i): UkeReceipt => {
+    const id = claimId(c, i + 1);
+    const r = receiptOf(c, id, revs);
+    if (r.ok) return r.receipt;
+    const reason = hasRevision(c.yearMonth, revs) ? UNREADABLE.changed : UNREADABLE.noRevision;
+    return { claimId: id, patientNo: c.patientNo, yearMonth: c.yearMonth, patient: c.patient, lines: [], comments: [], commentsKnown: true, unreadable: { reason } };
+  });
   return { payer: parsed.payer, prefecture: parsed.prefecture, clinic: parsed.clinic, billingMonth: parsed.billingMonth, receipts };
 }
