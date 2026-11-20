@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { period } from "../src/demo/period";
 import { rulesOf } from "../src/engine";
-import { isKnownKubun } from "../src/engine/codes-fictional";
+import { isKnownKubun } from "../src/engine/revisions";
 import { createKnowledge, readKnowledge, type StoreOptions } from "../src/lifecycle/store";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");

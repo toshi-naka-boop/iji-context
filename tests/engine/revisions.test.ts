@@ -120,6 +120,8 @@ describe("同梱の版", () => {
     expect(Object.keys(r2027_06.points).sort()).toEqual(Object.keys(r2026.points).sort());
     expect(r2027_06.consts).toBe(r2026.consts);
     expect(r2027_06.rules).toBe(r2026.rules);
+    // 診療行為コードも引き継ぐ（design.md §11-1）
+    expect([r2027_06.codes, r2027_06.bundles, r2027_06.uncoded, r2027_06.shikibetsu]).toEqual([r2026.codes, r2026.bundles, r2026.uncoded, r2026.shikibetsu]);
     const changed = Object.keys(r2026.points).filter((k) => r2026.points[k].points !== r2027_06.points[k].points);
     expect(changed.sort()).toEqual(["O001_1", "O001_2", "O001_3I", "O001_3RO", "O100_1HA", "O100_1I", "O100_1RO"]);
     const pair = (k: string) => [pointsOf(r2026, k), pointsOf(r2027_06, k)];

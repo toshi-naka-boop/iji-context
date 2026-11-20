@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
-import { isKnownKubun } from "../../engine/codes-fictional";
+import { isKnownKubun } from "../../engine/revisions";
 import { hasRevision } from "../../engine/revisions";
 import type { FacilityJson } from "../../engine/facility";
 import type { Calendar } from "../../lifecycle/calendar";
@@ -33,7 +33,7 @@ export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar" 
   return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
 }
 
-/** 本番の配線が作る StoreOptions。区分のキーの検査（架空コードの表にあるか）を必ず渡す（design.md §3） */
+/** 本番の配線が作る StoreOptions。区分のキーの検査（同梱の版の点数表にあるか）を必ず渡す（design.md §3） */
 export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir">): StoreOptions {
   return { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir, knownKubun: isKnownKubun };
 }

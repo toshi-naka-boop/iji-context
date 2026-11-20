@@ -25,6 +25,11 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     generation: over.id,
     kind: "改定",
     points: { [kubun]: { name: `作り物の区分 ${kubun}`, no: kubun, points: unitPoints, source: "未収載" } },
+    // 作り物の区分はコードを持たない（UKE に書けない）
+    codes: {},
+    bundles: [],
+    uncoded: { [kubun]: "作り物の区分" },
+    shikibetsu: {},
     consts: {} as RevisionConsts,
     rules: [fakeRule(kubun, maxCount)],
     ...over,

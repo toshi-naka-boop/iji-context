@@ -1,5 +1,6 @@
 // 同梱の版の一覧と、診療年月から版を 1 つに決める規則（design.md §2-5）
 // 該当する版がなければ例外にし、近い版で代用しない
+import { assertCodes } from "./codes";
 import { r2026 } from "./r2026";
 import { r2027_06 } from "./r2027-06";
 import type { Revision } from "./types";
@@ -14,7 +15,7 @@ function nextMonth(yearMonth: string): string {
 
 const covers = (rev: Revision, yearMonth: string) => rev.effectiveFrom <= yearMonth && yearMonth <= rev.effectiveUntil;
 
-/** 版の一覧の検査。id の重複・期間の重なり・隣り合う版のあいだの空白・点数表にない区分を持つルールなどを拒否する */
+/** 版の一覧の検査。id の重複・期間の重なり・隣り合う版のあいだの空白・点数表にない区分を持つルール・コードの表の不備（codes.ts の assertCodes）などを拒否する */
 export function assertRevisions(revs: Revision[]): void {
   const ids = new Set<string>();
   for (const r of revs) {
@@ -26,6 +27,7 @@ export function assertRevisions(revs: Revision[]): void {
       const bad = rule.kubun.find((k) => !Object.hasOwn(r.points, k));
       if (bad) throw new Error(`ルール ${rule.id} の区分が版 ${r.id} の点数表にない: ${bad}`);
     }
+    assertCodes(r);
   }
   const sorted = [...revs].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : 0));
   for (let i = 1; i < sorted.length; i++) {
@@ -48,6 +50,9 @@ export function assertRevisions(revs: Revision[]): void {
 /** 同梱の版の一覧。令和8年度改定後の版と、その値の変更の版（FR-92・FR-147） */
 export const REVISIONS: Revision[] = [r2026, r2027_06];
 assertRevisions(REVISIONS);
+
+/** 区分が、同梱のどれかの版の点数表にあるか（知識・公的文書の区分のキーの検査に使う。design.md §3） */
+export const isKnownKubun = (kubun: string): boolean => REVISIONS.some((r) => Object.hasOwn(r.points, kubun));
 
 /** 診療年月に当たる版があるか（形式違いの年月は「ない」） */
 export function hasRevision(yearMonth: string, revs: Revision[] = REVISIONS): boolean {

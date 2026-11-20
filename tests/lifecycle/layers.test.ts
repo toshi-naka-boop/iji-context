@@ -7,7 +7,7 @@ import { applyEvent, createKnowledge, listKnowledge, readKnowledge, type CreateI
 import { evaluateTriggers } from "../../src/lifecycle/triggers";
 import type { Calendar } from "../../src/lifecycle/calendar";
 import type { Layer, SourceType } from "../../src/lifecycle/types";
-import { isKnownKubun } from "../../src/engine/codes-fictional";
+import { isKnownKubun } from "../../src/engine/revisions";
 import { openApp, storeOptionsOf } from "../../src/server/app";
 
 /** 改選日が来ない設定（idle だけを見る） */

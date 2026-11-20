@@ -56,6 +56,21 @@ export type RevisionConsts = {
   ikou: { kubun: string; months: number; daysFromDischarge: number };
 };
 
+/**
+ * 区分 → 実在の診療行為コード（design.md §11-1・§11-14。値は EM §2-8 の行だけ）。
+ * primary は書き出しに使う 1 つ、accept は読み取りで同じ区分として受けるほかのコード（アプリの区分がマスターより粗いとき）。
+ * facility は、施設に入居する患者の書き出しに使うコード（accept の 1 つ。在宅ターミナルケア加算だけ）。
+ * quantity が真の区分は、きざみで算定する（数量データの欄に項目数を書き、点数は 1 項目あたりの点数 × 項目数）。
+ * base は注加算の基本の項目（同じ点数・回数の算定単位に入り、合算の点数を単位の最後の行に書く）
+ */
+export type CodeDef = { primary: string; accept: string[]; facility?: string; quantity?: true; base?: string };
+
+/**
+ * 包括の検査（design.md §11-1。型の定義はここ 1 か所）。項目のコード（members）を 1 行ずつ並べ、項目数で区分が決まる。
+ * tiers は min の昇順で、項目数が min 以上の最後の区分を採る。最初の min に届かない項目数は、どの区分にもならない
+ */
+export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[] };
+
 export type Revision = {
   id: string;
   label: string;
@@ -67,6 +82,15 @@ export type Revision = {
   /** 適用終了の診療年月 "YYYY-MM"（含む） */
   effectiveUntil: string;
   points: Record<string, KubunDef>;
+  /**
+   * 点数表の各区分は、codes（コード 1 つ）・bundles（項目のコードの集まり）・uncoded（コードを持たない。値は理由）のちょうど 1 つに載る。
+   * コードは改定で廃止・新設されるので版が持つ。コードから区分を引くときは、必ず先に版を決める（同じコードが、別の版では別の区分キーに当たることがある）
+   */
+  codes: Record<string, CodeDef>;
+  bundles: Bundle[];
+  uncoded: Record<string, string>;
+  /** 区分 → 診療識別（別表20。2 桁）。UKE の書き出しにだけ使い、読み取りでは判定に使わない。codes・bundles の区分は必ず持つ */
+  shikibetsu: Record<string, string>;
   consts: RevisionConsts;
   /** consts から工場関数で組み立てたもの */
   rules: Rule[];
