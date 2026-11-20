@@ -1,16 +1,17 @@
 // 合成 UKE 2 本を fixtures/uke/ に書き出す（spec FR-05）。`npx tsx scripts/gen-uke.ts`
 // 入力は fixtures/cases/K1〜K7.json と fixtures/uke/patients.json。出力は入力だけで決まる。
 // 見本の 2 本とは別に、アップロードで試すための合成の UKE も 3 本書き出す（design.md §11-11・§11-12。設定は fixtures/uke/extra.json、値は EM 5-1 の表）：
-// 点検の対象外の行を含むもの（taishogai.UKE）、必須の記載を 1 つ欠いたもの（kisaimore.UKE）、改定前の診療年月のもの（kaiteimae.UKE）
+// 点検の対象外の行を含むもの（taishogai.UKE）、必須の記載を 1 つ欠いたもの（kisaimore.UKE）、改定前の診療年月のもの（kaiteimae.UKE）。
+// もう 1 本、実在の請求と同じ形（医薬品・特定器材・症状詳記などを含む）を読めることを確かめるための合成の UKE（jitsurei.UKE。設定は fixtures/uke/jitsurei.json）
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { monthFrom, period } from "../src/demo/period";
 import { resolveRevision, revisionById } from "../src/engine/revisions";
-import type { ClaimContext } from "../src/engine/types";
+import type { ClaimContext, Payer } from "../src/engine/types";
 import { buildUkeFiles, type UkeSources } from "../src/uke/cases";
-import type { UkeFile } from "../src/uke/types";
-import { UNCODED_DISEASE } from "../src/uke/diseases";
+import type { UkeFile, UkePatient } from "../src/uke/types";
+import { diseaseCodeOf, UNCODED_DISEASE } from "../src/uke/diseases";
 import { encodeUke, formatUke, writeUke } from "../src/uke/uke";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -118,6 +119,94 @@ function generateOld(): Buffer {
   return writeUke({ ...file, billingMonth: monthFrom(1 - o.monthsBack), receipts }, () => rev);
 }
 
+type JitsureiRow = {
+  rec: "SI" | "IY" | "TO" | "CO";
+  shikibetsu?: string;
+  code: string;
+  quantity?: string;
+  points?: number;
+  minus?: true;
+  days?: Record<string, number>;
+  comments?: [string, string][];
+  price?: string;
+  product?: string;
+  text?: string;
+};
+type Jitsurei = {
+  file: string;
+  payer: Payer;
+  receipts: {
+    patientNo: string;
+    receiptType: string;
+    patient: Pick<UkePatient, "name" | "sex" | "birth" | "insurer">;
+    diseases: UkePatient["diseases"];
+    visits: Record<string, number>;
+    rows: JitsureiRow[];
+    notes: { kind: string; text: string }[];
+  }[];
+};
+export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "jitsurei.json"), "utf8")) as Jitsurei;
+
+/**
+ * 実在の請求と同じ形の、検証用の合成の UKE（設定は fixtures/uke/jitsurei.json。EM 5-1 の表）。外来 3 件と在宅 1 件を 1 つのファイルにする。
+ * formatUke は診療行為の行しか書かないので、ここでレコードを組む：医薬品（IY）・特定器材（TO）・コメント（CO）・症状詳記（SJ）と、資格確認（SN）・受診日等（JD）・窓口負担額（MF）を含む。
+ * 回数は算定日情報の合計、HO の合計点数は「1 回分の点数 × 回数」の合計（minus の行は引く）、診療実日数は受診等区分が 1 の日の数。医療機関は同梱の症例と同じ（東京都）
+ */
+export function generateJitsurei(): Buffer {
+  const { src } = loadSources();
+  const rec = (n: number, cols: Record<number, string | number>) => {
+    const out: string[] = Array.from({ length: n }, () => "");
+    for (const [k, v] of Object.entries(cols)) out[Number(k) - 1] = String(v);
+    return out.join(",");
+  };
+  /** 「日 → 値」を、1 日の情報が first 列目のレコードの列にする */
+  const dayCols = (first: number, days: Record<string, number>) => Object.fromEntries(Object.entries(days).map(([d, n]) => [first + Number(d) - 1, n]));
+  const count = (x: JitsureiRow) => Object.values(x.days ?? {}).reduce((s, n) => s + n, 0);
+  const ym = (yearMonth: string) => yearMonth.replace("-", "");
+  const rows = [rec(10, { 1: "IR", 2: JITSUREI.payer === "支払基金" ? 1 : 2, 3: "13", 4: 1, 5: src.clinic.code, 7: src.clinic.name, 8: ym(BILLING_MONTH), 9: "00", 10: src.clinic.phone })];
+  let grand = 0;
+  JITSUREI.receipts.forEach((r, i) => {
+    const p = r.patient;
+    const total = r.rows.reduce((s, x) => s + (x.points === undefined ? 0 : (x.minus ? -1 : 1) * x.points * count(x)), 0);
+    grand += total;
+    rows.push(rec(38, { 1: "RE", 2: i + 1, 3: r.receiptType, 4: ym(period.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 14: r.patientNo }));
+    rows.push(rec(15, { 1: "HO", 2: p.insurer.number.padStart(8, " "), 3: p.insurer.symbol, 4: p.insurer.no, 5: Object.values(r.visits).filter((v) => v === 1).length, 6: total }));
+    // 資格確認・受診日等・窓口負担額は、見本と同じ合成の設定（枝番は後期高齢者医療では書かない）
+    rows.push(rec(9, { 1: "SN", 2: 1, 3: "01", 7: p.insurer.number.startsWith("39") ? "" : "01" }));
+    rows.push(rec(33, { 1: "JD", 2: 1, ...dayCols(3, r.visits) }));
+    rows.push(rec(33, { 1: "MF", 2: "00" }));
+    for (const d of r.diseases) {
+      const code = d.code ?? diseaseCodeOf(d.name);
+      rows.push(rec(8, { 1: "SY", 2: code, 3: d.start, 4: d.outcome ?? 1, 5: (d.modifiers ?? []).join(""), 6: code === UNCODED_DISEASE ? d.name : "", 7: d.main ? "01" : "", 8: d.note ?? "" }));
+    }
+    for (const x of r.rows) {
+      if (x.rec === "CO") {
+        rows.push(rec(5, { 1: "CO", 2: x.shikibetsu ?? "", 3: 1, 4: x.code, 5: x.text ?? "" }));
+        continue;
+      }
+      // TO は、単価が項目 9、商品名及び規格又はサイズが項目 11、コメント欄が 12 から、算定日情報が 18 から。SI・IY は、コメント欄が 8 から、算定日情報が 14 から
+      const [comment, day] = x.rec === "TO" ? [12, 18] : [8, 14];
+      rows.push(
+        rec(x.rec === "TO" ? 48 : 44, {
+          1: x.rec,
+          2: x.shikibetsu ?? "",
+          3: 1,
+          4: x.code,
+          5: x.quantity ?? "",
+          6: x.points ?? "",
+          7: count(x),
+          ...(x.rec === "TO" ? { 9: x.price ?? "", 11: x.product ?? "" } : {}),
+          ...Object.fromEntries((x.comments ?? []).flatMap(([c, t], n) => [[comment + n * 2, c], [comment + n * 2 + 1, t]])),
+          ...dayCols(day, x.days ?? {}),
+        }),
+      );
+    }
+    for (const n of r.notes) rows.push(rec(3, { 1: "SJ", 2: n.kind, 3: n.text }));
+  });
+  rows.push(rec(4, { 1: "GO", 2: JITSUREI.receipts.length, 3: grand, 4: "99" }));
+  return encodeUke(`${rows.join("\r\n")}\r\n`);
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const out = generate();
   for (const [payer, file] of Object.entries(UKE_FILES)) {
@@ -129,4 +218,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     writeFileSync(path.join(root, EXTRA[key].file), extra[key]);
     console.log(`書き出し: ${EXTRA[key].file}`);
   }
+  writeFileSync(path.join(root, JITSUREI.file), generateJitsurei());
+  console.log(`書き出し: ${JITSUREI.file}`);
 }
