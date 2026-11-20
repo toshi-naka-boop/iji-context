@@ -41,7 +41,7 @@ export const FAULTS = [
   "xml-doctype",
   /** ORCA の診療行為：__proto__ という名前の要素がある XML */
   "xml-proto",
-  /** ORCA の診療行為：架空コードの表にないコードの行が 1 つ混じる */
+  /** ORCA の診療行為：版のコードの表にないコードの行が 1 つ混じる */
   "unknown-code",
   /** FHIR：next リンクが別のホストを指す */
   "next-other-host",
@@ -66,8 +66,8 @@ type Resource = { resourceType: string; id: string; [k: string]: unknown };
 type OrcaMedical = { Patient_Information: { Patient_ID: string }; Perform_Date: string; Medical_List_Information: Record<string, string>[] };
 type OrcaData = { patients: Record<string, unknown>; medical: Record<string, OrcaMedical> };
 
-/** 架空コードの表にないコード（unknown-code 用。表のコードは 99 で始まる） */
-const UNKNOWN_CODE = "980000001";
+/** 版のコードの表にないコード（unknown-code 用。形は 9 桁だが、どの版の表にもない作り物の番号） */
+const UNKNOWN_CODE = "100000001";
 
 /** xml2 形式にする（日レセ API の応答の書き方）：オブジェクトは type="record"、配列は type="array" で中の要素名は「〜_child」、値は type="string" */
 function xml2(name: string, v: unknown): string {

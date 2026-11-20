@@ -21,7 +21,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
-  const { caseOf, isUploaded } = cases;
+  const { isUploaded } = cases;
   const { monthOf } = notes;
   const { crosscheckOf } = doctor;
   const { caseFor, drillQuery, judgeFor, withLines } = questionCase;
@@ -129,13 +129,13 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     if (q.phase !== "ヒント") throw conflict(`選べない段階: ${q.phase}`);
     return q;
   }
-  const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
+  const choices = (id: string) => choiceItems(caseFor(choiceQ(id)), choiceGroups);
   function pick(id: string, lineIndex: number, option: string) {
     const q = choiceQ(id);
-    const item = choiceItems(caseOf(q.claimId), choiceGroups).find((x) => x.lineIndex === lineIndex);
+    const item = choiceItems(caseFor(q), choiceGroups).find((x) => x.lineIndex === lineIndex);
     if (!item) throw badRequest(`選択の問題がない行: ${lineIndex}`);
     if (!item.options.includes(option)) throw badRequest(`選択肢にない: ${option}`);
-    const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
+    const r = judgePick(caseFor(q), choiceGroups, lineIndex, option);
     saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
     return r;
   }

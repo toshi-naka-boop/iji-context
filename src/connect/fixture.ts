@@ -5,7 +5,7 @@ import path from "node:path";
 import type { ClaimContext } from "../engine/types";
 import type { Chart } from "../uke/crosscheck";
 import type { UkeFile, UkeReceipt } from "../uke/types";
-import { parseUke } from "../uke/uke";
+import { readUke } from "../uke/uke";
 import { recordOfUke } from "../patient/profile";
 import { assertQuery, type Connector } from "./types";
 
@@ -19,7 +19,7 @@ const patientIdOf = (r: UkeReceipt) => r.claimId.split("-")[0];
 
 export function createFixtureConnector(root = process.cwd()): Connector {
   const fixtures = path.join(root, "fixtures");
-  const files = (): UkeFile[] => UKE_FILES.map((f) => parseUke(readFileSync(path.join(fixtures, "uke", f))));
+  const files = (): UkeFile[] => UKE_FILES.map((f) => readUke(readFileSync(path.join(fixtures, "uke", f))));
   const json = <T>(dir: string, patientId: string): T | null => {
     const file = path.join(fixtures, dir, `${patientId}.json`);
     return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : null;
@@ -53,7 +53,7 @@ export function createFixtureConnector(root = process.cwd()): Connector {
           files: files()
             .map((f) => ({ ...f, receipts: f.receipts.filter(wanted) }))
             .filter((f) => f.receipts.length > 0),
-          // 合成 UKE のコードはすべて架空コードの表にある（表にないコードは parseUke が拒否する）
+          // 同梱の UKE のコードはすべて版のコードの表にある（表にないコードは readUke が拒否する）
           unmapped: [],
         };
       },

@@ -113,6 +113,8 @@ describe("ORCA 形式のコネクタ（請求。診療行為の API は xml2 形
       const want = loadCase(k);
       const got = toClaimContext(files[0], want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       expect(got.lines).toEqual(want.lines);
+      // 診療行為の API にコメントは載らないので、「コメントを持たない」請求になる
+      expect([got.comments, got.commentsKnown]).toEqual([[], false]);
       expect(evaluate(got)).toEqual(evaluate(want));
       expect(evaluate(got).total).toBe(total);
     }
@@ -122,10 +124,10 @@ describe("ORCA 形式のコネクタ（請求。診療行為の API は xml2 形
     expect((await claims(["K2"], nextMonth)).files).toEqual([]);
   });
 
-  it("架空コードの表にないコードが 1 つでもあれば、応答ごと受け取らない（コードはエラーに出さない）", async () => {
+  it("版のコードの表にないコードが 1 つでもあれば、応答ごと受け取らない（コードはエラーに出さない）", async () => {
     pointAt(mock, "unknown-code");
     const e = await failure(() => claims(["K2"]));
-    expect([e.kind, e.message]).toEqual(["format", expect.stringContaining("架空コードの表にないコード")]);
+    expect([e.kind, e.message]).toEqual(["format", expect.stringContaining("診療年月の版の表にないコード")]);
     expect(e.message).not.toMatch(/\d{9}/);
   });
 

@@ -1,6 +1,6 @@
 "use client";
 // 算定画面の一覧（2026-11-08 ユーザー判断で案 C+「クエストボード」）：訪問は月のタイムライン、練習問題は患者の色のカード。
-// 見た目だけを受け持ち、開く処理は呼ぶ側（page.tsx）の begin に任せる。データは合成データ・架空コード
+// 見た目だけを受け持ち、開く処理は呼ぶ側（page.tsx）の begin に任せる。データは合成データ
 import { useEffect, useState } from "react";
 import type { ClaimContext } from "../../src/engine/types";
 

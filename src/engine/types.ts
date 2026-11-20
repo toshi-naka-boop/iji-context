@@ -104,6 +104,21 @@ export type ClaimEvent =
 
 export type ClaimLine = { kubun: string; count: number; dates: string[] };
 
+/** 摘要欄のコメント（design.md §11-13） */
+export type Comment = {
+  /** 9 桁のコメントコード */
+  code: string;
+  /** 文字データ。全角の数字・記号を半角に寄せたもの */
+  text: string;
+  /** 文字データの原文 */
+  raw: string;
+  /**
+   * 同じ点数・回数の算定単位にある行の区分。埋めるのは、帰属が記録の形式から決まるコメントだけ（診療行為のレコードのコメント欄と、単位の途中にある診療識別が空の CO）。
+   * レセプト全体へのコメントと、単位の前後に置かれたコメント（どの単位に掛かるかが形式から決まらない）は空
+   */
+  on: string[];
+};
+
 export type ClaimContext = {
   claimId: string;
   yearMonth: string;
@@ -118,11 +133,16 @@ export type ClaimContext = {
    */
   recordsKnown: boolean;
   lines: ClaimLine[];
-  /** 摘要コメント（UKE の CO レコードから F4 が作る。コードは架空）。載っていないものは「なかった」 */
-  comments?: { kubun: string; code: string }[];
+  /** 摘要欄のコメント（UKE のコメント欄と CO レコードから作る）。commentsKnown が真なら、載っていないものは「なかった」 */
+  comments?: Comment[];
+  /**
+   * コメントを持つ作り方の請求か（design.md §11-13）。UKE から作った請求は真。
+   * コメントを持たない作り方（練習問題・選択モード・同梱の症例の JSON・カルテからの下書き・コメントの載らない連携）は偽で、空のコメントを「なかった」と読まない
+   */
+  commentsKnown: boolean;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
-  /** 連携で読んだ行のうち、架空コードの表に対応がなかったもの。判定の対象外（FR-111） */
+  /** 連携で読んだ行のうち、版のコードの表に対応がなかったもの。判定の対象外（FR-111） */
   excluded?: { code: string; count: number }[];
 };
 

@@ -127,6 +127,7 @@
     }
   ],
   "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
       "kubun": "C001_1I",

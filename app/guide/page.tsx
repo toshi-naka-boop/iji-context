@@ -27,7 +27,7 @@ export default function Guide() {
     <main className="shell">
       <TopBar />
       <PageGuide who="makki" title="練習問題の手引き">
-        医療事務や医師でなくても練習問題に取り組めるように、流れと用語をまとめました。合成データ・架空コードのデモです。迷ったら、算定画面で私たちに聞いてください。
+        医療事務や医師でなくても練習問題に取り組めるように、流れと用語をまとめました。合成データのデモです。迷ったら、算定画面で私たちに聞いてください。
       </PageGuide>
 
       <div className="board-head"><h2>練習の流れ</h2></div>

@@ -28,7 +28,8 @@ describe("請求の境界", () => {
       const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       // choices（導出の入力）は症例 JSON だけが持ち、UKE には載らない
       const { choices: _choices, ...fromUke } = want as typeof want & { choices?: unknown };
-      expect(got).toEqual({ ...fromUke, comments: want.comments ?? [] });
+      // UKE から作った請求は、コメントを持つ（commentsKnown が真）
+      expect(got).toEqual({ ...fromUke, comments: [], commentsKnown: true });
       expect(evaluate(got)).toEqual(evaluate(want));
     }
   });

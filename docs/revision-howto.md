@@ -21,10 +21,21 @@
 - 要件が変わったルールは `src/engine/rules/` の工場関数と `src/engine/predicates.ts` を直します。区分・閾値はルールに直書きせず、版の定数で渡します。番号（R01…）は振り直さず、新設は続きの番号にします
 - 指摘のキーを足したら `src/messages.ts` に文を足し、制度層の知識の文（`scripts/seed-knowledge.ts` の `RULE_TEXT`。点数は書かない）も合わせます
 
-## 3. 架空コードの表に行を追記する
+## 3. 診療行為コードを版に持たせる
 
-`src/engine/codes-fictional.ts` の `CODE_TABLE` の末尾に、新しい区分の行を足します。既存の行は変えず、消さず、並べ替えません。
-同じ行を `tests/engine/codes.lock.json` の末尾にも足します。区分のキーは、区分番号が変わっても変えません（変わるのは点数表の `no` だけ）。
+診療行為コードは版が持ちます（`Revision.codes`・`bundles`・`uncoded`・`shikibetsu`。今の版は `src/engine/revisions/r2026-codes.ts`）。改定でコードは廃止・新設されるので、新しい版には新しい表を書きます。値の変更の版（`extendRevision`）は、直前の版の表を引き継ぎます。
+
+1. 厚生労働省 診療報酬情報提供サービスの「ファイルダウンロード」から、その改定の医科診療行為マスターを取ってきます（リポジトリには入れません）
+2. EM §2-8 の表（区分キー・コード・マスターの名称・マスターの点数・診療識別）を新しい改定の行に直し、承認を取ります。コードを 1 つに決められない区分は表に入れず、候補と理由を書きます
+3. 版の表を書きます。EM にある区分は `codes`（`primary` は書き出しに使う 1 つ、`accept` は読み取りで同じ区分として受けるほかのコード）、項目数で区分が決まる検査は `bundles`、EM にない・1 つに決まらない区分は `uncoded` に理由つきで載せます。点数表の各区分は、この 3 つのちょうど 1 つに載せます（読み込み時に検査します）
+4. マスターと突き合わせます。食い違いが 0 件になるまで、テストを通すために片方を直さず、原文で確かめてから EM を直します
+
+```bash
+npx tsx scripts/check-codes.ts <医科診療行為マスターの CSV>
+```
+
+区分のキーは、区分番号やコードが変わっても変えません（変わるのは点数表の `no` と、版の `codes`）。コードから区分を引く処理は、必ず先に版を決めます（同じコードが、別の版では別の区分キーに当たることがあります）。
+`src`・`scripts`・`fixtures` と同梱の UKE に、以前の作り物のコード（99 で始まる 9 桁）が残っていないことは `npm run check:codes` で確かめます。
 
 ## 4. 症例・見本の UKE・練習問題を作り直す
 
@@ -46,7 +57,7 @@
 ## 6. 自動テストと、README・CLAUDE.md の固定条件を更新する
 
 ```bash
-npm run typecheck && npm test && npm run check:dates && npm run build
+npm run typecheck && npm test && npm run check:dates && npm run check:codes && npm run build
 npx tsx scripts/gen-uke.ts && git diff --exit-code fixtures/uke
 npx tsx scripts/gen-connect.ts && git diff --exit-code fixtures/connect
 ```

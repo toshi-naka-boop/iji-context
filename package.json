@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "check:dates": "tsx scripts/check-dates.ts",
     "check:banned-words": "tsx scripts/check-banned-words.ts",
+    "check:codes": "tsx scripts/check-no-fictional-codes.ts",
     "start": "next start"
   },
   "type": "module",

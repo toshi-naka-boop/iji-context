@@ -45,7 +45,7 @@ describe("請求 id にパスを仕込んだ UKE が読み込まれても、外�
       prefecture: "東京都",
       clinic: { code: "9999999", name: "架空在宅クリニック", phone: "0300000000" },
       billingMonth: month(1),
-      receipts: [{ claimId: id, yearMonth: YM, patient: person, lines: [{ kubun: "C001_1I", count: 1, dates: [day(5)] }], comments: [] }],
+      receipts: [{ claimId: id, yearMonth: YM, patient: person, lines: [{ kubun: "C001_1I", count: 1, dates: [day(5)] }], comments: [], commentsKnown: true }],
     };
     const ctx = openContext({ root: repo, dbFile: path.join(tmp, "app.db"), knowledgeDir: path.join(tmp, "knowledge"), skillsDir: path.join(tmp, "skills"), queryLogDir: path.join(tmp, "query-log") });
     const clock = createClock(ctx);

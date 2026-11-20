@@ -1,4 +1,4 @@
-// API Route（薄い入口。処理は src/server/app/uke.ts）。見本の UKE（合成データ・架空コード）のダウンロード（spec FR-109）
+// API Route（薄い入口。処理は src/server/app/uke.ts）。見本の UKE（合成データ）のダウンロード（spec FR-109）
 import { route } from "../../../../src/server/http";
 import { getApp } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";
