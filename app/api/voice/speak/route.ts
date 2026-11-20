@@ -11,14 +11,14 @@ import { speak } from "../../../../src/voice/elevenlabs";
 type Line = (typeof VOICE_LINES)[number];
 
 /** POST { characterId, line, name? } → audio/mpeg。読み上げるのは決まった台詞だけ（任意の文は受け付けない）。ログインした人だけ（利用料がかかるため。回数制限つき） */
-export const POST = route({ roles: allow("POST /api/voice/speak"), body: speakBody, limit: "voice", audit: { target: ({ body }) => `${body.characterId}:${body.line}` } }, async ({ body: b }) => {
+export const POST = route({ roles: allow("POST /api/voice/speak"), body: speakBody, limit: "voice", audit: { target: ({ body }) => `${body.characterId}:${body.line}` } }, async ({ body: b, user }) => {
   const voiceId = characterOf(b.characterId).voiceId;
   if (!voiceId) throw badRequest(`声が決まっていない: ${b.characterId}`);
   const all = JSON.parse(readFileSync(path.join(process.cwd(), "config", "voice-lines.json"), "utf8")) as { lines: Record<string, Record<Line, string>> };
   const name = (b.name ?? "").trim().slice(0, 20);
   const text = all.lines[b.characterId]?.[b.line]?.replace("{name}", name);
   if (!text || (b.line === "greeting" && !name)) throw badRequest("読み上げる台詞がない");
-  const audio = await speak(voiceId, text);
+  const audio = await speak(user, voiceId, text);
   return new Response(audio as BodyInit, { headers: { "content-type": "audio/mpeg" } });
 });
 

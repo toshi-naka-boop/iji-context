@@ -2,7 +2,7 @@
 // 取り出すのは AI。ただし事実ごとに「カルテのどの言葉から取ったか」（quote）を付けさせ、カルテに実際にない言葉の事実は捨てる。
 // 取り出した結果は本人が確かめて直してから使う。判定はユスティだけが行う（AI は判定しない）
 import { modelOptions, type ModelChoice } from "../mentor/models";
-import { runOnce } from "../mentor/run";
+import { runOnce, type Sender } from "../llm/outbound";
 
 /** 本人が書くカルテ（1 回の訪問） */
 export type ChartNote = { s: string; o: string; a: string; p: string; rx: string };
@@ -70,8 +70,8 @@ export function validateFacts(raw: unknown, note: ChartNote): { facts: Extracted
 }
 
 /** カルテから事実を取り出す（LLM）。出力は validateFacts を通してから返す */
-export async function extractFacts(note: ChartNote, model?: ModelChoice) {
-  const r = await runOnce("chartExtract", noteText(note), {
+export async function extractFacts(by: Sender, note: ChartNote, model?: ModelChoice) {
+  const r = await runOnce(by, "chartExtract", noteText(note), {
     systemPrompt: EXTRACT_PROMPT,
     tools: [],
     settingSources: [],

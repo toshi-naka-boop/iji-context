@@ -1,5 +1,5 @@
 // カルテ・患者・症例・UKE のルート（app/api/**/route.ts）を実際に呼んで確かめる：ログイン・スキーマ・請求 id の形・画像の大きさ・監査ログ。
-// LLM（Agent SDK）は呼ばない。src/mentor/run.ts の runOnce を差し替える
+// LLM（Agent SDK）は呼ばない。SDK の query を差し替える（llm.runOnce が返した値の structured が、モデルの返事になる）
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { claimId, dateIn, day, month, YM } from "../helpers/period";
 import { autoConsent } from "../helpers/consent";
 
 const llm = vi.hoisted(() => ({ runOnce: vi.fn() }));
-vi.mock("../../src/mentor/run", () => llm);
+vi.mock("@anthropic-ai/claude-agent-sdk", async (original) => (await import("../helpers/sdk")).fakeSdk(await original<object>(), llm.runOnce));
 // ファイルを読みに行ったか（どのパスか）を見るために、node:fs の読み取りを包む（動きは変えない）
 const fsCalls = vi.hoisted(() => ({ paths: [] as string[] }));
 vi.mock("node:fs", async (original) => {

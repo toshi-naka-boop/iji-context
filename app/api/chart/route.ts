@@ -5,8 +5,8 @@ import { allow } from "../../../src/server/policy";
 import { CHART_BODY_BYTES, chartBody } from "../../../src/server/schemas/chart";
 
 /** 書いた人はセッションの本人。監査ログの対象は請求 id だけ（カルテの本文は残さない）。本文の上限は、5 欄を上限の字数まで日本語で書いても入る大きさ */
-export const POST = route({ roles: allow("POST /api/chart"), body: chartBody, maxBytes: CHART_BODY_BYTES, limit: "llm", audit: { target: ({ body }) => body.claimId } }, ({ body, clerkId }) =>
-  writeChart({ ...body, clerkId }),
+export const POST = route({ roles: allow("POST /api/chart"), body: chartBody, maxBytes: CHART_BODY_BYTES, limit: "llm", audit: { target: ({ body }) => body.claimId } }, ({ body, clerkId, user }) =>
+  writeChart({ ...body, clerkId, user }),
 );
 
 export const runtime = "nodejs";

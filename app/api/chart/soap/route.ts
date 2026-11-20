@@ -6,9 +6,9 @@ import { formatChart } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";
 import { soapBody } from "../../../../src/server/schemas/chart";
 
-export const POST = route({ roles: allow("POST /api/chart/soap"), body: soapBody, limit: "llm" }, ({ body }) => {
+export const POST = route({ roles: allow("POST /api/chart/soap"), body: soapBody, limit: "llm" }, ({ body, user }) => {
   if (!body.text.trim()) throw badRequest("カルテが空です");
-  return formatChart(body.text);
+  return formatChart(user, body.text);
 });
 
 export const runtime = "nodejs";

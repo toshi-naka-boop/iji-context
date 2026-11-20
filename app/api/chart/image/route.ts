@@ -8,12 +8,12 @@ import { allow } from "../../../../src/server/policy";
 import { imageBody, MAX_IMAGE_BASE64 } from "../../../../src/server/schemas/chart";
 
 /** 本文は base64 の画像（5MB の 4/3 倍）と JSON の枠の分まで読む。それを超えたら読まずに 413 */
-export const POST = route({ roles: allow("POST /api/chart/image"), body: imageBody, maxBytes: MAX_IMAGE_BASE64 + 1024, limit: "llm" }, ({ body }) => {
+export const POST = route({ roles: allow("POST /api/chart/image"), body: imageBody, maxBytes: MAX_IMAGE_BASE64 + 1024, limit: "llm" }, ({ body, user }) => {
   const image = Buffer.from(body.imageBase64, "base64");
   // 画像の検査（大きさ・先頭のバイト列）は LLM を呼ぶ前にここでも行い、利用者に文言を返す
   if (image.length === 0 || image.length > MAX_IMAGE_BYTES) throw badRequest("画像が空か、5MB を超えています");
   if (!imageTypeOf(image)) throw badRequest("PNG・JPEG・WebP の画像を選んでください");
-  return readChartFromImage(image);
+  return readChartFromImage(user, image);
 });
 
 export const runtime = "nodejs";

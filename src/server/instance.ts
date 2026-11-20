@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { nextSmalltalkStreak, nextVentStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
+import { claimForAi } from "../llm/outbound";
 import type { Character } from "../mentor/prompt";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
@@ -197,20 +198,20 @@ async function withSession<T>(sessionId: string | null, run: (sid: string | null
 }
 
 /** ベテランのメンターに問う（ベテラン本人の作業場所・セッションで） */
-async function askVeteran(a: App, question: string) {
+async function askVeteran(a: App, by: User, question: string) {
   const vet = a.clerk("vet1");
   const p = prepare(a, vet.id);
-  const r = await withSession(p.sessionId, (sid) => askVeteranMentor(a.store, question, sid, p.workspace, modelFor("veteranMentor")));
+  const r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor")));
   a.setSession(vet.id, r.sessionId);
   a.setSetting(`session_gen:${vet.id}`, p.generation);
   return r;
 }
 
-/** メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す） */
 /**
+ * メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す）。user は操作した本人（外部へ送る前に、同意を確かめるために渡す）。
  * skipCrosscheck：本人が「照合の不一致とは別のことを医師に聞きたい」と選んだとき。この 1 回だけ照合の不一致を渡さない
  */
-export async function talkToMentor(input: { clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
+export async function talkToMentor(input: { user: User; clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
   const a = getApp();
   const clerk = a.clerk(input.clerkId);
   const q = a.question(input.questionId);
@@ -228,7 +229,7 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
         store: a.store,
         queryLog: a.queryLog,
         askPeerMentor: async (question) => {
-          const v = await askVeteran(a, question);
+          const v = await askVeteran(a, input.user, question);
           if (!v.answer.answerable) return null;
           a.peerResolvedByMentor(clerk.id, question, v.answer.body);
           return v.answer.body;
@@ -244,12 +245,14 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
           })),
       },
       {
+        by: input.user,
         clerkId: clerk.id,
         sessionId: sid,
         character: characterOf(clerk.character_id),
         style: a.styleOf(clerk.id),
         level,
-        ctx: { ...ctx, lines },
+        // メンターに渡す請求は、識別子を外した形だけ
+        ctx: claimForAi(ctx),
         engine,
         situation: input.situation,
         message: input.message,
@@ -273,13 +276,13 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
 }
 
 /** 訪問カルテを残し、AI が算定に要る事実を取り出す（FR-69）。取り出した事実は本人が確かめてから使う */
-export async function writeChart(input: { claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
+export async function writeChart(input: { user: User; claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
-  const r = await extractFacts(input.note, modelFor("chartExtract"));
+  const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
   return { ...saved, ...r };
 }
 
 /** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
-export const formatChart = (text: string) => formatSoap(text, modelFor("chartSoap"));
-export const readChartFromImage = (image: Buffer) => readChartImage(image, modelFor("chartImage"));
+export const formatChart = (user: User, text: string) => formatSoap(user, text, modelFor("chartSoap"));
+export const readChartFromImage = (user: User, image: Buffer) => readChartImage(user, image, modelFor("chartImage"));
