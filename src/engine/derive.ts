@@ -9,7 +9,7 @@ import {
   ikouEligible,
   kanriKubun,
   oushinOnlyBilledDays,
-  rxKubun,
+  rxKubunOn,
   sameDayOf,
   terminalVisitsOk,
   visitBillable,
@@ -56,7 +56,7 @@ export type Pending =
   | { kind: "事実不足"; id: string; need: NeedKey; target: "doctor" | "clerk"; blocks: string[]; date?: string }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
-export type Unsupported = { code: "kyokagata" | "single_building_multi" | "baseup_note5" | "unmapped_test_item"; detail: string };
+export type Unsupported = { code: "kyokagata" | "single_building_multi" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -312,12 +312,23 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if (first) add(k, [first.date], { derive: "D09", events: [first] });
   }
 
-  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（その処方の内服が 7 種類以上か）で決める（X-77）
-  if (!kanri && !kanriOpen)
-    for (const k of [c.rx.other, c.rx.many]) {
-      const mine = rxs.filter((e) => rxKubun(c, e) === k);
-      add(k, mine.map((e) => e.date), { derive: "D10", events: mine });
+  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（rxKubunOn）で決める（X-77・§11-5）
+  if (!kanri && !kanriOpen) {
+    const rxOf = new Map<string, { events: typeof rxs; asked: boolean }>([c.rx.other, c.rx.many].map((k) => [k, { events: [], asked: false }]));
+    for (const d of [...new Set(rxs.map((e) => e.date))]) {
+      const e = rxKubunOn(ctx, c, d);
+      if (e.known === true) {
+        const of = rxOf.get(e.kubun)!;
+        const event = rxs.find((x) => x.date === d)!;
+        of.events.push(event);
+        // 長期処方かの答えを使ったのは、種類数で決まらず、対象の薬が含まれないとも分かっていない処方
+        if (e.why !== "many" && event.psychotropic !== false) of.asked = true;
+      } else if (e.need === "rxLongPsychotropic") lack(`D10-long:${d}`, "rxLongPsychotropic", [c.rx.many, c.rx.other], d);
+      // 同じ日に処方が 2 回以上：日付ごとの事実では処方を分けられないので、その日は立てない
+      else unsupported.push({ code: "rx_same_day_multi", detail: `同じ日に 2 回以上の処方がある日の処方箋料は扱っていません（${d}）` });
     }
+    for (const [k, of] of rxOf) add(k, of.events.map((e) => e.date), { derive: "D10", events: of.events, needs: of.asked ? ["rxLongPsychotropic"] : [] });
+  }
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];

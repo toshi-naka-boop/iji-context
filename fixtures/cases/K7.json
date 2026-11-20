@@ -80,6 +80,10 @@
     "dischargeJointGuidance": {
       "known": false
     },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
@@ -121,7 +125,8 @@
       "type": "prescription",
       "date": "2026-10-28",
       "oralKinds": 5,
-      "days": 28
+      "days": 28,
+      "psychotropic": false
     }
   ],
   "lines": [

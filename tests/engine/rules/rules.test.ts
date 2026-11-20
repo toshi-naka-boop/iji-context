@@ -2,7 +2,7 @@
 // 管理料の区分の組み合わせ（§2-3-3）、往診と訪問診療の同日・翌日（§2-3-4）
 import { describe, expect, it } from "vitest";
 import { evaluate } from "../../../src/engine";
-import type { ClaimContext, Facility, FacilityFactKey, Fact, Finding, FindingKind } from "../../../src/engine/types";
+import type { ClaimContext, ClaimEvent, Facility, FacilityFactKey, Fact, Finding, FindingKind } from "../../../src/engine/types";
 import { day, month } from "../../helpers/period";
 import { line, loadCase, withEvents, withFact, withLines, without } from "../helpers";
 
@@ -507,15 +507,21 @@ describe("同じ区分を複数の行に分けた請求（X-75）", () => {
   });
 });
 
-describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", () => {
+describe("R07 処方箋料の区分は処方ごとに判定する（X-77。design.md §11-5。§11-8 完了条件 9）", () => {
   const A = day(1);
   const B = day(20);
-  /** 管理料のない月。1 日に内服 5 種類、20 日に 7 種類の処方 */
-  const base = (...lines: ReturnType<typeof line>[]): ClaimContext => ({
+  const rx = (date: string, oralKinds: number, psychotropic: boolean | null = false): ClaimEvent => ({ type: "prescription", date, oralKinds, days: 14, psychotropic });
+  /** 管理料のない月の、処方の出来事と処方箋料の行 */
+  const month1 = (events: ClaimEvent[], ...lines: ReturnType<typeof line>[]): ClaimContext => ({
     ...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1"),
-    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), { type: "prescription", date: A, oralKinds: 5, days: 14 }, { type: "prescription", date: B, oralKinds: 7, days: 14 }],
+    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), ...events],
     lines: [...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1").lines, ...lines],
   });
+  /** 1 日に内服 5 種類、20 日に 7 種類の処方（どちらも対象の薬は含まれない） */
+  const base = (...lines: ReturnType<typeof line>[]) => month1([rx(A, 5), rx(B, 7)], ...lines);
+  const long = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "rxLongPsychotropic", { known: true, value: table });
+  const missingOf = (ctx: ClaimContext) => of(ctx, "R07").map((f) => [f.kind, f.lineRefs, f.missing]);
+
   it("処方ごとに合う区分なら指摘なし", () => {
     expect(tags(base(line("F400_3", 1, [A]), line("F400_2", 1, [B])), "R07")).toEqual([]);
   });
@@ -524,8 +530,50 @@ describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", ()
     expect(tags(base(line("F400_2", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
     expect(tags(base(line("F400_2", 1, [A]), line("F400_3", 1, [B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more", "R07:区分誤り:not_seven_or_more"]);
   });
-  it("行の日に処方の出来事がないときは、月の処方のどれかに合えば指摘しない（日付で対応がとれないときの仮置き）", () => {
-    expect(tags(base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)])), "R07")).toEqual([]);
+  it("対応のとれない行（その日に処方の記録がない）は、月のほかの処方と区分が合っていても情報不足 rxRecord（医療事務・その日つき）。区分誤りとは言わない", () => {
+    const c = base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)]));
+    expect(missingOf(c)).toEqual([
+      ["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord", date: day(2) }],
+      ["情報不足", ["F400_2"], { target: "clerk", field: "rxRecord", date: day(21) }],
+    ]);
+    // 月に処方の記録が 1 件もないときも、区分 2 の行を区分誤りと断定しない。日付のない行も対応がとれない
+    expect(missingOf(month1([], line("F400_2", 1, [A])))).toEqual([["情報不足", ["F400_2"], { target: "clerk", field: "rxRecord", date: A }]]);
+    expect(missingOf(month1([rx(A, 5)], line("F400_3", 1, [])))).toEqual([["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord" }]]);
+  });
+  it("同じ日に処方が 2 回ある日は分けられないので、その日の行は情報不足（rxRecord）", () => {
+    expect(missingOf(month1([rx(A, 5), rx(A, 7)], line("F400_3", 1, [A])))).toEqual([["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord", date: A }]]);
+  });
+  describe("6 種類以下の処方と、向精神薬の長期処方（日付ごと）", () => {
+    it.each([null, true])("対象の薬が含まれる・分からない処方（psychotropic=%s）で長期処方かが不明の日は、区分 2 の行にも区分 3 の行にも、その日つきの情報不足（医師）", (psy) => {
+      for (const k of ["F400_2", "F400_3"]) {
+        const c = month1([rx(A, 5, psy)], line(k, 1, [A]));
+        expect(missingOf(c)).toEqual([["情報不足", [k], { target: "doctor", field: "rxLongPsychotropic", date: A }]]);
+        expect(missingOf(withFact(c, "rxLongPsychotropic", unknown))).toEqual([["情報不足", [k], { target: "doctor", field: "rxLongPsychotropic", date: A }]]);
+      }
+    });
+    it("長期処方が偽と分かっている日の区分 2 は not_seven_or_more、区分 3 は指摘なし", () => {
+      const c = (k: string) => long(month1([rx(A, 5, true)], line(k, 1, [A])), { [A]: false });
+      expect(tags(c("F400_2"), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+      expect(tags(c("F400_3"), "R07")).toEqual([]);
+    });
+    it("長期処方が真と分かっている日の区分 3 は use_long_psychotropic、区分 2 は指摘なし（C-87）", () => {
+      const c = (k: string) => long(month1([rx(A, 5, null)], line(k, 1, [A])), { [A]: true });
+      expect(tags(c("F400_3"), "R07")).toEqual(["R07:区分誤り:use_long_psychotropic"]);
+      expect(tags(c("F400_2"), "R07")).toEqual([]);
+    });
+    it("処方に対象の薬が含まれないと分かっている日は聞かれない（長期処方の答えがなくても、あっても、偽として扱う）", () => {
+      for (const table of [{}, { [A]: true }]) {
+        expect(tags(long(month1([rx(A, 5, false)], line("F400_3", 1, [A])), table), "R07")).toEqual([]);
+        expect(tags(long(month1([rx(A, 5, false)], line("F400_2", 1, [A])), table), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+      }
+    });
+    it("7 種類以上の処方は、対象の薬が分からなくても聞かれない", () => {
+      expect(tags(month1([rx(A, 7, null)], line("F400_2", 1, [A])), "R07")).toEqual([]);
+    });
+    it("ある日の答えは、ほかの日に効かない", () => {
+      const c = long(month1([rx(A, 5, true), rx(B, 5, true)], line("F400_2", 2, [A, B])), { [A]: true });
+      expect(missingOf(c)).toEqual([["情報不足", ["F400_2"], { target: "doctor", field: "rxLongPsychotropic", date: B }]]);
+    });
   });
 });
 

@@ -156,21 +156,25 @@ function separateOn(ctx: ClaimContext, day: string): boolean | undefined {
   return separate === false ? false : answerOn(ctx.facts.sameDayOushinAfterVisit, day) === true ? true : separate;
 }
 
-/** 処方 1 件の処方箋料の区分。処方ごとに、内服の種類数が閾値以上かで決める（D10・R07 が共有。X-77） */
-export function rxKubun(c: RevisionConsts, e: { oralKinds: number }): string {
-  return e.oralKinds >= c.rx.oralKindsThreshold ? c.rx.many : c.rx.other;
-}
-
 /**
- * その日の処方箋料として合う区分（その日の処方の区分）。
- * その日に処方の出来事がなければ（日付なしは day を "" で渡す）、日付で処方と行の対応がとれないので、月の処方のどれかの区分に合えばよいとする。
- * 処方の出来事が月に 1 件もなければ、閾値未満の区分だけ
+ * その日の処方箋料として期待される区分（design.md §11-5）。導出の D10 と R07 が同じ答えを使う。判定の単位は処方 1 回ごと（EM #7-13）。
+ * 内服の種類数が閾値以上 → 区分 2（why: many）／閾値未満で向精神薬の長期処方 → 区分 2（long）／閾値未満で長期処方でない → 区分 3（other）。
+ * 閾値未満で長期処方かが不明なら決まらない（rxLongPsychotropic を確かめる）。区分 3 のほうが点数が高いので、不明を区分 3 とみなさない（X-85）。
+ * 処方に対象の薬が含まれないと分かっていれば（psychotropic が偽）、聞かずに長期処方でないとして扱う。null は「含まれない」とみなさない。
+ * その日の処方の記録が 1 件に決まらないとき（ない＝行と対応がとれない／2 件以上＝日付ごとの事実では分けられない）も決まらない（rxRecord）。日付のない行は day を "" で渡す
  */
-export function rxKubunOn(ctx: ClaimContext, c: RevisionConsts, day: string): string[] {
-  const all = eventsOf(ctx, "prescription");
-  const onDay = all.filter((e) => e.date === day);
-  const of = (onDay.length ? onDay : all).map((e) => rxKubun(c, e));
-  return of.length ? [...new Set(of)] : [c.rx.other];
+export function rxKubunOn(
+  ctx: ClaimContext,
+  c: RevisionConsts,
+  day: string,
+): { known: true; kubun: string; why: "many" | "long" | "other" } | { known: false; need: "rxRecord" | "rxLongPsychotropic" } {
+  const onDay = eventsOf(ctx, "prescription").filter((e) => e.date === day);
+  if (onDay.length !== 1) return { known: false, need: "rxRecord" };
+  const e = onDay[0];
+  if (e.oralKinds >= c.rx.oralKindsThreshold) return { known: true, kubun: c.rx.many, why: "many" };
+  const long = e.psychotropic === false ? false : answerOn(ctx.facts.rxLongPsychotropic, day);
+  if (long === undefined) return { known: false, need: "rxLongPsychotropic" };
+  return long ? { known: true, kubun: c.rx.many, why: "long" } : { known: true, kubun: c.rx.other, why: "other" };
 }
 
 /**

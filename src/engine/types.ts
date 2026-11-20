@@ -76,6 +76,8 @@ export type Facts = {
   sameDayOushinAfterVisit: Fact<Record<string, boolean>>;
   /** 退院時共同指導料1 を算定したか。在宅ターミナルケア加算の別の経路（R09・D12。EM #7-11）。医療事務が確かめる */
   dischargeJointGuidance: Fact<boolean>;
+  /** その日の処方が、向精神薬（不安・不眠の薬）の 1 年以上の継続処方に当たるか（処方の日付 → 真偽）。載っていない日は不明（R07・D10。EM #7-15）。医師が確かめる */
+  rxLongPsychotropic: Fact<Record<string, boolean>>;
   /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
@@ -90,7 +92,11 @@ export type ClaimEvent =
   | { type: "visit"; date: string; sameBuildingCount: number }
   | { type: "oushin"; date: string; kind: "normal" | "emergency" }
   | { type: "test"; date: string; items: string[] }
-  | { type: "prescription"; date: string; oralKinds: number; days: number }
+  /**
+   * oralKinds：F200 注3 の数え方で数えた、常態として投与する内服薬の種類数（EM #7-14）。数えるのは入力する側で、エンジンは数え方（薬価・臨時の投薬）を適用しない。
+   * psychotropic：その処方に、処方箋料の区分 2 の対象になる不安・不眠の薬が含まれるか（EM #7-15）。null は「分からない」で、「含まれない」とはみなさない
+   */
+  | { type: "prescription"; date: string; oralKinds: number; days: number; psychotropic: boolean | null }
   | { type: "death"; date: string }
   | { type: "discharge"; date: string }
   /** 管理料（在医総管・施設総管）の算定開始月（"YYYY-MM"） */
@@ -121,7 +127,7 @@ export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  /** 情報不足のとき。施設の設定は field が "facility.<key>"。date は日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと（事実のキーではない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
   reference: string;

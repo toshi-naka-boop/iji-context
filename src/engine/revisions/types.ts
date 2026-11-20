@@ -33,7 +33,7 @@ export type RevisionConsts = {
   bundled: { kubun: string[]; noRxAddition: string };
   /** 特定疾患処方管理加算（R06）。対象外の主病と、処方日数の下限 */
   tokutei: { kubun: string; excludedDiseases: string[]; minDays: number };
-  /** 処方箋料（R07）。内服の種類数がこの数以上なら many、それ以外は other */
+  /** 処方箋料（R07）。内服の種類数がこの数以上か、向精神薬の長期処方なら many（区分 2）、それ以外は other（区分 3） */
   rx: { oralKindsThreshold: number; many: string; other: string };
   /** ベースアップ評価料(Ⅰ)（R08）。visit は [同一建物居住者以外, 同一建物居住者]。overlapKey は両方を算定した日の重ねを決める施設の設定 */
   baseUp: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };

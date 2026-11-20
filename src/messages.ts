@@ -19,7 +19,8 @@ export const FINDING_TEXT: Record<string, string> = {
   "R06.excluded_disease": "主病が特定疾患処方管理加算の対象外です",
   "R06.under_28_days": "28 日以上の処方がないのに、特定疾患処方管理加算が入っています",
   "R07.use_seven_or_more": "内服 7 種類以上なので、処方箋料の区分が違います",
-  "R07.not_seven_or_more": "内服 7 種類未満なのに、7 種類以上の区分になっています",
+  "R07.use_long_psychotropic": "向精神薬の長期処方に当たるので、処方箋料の区分が違います",
+  "R07.not_seven_or_more": "内服 7 種類未満で、向精神薬の長期処方にも当たらないのに、区分 2 になっています",
   "R08.oushin_only_day": "訪問診療料のない日に、訪問診療時のベースアップ評価料が入っています",
   "R08.use_visit": "訪問診療料の日に、再診時等のベースアップ評価料が入っています",
   "R08.duplicate_on_visit_day": "訪問診療料の日に、訪問診療時のベースアップ評価料と再診時等のベースアップ評価料が重なっています。再診時等の行は算定できないので外してください",
@@ -75,6 +76,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
   sameDaySeparate: "同じ日の訪問診療と往診が、別々の診療か（1 回の診療ではないか）",
   sameDayOushinAfterVisit: "その日、訪問診療のあとに、病状の急変などで往診したか",
   dischargeJointGuidance: "退院時共同指導料1 を算定したか",
+  rxLongPsychotropic: "その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
 };
@@ -104,7 +106,7 @@ export const DERIVE_TEXT: Record<string, string> = {
   D07: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
   D08: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
   D09: "検査の項目ごとに 1 回。血液採取は検査の日ごとに 1 回、判断料は区分ごとに月 1 回",
-  D10: "管理料を算定しない月の処方。内服の種類数で区分が決まる",
+  D10: "管理料を算定しない月の処方。内服の種類数と、向精神薬の長期処方かで区分が決まる",
   D11: "本人が選んだ",
   D12: "本人が選んだ（死亡日前 14 日以内に 2 回以上の訪問・往診の記録があるか、退院時共同指導料1 を算定して訪問診療の記録がある）",
 };
@@ -116,10 +118,12 @@ export function findingText(f: Finding): string {
       const label = FACILITY_LABEL[f.missing.field.slice("facility.".length) as FacilityFactKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
-    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
+    // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
+    if (f.missing.field === "rxRecord") return `処方箋料の行${day}に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください`;
+    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     return f.missing.target === "doctor"
-      ? `${label}がカルテから分かりません。医師確認で確かめましょう`
+      ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
       : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
   return FINDING_TEXT[f.messageKey] ?? f.messageKey;

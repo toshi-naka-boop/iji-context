@@ -18,7 +18,7 @@ export function ruleKubun(ruleId: string, yearMonth: string, revs: Revision[] = 
 }
 
 /** 不明な事実を誰に聞くか。臨床の判断は医師、それ以外は医療事務 */
-const DOCTOR_FACTS: FactKey[] = ["table7", "table8_2", "table8_3Other", "mainDisease", "homeOxygen", "acuteExacerbation", "deathPlace"];
+const DOCTOR_FACTS: FactKey[] = ["table7", "table8_2", "table8_3Other", "mainDisease", "homeOxygen", "acuteExacerbation", "deathPlace", "rxLongPsychotropic"];
 
 /** 不明な入力の宛先（導出の保留と共有する） */
 export const targetOfNeed = (key: NeedKey): "doctor" | "clerk" => ((DOCTOR_FACTS as string[]).includes(key) ? "doctor" : "clerk");

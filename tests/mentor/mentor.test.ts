@@ -140,6 +140,10 @@ describe("指摘の文言", () => {
     for (const k of keys) expect(FINDING_TEXT[k], k).toBeTruthy();
     for (const t of Object.values(FINDING_TEXT)) expect(t).not.toMatch(/教育|学習|学ぶ|教える|円/);
     expect(findingText({ ruleId: "R03", kind: "情報不足", lineRefs: [], missing: { target: "clerk", field: "careLevel" }, messageKey: "R03.missing_fact", reference: "" })).toBe("要介護度が入っていません。介護保険証で確かめて入力してください");
+    // 日付ごとの事実は、医師あてでも日付を添える。処方の記録と対応がとれない行は、入力を求めず、記録を確かめるよう案内する
+    const at = (field: string, target: "doctor" | "clerk") => findingText({ ruleId: "R07", kind: "情報不足", lineRefs: [], missing: { target, field, date: "2026-10-28" }, messageKey: "R07.missing_fact", reference: "" });
+    expect(at("rxLongPsychotropic", "doctor")).toBe("その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか（10月28日）がカルテから分かりません。医師確認で確かめましょう");
+    expect(at("rxRecord", "clerk")).toBe("処方箋料の行（10月28日）に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください");
   });
 });
 

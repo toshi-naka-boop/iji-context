@@ -32,6 +32,7 @@ const UNKNOWN_FACTS: Facts = {
   sameDaySeparate: { known: false },
   sameDayOushinAfterVisit: { known: false },
   dischargeJointGuidance: { known: false },
+  rxLongPsychotropic: { known: false },
   rapidSameDayDocumented: { known: false },
   comprehensiveCare: { known: false },
 };

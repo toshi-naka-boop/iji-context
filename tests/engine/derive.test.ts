@@ -359,7 +359,7 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(judge(c, r).findings).toEqual([]);
   });
   it("処方箋料の区分は処方ごとに決める：1 日に内服 5 種類、20 日に 7 種類なら 60＋32＝92 点（X-77）", () => {
-    const rx = (n: number, oralKinds: number): ClaimEvent => ({ type: "prescription", date: day(n), oralKinds, days: 28 });
+    const rx = (n: number, oralKinds: number): ClaimEvent => ({ type: "prescription", date: day(n), oralKinds, days: 28, psychotropic: false });
     const c: ClaimContext = { ...withFact(K2, "comprehensiveCare", no), events: [...K2.events.filter((e) => e.type !== "prescription"), rx(1, 5), rx(20, 7)] };
     const r = derive(c);
     expect(r.pending).toEqual([]);
@@ -370,6 +370,48 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(pointsOfRx).toEqual([60, 32]);
     expect(result.findings).toEqual([]);
     for (const k of [C.rx.other, C.rx.many]) expect(r.basis.find((b) => b.kubun === k)?.events).toHaveLength(1);
+  });
+  describe("処方箋料（D10）：6 種類以下の処方と、向精神薬の長期処方（design.md §11-5。§11-8 完了条件 9）", () => {
+    const D = day(28);
+    /** K2 を管理料のない月にして、28 日の処方（内服 5 種類）の「対象の薬が含まれるか」を差し替える */
+    const of = (psychotropic: boolean | null, table?: Record<string, boolean>): ClaimContext => ({
+      ...withFact(withFact(K2, "comprehensiveCare", no), "rxLongPsychotropic", table ? sep(table) : unknown),
+      events: K2.events.map((e) => (e.type === "prescription" ? { ...e, psychotropic } : e)),
+    });
+    const r07 = (c: ClaimContext, r: DeriveResult) => judge(c, r).findings.filter((f) => f.ruleId === "R07");
+    it.each([null, true])("長期処方かが不明の日（psychotropic=%s）は、処方箋料を保留（事実不足・宛先は医師・その日つき）にして合計を出さない。区分 3 とみなさない", (psy) => {
+      const r = derive(of(psy));
+      expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", id: `D10-long:${D}`, need: "rxLongPsychotropic", target: "doctor", date: D, blocks: [C.rx.many, C.rx.other] })]);
+      expect(kubunOf(r)).not.toContain(C.rx.other);
+      expect(kubunOf(r)).not.toContain(C.rx.many);
+      expect(r.totalStatus).toBe("withheld");
+    });
+    it("長期処方が真なら区分 2、偽なら区分 3 を立て、どちらも検証で指摘がない", () => {
+      for (const [answer, kubun] of [[true, C.rx.many], [false, C.rx.other]] as const) {
+        const c = of(true, { [D]: answer });
+        const r = derive(c);
+        expect(r.pending).toEqual([]);
+        expect(datesOf(r, kubun)).toEqual([D]);
+        expect(r.basis.find((b) => b.kubun === kubun)?.needs).toEqual(["rxLongPsychotropic"]);
+        expect(r07(c, r)).toEqual([]);
+      }
+    });
+    it("処方に対象の薬が含まれないと分かっている日は聞かれず、区分 3 が立つ", () => {
+      const c = of(false);
+      const r = derive(c);
+      expect(r.pending).toEqual([]);
+      expect(datesOf(r, C.rx.other)).toEqual([D]);
+      expect(r.basis.find((b) => b.kubun === C.rx.other)?.needs).toEqual([]);
+      expect(r07(c, r)).toEqual([]);
+    });
+    it("同じ日に処方が 2 回ある日は、処方箋料を立てず unsupported にして合計を出さない", () => {
+      const c: ClaimContext = { ...of(false), events: [...of(false).events, { type: "prescription", date: D, oralKinds: 7, days: 28, psychotropic: false }] };
+      const r = derive(c);
+      expect(r.unsupported.map((u) => u.code)).toEqual(["rx_same_day_multi"]);
+      expect(kubunOf(r)).not.toContain(C.rx.other);
+      expect(kubunOf(r)).not.toContain(C.rx.many);
+      expect(r.totalStatus).toBe("withheld");
+    });
   });
   it("居住の場所・注16（区分を左右するとき）・施設の届出が不明なら、その区分だけ保留になる", () => {
     expect(derive(withFact(K2, "residence", unknown)).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["residence"]);
