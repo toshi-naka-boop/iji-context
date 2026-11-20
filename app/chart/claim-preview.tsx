@@ -6,10 +6,20 @@ import type { ClaimPreview as Preview } from "../../src/chart/claim";
 import { COMMENT_CHECK_NOTE } from "../../src/messages";
 
 type PatientFinding = { checkId: string; kind: string; text: string };
-type Claim = Preview & { claimId: string; date: string; patientFindings: PatientFinding[] };
+/** trial・rulesAvailable・notInRevision は、版を選んだ試算のときだけ付く（design.md §11-12） */
+type Claim = Preview & {
+  claimId: string;
+  date: string;
+  patientFindings: PatientFinding[];
+  trial?: { revisionId: string; claimYearMonth: string; inPeriod: boolean };
+  rulesAvailable?: boolean;
+  notInRevision?: string[];
+};
+type Rev = { id: string; label: string };
 
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 const num = (n: number) => n.toLocaleString("ja-JP");
+const ym = (yearMonth: string) => `${Number(yearMonth.slice(0, 4))}年${Number(yearMonth.slice(5, 7))}月`;
 
 /** localRules は、ローカルルール欄を差し込む場所（中身は呼び出し側が渡す） */
 export function ClaimPreview({ noteId, localRules }: { noteId: number; localRules?: ReactNode }) {
@@ -18,10 +28,18 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string[]>([]);
   const [err, setErr] = useState("");
+  /** 試算に使う版（"" は選ばない＝診療年月の版での、今までどおりの判定）と、選べる版 */
+  const [rev, setRev] = useState("");
+  const [revisions, setRevisions] = useState<Rev[]>([]);
+
+  useEffect(() => {
+    fetch("/api/revision/compare").then((r) => (r.ok ? r.json() : null)).then((d) => d && setRevisions(d.revisions as Rev[])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
-    const q = Object.keys(choices).length ? `?choices=${encodeURIComponent(JSON.stringify(choices))}` : "";
+    const params = new URLSearchParams({ ...(Object.keys(choices).length ? { choices: JSON.stringify(choices) } : {}), ...(rev ? { rev } : {}) }).toString();
+    const q = params ? `?${params}` : "";
     fetch(`/api/chart/${noteId}/claim${q}`)
       .then(async (r) => {
         const d = await r.json();
@@ -32,7 +50,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
     return () => {
       alive = false;
     };
-  }, [noteId, choices]);
+  }, [noteId, choices, rev]);
 
   if (err) return <div className="notice warn">{err}</div>;
   if (!claim) return <div className="muted">算定行を組み立てています…</div>;
@@ -48,6 +66,24 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       <p className="muted" style={{ margin: 0 }}>
         確かめた事実と記録された出来事から、決まった規則で組み立てた行です。記録にないものは行にしていません。この確定は提出ではなく、件数にも数えません。
       </p>
+      {revisions.length > 0 && (
+        <label>
+          <span className="muted">版を選んで試算する：</span>
+          <select value={rev} onChange={(e) => { setRev(e.target.value); setChoices({}); setPicked([]); }} aria-label="試算に使う版">
+            <option value="">選ばない（診療年月の版で判定）</option>
+            {revisions.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+          </select>
+        </label>
+      )}
+      {claim.trial && (
+        <div className="notice warn" role="note">
+          <strong>
+            診療年月 {ym(claim.trial.claimYearMonth)} の記録を、{revisions.find((v) => v.id === claim.trial!.revisionId)?.label ?? claim.trial.revisionId}の点数表とルールで試算しています。実際の請求の判定ではありません。
+          </strong>
+          {!claim.trial.inPeriod && <div>この診療年月は、この版の適用期間の外です。日付は記録のまま動かしていません。</div>}
+          {(claim.notInRevision ?? []).length > 0 && <div>この版の点数表にない区分は、行にしていません：{claim.notInRevision!.join("、")}</div>}
+        </div>
+      )}
       <table className="emr-table">
         <thead>
           <tr><th>算定行</th><th>回数</th><th>点数</th><th>小計</th><th>根拠</th></tr>
@@ -136,7 +172,9 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
 
       <h3 style={{ margin: 0 }}>ユスティの指摘</h3>
       <p className="muted" style={{ margin: 0 }}>{COMMENT_CHECK_NOTE}</p>
-      {claim.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
+      {claim.rulesAvailable === false
+        ? <p className="notice warn" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p>
+        : claim.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
       {claim.findings.map((f, i) => (
         <div key={i} className="notice warn">
           <span className="badge warn">{f.kind}</span> {f.text}

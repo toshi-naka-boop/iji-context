@@ -15,6 +15,7 @@ import { createPeer } from "./app/peer";
 import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
+import { createRevision } from "./app/revision";
 import { createUke } from "./app/uke";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
@@ -40,6 +41,7 @@ export function openApp(paths: AppPaths) {
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
   const { deleteUpload } = createErase(ctx, uke, patientFactsOf);
+  const { compareOf } = createRevision(uke, casesOf, notes);
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
@@ -51,8 +53,8 @@ export function openApp(paths: AppPaths) {
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
-  const chartClaim = (noteId: number, choices: Record<string, string>) => {
-    const claim = notes.claimOfNote(noteId, choices);
+  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
+    const claim = notes.claimOfNote(noteId, choices, revId);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -85,6 +87,7 @@ export function openApp(paths: AppPaths) {
     noteOf,
     confirmNote,
     chartClaim,
+    compareOf,
     patients,
     outlookOf,
     patientFacts,

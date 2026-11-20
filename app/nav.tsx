@@ -15,6 +15,7 @@ const LINKS: [string, string][] = [
   ["/uke", "UKE 取り込み"],
   ["/meeting", "レセメン会議"],
   ["/knowledge", "知識"],
+  ["/revision", "改定の比較"],
   ["/manager", "事務長"],
   ["/guide", "手引き"],
   ["/settings", "設定"],

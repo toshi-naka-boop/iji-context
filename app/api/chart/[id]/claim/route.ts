@@ -1,4 +1,4 @@
-// API Route（薄い入口。処理は src/server/app.ts）。確定したカルテから導出した算定行・根拠・保留・指摘を返す（FR-94〜102）。読むだけで、何も記録しない
+// API Route（薄い入口。処理は src/server/app.ts）。確定したカルテから導出した算定行・根拠・保留・指摘を返す（FR-94〜102）。読むだけで、何も記録しない。rev を付けると、その版での試算（design.md §11-12）
 import { badRequest } from "../../../../../src/server/errors";
 import { route } from "../../../../../src/server/http";
 import { getApp } from "../../../../../src/server/instance";
@@ -15,7 +15,7 @@ function choicesOf(raw: string | undefined): Record<string, string> {
   }
 }
 
-export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, ({ params, query }) => getApp().chartClaim(Number(params.id), choicesOf(query.choices)));
+export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, ({ params, query }) => getApp().chartClaim(Number(params.id), choicesOf(query.choices), query.rev));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

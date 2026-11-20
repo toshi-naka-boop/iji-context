@@ -74,6 +74,8 @@ export const POLICY = {
   "POST /api/chart/[id]": row(WORK, "none", true),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
   "GET /api/chart/[id]/claim": row(WORK, "none", true),
+  // 改定の比較（design.md §11-2）：同じ記録を 2 つの版で導出して並べる。読むだけ。全ロール
+  "GET /api/revision/compare": row(ALL, "none", true),
   "POST /api/chart/image": row(WORK, "ai", true),
   "POST /api/chart/soap": row(WORK, "ai", true),
   "GET /api/patients": row(WORK, "none", true),

@@ -1,6 +1,6 @@
 // カルテの画面の算定プレビュー（spec FR-101。design.md §2-8）：導出の結果（行・根拠・保留・未対応）と検証の結果を、画面に出す形にまとめる。
 // ここは並べ替えと文言だけで、判定はしない（導出は deriveLines、検証は evaluate）。宛先は医療事務なので点数を出してよい
-import type { DeriveResult, LineBasis, Pending } from "../engine/derive";
+import type { DeriveResult, LineBasis, Pending, Unsupported } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimEvent, EngineResult } from "../engine/types";
 import { DERIVE_TEXT, findingText, needLabel } from "../messages";
@@ -8,6 +8,9 @@ import { DERIVE_TEXT, findingText, needLabel } from "../messages";
 const EVENT_LABEL: Record<ClaimEvent["type"], string> = { visit: "訪問診療", oushin: "往診", test: "検査", prescription: "処方", death: "死亡", discharge: "退院", kanriStart: "管理料の算定開始" };
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 const eventText = (e: { type: ClaimEvent["type"]; date: string }) => `${EVENT_LABEL[e.type]} ${md(e.date)}`;
+
+/** 導出の未対応を画面に出す文 */
+export const unsupportedText = (u: Unsupported): string => (u.code === "unmapped_test_item" ? `検査の項目「${u.detail}」は、区分の表にないので行にしていません` : u.detail);
 
 export type ClaimPreviewLine = {
   kubun: string;
@@ -41,7 +44,8 @@ export type ClaimPreview = {
   findings: { ruleId: string; kind: string; text: string; lines: string[] }[];
 };
 
-export function claimPreviewOf(derived: DeriveResult, engine: EngineResult, rev: Revision): ClaimPreview {
+/** engine は、請求の判定（EngineResult）か試算（TrialResult）の、行ごとの点数・合計・指摘 */
+export function claimPreviewOf(derived: DeriveResult, engine: Pick<EngineResult, "byLine" | "total" | "findings">, rev: Revision): ClaimPreview {
   const nameOf = (kubun: string) => rev.points[kubun]?.name ?? kubun;
   const basisOf = (b: LineBasis | undefined): ClaimPreviewLine["basis"] =>
     b ? { rule: DERIVE_TEXT[b.derive] ?? b.derive, events: b.events.map(eventText), needs: b.needs.map(needLabel), byChoice: b.choice !== undefined, tentative: b.tentative } : null;
@@ -67,7 +71,7 @@ export function claimPreviewOf(derived: DeriveResult, engine: EngineResult, rev:
     totalStatus: derived.totalStatus,
     total: derived.totalStatus === "withheld" ? null : engine.total,
     pending: derived.pending.map(pendingOf),
-    unsupported: derived.unsupported.map((u) => ({ code: u.code, text: u.code === "unmapped_test_item" ? `検査の項目「${u.detail}」は、区分の表にないので行にしていません` : u.detail })),
+    unsupported: derived.unsupported.map((u) => ({ code: u.code, text: unsupportedText(u) })),
     // 行にしなかった理由は、混ぜずに 1 つずつ出す（1 回の診療として片方を選んだ／訪問診療のあとの往診ではない／文書の提供がない。design.md §11-5）
     notBilled: derived.notBilled.map((n) =>
       n.reason === "same_encounter"
