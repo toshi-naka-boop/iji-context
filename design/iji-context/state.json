@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v24",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v24",
+  "approvedDesignSha256": "83fdd8181c1afaa2cd94d8452adf20f619fc92d453c4121253a809385fe21b4c",
+  "approvedAt": "2026-11-20T00:00:00+09:00",
+  "approvalEvidence": "v24:83fdd8181c1a を承認",
   "requiredApprovalFingerprint": "v24:83fdd8181c1a",
   "baseline": "feat/integration（PR #16、66f29e6）",
   "criticRound": 31,
@@ -15,10 +15,10 @@
     "ledger.md",
     "sources/research/full-coverage-research.md"
   ],
-  "nextAction": "ユーザーの承認（指紋つき）を待つ。承認後、段 10a から実装を委譲",
+  "nextAction": "段 10a（マスターの取り込み・錨・UkeClaim に点検に要る項目を保持・設定の画面）を委譲して実装。完了条件は呼び出し側で実行",
   "lastUpdated": "2026-11-20",
   "delegation": {
     "実装": "claude サブエージェント",
-    "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol xhigh"
+    "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol"
   }
 }
