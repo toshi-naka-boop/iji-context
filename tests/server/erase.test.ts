@@ -105,7 +105,7 @@ describe("取り込んだファイルを消す", () => {
         a.savePatientFact(id, me, { key: "table7", value: true, source: "カルテ", validUntil: null });
         // 請求ごとに確かめた事実（日付ごとの事実と、そうでない事実）
         a.saveClaimFact(id, me, "clerk", { key: "sameDayOushinAfterVisit", date: day(5), value: true, source: "カルテ" });
-        a.saveClaimFact(id, me, "clerk", { key: "contactDocProvided", date: null, value: true, source: "カルテ" });
+        a.saveClaimFact(id, me, "clerk", { key: "dischargeJointGuidance", date: null, value: true, source: "カルテ" });
         a.confirmCoverage(id, me, { coverageId: a.patientProfile(id).coverages[0].coverageId, source: "保険証・資格確認書" });
         out[`patient:${id}`] = a.patientFacts(id).patientId;
         out[`question:${id}`] = q.id;
@@ -180,7 +180,7 @@ describe("取り込んだファイルを消す", () => {
       expect(a.cases().map((c) => c.claimId).filter((id) => id.startsWith("U"))).toEqual(["U2-1"]);
       expect(a.doctorQueries().map((q) => q.claimId)).toEqual(["U2-1"]);
       expect(a.patientFacts("U2-1")).toMatchObject({ patientId: stays, facts: [{ key: "table7" }] });
-      expect(a.claimFacts("U2-1").facts.map((f) => f.key)).toEqual(["sameDayOushinAfterVisit", "contactDocProvided"]);
+      expect(a.claimFacts("U2-1").facts.map((f) => f.key)).toEqual(["sameDayOushinAfterVisit", "dischargeJointGuidance"]);
       // 残った請求は、今までどおり点検できる。同梱の症例も動く
       const q = a.start(me, "U2-1");
       expect(a.confirm(q.id, a.caseFor(q).lines).confirmed).not.toBeNull();

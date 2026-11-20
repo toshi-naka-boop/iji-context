@@ -193,7 +193,7 @@ export default function UkeClaimCheck() {
                 <div key={i} className="notice">
                   {ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)} {findingText(f)}
                   {lineRefs.length > 0 && <div className="muted">対象の行：{lineRefs.map(nameOf).join("、")}</div>}
-                  <FactInput claimId={c.claimId} finding={f} patientHref="/work" onSaved={() => setTick((t) => t + 1)} />
+                  <FactInput claimId={c.claimId} finding={f} patientHref="/work" patientInline onSaved={() => setTick((t) => t + 1)} />
                 </div>
               ))}
               <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />

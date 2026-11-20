@@ -1,12 +1,14 @@
 "use client";
 // 「情報不足」の項目に、その場で答えを残す入力（請求ごとに確かめた事実。POST /api/claims/[claimId]/facts）と、残した答えの一覧。
 // 入るのは、人が確かめて残した値だけ。医師あての項目は医師の役割だけが残せる（医療事務には「医師に確認が要ります」と出す）。
-// 患者パネルで残す項目（PATIENT_FACT_KEYS）は、入力を作らず患者情報の欄へ誘導する。入力では消えない情報不足（カルテの記録がない・対象外の行・施設の設定）には何も出さない
+// 患者ごとに残す項目（PATIENT_FACT_KEYS。要介護度・居住の場所など。月をまたいで残る）は、患者情報の欄へ誘導する。patientInline の画面（取り込んだレセプトの点検）では、同じ入力をその場にも出す（POST /api/patients/[claimId]/facts）。
+// 入力では消えない情報不足（カルテの記録がない・対象外の行・施設の設定）には何も出さない
 import { useEffect, useState } from "react";
-import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, RESIDENCES, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey } from "../src/claim/facts";
+import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey } from "../src/claim/facts";
 import type { Finding } from "../src/engine/types";
 import { FACT_LABEL } from "../src/messages";
-import { PATIENT_FACT_KEYS } from "../src/patient/facts";
+import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
+import { LABEL as PATIENT_LABEL, choicesOf, show as showPatientFact, valueOf } from "./work/patient-panel";
 import type { Role } from "../src/server/roles";
 
 type Saved = ClaimFact & { target: "doctor" | "clerk"; checkedByName: string };
@@ -43,7 +45,7 @@ function FactForm(props: { claimId: string; factKey: ClaimFactKey; date: string 
     setValue("");
     props.onSaved();
   }
-  const options = kind === "boolean" ? [["true", "はい"], ["false", "いいえ"]] : kind === "residence" ? RESIDENCES.map((x) => [x, x]) : DEATH_PLACES.map((x) => [x, x]);
+  const options = kind === "boolean" ? [["true", "はい"], ["false", "いいえ"]] : DEATH_PLACES.map((x) => [x, x]);
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
       {kind === "text" ? (
@@ -63,12 +65,53 @@ function FactForm(props: { claimId: string; factKey: ClaimFactKey; date: string 
   );
 }
 
-/** 情報不足の 1 項目に添える入力。日付ごとの事実は、聞かれている日の答えを残す。patientHref は、患者情報の欄への行き先 */
-export function FactInput(props: { claimId: string; finding: Finding; patientHref: string; onSaved: () => void }) {
+/** 患者ごとに残す項目の入力（患者パネルと同じ項目・同じ API）。残した値は、同じ患者のほかの月の請求にも使う */
+function PatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [source, setSource] = useState<string>(FACT_SOURCES[0]);
+  const [validUntil, setValidUntil] = useState("");
+  const [err, setErr] = useState("");
+  async function save() {
+    setErr("");
+    const fact = { key: props.factKey, value: valueOf(props.factKey, value), source, validUntil: props.factKey === "careLevel" ? validUntil || null : null };
+    const r = await fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) return setErr(d?.error ?? "エラー");
+    setValue("");
+    props.onSaved();
+  }
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <select aria-label={PATIENT_LABEL[props.factKey]} value={value} onChange={(e) => setValue(e.target.value)}>
+        <option value="">選ぶ</option>
+        {choicesOf(props.factKey).map((v) => <option key={String(v)} value={String(v)}>{showPatientFact(props.factKey, v)}</option>)}
+      </select>
+      <select aria-label="確かめ方" value={source} onChange={(e) => setSource(e.target.value)}>
+        {FACT_SOURCES.map((s) => <option key={s} value={s}>{how(s)}</option>)}
+      </select>
+      {props.factKey === "careLevel" && <label>有効期間の終わり <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>}
+      <button disabled={value === ""} onClick={() => void save()}>残す</button>
+      {err && <span className="notice warn">{err}</span>}
+    </span>
+  );
+}
+
+/**
+ * 情報不足の 1 項目に添える入力。日付ごとの事実は、聞かれている日の答えを残す。patientHref は、患者情報の欄への行き先。
+ * patientInline：患者ごとに残す項目の入力を、その場にも出す（算定の仕事をする人にだけ）
+ */
+export function FactInput(props: { claimId: string; finding: Finding; patientHref: string; onSaved: () => void; patientInline?: boolean }) {
   const role = useRole();
   const m = props.finding.missing;
   if (!m) return null;
-  if ((PATIENT_FACT_KEYS as readonly string[]).includes(m.field)) return <div className="muted">この項目は、月末の点検の「患者情報」の欄で、確定の前に残します。<a href={props.patientHref}>患者情報の欄へ</a></div>;
+  if ((PATIENT_FACT_KEYS as readonly string[]).includes(m.field)) {
+    return (
+      <div className="muted">
+        この項目は患者ごとに残します（同じ患者のほかの月の請求にも使います）。月末の点検の「患者情報」の欄で、確定の前に残せます。<a href={props.patientHref}>患者情報の欄へ</a>
+        {props.patientInline && (role === "clerk" || role === "veteran") && <div style={{ marginTop: 6 }}><PatientFactForm claimId={props.claimId} factKey={m.field as PatientFactKey} onSaved={props.onSaved} /></div>}
+      </div>
+    );
+  }
   if (!isClaimFactKey(m.field) || role === null) return null;
   if (!canSave(role, m.target)) return m.target === "doctor" ? <div className="muted">医師に確認が要ります。医師の役割の利用者が、確かめた答えを残します。</div> : null;
   return <div style={{ marginTop: 6 }}><FactForm claimId={props.claimId} factKey={m.field} date={m.date ?? null} onSaved={props.onSaved} /></div>;

@@ -12,7 +12,7 @@ import type { Role } from "../../src/server/roles";
 import type { UkeFile } from "../../src/uke/types";
 import { readUke, writeUke } from "../../src/uke/uke";
 import { autoConsent } from "../helpers/consent";
-import { claimId, dateIn, day, YM } from "../helpers/period";
+import { claimId, dateIn, day, month, YM } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -25,6 +25,8 @@ const VISIT = C.visitKubun[0];
 const OUSHIN = C.oushin.kubun;
 /** 取り込む請求：5 日と 15 日は訪問診療料と往診料の両方（往診料の翌日の訪問診療料はない）、12〜15 日は同じ週に訪問診療料が 4 回 */
 const ID = "U1-1";
+/** 同じ患者の、次の月の請求 */
+const NEXT = "U2-1";
 const url = `/api/claims/${ID}/facts`;
 
 beforeAll(async () => {
@@ -53,7 +55,13 @@ beforeAll(async () => {
       },
     ],
   };
-  instance.runAs(owner, () => expect(instance.getApp().uploadUke(instance.clerkIdOf(owner), writeUke(file)).filter((u) => u.uploaded).flatMap((u) => u.receipts.map((x) => x.claimId))).toEqual([ID]));
+  // 同じ患者の、次の月の請求（別のファイル）。管理料の行があり、居住の場所を聞かれる
+  const next: UkeFile = { ...base, receipts: [{ ...file.receipts[0], claimId: "B1", yearMonth: month(1), lines: [{ kubun: VISIT, count: 1, dates: [dateIn(1, 5)] }, { kubun: "C002_2NI1", count: 1, dates: [dateIn(1, 5)] }] }] };
+  instance.runAs(owner, () => {
+    const a = instance.getApp();
+    expect(a.uploadUke(instance.clerkIdOf(owner), writeUke(file)).filter((u) => u.uploaded).flatMap((u) => u.receipts.map((x) => x.claimId))).toEqual([ID]);
+    expect(a.uploadUke(instance.clerkIdOf(owner), writeUke(next)).filter((u) => u.uploaded).flatMap((u) => u.receipts.map((x) => x.claimId))).toEqual([ID, NEXT]);
+  });
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
@@ -69,9 +77,12 @@ const setRole = (role: Role) => instance.getAuth().switchRole(owner, role);
 /** 事実を 1 つ残す（応答の状態を返す） */
 const save = async (fact: Record<string, unknown>, id = ID) => (await routes()).POST(post(`/api/claims/${id}/facts`, cookie, { fact }), params(id));
 const fact = (key: string, value: unknown, date: string | null = null) => ({ key, date, value, source: "カルテ" });
+/** 患者ごとの事実を 1 つ残す（POST /api/patients/[claimId]/facts。応答の状態を返す） */
+const savePatient = async (key: string, value: unknown, id = ID) =>
+  (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${id}/facts`, cookie, { fact: { key, value, source: "カルテ", validUntil: null } }), params(id));
 /** 取り込んだレセプトの点検のうち、そのルールの情報不足（項目と日付）と指摘（種類） */
-function check(ruleId: string) {
-  const c = instance.runAs(owner, () => instance.getApp().ukeCheck(ID)) as { missing: Finding[]; findings: Finding[] };
+function check(ruleId: string, id = ID) {
+  const c = instance.runAs(owner, () => instance.getApp().ukeCheck(id)) as { missing: Finding[]; findings: Finding[] };
   return {
     missing: c.missing.filter((f) => f.ruleId === ruleId && f.missing!.field !== "chartRecord").map((f) => `${f.missing!.field}@${f.missing!.date ?? ""}:${f.missing!.target}`),
     findings: c.findings.filter((f) => f.ruleId === ruleId).map((f) => f.messageKey),
@@ -134,10 +145,12 @@ describe("請求ごとに確かめた事実のルート", () => {
     // 5 日の確定した指摘は、15 日の確認が残っていても出る（1 つの不明でほかの判定を止めない：反証 round-28）
     expect(check("R10")).toEqual({ missing: ["contactDocProvided@:clerk"], findings: ["R10.oushin_not_after_visit"] });
     // 文書を提供していない：15 日の訪問診療料が要件不足。5 日の指摘も出る
-    expect((await save(fact("contactDocProvided", false))).status).toBe(200);
+    // 文書の提供は患者ごとの事実（design.md §6-1）：請求ごとの入口では残せず、患者ごとの入口で残す
+    expect((await save(fact("contactDocProvided", false))).status).toBe(400);
+    expect((await savePatient("contactDocProvided", false)).status).toBe(200);
     expect(check("R10")).toEqual({ missing: [], findings: ["R10.oushin_not_after_visit", "R10.same_day_as_visit"] });
     // 直す（最新の 1 件を使う）：提供している → 15 日の指摘が消える
-    expect((await save(fact("contactDocProvided", true))).status).toBe(200);
+    expect((await savePatient("contactDocProvided", true)).status).toBe(200);
     expect(check("R10")).toEqual({ missing: [], findings: ["R10.oushin_not_after_visit"] });
     // 5 日を直す：1 回の診療だった → 背反に変わる
     expect((await save(fact("sameDaySeparate", false, d5))).status).toBe(200);
@@ -149,7 +162,6 @@ describe("請求ごとに確かめた事実のルート", () => {
     expect(list.facts.map((f) => [f.key, f.date, f.value, f.target])).toEqual([
       ["sameDayOushinAfterVisit", d5, false, "clerk"],
       ["sameDayOushinAfterVisit", d15, true, "clerk"],
-      ["contactDocProvided", null, true, "clerk"],
       ["sameDaySeparate", d5, false, "clerk"],
     ]);
     expect(list.facts.every((f) => f.checkedBy === instance.clerkIdOf(owner) && f.source === "カルテ")).toBe(true);
@@ -167,7 +179,7 @@ describe("請求ごとに確かめた事実のルート", () => {
     expect(check("R13")).toEqual({ missing: ["acuteExacerbation@:doctor"], findings: [] });
 
     setRole("doctor");
-    expect((await save(fact("contactDocProvided", true))).status).toBe(403);
+    expect((await save(fact("dischargeJointGuidance", true))).status).toBe(403);
     expect((await save(fact("acuteExacerbation", false))).status).toBe(200);
     expect(check("R13")).toEqual({ missing: [], findings: ["R13.over_three_a_week"] });
     expect((await save(fact("acuteExacerbation", true))).status).toBe(200);
@@ -202,9 +214,39 @@ describe("請求ごとに確かめた事実のルート", () => {
     for (const key of ["sameDaySeparate", "sameDayOushinAfterVisit", "rxLongPsychotropic", "contactDocProvided", "acuteExacerbation", "mainDisease", "residence"] as const) expect([key, facts[key]]).toEqual([key, k1.facts[key]]);
     const rows = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((r) => r.action === "POST /api/claims/[claimId]/facts");
     expect(new Set(rows.filter((r) => r.result === "ok").map((r) => r.target))).toEqual(
-      new Set([`${ID} sameDayOushinAfterVisit`, `${ID} sameDaySeparate`, `${ID} contactDocProvided`, `${ID} acuteExacerbation`, `${ID} rxLongPsychotropic`, `${ID} mainDisease`]),
+      new Set([`${ID} sameDayOushinAfterVisit`, `${ID} sameDaySeparate`, `${ID} acuteExacerbation`, `${ID} rxLongPsychotropic`, `${ID} mainDisease`]),
     );
     expect(rows.filter((r) => r.result === "denied").length).toBeGreaterThan(0);
     expect(JSON.stringify(rows)).not.toMatch(/架空|06139991|やまだ/);
+  });
+
+  it("患者ごとに残した事実（居住の場所など 4 つ）は、同じ患者の別の月の請求にも効く。請求ごとに残した古い行は使わない", async () => {
+    setRole("clerk");
+    const residenceOf = (id: string) => instance.runAs(owner, () => instance.getApp().caseOf(id)).facts.residence;
+    // 次の月の請求：管理料の行があるので、居住の場所を聞かれる
+    expect(check("R16", NEXT).missing).toEqual(["residence@:clerk"]);
+    expect([residenceOf(ID), residenceOf(NEXT)]).toEqual([{ known: false }, { known: false }]);
+    // 形の違う値・期限つきは 400
+    expect((await savePatient("residence", "病院")).status).toBe(400);
+    expect((await savePatient("residence", true)).status).toBe(400);
+    expect((await savePatient("emergencyEligible", "居宅")).status).toBe(400);
+    // 今月の請求から残す → 同じ患者の、次の月の請求でも聞かれなくなる
+    expect((await savePatient("residence", "居宅")).status).toBe(200);
+    expect([residenceOf(ID), residenceOf(NEXT)]).toEqual([{ known: true, value: "居宅" }, { known: true, value: "居宅" }]);
+    expect(check("R16", NEXT).missing).toEqual([]);
+    // 次の月の請求から直しても、今月の請求に効く（患者に付く）
+    expect((await savePatient("residence", "施設入居等", NEXT)).status).toBe(200);
+    expect(residenceOf(ID)).toEqual({ known: true, value: "施設入居等" });
+    for (const key of ["emergencyEligible", "comprehensiveCare"] as const) {
+      expect((await savePatient(key, true)).status).toBe(200);
+      expect([key, instance.runAs(owner, () => instance.getApp().caseOf(NEXT)).facts[key]]).toEqual([key, { known: true, value: true }]);
+    }
+    // 前の版で請求ごとに残した行（claim_facts に居住の場所）が DB にあっても、判定にも一覧にも出ない
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(instance.tenantPaths(owner.tenantId).dbFile);
+    db.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, 'residence', '', ?, 'カルテ', ?, ?)").run(NEXT, JSON.stringify("居宅"), instance.clerkIdOf(owner), new Date().toISOString());
+    db.close();
+    expect(residenceOf(NEXT)).toEqual({ known: true, value: "施設入居等" });
+    expect(instance.runAs(owner, () => instance.getApp().claimFacts(NEXT)).facts).toEqual([]);
   });
 });
