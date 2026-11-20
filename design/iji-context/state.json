@@ -6,16 +6,16 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v24:c6737934fad6",
+  "requiredApprovalFingerprint": "v24:16887a650c69",
   "baseline": "feat/integration（PR #16、66f29e6）",
-  "criticRound": 30,
+  "criticRound": 31,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§12）",
     "ledger.md",
     "sources/research/full-coverage-research.md"
   ],
-  "nextAction": "round-30（§12 の改訂の確認）で新規 high がなければ承認CPへ",
+  "nextAction": "round-31（codex だけ。3 巡目で打ち切り）で新規 high がなければ承認CPへ",
   "lastUpdated": "2026-11-20",
   "delegation": {
     "実装": "claude サブエージェント",
