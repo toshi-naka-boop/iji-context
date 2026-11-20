@@ -1,5 +1,6 @@
 // masters.db の読み方を、採用値のファイル（EM §2-11）で確かめる（design.md §12-1。C-102・C-106）。scripts/build-masters.ts と scripts/check-masters.ts が呼ぶ。
 // 1. 錨：原文（告示・通知・手引き・仕様書の記載例）で確かめた、データの中の具体的な事実。持っている 1 枚ごとに全部成り立つこと。1 つでも外れたら失敗
+//    式の錨：原文の計算例（この行をこの数量で書くと、この点数）。点数の検算（G02）の式（src/generic/points.ts）で再計算して、原文の点数になること
 // 2. 件数：判定に使う列の、値ごとの件数。読み方を確かめた版と同じ 1 枚では一致（違えば失敗）、ほかの 1 枚では 1 割を超えて違えば警告
 // 3. 版の表との食い違い：Revision の points・codes と、診療年月に当たる 1 枚の医科診療行為マスター（src/masters/revision-check.ts）。1 件でもあれば失敗
 // 4. 点検の準備（checks_ready）：点検 G01〜G09 ごとに、要る表がそろい、判定に使う列の値に錨があるか。錨のない表・列を使う点検は動かさない
@@ -7,6 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { REVISIONS } from "../engine/revisions";
+import { recalcUnit, type RecalcItem } from "../generic/points";
 import type { Revision } from "../engine/revisions/types";
 import { MASTERS_CONFIG, type MastersConfig } from "./config";
 import { pickSnapshot } from "./db";
@@ -19,11 +21,14 @@ type Pairs = Record<string, string>;
 /** 錨：where で決まる行が 1 つ以上あり、その全部で expect の列が書いてある値であること */
 export type Anchor = { id: string; table: string; where: Pairs; expect: Pairs };
 /** 件数：where に当たる行の数 */
+/** 式の錨：items の行を 1 つの単位として、診療識別 shikibetsu で再計算すると points 点になること（薬価・材料価格そのものでなく、式ごと縛る） */
+export type FormulaAnchor = { id: string; shikibetsu: string; items: RecalcItem[]; points: number };
 export type CountRow = { table: string; where: Pairs; count: number };
 export type Em = {
   /** データ名 → 読み方を確かめた版（更新日） */
   verified: Record<string, string>;
   anchors: Anchor[];
+  formulas: FormulaAnchor[];
   counts: CountRow[];
   /** EM §2-8 の、コード → マスターの名称 */
   names: Map<string, string>;
@@ -45,7 +50,7 @@ function pairsOf(cell: string, table: string, where: string): Pairs {
 }
 
 /**
- * EM §2-11 の 3 つの表を読む。行の見分け方：1 列めが「`データ名` …」で 3 列めが 8 桁の数字＝データ源／1 列めが A と数字＝錨／3 列で、1 列めが「`表`」・3 列めが数＝件数
+ * EM §2-11 の表を読む。行の見分け方：1 列めが「`データ名` …」で 3 列めが 8 桁の数字＝データ源／1 列めが A と数字＝錨／1 列めが F と数字＝式の錨／3 列で、1 列めが「`表`」・3 列めが数＝件数
  */
 export function parseEm(em: string): Em {
   const start = em.indexOf("### 2-11. 採用したデータ源");
@@ -58,7 +63,7 @@ export function parseEm(em: string): Em {
     if (!t || !TABLE_COLUMNS[t]) throw new Error(`EM §2-11 ${where}：知らない表: ${cell}`);
     return t;
   };
-  const out: Em = { verified: {}, anchors: [], counts: [], names: emNames(em) };
+  const out: Em = { verified: {}, anchors: [], formulas: [], counts: [], names: emNames(em) };
   for (const line of section.split("\n")) {
     const c = line.split("|").slice(1, -1).map((x) => x.trim());
     const dataset = /^`([a-z_]+)`/.exec(c[0] ?? "")?.[1];
@@ -69,6 +74,16 @@ export function parseEm(em: string): Em {
       const a = { id: c[0], table, where: pairsOf(c[2], table, `錨 ${c[0]}`), expect: pairsOf(c[3], table, `錨 ${c[0]}`) };
       if (Object.keys(a.where).length === 0) throw new Error(`EM §2-11 錨 ${c[0]}：行を決める値がない`);
       out.anchors.push(a);
+    } else if (/^F\d{2}$/.test(c[0] ?? "")) {
+      // 式の錨：| 錨 | 診療識別 | 行 | 点数 | …。行は「種類:コード*数量@単価」を空白で区切る（数量・単価は、要らなければ省く）
+      if (out.formulas.some((f) => f.id === c[0])) throw new Error(`EM §2-11 式の錨 ${c[0]}：番号が重複`);
+      const items = c[2].replace(/`/g, "").split(/\s+/).filter(Boolean).map((t): RecalcItem => {
+        const m = /^(SI|IY|TO):(\d{9})(?:\*(\d+(?:\.\d+)?))?(?:@(\d+(?:\.\d+)?))?$/.exec(t);
+        if (!m) throw new Error(`EM §2-11 式の錨 ${c[0]}：「種類:コード*数量@単価」の形でない: ${t}`);
+        return { kind: m[1] as RecalcItem["kind"], code: m[2], ...(m[3] !== undefined ? { quantity: m[3] } : {}), ...(m[4] !== undefined ? { unitPrice: m[4] } : {}) };
+      });
+      if (items.length === 0 || new Set(items.map((it) => it.kind)).size !== 1 || !/^(\d{2}|—)$/.test(c[1]) || !/^\d+$/.test(c[3])) throw new Error(`EM §2-11 式の錨 ${c[0]}：行（1 種類）・診療識別（2 桁か「—」）・点数が読めない`);
+      out.formulas.push({ id: c[0], shikibetsu: c[1] === "—" ? "" : c[1], items, points: Number(c[3]) });
     } else if (c.length === 3 && /^`[a-z_]+`$/.test(c[0]) && /^[\d,]+$/.test(c[2])) {
       const table = tableOf(c[0], "件数");
       out.counts.push({ table, where: pairsOf(c[1], table, "件数"), count: Number(c[2].replace(/,/g, "")) });
@@ -103,21 +118,14 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
       need("iyakuhin", { price_kind: "1", price: null }),
       need("tokutei", { price_kind: "1", price: null }),
       ...each("tokutei", "price_kind", ["2", "5", "9"]),
+      ...each("tokutei", "sanso", ["0", "1", "2", "3", "4", "5", "9"]),
     ],
   },
   G03: {
     label: "行の属性",
-    needs: [
-      ...each("shinryo", "nyugai", ["0", "1", "2"]),
-      ...each("shinryo", "hospital_clinic", ["0", "1", "2"]),
-      ...each("shinryo", "kouki", ["0", "1", "2"]),
-      need("shinryo", { age_lower: null }),
-      need("shinryo", { age_upper: null }),
-      need("shinryo", { shukei_gai: null }),
-      need("shinryo", { chu_code: null, chu_seq: "0" }),
-      need("shinryo", { chu_code: null, kokuji1: "7" }),
-      ...each("shinryo", "jitsunissu", ["1", "2"]),
-    ],
+    // 作ったのは、入外・病院診療所・年齢の上下限（数字）と、施設基準のある行の「届出が要ります」。後期高齢者医療適用区分・実日数・点数欄集計先識別（診療識別）・注加算の付け先は、
+    // 点検を作っていないので挙げない（後期高齢者医療適用区分 1・2 と実日数 1 は、原文で確かめられる例がなく、錨を置けていない。EM §2-11）
+    needs: [...each("shinryo", "nyugai", ["0", "1", "2"]), ...each("shinryo", "hospital_clinic", ["0", "1", "2"]), need("shinryo", { age_lower: null }), need("shinryo", { age_upper: null }), need("shinryo", { shisetsu: null })],
   },
   G04: {
     label: "包括",
@@ -199,6 +207,24 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   }
   lines.push(`錨：${em.anchors.length} 個のうち ${passed.size} 個が通った（データがなくて確かめていない ${em.anchors.filter((a) => snapshotsOf(a.table).length === 0).length} 個）。確かめた回数 ${anchorRuns}`);
 
+  // 式の錨（その行の種類のマスターの、持っている 1 枚ごと）
+  const TABLE_OF = { SI: "shinryo", IY: "iyakuhin", TO: "tokutei" } as const;
+  const passedFormulas: FormulaAnchor[] = [];
+  for (const f of em.formulas) {
+    const snaps = snapshotsOf(TABLE_OF[f.items[0].kind]);
+    let ok = snaps.length > 0;
+    for (const s of snaps) {
+      const r = recalcUnit(db, { SI: s, IY: s, TO: s }, f.items, { shikibetsu: f.shikibetsu, shikibetsuSure: true, bundles: [] });
+      if (!("points" in r) || r.points !== f.points) {
+        ok = false;
+        failures++;
+        lines.push(`式の錨 ${f.id} が外れた（${TABLE_OF[f.items[0].kind]} ${s}）：原文は ${f.points} 点、再計算は ${"points" in r ? `${r.points} 点` : `できない（${r.reason}）`}`);
+      }
+    }
+    if (ok) passedFormulas.push(f);
+  }
+  if (em.formulas.length > 0) lines.push(`式の錨：${em.formulas.length} 個のうち ${passedFormulas.length} 個が通った`);
+
   // 2. 件数
   let countRuns = 0;
   for (const c of em.counts) {
@@ -251,7 +277,10 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   }
 
   // 4. 点検の準備
+  // 医薬品の式の錨は、薬価（金額種別 1 の新又は現金額）の読み方を縛る：薬価 × 使用量が、原文の点数になる
+  const priced = passedFormulas.some((f) => f.items[0].kind === "IY");
   const covered = (n: Need): boolean =>
+    (priced && n.table === "iyakuhin" && Object.entries(n.pairs).every(([k, v]) => (k === "price_kind" && v === "1") || (k === "price" && v === null))) ||
     em.anchors.some((a) => {
       if (a.table !== n.table || !passed.has(a.id)) return false;
       const all = { ...a.where, ...a.expect };

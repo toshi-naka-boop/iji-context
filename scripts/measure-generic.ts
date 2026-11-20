@@ -2,9 +2,11 @@
 // 使い方：RESEMEN_MASTER_DIR=<masters.db のあるフォルダ> npx tsx scripts/measure-generic.ts <UKE のファイル…>
 // 出すのは数だけ（患者の氏名・番号は出さない。レセプトは、ファイルの中の通し番号と診療年月で示す）。何も保存しない。
 // 段 10b で数えるもの：識別できた行の割合（マスターで名前が付いた行／全部の行）、partial になったルールの割合、v23 の定義（対象外の単位が 1 つでもあれば、どのルールも partial）との比較、点検ごとの指摘の数。
+// 段 11 で数えるもの：検算（G02）できた単位の割合と、そのうち UKE の点数と合った割合、検算の対象外の単位の理由ごとの数、G02・G03 の指摘の数（点検ごとの指摘の数に出る）。
+// 行の属性（G03）には、入院外・生年月日・施設の種別（config/facility.json が在宅療養支援診療所なら診療所）を渡す
 // 段 12 で足したもの：G04〜G06 の指摘の数（言い切りの候補＝一覧に載せれば言い切りになるもの・条件つき）、手書きのルールとの重なりで出さなかった数、指摘の内訳（コードと出どころ）、点検にかかった時間。
 // 手書きのルールは、取り込んだレセプトの点検と同じ条件（事実はどれも不明・カルテ側の記録なし・施設は標準の設定）で掛ける。
-// あとの段が、ここに数を足す（検算できた単位の割合と合った割合＝段 11、など）
+// あとの段が、ここに数を足す
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { evaluate, partialBy } from "../src/engine";
@@ -13,9 +15,10 @@ import { facilityOf, type FacilityJson } from "../src/engine/facility";
 import { hasRevision, resolveRevision } from "../src/engine/revisions";
 import type { ClaimContext } from "../src/engine/types";
 import { evaluateGeneric } from "../src/generic";
+import { recalcClaim, recalcSummary } from "../src/generic/g02";
 import { outsideOf, rowNamesOf } from "../src/generic/lookup";
 import { mappedLinesOf, overlap } from "../src/generic/overlap";
-import { GENERIC_CHECKS } from "../src/generic/types";
+import { GENERIC_CHECKS, type GenericAboutMore } from "../src/generic/types";
 import { mastersDbPath, openMasters } from "../src/masters/db";
 import { GENERIC_TEXT_CERTAIN } from "../src/messages";
 import { mapClaim, parseUke, UkeError } from "../src/uke/uke";
@@ -66,6 +69,8 @@ const total = {
   ms: { max: 0, sum: 0, rows: 0 },
   ran: new Map<string, number>(),
   notRun: new Map<string, number>(),
+  /** 検算（G02）：点数の書いてある単位・再計算できた単位・UKE の点数と合った単位・対象外の理由ごとの数 */
+  recalc: { units: 0, checked: 0, matched: 0, excluded: new Map<string, number>() },
 };
 const add = <K>(m: Map<K, number>, k: K, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
 
@@ -94,7 +99,7 @@ for (const f of files) {
     }
     total.claims++;
     const rev = resolveRevision(claim.yearMonth);
-    const about = { yearMonth: claim.yearMonth, generation: rev.generation };
+    const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(facility.zaishishin === true ? { clinic: true } : {}) };
     // 識別できた行
     const items = claim.units.flatMap((u) => u.items);
     const names = rowNamesOf(db, about, { items, comments: [], diseases: [] });
@@ -141,7 +146,14 @@ for (const f of files) {
       total.findings.set(x.check, c);
     }
     const sure = 0;
-    console.log(`${id}：名前が付いた行 ${rows.join("・")}／対象外の単位 ${others}／partial のルール ${stopped.length}/${rev.rules.length}（v23 の定義では ${others > 0 ? rev.rules.length : 0}/${rev.rules.length}）${stopped.length > 0 && stopped.length < rev.rules.length ? `［${stopped.join(" ")}］` : ""}／指摘 確定 ${sure}・条件つき ${o.findings.length}（うち言い切りの候補 ${o.findings.filter((x) => x.certainty === "確定").length}）／重なりで出さなかった ${o.duplicate + o.judged}`);
+    // 検算（G02 が動いたときだけ）
+    const list = g.ran.some((r) => r.check === "G02") ? recalcClaim(claim, db, about) : [];
+    const sum = recalcSummary(Array.isArray(list) ? list : []);
+    total.recalc.units += sum.units;
+    total.recalc.checked += sum.checked;
+    total.recalc.matched += sum.matched;
+    for (const e of sum.excluded) add(total.recalc.excluded, e.text, e.count);
+    console.log(`${id}：名前が付いた行 ${rows.join("・")}／対象外の単位 ${others}／partial のルール ${stopped.length}/${rev.rules.length}（v23 の定義では ${others > 0 ? rev.rules.length : 0}/${rev.rules.length}）${stopped.length > 0 && stopped.length < rev.rules.length ? `［${stopped.join(" ")}］` : ""}／検算 ${sum.matched}/${sum.checked}/${sum.units}（合った／再計算できた／単位）／指摘 確定 ${sure}・条件つき ${o.findings.length}（うち言い切りの候補 ${o.findings.filter((x) => x.certainty === "確定").length}）／重なりで出さなかった ${o.duplicate + o.judged}`);
   });
 }
 db.close();
@@ -157,6 +169,9 @@ const pairs = [...total.ruleClaims.values()].reduce((s, n) => s + n, 0);
 console.log(`partial になった（ルール × レセプト）の組：v24 ${frac([...total.partial.values()].reduce((s, n) => s + n, 0), pairs)}　v23 の定義 ${frac(total.v23Pairs, pairs)}`);
 console.log("partial になったルールの割合（ルールごと。partial になったレセプト／そのルールがある版のレセプト）：");
 for (const [ruleId, n] of total.ruleClaims) console.log(`  ${ruleId} ${frac(total.partial.get(ruleId) ?? 0, n)}`);
+console.log(`検算（G02）：再計算できた単位 ${frac(total.recalc.checked, total.recalc.units)}、そのうち UKE の点数と合った単位 ${frac(total.recalc.matched, total.recalc.checked)}`);
+console.log(`検算の対象外の単位 ${total.recalc.units - total.recalc.checked}（理由ごと。対象外は「合っている」に数えない）：${total.recalc.excluded.size === 0 ? "なし" : ""}`);
+for (const [text, n] of total.recalc.excluded) console.log(`  ${text}：${n}`);
 console.log("点検ごとの指摘の数（確定・条件つき）と、動いたレセプトの数：");
 for (const { id, kind } of GENERIC_CHECKS) {
   const c = total.findings.get(id) ?? { 確定: 0, 条件つき: 0 };

@@ -12,7 +12,9 @@ import type { ClaimContext, ClaimLine, Finding } from "../../engine/types";
 import { evaluateGeneric } from "../../generic";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
 import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
+import { genericScopeOf } from "../../generic/scope";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
+import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
 import { diseaseCodeOf } from "../../uke/diseases";
 import type { UkeClaim, UkeOther } from "../../uke/types";
@@ -64,8 +66,10 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
 /** 基本マスターの断り書きに、電子点数表の分を足す */
 const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: { later: boolean; newer: boolean }) => ({ later: [...notes.later, ...(t.later ? ["電子点数表"] : [])], newer: [...notes.newer, ...(t.newer ? ["電子点数表"] : [])] });
 
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside">, hand: Hand, mapped: MappedLine[]) {
-  const about = { yearMonth: claim.yearMonth, generation: rev.generation };
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[]) {
+  // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
+  // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
+  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}) };
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
   return withMasters((db) => {
     const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
@@ -73,8 +77,11 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about)) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
-      // カルテ側の記録がない請求として判定している（recordsKnown は偽）
-      generic: genericOut(evaluateGeneric(claim, db, about), names, hand, rev, false, mapped),
+      // カルテ側の記録がない請求として判定している（recordsKnown は偽）。検算（G02）の数と、G02・G03 がしていないことを、点検の範囲に足す
+      generic: (() => {
+        const result = evaluateGeneric(claim, db, about);
+        return { ...genericOut(result, names, hand, rev, false, mapped), scope: genericScopeOf(claim, db, about, result) };
+      })(),
       stopped: rev.rules.flatMap((rule) => {
         const by = partialBy(rule, rev, ctx);
         if (by === null) return [];

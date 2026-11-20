@@ -125,10 +125,10 @@ export default function UkeClaimCheck() {
     if (same) same.ruleIds.push(s.ruleId);
     else stoppedGroups.push({ ruleIds: [s.ruleId], all: s.all, codes: s.codes });
   }
-  /** コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ */
+  /** コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ。施設基準のある行には「届出が要ります」と添える（指摘ではない） */
   const coded = (code: string) => {
     const n = c?.names?.items[code];
-    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}` : code;
+    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}${n.todokede ? "　届出が要ります" : ""}` : code;
   };
   return (
     <main className="shell">

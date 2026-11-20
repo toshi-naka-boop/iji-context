@@ -77,7 +77,9 @@ describe("段 10b：実データの masters.db で", () => {
     expect(claim.units.flatMap((u) => u.items.map((x) => x.code))).toContain(DRUG_CHANGED_LATER);
     const r = evaluateGeneric(claim, db, { yearMonth: claim.yearMonth, generation: rev.generation });
     expect(claim.yearMonth).toBe(YM);
-    expect([r.findings, r.ran.map((x) => x.check).includes("G01")]).toEqual([[], true]);
+    expect([r.findings.filter((f) => f.check === "G01"), r.ran.map((x) => x.check).includes("G01")]).toEqual([[], true]);
+    // 段 11：薬だけを替えて点数はそのままなので、検算（G02）がその単位に出る。使った行の変更年月日が診療年月より後なので、条件つき＋断り書き
+    expect(r.findings.map((f) => [f.check, f.certainty, f.codes.includes(DRUG_CHANGED_LATER), f.params.later])).toEqual([["G02", "条件つき", true, "。この後にマスターが変更されています"]]);
     for (const c of parseUke(sample("jitsurei.UKE")).claims) expect(evaluateGeneric(c, db, about).findings).toEqual([]);
     db.close();
   });
@@ -170,7 +172,10 @@ describe("段 10b：実データの masters.db で", () => {
         expect(c.others.flatMap((o) => o.codes).filter((code) => !c.names.items[code]), id).toEqual([]);
         expect(c.comments.filter((x) => !c.names.comments[x.code]), id).toEqual([]);
         expect(c.diseases.filter((d) => d.name === null), id).toEqual([]);
-        expect([c.generic.ran.some((x) => x.check === "G01"), c.generic.findings], id).toEqual([true, []]);
+        expect([["G01", "G02", "G03"].every((id2) => c.generic.ran.some((x) => x.check === id2)), c.generic.findings], id).toEqual([true, []]);
+        // 段 11：検算の数（対象外は、合っている側に数えない）と、していないことが、点検の範囲に付く
+        expect(c.generic.scope!.recalc!.matched, id).toBe(c.generic.scope!.recalc!.checked);
+        expect(c.generic.scope!.notDone, id).toHaveLength(1);
         expect(c.stopped.every((s) => !s.all), id).toBe(true);
         expect(c.stopped.length, id).toBeLessThan(rev.rules.length);
       }

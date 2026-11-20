@@ -18,8 +18,8 @@ const OUSHIN = r2026.codes.C000.primary;
 /** どのマスターにもないコード（作り物） */
 const UNKNOWN = "100000000";
 const claimOf = (...units: [kind: "SI" | "IY" | "TO", code: string][][]): GenericClaim => ({ units: units.map((items) => ({ items: items.map(([kind, code]) => ({ kind, code })) })) });
-/** 入っている点検（G01 と、段 12 の G04〜G06）。ほかは「まだ入っていない」 */
-const BUILT = ["G01", "G04", "G05", "G06"];
+/** 入っている点検（G01、段 11 の G02・G03、段 12 の G04〜G06）。ほかは「まだ入っていない」 */
+const BUILT = ["G01", "G02", "G03", "G04", "G05", "G06"];
 const ALL = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"];
 
 describe("evaluateGeneric の骨組み", () => {
@@ -31,7 +31,7 @@ describe("evaluateGeneric の骨組み", () => {
     expect(genericView(r, null).notRun[0]).toEqual({ check: "G01", kind: "コード", reason: "noMasters", text: "マスターが入っていないので、していません" });
   });
 
-  it("入っていない点検は「まだ入っていない」、準備の行がない点検（小さな表の G04〜G06）は「準備ができていない」として返す（動いたことにしない）", () => {
+  it("入っていない点検は「まだ入っていない」、準備ができていない・準備の行がない点検（小さな表の G02〜G06）は「準備ができていない」として返す（動いたことにしない）", () => {
     const db = smallMasters();
     const r = evaluateGeneric(claimOf([["SI", HOUMON]]), db, about);
     expect(r.ran).toEqual([{ check: "G01", kind: "コード" }]);

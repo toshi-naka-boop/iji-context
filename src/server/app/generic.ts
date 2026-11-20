@@ -6,6 +6,7 @@ import type { ClaimLine, EngineResult } from "../../engine/types";
 import { evaluateGeneric } from "../../generic";
 import { rowNamesOf, type RowNames } from "../../generic/lookup";
 import { claimOfLines, overlap, type MappedLine } from "../../generic/overlap";
+import { genericScopeOf } from "../../generic/scope";
 import type { GenericResult } from "../../generic/types";
 import { genericView, type GenericView } from "../../generic/view";
 import { withMasters } from "../../masters/db";
@@ -26,8 +27,10 @@ export function genericOut(result: GenericResult, names: RowNames | null, hand: 
 export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: string, hand: Hand, recordsKnown: boolean): GenericOut & { skippedLines: number } {
   const { claim, mapped } = claimOfLines(lines, rev);
   const about = { yearMonth, generation: rev.generation };
-  const view = withMasters((db) =>
-    genericOut(evaluateGeneric(claim, db, about), db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped),
-  );
+  const view = withMasters((db) => {
+    const result = evaluateGeneric(claim, db, about);
+    // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
+    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: genericScopeOf(claim, db, about, result) };
+  });
   return { ...view, skippedLines: lines.length - claim.units.length };
 }

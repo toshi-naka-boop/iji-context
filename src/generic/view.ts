@@ -1,6 +1,7 @@
 // データで動く点検の結果を、画面に出す形にする（design.md §12-5）：指摘の文（定型文）、当たる行の名称、出どころ、点検の範囲（動いた点検・動かさなかった点検と理由）
 import { genericNotRunText, genericText } from "../messages";
 import type { RowNames } from "./lookup";
+import type { GenericScope } from "./scope";
 import type { GenericResult } from "./types";
 
 export type GenericView = {
@@ -9,6 +10,8 @@ export type GenericView = {
   ran: { check: string; kind: string }[];
   /** 動かさなかった点検と理由。reason は、データがない（noMasters・noSnapshot）／準備ができていない（notReady）／まだ入っていない（notBuilt） */
   notRun: { check: string; kind: string; reason: string; text: string }[];
+  /** 検算（G02）の数と対象外の理由、G02・G03 が点検していないこと（src/generic/scope.ts。呼び出し側が足す） */
+  scope?: GenericScope;
 };
 
 /** names は、行の名称（マスターがなければ null）。持っているマスターにないコードは、指摘の値（params.name）にある名称を添える */

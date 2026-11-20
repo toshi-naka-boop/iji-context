@@ -18,6 +18,10 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
   const { duplicate = 0, judged = 0 } = generic.overlap ?? {};
   const hidden = [judged > 0 ? `手書きのルールが判定済み ${judged} 件` : "", duplicate > 0 ? `ユスティの指摘と同じ内容 ${duplicate} 件` : ""].filter((x) => x !== "").join("、");
   const notes = generic.ran.flatMap((r) => (GENERIC_SCOPE_NOTE[r.check] ? [{ ...r, text: GENERIC_SCOPE_NOTE[r.check] }] : []));
+  // 検算（G02）の数：再計算できた単位・合った単位と、検算の対象外の単位（理由ごと）。対象外は「合っている」ではない
+  const recalc = generic.scope?.recalc;
+  const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
+  const notDone = generic.scope?.notDone ?? [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {groupSameChild(generic.findings).map(([f, ...more], i) => (
@@ -41,6 +45,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
           {noData.map((n) => <li key={n.check}>データがなくて動かなかった点検：{n.check}（{n.kind}）。{n.text}</li>)}
           {notReady.map((n) => <li key={n.check}>準備ができていない点検：{n.check}（{n.kind}）。{n.text}</li>)}
           {notBuilt.length > 0 && <li>まだ入っていない点検：{names(notBuilt)}</li>}
+          {recalc && <li>{recalcText}</li>}
+          {notDone.map((t, i) => <li key={i}>{t}</li>)}
         </ul>
       ) : (
         <p className="muted" style={{ margin: 0 }}>
@@ -50,6 +56,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
           {[...noData, ...notReady].map((n) => `${n.check}（${n.kind}）は、${n.text}。`).join("")}
           {skippedLines > 0 ? `コードに直せない ${skippedLines} 行には掛けていません。` : ""}
           {notBuilt.length > 0 ? `${names(notBuilt)}は、まだ入っていません。` : ""}
+          {recalc ? `${recalcText}。` : ""}
+          {notDone.map((t) => `${t}。`).join("")}
         </p>
       )}
     </div>

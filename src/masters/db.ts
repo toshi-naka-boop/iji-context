@@ -68,7 +68,7 @@ export type ShinryoRow = {
   sho: number; bu: number; kubun_no: number; eda: number; kou: number;
 };
 export type IyakuhinRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; zaikei: string; changed_on: string; abolished_on: string; keika_until: number };
-export type TokuteiRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; changed_on: string; keika_until: string; abolished_on: string };
+export type TokuteiRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; sanso: string; changed_on: string; keika_until: string; abolished_on: string };
 
 const one = <T>(db: MastersDb, table: "shinryo" | "iyakuhin" | "tokutei", snapshot: string, code: string): T | null =>
   (db.prepare(`SELECT * FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as T | undefined) ?? null;
