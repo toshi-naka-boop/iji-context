@@ -25,15 +25,15 @@ export type RevisionConsts = {
     familyOf: Record<Residence, KanriFamily>;
     note16: { from: KanriTierKey; to: KanriTierKey };
   };
-  /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分 */
-  hokatsu: { kubun: string; careLevelMin: number; tiers: KanriTierKey[] };
+  /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分。要介護度・障害支援区分がそれぞれの下限以上なら対象 */
+  hokatsu: { kubun: string; careLevelMin: number; disabilityLevelMin: number; tiers: KanriTierKey[] };
   /** 在宅療養指導管理料（R04） */
   shidoKanriKubun: string[];
   /** 管理料に包括される項目と、処方箋を交付しない場合の加算（R05） */
   bundled: { kubun: string[]; noRxAddition: string };
   /** 特定疾患処方管理加算（R06）。対象外の主病と、処方日数の下限 */
   tokutei: { kubun: string; excludedDiseases: string[]; minDays: number };
-  /** 処方箋料（R07）。内服の種類数がこの数以上なら many、それ以外は other */
+  /** 処方箋料（R07）。内服の種類数がこの数以上か、向精神薬の長期処方なら many（区分 2）、それ以外は other（区分 3） */
   rx: { oralKindsThreshold: number; many: string; other: string };
   /** ベースアップ評価料(Ⅰ)（R08）。visit は [同一建物居住者以外, 同一建物居住者]。overlapKey は両方を算定した日の重ねを決める施設の設定 */
   baseUp: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };

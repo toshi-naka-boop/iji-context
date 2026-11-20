@@ -9,7 +9,8 @@ import {
   ikouEligible,
   kanriKubun,
   oushinOnlyBilledDays,
-  rxKubun,
+  rxKubunOn,
+  sameDayOf,
   terminalVisitsOk,
   visitBillable,
   visitKubunOn,
@@ -51,11 +52,11 @@ export type LineBasis = {
 
 export type PendingOption = { id: string; label: string; kubun: string[] };
 export type Pending =
-  /** date は、日付ごとの事実（sameDaySeparate）の対象の日 */
+  /** date は、日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
   | { kind: "事実不足"; id: string; need: NeedKey; target: "doctor" | "clerk"; blocks: string[]; date?: string }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
-export type Unsupported = { code: "kyokagata" | "single_building_multi" | "baseup_note5" | "unmapped_test_item"; detail: string };
+export type Unsupported = { code: "kyokagata" | "single_building_multi" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -70,7 +71,7 @@ export type DeriveResult = {
   /** 今の pending にない id への答え（無視した） */
   staleChoices: string[];
   /** 出来事はあるが行を立てなかったもの（§2-3-4） */
-  notBilled: { event: EventRef; reason: "after_oushin" | "same_encounter" }[];
+  notBilled: { event: EventRef; reason: "after_oushin" | "same_encounter" | "oushin_not_after_visit" }[];
 };
 
 /** 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す */
@@ -122,7 +123,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const notBilled: DeriveResult["notBilled"] = [];
   const asked = new Set<string>();
   // 述語に渡す請求。行は「ここまでに立てた行」（lines は同じ配列を指す）。請求 id・審査支払機関は述語が見ないので空・仮の値
-  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, lines, history: input.history };
+  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, lines, history: input.history };
 
   const ref = (e: EventRef): EventRef => ({ type: e.type, date: e.date });
   function add(kubun: string, dates: string[], b: { derive: string; events: EventRef[]; needs?: NeedKey[]; choice?: string; tentative?: boolean }) {
@@ -153,17 +154,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
 
   if (facility.kyokagata) unsupported.push({ code: "kyokagata", detail: "機能強化型の在宅療養支援診療所の点数は扱っていません" });
 
-  // --- D01・D02：訪問診療料と往診料（§2-3-4）。同じ日の両方は、出来事だけでは立てない
-  const separate = facts.sameDaySeparate.known ? facts.sameDaySeparate.value : {};
+  // --- D01・D02：訪問診療料と往診料（§2-3-4・§11-5）。同じ日の両方は、出来事だけでは立てない。関係は R10 と同じ述語（sameDayOf）で決める
   const sameDay = new Map<string, { visit: Decision | "check"; oushin: Decision }>();
   for (const d of [...new Set(visits.map((v) => v.date))].filter((x) => oushins.some((o) => o.date === x))) {
     const visitK = [...new Set(visits.filter((v) => v.date === d).map(visitKubunOf))];
     const blocks = [...visitK, c.oushin.kubun, ...dayBlocks, ...kanriBlocks];
-    const answer = separate[d];
-    if (answer === undefined) {
-      lack(`D01-sameDay:${d}`, "sameDaySeparate", blocks, d);
+    const s = sameDayOf(ctx, d);
+    if (s.known === false) {
+      lack(`D01-sameDay:${d}`, s.need, blocks, d);
       sameDay.set(d, { visit: "hold", oushin: "hold" });
-    } else if (answer === false) {
+    } else if (s.value === "same") {
       const id = `D01-encounter:${d}`;
       const picked = ask(id, "同じ日の訪問診療と往診は 1 回の診療です。診療の中身に合うほうを選んでください", [
         { id: "visit", label: "訪問診療料（定期の訪問診療）", kubun: visitK },
@@ -172,10 +172,15 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       sameDay.set(d, picked === undefined ? { visit: "hold", oushin: "hold" } : picked === "visit" ? { visit: "bill", oushin: "skip" } : { visit: "skip", oushin: "bill" });
       if (picked === "visit") for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: "same_encounter" });
       if (picked === "oushin") for (const v of visits.filter((x) => x.date === d)) notBilled.push({ event: ref(v), reason: "same_encounter" });
-    } else sameDay.set(d, { visit: "check", oushin: "bill" });
+    } else if (s.value === "after") sameDay.set(d, { visit: "check", oushin: "bill" });
+    else {
+      // 別々の診療だが、訪問診療のあとの往診ではない：往診料は立てない。往診料を立てない日なので、訪問診療料に同じ日の制限は掛からない
+      sameDay.set(d, { visit: "bill", oushin: "skip" });
+      for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: "oushin_not_after_visit" });
+    }
   }
   const oushinDecision = (date: string): Decision => sameDay.get(date)?.oushin ?? "bill";
-  /** 訪問診療料を立てるか。往診と同じ日（別々の診療）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
+  /** 訪問診療料を立てるか。往診料を立てる同じ日（訪問診療のあとの往診）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
   function visitDecision(v: (typeof visits)[number]): Decision {
     const same = sameDay.get(v.date);
     // 同じ日の要選択で訪問診療料を選んだ日（bill）も、前日の往診料の制限は下で調べる（X-74）
@@ -197,7 +202,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const billedVisits = decided.filter((x) => x.d === "bill").map((x) => x.v);
   for (const k of c.visitKubun) {
     const mine = billedVisits.filter((v) => visitKubunOf(v) === k);
-    add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate"] : [] });
+    add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate", "sameDayOushinAfterVisit"] : [] });
   }
   const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill");
   add(c.oushin.kubun, billedOushins.map((o) => o.date), { derive: "D02", events: billedOushins });
@@ -248,7 +253,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if ((c.hokatsu.tiers as string[]).includes(kanri.tier)) {
       const e = hokatsuEligible(ctx, c);
       if (e.known === false) lack(`D04-${e.need}:${input.yearMonth}`, e.need, [c.hokatsu.kubun]);
-      else if (e.value) add(c.hokatsu.kubun, [kanri.date], { derive: "D04", events: billedVisits, needs: (["careLevel", "table8_3Other"] as const).filter((k) => facts[k].known), tentative });
+      else if (e.value) add(c.hokatsu.kubun, [kanri.date], { derive: "D04", events: billedVisits, needs: (["careLevel", "disabilitySupportLevel", "table8_3Other"] as const).filter((k) => facts[k].known), tentative });
     }
     if (ikouEligible(ctx, c)) add(c.ikou.kubun, [kanri.date], { derive: "D05", events: [...byDate(eventsOf(ctx, "discharge")), ...billedVisits], tentative });
   }
@@ -307,12 +312,23 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if (first) add(k, [first.date], { derive: "D09", events: [first] });
   }
 
-  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（その処方の内服が 7 種類以上か）で決める（X-77）
-  if (!kanri && !kanriOpen)
-    for (const k of [c.rx.other, c.rx.many]) {
-      const mine = rxs.filter((e) => rxKubun(c, e) === k);
-      add(k, mine.map((e) => e.date), { derive: "D10", events: mine });
+  // --- D10：処方箋料。管理料を立てない月だけ（R05）。区分は処方ごとに、R07 と同じ述語（rxKubunOn）で決める（X-77・§11-5）
+  if (!kanri && !kanriOpen) {
+    const rxOf = new Map<string, { events: typeof rxs; asked: boolean }>([c.rx.other, c.rx.many].map((k) => [k, { events: [], asked: false }]));
+    for (const d of [...new Set(rxs.map((e) => e.date))]) {
+      const e = rxKubunOn(ctx, c, d);
+      if (e.known === true) {
+        const of = rxOf.get(e.kubun)!;
+        const event = rxs.find((x) => x.date === d)!;
+        of.events.push(event);
+        // 長期処方かの答えを使ったのは、種類数で決まらず、対象の薬が含まれないとも分かっていない処方
+        if (e.why !== "many" && event.psychotropic !== false) of.asked = true;
+      } else if (e.need === "rxLongPsychotropic") lack(`D10-long:${d}`, "rxLongPsychotropic", [c.rx.many, c.rx.other], d);
+      // 同じ日に処方が 2 回以上：日付ごとの事実では処方を分けられないので、その日は立てない
+      else unsupported.push({ code: "rx_same_day_multi", detail: `同じ日に 2 回以上の処方がある日の処方箋料は扱っていません（${d}）` });
     }
+    for (const [k, of] of rxOf) add(k, of.events.map((e) => e.date), { derive: "D10", events: of.events, needs: of.asked ? ["rxLongPsychotropic"] : [] });
+  }
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];
@@ -334,6 +350,8 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
         if (held) held.blocks.push(terminal);
         else lack(`D12-sameDay:${d}`, "sameDaySeparate", [terminal], d);
       }
+      // 回数が足りず、訪問診療はある：退院時共同指導料1 を算定していれば満たす（R09 と同じ述語）
+      if (enough.askGuidance) lack(`D12-guidance:${death.date}`, "dischargeJointGuidance", [terminal]);
     } else if (enough.ok) {
       const tid = `D12-terminal:${death.date}`;
       const yes = ask(tid, "在宅ターミナルケア加算を算定しますか（訪問の回数のほかの要件は、記録で確かめてください）", [

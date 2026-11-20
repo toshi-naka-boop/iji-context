@@ -94,7 +94,7 @@ const consts: RevisionConsts = {
     // 注16：基準を満たさない施設は 2ロ に代えて 2ニ を算定する（R8-17。重症区分の 2イ は対象外）
     note16: { from: "ロ", to: "ニ" },
   },
-  hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, tiers: ["ロ", "ニ"] },
+  hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, disabilityLevelMin: 2, tiers: ["ロ", "ニ"] },
   shidoKanriKubun: ["C101_2I", "C103_2"],
   bundled: { kubun: ["B000", "F400_3", "F400_2", "F400_N4", "F400_N6_1"], noRxAddition: "C002_N2" },
   tokutei: { kubun: "F400_N4", excludedDiseases: ["糖尿病", "高血圧", "脂質異常症"], minDays: 28 },

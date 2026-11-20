@@ -28,6 +28,9 @@
       "known": true,
       "value": false
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
     "table8_3Other": {
       "known": false
     },
@@ -64,6 +67,17 @@
       "value": true
     },
     "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
       "known": true,
       "value": {}
     },
@@ -108,9 +122,11 @@
       "type": "prescription",
       "date": "2026-10-28",
       "oralKinds": 5,
-      "days": 28
+      "days": 28,
+      "psychotropic": false
     }
   ],
+  "recordsKnown": true,
   "lines": [
     {
       "kubun": "C001_1I",

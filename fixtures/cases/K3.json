@@ -28,6 +28,9 @@
       "known": true,
       "value": true
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
     "table8_3Other": {
       "known": false
     },
@@ -64,6 +67,17 @@
       "value": true
     },
     "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
       "known": true,
       "value": {}
     },
@@ -138,6 +152,7 @@
       "sameBuildingCount": 1
     }
   ],
+  "recordsKnown": true,
   "lines": [
     {
       "kubun": "C001_1I",

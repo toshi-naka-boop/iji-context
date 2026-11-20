@@ -10,6 +10,7 @@ export function makeR13(c: RevisionConsts): Rule {
     id: "R13",
     kubun: c.visitKubun,
     reference: "C001 注1（週3回限度）・別表第七",
+    recordFindings: [],
     appliesTo: (ctx) => present(ctx, c.visitKubun).length > 0,
     // 別表第七に当たると分かっていれば、急性増悪は聞かない（答えで結論が変わらない）
     needs: (ctx) => {

@@ -2,7 +2,7 @@
 // 管理料の区分の組み合わせ（§2-3-3）、往診と訪問診療の同日・翌日（§2-3-4）
 import { describe, expect, it } from "vitest";
 import { evaluate } from "../../../src/engine";
-import type { ClaimContext, Facility, FacilityFactKey, Fact, Finding, FindingKind } from "../../../src/engine/types";
+import type { ClaimContext, ClaimEvent, Facility, FacilityFactKey, Fact, Finding, FindingKind } from "../../../src/engine/types";
 import { day, month } from "../../helpers/period";
 import { line, loadCase, withEvents, withFact, withLines, without } from "../helpers";
 
@@ -26,6 +26,8 @@ const withFacility = <K extends FacilityFactKey>(ctx: ClaimContext, key: K, valu
 const setDates = (ctx: ClaimContext, kubun: string, dates: string[]): ClaimContext => ({ ...ctx, lines: ctx.lines.map((l) => (l.kubun === kubun ? { ...l, count: dates.length, dates } : l)) });
 const replaceKubun = (ctx: ClaimContext, from: string, to: string): ClaimContext => ({ ...ctx, lines: ctx.lines.map((l) => (l.kubun === from ? { ...l, kubun: to } : l)) });
 const separate = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "sameDaySeparate", { known: true, value: table });
+/** その日、訪問診療のあとに、急変などで往診したか */
+const afterVisit = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "sameDayOushinAfterVisit", { known: true, value: table });
 
 const of = (ctx: ClaimContext, ...ruleIds: string[]): Finding[] => evaluate(ctx).findings.filter((f) => ruleIds.includes(f.ruleId));
 const kinds = (ctx: ClaimContext, ruleId: string): FindingKind[] => of(ctx, ruleId).map((f) => f.kind);
@@ -47,7 +49,7 @@ type Case = { id: string; ok: ClaimContext; ng: ClaimContext; kind: FindingKind;
 const cases: Case[] = [
   { id: "R01", ok: K1, ng: without(K1, "C001_1I", "O001_3I", "O100_1HA"), kind: "区分誤り", key: "no_visit" },
   { id: "R02", ok: K1, ng: replaceKubun(K1, "C002_2I1", "C002_2RO1"), kind: "区分誤り", key: "use_severe" },
-  { id: "R03", ok: K2, ng: withFact(withFact(K2, "careLevel", { known: true, value: 2 }), "table8_3Other", no), kind: "要件不足", key: "not_eligible" },
+  { id: "R03", ok: K2, ng: withFact(withFact(withFact(K2, "careLevel", { known: true, value: 2 }), "disabilitySupportLevel", { known: true, value: 0 }), "table8_3Other", no), kind: "要件不足", key: "not_eligible" },
   { id: "R04", ok: K1, ng: withLines(K1, line("C101_2I")), kind: "背反", key: "only_main" },
   { id: "R05", ok: K1, ng: withLines(K1, line("B000")), kind: "背反", key: "bundled" },
   {
@@ -189,33 +191,46 @@ describe("R03 包括的支援加算（施設総管にも当たる。C-66）", ()
   it("要介護 3 の施設総管 2ロ で加算がなければ取り忘れ", () => {
     expect(tags(withFact(K4, "careLevel", { known: true, value: 3 }), "R03")).toEqual(["R03:取り忘れ:missing"]);
   });
-  describe("別表第八の三の場合分け（EM R8-15a）", () => {
-    const care = (n: number) => ({ known: true, value: n }) as const;
+  describe("別表第八の三の場合分け（EM R8-15a。design.md §11-4 の表の 1〜5。§11-8 完了条件 9）", () => {
+    const num = (n: number) => ({ known: true, value: n }) as const;
     const hokatsu = line("C002_N10_HOKATSU", 1, [day(27)]);
-    const of3 = (careLevel: ClaimContext["facts"]["careLevel"], other: ClaimContext["facts"]["table8_3Other"]) => withFact(withFact(K4, "careLevel", careLevel), "table8_3Other", other);
+    type F = ClaimContext["facts"];
+    const of3 = (careLevel: F["careLevel"], level: F["disabilitySupportLevel"], other: F["table8_3Other"]) =>
+      withFact(withFact(withFact(K4, "careLevel", careLevel), "disabilitySupportLevel", level), "table8_3Other", other);
     const missingOf = (c: ClaimContext) => of(c, "R03").map((f) => f.missing);
-    it("要介護 3 以上なら、ほかの状態が不明でも当たらなくても対象（加算ありで 0 件、なしで取り忘れ）", () => {
-      for (const other of [unknown, no, yes]) {
-        expect(tags(withLines(of3(care(3), other), hokatsu), "R03")).toEqual([]);
-        expect(tags(of3(care(3), other), "R03")).toEqual(["R03:取り忘れ:missing"]);
+    /** 対象：加算ありで 0 件、なしで取り忘れ */
+    const eligible = (c: ClaimContext) => {
+      expect(tags(withLines(c, hokatsu), "R03")).toEqual([]);
+      expect(tags(c, "R03")).toEqual(["R03:取り忘れ:missing"]);
+    };
+    /** 決まらない：加算の行があってもなくても、同じ事実の情報不足だけ（要件不足と断定しない） */
+    const undecided = (c: ClaimContext, missing: { target: "doctor" | "clerk"; field: string }) => {
+      expect(missingOf(c)).toEqual([missing]);
+      expect(missingOf(withLines(c, hokatsu))).toEqual([missing]);
+    };
+    it("1：要介護 3 以上と分かっていれば、ほかの 2 つが不明でも当たらなくても対象", () => {
+      for (const level of [unknown, num(0), num(6)]) for (const other of [unknown, no, yes]) eligible(of3(num(3), level, other));
+    });
+    it("1：障害支援区分 2 以上と分かっていれば、要介護度とほかの状態が不明でも当たらなくても対象", () => {
+      for (const c of [unknown, num(0), num(2)]) for (const other of [unknown, no]) eligible(of3(c, num(2), other));
+    });
+    it("1：ほかの状態に当たると分かっていれば、要介護度と障害支援区分が不明でも下限未満でも対象", () => {
+      for (const c of [unknown, num(2)]) for (const level of [unknown, num(0), num(1)]) eligible(of3(c, level, yes));
+    });
+    it("2：要介護度が不明なら、先に要介護度だけを聞く（宛先は医療事務）", () => {
+      for (const level of [unknown, num(1)]) for (const other of [unknown, no]) undecided(of3(unknown, level, other), { target: "clerk", field: "careLevel" });
+    });
+    it("3：要介護 3 未満で、障害支援区分が不明なら障害支援区分を聞く（宛先は医療事務）", () => {
+      for (const other of [unknown, no]) undecided(of3(num(2), unknown, other), { target: "clerk", field: "disabilitySupportLevel" });
+    });
+    it("4：要介護 3 未満・障害支援区分 2 未満で、ほかの状態が不明なら医師に聞く", () => {
+      for (const level of [num(0), num(1)]) undecided(of3(num(2), level, unknown), { target: "doctor", field: "table8_3Other" });
+    });
+    it("5：どれにも当たらないと分かっていれば対象外（加算ありで要件不足、なしで 0 件）", () => {
+      for (const level of [num(0), num(1)]) {
+        expect(tags(withLines(of3(num(2), level, no), hokatsu), "R03")).toEqual(["R03:要件不足:not_eligible"]);
+        expect(tags(of3(num(2), level, no), "R03")).toEqual([]);
       }
-    });
-    it("要介護 3 未満でも、ほかの状態に当たると分かっていれば対象。要介護度が不明でも同じ", () => {
-      for (const c of [care(2), care(0), unknown]) {
-        expect(tags(withLines(of3(c, yes), hokatsu), "R03")).toEqual([]);
-        expect(tags(of3(c, yes), "R03")).toEqual(["R03:取り忘れ:missing"]);
-      }
-    });
-    it("要介護 3 未満で、ほかの状態が不明なら情報不足（宛先は医師）。加算の行があってもなくても要件不足と断定しない", () => {
-      expect(missingOf(of3(care(2), unknown))).toEqual([{ target: "doctor", field: "table8_3Other" }]);
-      expect(tags(withLines(of3(care(2), unknown), hokatsu), "R03")).toEqual(["R03:情報不足:table8_3Other"]);
-    });
-    it("どちらも不明なら、先に要介護度だけを聞く（宛先は医療事務）", () => {
-      expect(missingOf(of3(unknown, unknown))).toEqual([{ target: "clerk", field: "careLevel" }]);
-    });
-    it("要介護 3 未満で、ほかの状態にも当たらないと分かっていれば対象外（加算ありで要件不足、なしで 0 件）", () => {
-      expect(tags(withLines(of3(care(2), no), hokatsu), "R03")).toEqual(["R03:要件不足:not_eligible"]);
-      expect(tags(of3(care(2), no), "R03")).toEqual([]);
     });
   });
 });
@@ -241,8 +256,8 @@ describe("R05・R14（施設総管にも当たる）", () => {
 // R08・R15：訪問診療の日は、訪問診療料を算定した行の日で決める。両方を算定した日の重ねは、加算ごとの施設の設定で決める
 
 describe("R08・R15 訪問診療時と再診時等", () => {
-  /** 14 日に訪問診療料と往診料の両方（別々の診療と確かめ済み）。ベースアップ評価料・物価対応料の再診時等を重ねる */
-  const BOTH = separate(K1_BOTH, { [FIRST]: true });
+  /** 14 日に訪問診療料と往診料の両方（訪問診療のあとの往診と確かめ済み）。ベースアップ評価料・物価対応料の再診時等を重ねる */
+  const BOTH = afterVisit(K1_BOTH, { [FIRST]: true });
   const OVERLAP_BU = withLines(BOTH, line("O001_2", 1, [FIRST]));
   const OVERLAP_PRICE = withLines(BOTH, line("O100_1RO", 1, [FIRST]));
 
@@ -300,22 +315,34 @@ describe("R10 往診と訪問診療の同日・翌日", () => {
   const events2 = (c: ClaimContext) => withEvents(c, { type: "oushin", date: FIRST, kind: "normal" });
   const noEvents = (c: ClaimContext): ClaimContext => ({ ...c, events: c.events.filter((e) => e.type !== "visit" && e.type !== "oushin") });
 
-  it("A：同じ日に両方の行があり、別々の診療かを確かめていない → 情報不足（出来事が 2 つあっても、1 つもなくても同じ）", () => {
-    for (const c of [events2(K1_BOTH), noEvents(K1_BOTH)]) {
+  it("不明：同じ日に両方の行があり、何も確かめていない → 訪問診療のあとの往診かの情報不足（出来事が 2 つあっても、1 つもなくても同じ）", () => {
+    for (const c of [events2(K1_BOTH), noEvents(K1_BOTH), withFact(withFact(K1_BOTH, "sameDaySeparate", unknown), "sameDayOushinAfterVisit", unknown)]) {
       const f = of(c, "R10");
-      expect(f).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "sameDaySeparate", date: FIRST } })]);
+      expect(f).toEqual([expect.objectContaining({ kind: "情報不足", lineRefs: ["C000", "C001_1I"], missing: { target: "clerk", field: "sameDayOushinAfterVisit", date: FIRST } })]);
+    }
+    // 別々の診療と確かめてあっても、あとの往診かは聞く（別々なだけでは往診料を立てられない。§11-5）
+    expect(of(separate(K1_BOTH, { [FIRST]: true }), "R10").map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDayOushinAfterVisit", date: FIRST }]);
+  });
+  it("1 回の診療（sameDaySeparate が偽）→ 背反 same_encounter（往診料と、その日の訪問診療料の両方を指す）。あとの往診かは聞かずに偽として扱う", () => {
+    for (const c of [separate(K1_BOTH, { [FIRST]: false }), afterVisit(separate(K1_BOTH, { [FIRST]: false }), { [FIRST]: false })]) {
+      expect(of(c, "R10").map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["背反", "R10.same_encounter", ["C000", "C001_1I"]]]);
     }
   });
-  it("B：別々の診療でないと確かめた → 背反 same_encounter（往診料と、その日の訪問診療料の両方を指す）", () => {
-    const f = of(separate(K1_BOTH, { [FIRST]: false }), "R10");
-    expect(f.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["背反", "R10.same_encounter", ["C000", "C001_1I"]]]);
-  });
-  it("C：別々の診療と確かめた同じ日。在支診で文書提供済みなら通す、なしなら要件不足、不明なら情報不足", () => {
-    const c = separate(K1_BOTH, { [FIRST]: true });
+  it("真：訪問診療のあとの往診なら往診料を立てられる。別々の診療かは聞かない。訪問診療料の側は、在支診で文書提供済みなら通す、なしなら要件不足、不明なら情報不足", () => {
+    const c = afterVisit(K1_BOTH, { [FIRST]: true });
     expect(tags(c, "R10")).toEqual([]);
+    expect(tags(withFact(c, "sameDaySeparate", unknown), "R10")).toEqual([]);
     const ng = of(withFact(c, "contactDocProvided", no), "R10");
     expect(ng.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["要件不足", "R10.same_day_as_visit", ["C001_1I"]]]);
     expect(of(withFact(c, "contactDocProvided", unknown), "R10")).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "contactDocProvided" } })]);
+  });
+  it("偽：あとの往診でなく、別々の診療かが不明なら、別々の診療かを聞く。別々の診療（往診が先など）なら往診料の行に oushin_not_after_visit", () => {
+    const notAfter = afterVisit(K1_BOTH, { [FIRST]: false });
+    expect(of(notAfter, "R10").map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDaySeparate", date: FIRST }]);
+    const f = of(separate(notAfter, { [FIRST]: true }), "R10");
+    expect(f.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["要件不足", "R10.oushin_not_after_visit", ["C000"]]]);
+    // 往診料を立てられない日なので、訪問診療料の側の文書提供は聞かない・指摘しない
+    for (const doc of [no, unknown]) expect(tags(withFact(separate(notAfter, { [FIRST]: true }), "contactDocProvided", doc), "R10")).toEqual(["R10:要件不足:oushin_not_after_visit"]);
   });
   it("D：往診料の翌日の訪問診療料。文書提供の 3 通り。在支診でなければ要件不足", () => {
     expect(tags(K1_DAY_AFTER, "R10")).toEqual([]);
@@ -328,12 +355,17 @@ describe("R10 往診と訪問診療の同日・翌日", () => {
     expect(tags(events2(K1), "R10")).toEqual([]);
     expect(evaluate(events2(K1)).applied).not.toContain("R10");
   });
-  it("答えのある日とない日が混ざると、ない日の分だけが情報不足になり、missing.date がその日になる（C-77 (a)）", () => {
-    const c = separate(setDates(K1_BOTH, "C000", [FIRST, SECOND]), { [FIRST]: true });
-    const f = of(c, "R10");
-    expect(f).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "sameDaySeparate", date: SECOND } })]);
+  it("月に 2 日あるとき、片方の日の答えはもう片方に効かない。ない日の分だけが情報不足になり、missing.date がその日になる（C-77 (a)・X-68）", () => {
+    const two = setDates(K1_BOTH, "C000", [FIRST, SECOND]);
+    for (const answer of [true, false]) {
+      const f = of(afterVisit(separate(two, { [FIRST]: true }), { [FIRST]: answer }), "R10").filter((x) => x.kind === "情報不足");
+      expect(f.map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDayOushinAfterVisit", date: SECOND }]);
+    }
+    // 14 日は 1 回の診療、28 日はあとの往診：指摘は 14 日の分だけ
+    const mixed = afterVisit(separate(two, { [FIRST]: false }), { [SECOND]: true });
+    expect(of(mixed, "R10").map((x) => [x.messageKey, x.lineRefs])).toEqual([["R10.same_encounter", ["C000", "C001_1I"]]]);
     // 2 日とも答えがなければ、日付の違う 2 件
-    expect(of(separate(c, {}), "R10").map((x) => x.missing?.date)).toEqual([FIRST, SECOND]);
+    expect(of(two, "R10").map((x) => x.missing?.date)).toEqual([FIRST, SECOND]);
   });
   it("緊急往診加算の対象外は要件不足。対象かどうかが不明なら情報不足", () => {
     const c = withLines(K1_OUSHIN, line("C000_N1_KINKYU", 1, [OTHER]));
@@ -396,9 +428,9 @@ describe("R16 管理料の族", () => {
 describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
   const D = day(21);
   const DEATH = day(22);
-  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない。退院時共同指導料1 は算定していない */
   const ONE_DAY: ClaimContext = {
-    ...loadCase("K5"),
+    ...withFact(loadCase("K5"), "dischargeJointGuidance", no),
     events: [
       { type: "visit", date: D, sameBuildingCount: 1 },
       { type: "oushin", date: D, kind: "normal" },
@@ -420,6 +452,34 @@ describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と
     const c = withEvents(ONE_DAY, { type: "visit", date: day(19), sameBuildingCount: 1 });
     expect(tags(c, "R09")).toEqual([]);
     expect(tags(separate(c, { [D]: false }), "R09")).toEqual([]);
+  });
+  it("往診が先でも、別々の診療なら 2 回と数える（訪問診療のあとの往診でなくてよい。C-88）。あとの往診と確かめた日も 2 回", () => {
+    expect(tags(afterVisit(separate(ONE_DAY, { [D]: true }), { [D]: false }), "R09")).toEqual([]);
+    expect(tags(afterVisit(ONE_DAY, { [D]: true }), "R09")).toEqual([]);
+  });
+  describe("別の経路：退院時共同指導料1 を算定し、訪問診療を実施（EM #7-11。design.md §11-5。§11-8 完了条件 9）", () => {
+    /** 回数が 1 回（1 回の診療と確かめた日だけ）で、訪問診療はある */
+    const SHORT = separate(ONE_DAY, { [D]: false });
+    it("回数が足りず訪問診療が 1 回以上あるとき：真なら満たす、偽なら terminal_visits、不明なら情報不足（医療事務）", () => {
+      expect(tags(withFact(SHORT, "dischargeJointGuidance", yes), "R09")).toEqual([]);
+      expect(tags(withFact(SHORT, "dischargeJointGuidance", no), "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+      expect(of(withFact(SHORT, "dischargeJointGuidance", unknown), "R09")).toEqual([
+        expect.objectContaining({ kind: "情報不足", lineRefs: ["C001_N6_TERMINAL"], missing: { target: "clerk", field: "dischargeJointGuidance" } }),
+      ]);
+    });
+    it("回数が 2 回に届いていれば聞かない。訪問診療が 1 回もなければ（往診だけ）聞かずに要件不足", () => {
+      expect(tags(withFact(separate(ONE_DAY, { [D]: true }), "dischargeJointGuidance", unknown), "R09")).toEqual([]);
+      const oushinOnly: ClaimContext = { ...ONE_DAY, events: ONE_DAY.events.filter((e) => e.type !== "visit"), facts: { ...ONE_DAY.facts, dischargeJointGuidance: unknown } };
+      expect(tags(oushinOnly, "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+    });
+    it("同じ日の数え方で回数が変わる間は、先にその日を聞く。真と分かっていれば、その日を聞かずに満たす", () => {
+      expect(of(withFact(ONE_DAY, "dischargeJointGuidance", unknown), "R09").map((f) => f.missing)).toEqual([{ target: "clerk", field: "sameDaySeparate", date: D }]);
+      expect(tags(withFact(ONE_DAY, "dischargeJointGuidance", yes), "R09")).toEqual([]);
+    });
+    it("不明のときも、看取り加算と死亡診断加算の背反は出る", () => {
+      const c = withLines(withFact(SHORT, "dischargeJointGuidance", unknown), line("C001_N7_MITORI", 1, [DEATH]), line("C001_N8_SHIBOU", 1, [DEATH]));
+      expect(tags(c, "R09")).toEqual(["R09:背反:mitori_with_shibou", "R09:情報不足:dischargeJointGuidance"]);
+    });
   });
 });
 
@@ -447,15 +507,21 @@ describe("同じ区分を複数の行に分けた請求（X-75）", () => {
   });
 });
 
-describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", () => {
+describe("R07 処方箋料の区分は処方ごとに判定する（X-77。design.md §11-5。§11-8 完了条件 9）", () => {
   const A = day(1);
   const B = day(20);
-  /** 管理料のない月。1 日に内服 5 種類、20 日に 7 種類の処方 */
-  const base = (...lines: ReturnType<typeof line>[]): ClaimContext => ({
+  const rx = (date: string, oralKinds: number, psychotropic: boolean | null = false): ClaimEvent => ({ type: "prescription", date, oralKinds, days: 14, psychotropic });
+  /** 管理料のない月の、処方の出来事と処方箋料の行 */
+  const month1 = (events: ClaimEvent[], ...lines: ReturnType<typeof line>[]): ClaimContext => ({
     ...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1"),
-    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), { type: "prescription", date: A, oralKinds: 5, days: 14 }, { type: "prescription", date: B, oralKinds: 7, days: 14 }],
+    events: [...NO_KANRI.events.filter((e) => e.type !== "prescription"), ...events],
     lines: [...without(NO_KANRI, "F400_3", "F400_N4", "F400_N6_1").lines, ...lines],
   });
+  /** 1 日に内服 5 種類、20 日に 7 種類の処方（どちらも対象の薬は含まれない） */
+  const base = (...lines: ReturnType<typeof line>[]) => month1([rx(A, 5), rx(B, 7)], ...lines);
+  const long = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "rxLongPsychotropic", { known: true, value: table });
+  const missingOf = (ctx: ClaimContext) => of(ctx, "R07").map((f) => [f.kind, f.lineRefs, f.missing]);
+
   it("処方ごとに合う区分なら指摘なし", () => {
     expect(tags(base(line("F400_3", 1, [A]), line("F400_2", 1, [B])), "R07")).toEqual([]);
   });
@@ -464,8 +530,50 @@ describe("R07 処方箋料の区分は処方ごとに判定する（X-77）", ()
     expect(tags(base(line("F400_2", 2, [A, B])), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
     expect(tags(base(line("F400_2", 1, [A]), line("F400_3", 1, [B])), "R07")).toEqual(["R07:区分誤り:use_seven_or_more", "R07:区分誤り:not_seven_or_more"]);
   });
-  it("行の日に処方の出来事がないときは、月の処方のどれかに合えば指摘しない（日付で対応がとれないときの仮置き）", () => {
-    expect(tags(base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)])), "R07")).toEqual([]);
+  it("対応のとれない行（その日に処方の記録がない）は、月のほかの処方と区分が合っていても情報不足 rxRecord（医療事務・その日つき）。区分誤りとは言わない", () => {
+    const c = base(line("F400_3", 1, [day(2)]), line("F400_2", 1, [day(21)]));
+    expect(missingOf(c)).toEqual([
+      ["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord", date: day(2) }],
+      ["情報不足", ["F400_2"], { target: "clerk", field: "rxRecord", date: day(21) }],
+    ]);
+    // 月に処方の記録が 1 件もないときも、区分 2 の行を区分誤りと断定しない。日付のない行も対応がとれない
+    expect(missingOf(month1([], line("F400_2", 1, [A])))).toEqual([["情報不足", ["F400_2"], { target: "clerk", field: "rxRecord", date: A }]]);
+    expect(missingOf(month1([rx(A, 5)], line("F400_3", 1, [])))).toEqual([["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord" }]]);
+  });
+  it("同じ日に処方が 2 回ある日は分けられないので、その日の行は情報不足（rxRecord）", () => {
+    expect(missingOf(month1([rx(A, 5), rx(A, 7)], line("F400_3", 1, [A])))).toEqual([["情報不足", ["F400_3"], { target: "clerk", field: "rxRecord", date: A }]]);
+  });
+  describe("6 種類以下の処方と、向精神薬の長期処方（日付ごと）", () => {
+    it.each([null, true])("対象の薬が含まれる・分からない処方（psychotropic=%s）で長期処方かが不明の日は、区分 2 の行にも区分 3 の行にも、その日つきの情報不足（医師）", (psy) => {
+      for (const k of ["F400_2", "F400_3"]) {
+        const c = month1([rx(A, 5, psy)], line(k, 1, [A]));
+        expect(missingOf(c)).toEqual([["情報不足", [k], { target: "doctor", field: "rxLongPsychotropic", date: A }]]);
+        expect(missingOf(withFact(c, "rxLongPsychotropic", unknown))).toEqual([["情報不足", [k], { target: "doctor", field: "rxLongPsychotropic", date: A }]]);
+      }
+    });
+    it("長期処方が偽と分かっている日の区分 2 は not_seven_or_more、区分 3 は指摘なし", () => {
+      const c = (k: string) => long(month1([rx(A, 5, true)], line(k, 1, [A])), { [A]: false });
+      expect(tags(c("F400_2"), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+      expect(tags(c("F400_3"), "R07")).toEqual([]);
+    });
+    it("長期処方が真と分かっている日の区分 3 は use_long_psychotropic、区分 2 は指摘なし（C-87）", () => {
+      const c = (k: string) => long(month1([rx(A, 5, null)], line(k, 1, [A])), { [A]: true });
+      expect(tags(c("F400_3"), "R07")).toEqual(["R07:区分誤り:use_long_psychotropic"]);
+      expect(tags(c("F400_2"), "R07")).toEqual([]);
+    });
+    it("処方に対象の薬が含まれないと分かっている日は聞かれない（長期処方の答えがなくても、あっても、偽として扱う）", () => {
+      for (const table of [{}, { [A]: true }]) {
+        expect(tags(long(month1([rx(A, 5, false)], line("F400_3", 1, [A])), table), "R07")).toEqual([]);
+        expect(tags(long(month1([rx(A, 5, false)], line("F400_2", 1, [A])), table), "R07")).toEqual(["R07:区分誤り:not_seven_or_more"]);
+      }
+    });
+    it("7 種類以上の処方は、対象の薬が分からなくても聞かれない", () => {
+      expect(tags(month1([rx(A, 7, null)], line("F400_2", 1, [A])), "R07")).toEqual([]);
+    });
+    it("ある日の答えは、ほかの日に効かない", () => {
+      const c = long(month1([rx(A, 5, true), rx(B, 5, true)], line("F400_2", 2, [A, B])), { [A]: true });
+      expect(missingOf(c)).toEqual([["情報不足", ["F400_2"], { target: "doctor", field: "rxLongPsychotropic", date: B }]]);
+    });
   });
 });
 

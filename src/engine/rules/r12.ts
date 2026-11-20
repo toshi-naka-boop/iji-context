@@ -10,6 +10,7 @@ export function makeR12(c: RevisionConsts): Rule {
     id: "R12",
     kubun: [...DX, ...CONFLICT],
     reference: "C001 注13 在宅医療DX情報活用加算",
+    recordFindings: [],
     appliesTo: (ctx) => present(ctx, DX).length > 0,
     needs: () => ["facility.dxTier"],
     check(ctx) {

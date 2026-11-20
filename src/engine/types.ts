@@ -45,10 +45,12 @@ export type Facts = {
   table7: Fact<boolean>;
   /** 別表第八の二に該当（重症区分） */
   table8_2: Fact<boolean>;
+  /** 障害支援区分（0＝認定なし、1〜6）。R03・D04 が読む。医療事務が受給者証・カルテで確かめる（design.md §11-4） */
+  disabilitySupportLevel: Fact<number>;
   /**
-   * 要介護度のほかに、別表第八の三（包括的支援加算の対象）のどれかの状態に当たるか。R03・D04 が読む。
-   * 障害支援区分 2 以上、認知症高齢者の日常生活自立度 Ⅲ 以上、週 1 回以上の訪問看護、訪問診療・訪問看護での処置、
-   * 看護職員が配置された施設での処置、麻薬の投薬、その他（EM R8-15a）。要介護 3 以上は careLevel で見る
+   * 要介護度と障害支援区分のほかに、別表第八の三（包括的支援加算の対象）のどれかの状態に当たるか。R03・D04 が読む。
+   * 認知症高齢者の日常生活自立度 Ⅲ 以上、週 1 回以上の訪問看護、訪問診療・訪問看護での処置、
+   * 看護職員が配置された施設での処置、麻薬の投薬、その他（EM R8-15a の (2)〜(7)）。要介護 3 以上は careLevel、障害支援区分 2 以上は disabilitySupportLevel で見る
    */
   table8_3Other: Fact<boolean>;
   mainDisease: Fact<string>;
@@ -65,8 +67,17 @@ export type Facts = {
   residence: Fact<Residence>;
   /** 24 時間対応の体制の連絡担当者・往診担当医などを、文書でその患者に提供しているか（R10） */
   contactDocProvided: Fact<boolean>;
-  /** 同じ日に訪問診療料と往診料の両方を算定した日ごとに、別々の診療かを確かめた答え（日付 → 真偽）。載っていない日は不明（R10） */
+  /**
+   * 同じ日の訪問診療と往診が、別々の診療かを確かめた答え（日付 → 真偽）。載っていない日は不明。
+   * 役目は、実施の回数を数える（R09）ことと、1 回の診療かを見る（R10 の same_encounter）ことだけ。往診料を立てる条件は sameDayOushinAfterVisit で見る（design.md §11-5）
+   */
   sameDaySeparate: Fact<Record<string, boolean>>;
+  /** その日、訪問診療のあとに、病状の急変などで往診したか（日付 → 真偽）。載っていない日は不明。同じ日の往診料を立てる条件（R10・D02。EM #7-8 改） */
+  sameDayOushinAfterVisit: Fact<Record<string, boolean>>;
+  /** 退院時共同指導料1 を算定したか。在宅ターミナルケア加算の別の経路（R09・D12。EM #7-11）。医療事務が確かめる */
+  dischargeJointGuidance: Fact<boolean>;
+  /** その日の処方が、向精神薬（不安・不眠の薬）の 1 年以上の継続処方に当たるか（処方の日付 → 真偽）。載っていない日は不明（R07・D10。EM #7-15）。医師が確かめる */
+  rxLongPsychotropic: Fact<Record<string, boolean>>;
   /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
@@ -81,7 +92,11 @@ export type ClaimEvent =
   | { type: "visit"; date: string; sameBuildingCount: number }
   | { type: "oushin"; date: string; kind: "normal" | "emergency" }
   | { type: "test"; date: string; items: string[] }
-  | { type: "prescription"; date: string; oralKinds: number; days: number }
+  /**
+   * oralKinds：F200 注3 の数え方で数えた、常態として投与する内服薬の種類数（EM #7-14）。数えるのは入力する側で、エンジンは数え方（薬価・臨時の投薬）を適用しない。
+   * psychotropic：その処方に、処方箋料の区分 2 の対象になる不安・不眠の薬が含まれるか（EM #7-15）。null は「分からない」で、「含まれない」とはみなさない
+   */
+  | { type: "prescription"; date: string; oralKinds: number; days: number; psychotropic: boolean | null }
   | { type: "death"; date: string }
   | { type: "discharge"; date: string }
   /** 管理料（在医総管・施設総管）の算定開始月（"YYYY-MM"） */
@@ -97,6 +112,11 @@ export type ClaimContext = {
   prefecture: string;
   facts: Facts;
   events: ClaimEvent[];
+  /**
+   * カルテ側の記録（出来事）があるか。偽の請求（見本以外の UKE）では、空の出来事を「なかった」と読まない：
+   * 出来事を読んで決める指摘（Rule.recordFindings）は出さず、情報不足（chartRecord）を返す（design.md §11-6）
+   */
+  recordsKnown: boolean;
   lines: ClaimLine[];
   /** 摘要コメント（UKE の CO レコードから F4 が作る。コードは架空）。載っていないものは「なかった」 */
   comments?: { kubun: string; code: string }[];
@@ -112,7 +132,7 @@ export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  /** 情報不足のとき。施設の設定は field が "facility.<key>"。date は日付ごとの事実（sameDaySeparate）の対象の日 */
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること（どちらも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
   reference: string;
@@ -137,6 +157,11 @@ export type Rule = {
   /** 対象区分（§4-4 で「関係あり」の判定に使う。C-6） */
   kubun: string[];
   reference: string;
+  /**
+   * このルールの指摘の種類（messageKey の「ルール id.」より後ろ）のうち、出来事を読んで決めるもの。
+   * カルテ側の記録がない請求（recordsKnown が偽）では、evaluate がこの種類の指摘を捨て、情報不足（chartRecord）を 1 件返す（design.md §11-6）
+   */
+  recordFindings: string[];
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];

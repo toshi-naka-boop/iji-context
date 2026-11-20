@@ -111,7 +111,7 @@ describe("ORCA 形式のコネクタ（請求。診療行為の API は xml2 形
     expect(files.map((f) => [f.payer, f.receipts.map((r) => r.claimId)])).toEqual([["国保連", [claimId("K2"), claimId("K1")]]]);
     for (const [k, total] of [["K2", 6372], ["K1", 14806]] as const) {
       const want = loadCase(k);
-      const got = toClaimContext(files[0], want.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+      const got = toClaimContext(files[0], want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       expect(got.lines).toEqual(want.lines);
       expect(evaluate(got)).toEqual(evaluate(want));
       expect(evaluate(got).total).toBe(total);

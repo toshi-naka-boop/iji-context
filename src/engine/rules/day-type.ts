@@ -31,6 +31,7 @@ export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
     id: spec.id,
     kubun: ALL,
     reference: spec.reference,
+    recordFindings: [],
     appliesTo: (ctx) => ALL.some((k) => lineOf(ctx, k)),
     // 重ねた行があるときだけ、施設の設定を聞く
     needs: (ctx) => (overlapDays(ctx).length > 0 ? [`facility.${overlapKey}`] : []),

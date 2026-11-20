@@ -10,13 +10,14 @@ import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patien
 type Row = PatientFact & { expired: boolean };
 type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
 
-const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", table7: "別表第七", table8_2: "別表第八の二", table8_3Other: "別表第八の三（要介護度以外）", homeOxygen: "在宅酸素療法" };
+const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", disabilitySupportLevel: "障害支援区分", table7: "別表第七", table8_2: "別表第八の二", table8_3Other: "別表第八の三（要介護度・障害支援区分以外）", homeOxygen: "在宅酸素療法" };
 
 /** 確かめ方の言い方（「医師に確認で確かめた」とならないように） */
 const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : `${s}で確かめた`);
 
 function show(key: PatientFactKey, v: number | boolean): string {
   if (key === "careLevel") return v === 0 ? "要支援・非該当" : `要介護${v}`;
+  if (key === "disabilitySupportLevel") return v === 0 ? "認定なし" : `区分${v}`;
   if (key === "homeOxygen") return v ? "している" : "していない";
   return v ? "当たる" : "当たらない";
 }
@@ -80,7 +81,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
 
   async function save() {
     setErr("");
-    const fact = { key, value: key === "careLevel" ? Number(value) : value === "true", source, validUntil: key === "careLevel" ? validUntil || null : null };
+    const fact = { key, value: key === "careLevel" || key === "disabilitySupportLevel" ? Number(value) : value === "true", source, validUntil: key === "careLevel" ? validUntil || null : null };
     const r = await fetch(`/api/patients/${props.claimId}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json();
     if (!r.ok) return setErr(d.error ?? "エラー");
@@ -142,8 +143,8 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
           </select>
           <select value={value} onChange={(e) => setValue(e.target.value)}>
             <option value="">選ぶ</option>
-            {key === "careLevel"
-              ? [0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{show(key, n)}</option>)
+            {key === "careLevel" || key === "disabilitySupportLevel"
+              ? (key === "careLevel" ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]).map((n) => <option key={n} value={n}>{show(key, n)}</option>)
               : [true, false].map((b) => <option key={String(b)} value={String(b)}>{show(key, b)}</option>)}
           </select>
           <select value={source} onChange={(e) => setSource(e.target.value)}>

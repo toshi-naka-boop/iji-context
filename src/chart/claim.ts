@@ -54,8 +54,13 @@ export function claimPreviewOf(derived: DeriveResult, engine: EngineResult, rev:
     total: derived.totalStatus === "withheld" ? null : engine.total,
     pending: derived.pending.map(pendingOf),
     unsupported: derived.unsupported.map((u) => ({ code: u.code, text: u.code === "unmapped_test_item" ? `検査の項目「${u.detail}」は、区分の表にないので行にしていません` : u.detail })),
+    // 行にしなかった理由は、混ぜずに 1 つずつ出す（1 回の診療として片方を選んだ／訪問診療のあとの往診ではない／文書の提供がない。design.md §11-5）
     notBilled: derived.notBilled.map((n) =>
-      n.reason === "same_encounter" ? `${eventText(n.event)}：同じ日のもう一方で算定するので、行にしていません` : `${eventText(n.event)}：往診の日・その翌日の訪問診療で、連絡先などの文書を提供している患者ではないので、行にしていません`,
+      n.reason === "same_encounter"
+        ? `${eventText(n.event)}：1 回の診療として${n.event.type === "oushin" ? "訪問診療料" : "往診料"}を選んだので、行にしていません`
+        : n.reason === "oushin_not_after_visit"
+          ? `${eventText(n.event)}：訪問診療のあとに、病状の急変などで行った往診ではないので、同じ日の往診料は行にしていません`
+          : `${eventText(n.event)}：往診の日・その翌日の訪問診療で、連絡先などの文書を提供している患者ではないので、行にしていません`,
     ),
     findings: engine.findings.map((f) => ({ ruleId: f.ruleId, kind: f.kind, text: findingText(f), lines: f.lineRefs.map(nameOf) })),
   };

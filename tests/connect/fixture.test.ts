@@ -25,7 +25,7 @@ describe("請求の境界", () => {
     for (const k of CASES) {
       const want = loadCase(k);
       const file = files.find((f) => f.payer === want.payer)!;
-      const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, history: want.history });
+      const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       // choices（導出の入力）は症例 JSON だけが持ち、UKE には載らない
       const { choices: _choices, ...fromUke } = want as typeof want & { choices?: unknown };
       expect(got).toEqual({ ...fromUke, comments: want.comments ?? [] });

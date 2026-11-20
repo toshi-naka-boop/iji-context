@@ -67,6 +67,16 @@ describe("患者ごとに確かめた情報", () => {
     expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(3) })).toThrow(/今日より前/);
     expect(() => app.savePatientFact(claimId("K4"), "nobody", care)).toThrow(/登録されていない/);
   });
+
+  it("K4 に要介護 2 と障害支援区分 2 を残すと、包括的支援加算の取り忘れが出る。障害支援区分は 0〜6 で、期限を付けない（design.md §11-4）", () => {
+    const level = { key: "disabilitySupportLevel" as const, value: 2, source: "受給者証" as const, validUntil: null };
+    app.savePatientFact(claimId("K4"), "new1", care);
+    app.savePatientFact(claimId("K4"), "new1", level);
+    expect(app.caseOf(claimId("K4")).facts.disabilitySupportLevel).toEqual({ known: true, value: 2 });
+    expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "取り忘れ"]]);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...level, value: 7 })).toThrow(/0〜6/);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...level, validUntil: dateIn(2, 31) })).toThrow(/期限は付けない/);
+  });
 });
 
 describe("1 問の流れ（K2：加算の取り忘れ）", () => {

@@ -9,6 +9,7 @@ export function makeR04(c: RevisionConsts): Rule {
     id: "R04",
     kubun: KANRI,
     reference: "第2部第2節第1款 通則2（主たる指導管理の所定点数のみ）",
+    recordFindings: [],
     appliesTo: (ctx) => present(ctx, KANRI).length > 0,
     needs: () => [],
     check(ctx) {

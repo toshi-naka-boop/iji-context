@@ -6,11 +6,11 @@ import { claimId, date } from "./cases";
 
 export const claimParams = z.strictObject({ claimId });
 
-/** 形だけをここで確かめる。項目ごとの決まり（要介護度は 0〜5 と有効期間の終わりの日、ほかは期限なし）は src/patient/facts.ts の validatePatientFact が確かめて文言を返す */
+/** 形だけをここで確かめる。項目ごとの決まり（要介護度は 0〜5 と有効期間の終わりの日、障害支援区分は 0〜6、ほかは期限なし）は src/patient/facts.ts の validatePatientFact が確かめて文言を返す */
 export const factBody = z.strictObject({
   fact: z.strictObject({
     key: z.enum(PATIENT_FACT_KEYS),
-    value: z.union([z.number().int().min(0).max(5), z.boolean()]),
+    value: z.union([z.number().int().min(0).max(6), z.boolean()]),
     source: z.enum(FACT_SOURCES),
     validUntil: date.nullable(),
   }),

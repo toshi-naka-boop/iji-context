@@ -12,22 +12,24 @@ export const FINDING_TEXT: Record<string, string> = {
   "R02.not_severe": "別表第八の二に当たらないのに、重症区分になっています",
   "R02.severe_with_hokatsu": "重症区分で算定する月に、包括的支援加算が入っています。加算の行を外してください",
   "R03.missing": "包括的支援加算の要件を満たしていますが、入っていません",
-  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上など、別表第八の三の状態）を満たしていません",
+  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上、障害支援区分2 以上など、別表第八の三の状態）を満たしていません",
   "R04.only_main": "在宅療養指導管理料が 2 つ以上入っています（主たるもの 1 つだけ）",
   "R05.bundled": "管理料の月に、所定点数に含まれる項目が別に入っています",
   "R05.no_rx_addition_with_rx": "処方箋を出している月に、処方箋を交付しない場合の加算が入っています",
   "R06.excluded_disease": "主病が特定疾患処方管理加算の対象外です",
   "R06.under_28_days": "28 日以上の処方がないのに、特定疾患処方管理加算が入っています",
   "R07.use_seven_or_more": "内服 7 種類以上なので、処方箋料の区分が違います",
-  "R07.not_seven_or_more": "内服 7 種類未満なのに、7 種類以上の区分になっています",
+  "R07.use_long_psychotropic": "向精神薬の長期処方に当たるので、処方箋料の区分が違います",
+  "R07.not_seven_or_more": "内服 7 種類未満で、向精神薬の長期処方にも当たらないのに、区分 2 になっています",
   "R08.oushin_only_day": "訪問診療料のない日に、訪問診療時のベースアップ評価料が入っています",
   "R08.use_visit": "訪問診療料の日に、再診時等のベースアップ評価料が入っています",
   "R08.duplicate_on_visit_day": "訪問診療料の日に、訪問診療時のベースアップ評価料と再診時等のベースアップ評価料が重なっています。再診時等の行は算定できないので外してください",
   "R08.no_revisit_on_both_day": "訪問診療料と往診料の両方がある日に、再診時等のベースアップ評価料が重なっています。この行は算定できないので外してください",
   "R09.mitori_with_shibou": "看取り加算と死亡診断加算が両方入っています（併算定できません）",
-  "R09.terminal_visits": "在宅ターミナルケア加算の要件（死亡日前 14 日以内に 2 回以上の訪問）を満たしていません",
+  "R09.terminal_visits": "在宅ターミナルケア加算の要件（死亡日前 14 日以内に 2 回以上の訪問・往診、又は退院時共同指導料1 の算定と訪問診療）を満たしていません",
   "R10.kinkyu_not_eligible": "緊急往診加算の対象患者ではありません",
   "R10.same_encounter": "1 回の診療に、訪問診療料と往診料の両方が入っています。診療の中身に合うほうだけを残してください",
+  "R10.oushin_not_after_visit": "訪問診療料と同じ日の往診料は、訪問診療のあとに、病状の急変などで往診したときでなければ算定できません",
   "R10.same_day_as_visit": "往診料と同じ日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R10.visit_day_after_oushin": "往診料の翌日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R11.judgement_once_a_month": "検体検査判断料が月 2 回以上入っています",
@@ -61,7 +63,8 @@ export const FACT_LABEL: Record<FactKey, string> = {
   careLevel: "要介護度",
   table7: "別表第七に当たるか",
   table8_2: "別表第八の二に当たるか",
-  table8_3Other: "要介護度のほかに、別表第八の三の状態（認知症の日常生活自立度Ⅲ以上、週1回以上の訪問看護、処置、麻薬の投薬など）に当たるか",
+  disabilitySupportLevel: "障害支援区分",
+  table8_3Other: "要介護度と障害支援区分のほかに、別表第八の三の状態（認知症の日常生活自立度Ⅲ以上、週1回以上の訪問看護、処置、麻薬の投薬など）に当たるか",
   mainDisease: "主病",
   homeOxygen: "在宅酸素療法中か",
   deathPlace: "看取りの場所",
@@ -70,7 +73,10 @@ export const FACT_LABEL: Record<FactKey, string> = {
   emergencyEligible: "緊急往診の対象患者か",
   residence: "居住の場所（居宅か、施設に入居しているか）",
   contactDocProvided: "連絡担当者・往診担当医などの文書を患者に提供しているか",
-  sameDaySeparate: "同じ日の訪問診療料と往診料が、別々の診療のものか",
+  sameDaySeparate: "同じ日の訪問診療と往診が、別々の診療か（1 回の診療ではないか）",
+  sameDayOushinAfterVisit: "その日、訪問診療のあとに、病状の急変などで往診したか",
+  dischargeJointGuidance: "退院時共同指導料1 を算定したか",
+  rxLongPsychotropic: "その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
 };
@@ -94,15 +100,15 @@ export const DERIVE_TEXT: Record<string, string> = {
   D01: "訪問診療の記録 1 件につき 1 回",
   D02: "往診の記録 1 件につき 1 回",
   D03: "その月の訪問診療料の回数と、患者の状態・居住の場所・施設の基準で決まる区分",
-  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上など別表第八の三の状態",
+  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上・障害支援区分 2 以上など別表第八の三の状態",
   D05: "退院後に在宅療養を始め、管理料の算定開始月から 3 か月目まで",
   D06: "訪問診療料を算定した月に 1 回（届出の区分による）",
   D07: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
   D08: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
   D09: "検査の項目ごとに 1 回。血液採取は検査の日ごとに 1 回、判断料は区分ごとに月 1 回",
-  D10: "管理料を算定しない月の処方。内服の種類数で区分が決まる",
+  D10: "管理料を算定しない月の処方。内服の種類数と、向精神薬の長期処方かで区分が決まる",
   D11: "本人が選んだ",
-  D12: "本人が選んだ（死亡日前 14 日以内に 2 回以上の訪問・往診の記録がある）",
+  D12: "本人が選んだ（死亡日前 14 日以内に 2 回以上の訪問・往診の記録があるか、退院時共同指導料1 を算定して訪問診療の記録がある）",
 };
 
 /** 確認してほしい点の文。情報不足は「どこを確かめるか」を添える（医療事務あては本人、医師あては医師確認） */
@@ -112,11 +118,15 @@ export function findingText(f: Finding): string {
       const label = FACILITY_LABEL[f.missing.field.slice("facility.".length) as FacilityFactKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
-    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
+    // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
+    if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
+    // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
+    if (f.missing.field === "rxRecord") return `処方箋料の行${day}に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください`;
+    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     return f.missing.target === "doctor"
-      ? `${label}がカルテから分かりません。医師確認で確かめましょう`
-      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : ""}確かめて入力してください`;
+      ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
+      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
   return FINDING_TEXT[f.messageKey] ?? f.messageKey;
 }
