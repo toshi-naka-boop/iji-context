@@ -2,7 +2,7 @@
 // 置き場所では判定しない：コメントコードは項目ごとに決まっているので、「レセプトのどこかに、そのコードのコメントがあるか」で見る（Comment.on は使わない）。
 // どの記載が要るかは版の表（EM §2-10 表 1）、条件と数え方は comments.ts（導出の「摘要欄に書くこと」と共有）。文章（理由）の中身は読まない
 import { commentCodesFor, commentFormatOk, commentWhen, dateOfWareki, kanriStartMonth, visitOrOushinDays, type CommentSpec } from "../comments";
-import { overLimitVisitDays } from "../predicates";
+import { kanriKubun, overLimitVisitDays } from "../predicates";
 import type { CommentRule } from "../revisions/types";
 import type { ClaimContext, Finding, Rule } from "../types";
 import { eventsOf, present } from "./util";
@@ -18,6 +18,10 @@ export function makeR17(spec: CommentSpec): Rule {
     // 点検の対象外の行がある請求で出すのは、必ず要る記載（when が always）の記載もれと、形式、包括的支援加算の状態と確かめた事実の食い違い
     // （コメントと事実だけで決まる。対象外の行が増えても解消しない：反証 round-28）。条件つきの記載と日付の突き合わせは申告しない（design.md §11-11）
     soundWhenPartial: ["comment_missing", "comment_format", "comment_mismatch_hokatsuState"],
+    // 条件と突き合わせが読む行：訪問診療料・往診料の日（同じ日の往診の理由・週の上限・訪問日の記載）と、管理料の族（族ごとにコードが違う記載）
+    reads() {
+      return [...new Set([...this.kubun, ...spec.consts.visitKubun, spec.consts.oushin.kubun, ...kanriKubun(spec.consts)])];
+    },
     appliesTo: (ctx) => ctx.commentsKnown && present(ctx, kubun).length > 0,
     // 条件を決める事実の不明は、記載ごとに check が情報不足で返す（needs に入れると、ほかの記載の点検まで止まる）
     needs: () => [],

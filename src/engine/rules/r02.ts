@@ -13,6 +13,10 @@ export function makeR02(c: RevisionConsts): Rule {
     reference: "C002 2イ・C002-2 2イ（別に厚生労働大臣が定める状態＝別表第八の二）・C002 注10",
     recordFindings: [],
     soundWhenPartial: [],
+    // 訪問診療料の回数で、見る月か（月 2 回以上）が決まる（expectedKanri）
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun])];
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: (ctx) => (expectedKanri(ctx, c).visits >= 2 ? ["table8_2"] : []),
     check(ctx) {

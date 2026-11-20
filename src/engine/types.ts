@@ -1,4 +1,5 @@
 // ルールエンジンの入出力の型（design.md §2-1・§2-2）
+import type { Revision } from "./revisions/types";
 
 /** 三値の事実。known=false は「わからない」（C-4） */
 export type Fact<T> = { known: true; value: T } | { known: false };
@@ -145,11 +146,25 @@ export type ClaimContext = {
    * ほかの行の有無や回数で決まる指摘は当てにならないので、evaluate は Rule.soundWhenPartial に申告のある種類の指摘だけを出し、合計を出さない。省くと偽
    */
   partial?: boolean;
+  /**
+   * 対象外の単位のコードを、基本マスターで引いたもの（design.md §12-4）。基本マスターがある請求だけが持つ（引くのは呼び出し側。エンジンは DB を開かない）。
+   * 持つ請求では、止めるかどうかをルールごとに決める（src/engine/index.ts の partialBy）。持たない請求は、対象外の単位が 1 つでもあれば、どのルールも止める（v23 のまま）
+   */
+  outside?: Outside;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
   /** 連携で読んだ行のうち、版のコードの表に対応がなかったもの。判定の対象外（FR-111） */
   excluded?: { code: string; count: number }[];
 };
+
+/**
+ * 対象外の単位にあるコード 1 つ。known は、診療年月に使う 1 枚のマスター（医科診療行為・医薬品・特定器材のどれか）にあるか。
+ * no は区分番号の鍵（医科診療行為マスターのコード表用番号の「章/部/区分番号」。枝番・項番は入れない）。医薬品・特定器材と、マスターにないコードは null
+ */
+export type OutsideCode = { code: string; known: boolean; no: string | null };
+
+/** codes は対象外の単位のコード（重複は除く）。noOf は、版の区分 → その区分のコード（primary。包括の検査は項目）の区分番号の鍵。マスターで引けなかった区分は載らない */
+export type Outside = { codes: OutsideCode[]; noOf: Record<string, string[]> };
 
 /** 「記載もれ」は摘要欄の記載（R17）。宛先は医療事務で、点数は付かない（design.md §11-13） */
 export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "記載もれ" | "情報不足";
@@ -198,6 +213,12 @@ export type Rule = {
    * 申告のない種類は出ない（申告漏れは見逃しに倒れ、誤った指摘には倒れない）。申告が正しいことは tests/engine/partial.test.ts が縛る
    */
   soundWhenPartial: string[];
+  /**
+   * このルールが「あるか・ないか・何回か・どの日か」を見る区分（design.md §12-4）。kubun を含み、述語を通して読む区分（訪問診療料の回数・往診料の日など）も全部挙げる。
+   * 基本マスターがある請求では、対象外の単位に、ここの区分と同じ区分番号のコード（か、マスターにないコード）があるときだけ、このルールを partial として扱う。
+   * 申告のないルールは、対象外の単位が 1 つでもあれば止める（v23 のまま）。申告が足りていることは tests/engine/reads.test.ts が縛る
+   */
+  reads?(rev: Revision): string[];
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];

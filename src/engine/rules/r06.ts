@@ -12,6 +12,10 @@ export function makeR06(c: RevisionConsts): Rule {
     // 処方の日数は出来事から読む（対象外の主病 excluded_disease は事実だけで決まる）
     recordFindings: ["under_28_days"],
     soundWhenPartial: ["excluded_disease"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => has(ctx, KUBUN),
     needs: () => ["mainDisease"],
     check(ctx) {

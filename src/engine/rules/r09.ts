@@ -13,6 +13,10 @@ export function makeR09(c: RevisionConsts): Rule {
     // 回数は訪問・往診・死亡の出来事で数える（看取りと死亡診断の背反 mitori_with_shibou は行だけで決まる）
     recordFindings: ["terminal_visits"],
     soundWhenPartial: ["mitori_with_shibou"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => [MITORI, SHIBOU, TERMINAL].some((k) => has(ctx, k)),
     needs: () => [],
     check(ctx) {

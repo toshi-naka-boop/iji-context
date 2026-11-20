@@ -14,6 +14,10 @@ export function makeR03(c: RevisionConsts): Rule {
     recordFindings: [],
     // not_eligible は申告しない：見る月か（hokatsuInScope）が訪問診療料の回数で決まり、重症で月 2 回以上の月は R02 の担当。訪問診療料の行が対象外に移ると、R03 が新しく出る
     soundWhenPartial: [],
+    // 訪問診療料の回数で、期待される区分（加算を見る月か）が決まる（hokatsuInScope → expectedKanri）
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun])];
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs(ctx) {
       if (!hokatsuInScope(ctx, c)) return [];

@@ -14,6 +14,10 @@ export function makeR07(c: RevisionConsts): Rule {
     // どの指摘も、その日の処方の出来事と比べて決める
     recordFindings: ["use_seven_or_more", "use_long_psychotropic", "not_seven_or_more", "no_rx_record"],
     soundWhenPartial: [],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => has(ctx, OTHER) || has(ctx, MANY),
     needs: () => [],
     check(ctx) {

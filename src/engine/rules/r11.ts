@@ -18,6 +18,10 @@ export function makeR11(c: RevisionConsts): Rule {
     reference: "D026 検体検査判断料・外来迅速検体検査加算（第3部第1節第1款 通則3）",
     recordFindings: [],
     soundWhenPartial: [],
+    // 外来迅速検体検査加算の日が、訪問診療料・往診料の日か（rapidAtHome）
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun, c.oushin.kubun])];
+    },
     appliesTo: (ctx) => [...D026, BNP, RAPID].some((k) => has(ctx, k)),
     needs: (ctx) => (rapidAtHome(ctx) ? ["rapidSameDayDocumented"] : []),
     check(ctx) {
