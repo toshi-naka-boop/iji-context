@@ -71,6 +71,8 @@ export const POLICY = {
 
   // カルテ・患者情報・UKE
   "POST /api/chart": row(WORK, "ai", true),
+  // 訪問カルテの一覧（消す相手を選ぶため）。消せる人と同じ役割。見えるのは、事務長には全部、ほかの人には自分が書いた分（src/server/app/notes.ts の listNotes）。本文は返さない
+  "GET /api/chart": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/chart/[id]": row(WORK, "none", true),
   // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
   "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),

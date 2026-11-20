@@ -281,6 +281,25 @@ describe("訪問カルテ", () => {
     // 消す前：往診のカルテが同じ日の訪問診療に重なり、「訪問診療のあとに往診したか」が決まるまで算定行が保留になっている。本文と確かめた事実は chart_notes にだけある
     expect(await preview()).toEqual({ lines: [], pending: [`D01-sameDay:${day(13)}`] });
     for (const text of [...Object.values(GONE), "目印の薬"]) expect([text, tablesWith(text)]).toEqual([text, ["chart_notes"]]);
+    // 一覧（消す相手を選ぶ）：書いた本人には自分の分、事務長には全部、書いていないベテランには何も出ない。医師は 403、未ログインは 401。本文と確かめた事実は返らない
+    const list = (await import("../../app/api/chart/route")).GET;
+    const listOf = async (c: string | null) => {
+      const r = await list(new Request("http://localhost/api/chart", { headers: c ? { cookie: c } : {} }));
+      return { status: r.status, text: await r.text() };
+    };
+    const rowsOf = (text: string) => (JSON.parse(text) as { id: number; claimId: string; date: string; kind: string; writer: string; mine: boolean; confirmed: boolean }[]);
+    expect((await listOf(null)).status).toBe(401);
+    expect((await listOf(doc)).status).toBe(403);
+    const own = await listOf(mine);
+    expect(rowsOf(own.text)).toEqual([
+      { id: gone, claimId: claimId("K2"), date: day(13), kind: "往診", writer: "かるて", mine: true, confirmed: true },
+      { id: stay, claimId: claimId("K2"), date: day(13), kind: "訪問診療", writer: "かるて", mine: true, confirmed: true },
+      { id: third, claimId: claimId("K2"), date: day(13), kind: "往診", writer: "かるて", mine: true, confirmed: true },
+    ]);
+    expect(rowsOf((await listOf(vet)).text)).toEqual([]);
+    const all = await listOf(mgr);
+    expect(rowsOf(all.text).map((n) => [n.id, n.mine])).toEqual([[gone, false], [stay, false], [third, false]]);
+    for (const t of [own.text, all.text]) expect(t).not.toMatch(/目印/);
     const before = instance.runAs(owner, () => instance.getApp().audit.list(500)).length;
 
     // 未ログインは 401、形の違う id は 400、ないカルテは 404、医師は 403（権限表）、書いた本人でないベテランは 403（本人の照合）。どれも消えない
@@ -298,6 +317,7 @@ describe("訪問カルテ", () => {
     const res = await del(gone, mine);
     expect([res.status, await res.json()]).toEqual([200, { deleted: gone }]);
     expect((await del(gone, mine)).status).toBe(404);
+    expect(rowsOf((await listOf(mgr)).text).map((n) => n.id)).toEqual([stay]);
 
     // 全表の走査：消したカルテの本文・確かめた事実は、どの表にも（監査ログにも）残っていない。残したカルテはそのまま
     for (const text of [...Object.values(GONE), "目印の薬", "事務長が消す目印"]) expect([text, tablesWith(text)]).toEqual([text, []]);

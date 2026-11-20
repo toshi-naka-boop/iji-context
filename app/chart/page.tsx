@@ -15,6 +15,7 @@ import SAMPLES from "../../fixtures/charts/samples.json";
 import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
 import { ClaimPreview } from "./claim-preview";
+import { NoteList } from "./note-list";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
@@ -222,6 +223,8 @@ export default function Chart() {
                 </div>
               </>
             )}
+            {/* 前に書いたカルテ（保存のみ・確定済み）を、あとからでも消せる。一覧から今のカルテを消したら、入力を最初に戻す */}
+            <NoteList claimId={p.claimId} tick={`${ex?.id ?? ""}-${confirmed ? 1 : 0}`} onDeleted={(id) => { if (ex?.id === id) { setEx(null); setRows([]); setConfirmed(null); setNote(EMPTY); } }} />
             {ex && !confirmed && (
               <div>
                 <h3>読み取った事実（確かめてください）</h3>

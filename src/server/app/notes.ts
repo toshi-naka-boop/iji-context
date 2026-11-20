@@ -68,6 +68,18 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
     return { deleted: id };
   }
+  /**
+   * 訪問カルテの一覧（消す相手を選ぶため）。見えるのは消せる分だけ：事務長には全部、ほかの人には自分が書いた分。
+   * 返すのは、id・請求・日付・種類・書いた人の名前・確定済みか。本文と、そこから確かめた事実は返さない
+   */
+  function listNotes(clerkId: string, role: Role) {
+    const rows = sqlite
+      .prepare("SELECT n.id, n.claim_id, n.date, n.kind, n.clerk_id, n.facts IS NOT NULL AS confirmed, c.name FROM chart_notes n LEFT JOIN clerks c ON c.id = n.clerk_id ORDER BY n.id")
+      .all() as { id: number; claim_id: string; date: string; kind: string; clerk_id: string; confirmed: number; name: string | null }[];
+    return rows
+      .filter((r) => role === "manager" || r.clerk_id === clerkId)
+      .map((r) => ({ id: r.id, claimId: r.claim_id, date: r.date, kind: r.kind, writer: r.name ?? "", mine: r.clerk_id === clerkId, confirmed: r.confirmed === 1 }));
+  }
   /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
   function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
     if (!clerkId) return [];
@@ -161,7 +173,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, deleteNote, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;
