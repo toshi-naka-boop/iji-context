@@ -28,6 +28,7 @@ export const FINDING_TEXT: Record<string, string> = {
   "R09.terminal_visits": "在宅ターミナルケア加算の要件（死亡日前 14 日以内に 2 回以上の訪問）を満たしていません",
   "R10.kinkyu_not_eligible": "緊急往診加算の対象患者ではありません",
   "R10.same_encounter": "1 回の診療に、訪問診療料と往診料の両方が入っています。診療の中身に合うほうだけを残してください",
+  "R10.oushin_not_after_visit": "訪問診療料と同じ日の往診料は、訪問診療のあとに、病状の急変などで往診したときでなければ算定できません",
   "R10.same_day_as_visit": "往診料と同じ日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R10.visit_day_after_oushin": "往診料の翌日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R11.judgement_once_a_month": "検体検査判断料が月 2 回以上入っています",
@@ -71,7 +72,8 @@ export const FACT_LABEL: Record<FactKey, string> = {
   emergencyEligible: "緊急往診の対象患者か",
   residence: "居住の場所（居宅か、施設に入居しているか）",
   contactDocProvided: "連絡担当者・往診担当医などの文書を患者に提供しているか",
-  sameDaySeparate: "同じ日の訪問診療料と往診料が、別々の診療のものか",
+  sameDaySeparate: "同じ日の訪問診療と往診が、別々の診療か（1 回の診療ではないか）",
+  sameDayOushinAfterVisit: "その日、訪問診療のあとに、病状の急変などで往診したか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
 };

@@ -30,6 +30,7 @@ const UNKNOWN_FACTS: Facts = {
   residence: { known: false },
   contactDocProvided: { known: false },
   sameDaySeparate: { known: false },
+  sameDayOushinAfterVisit: { known: false },
   rapidSameDayDocumented: { known: false },
   comprehensiveCare: { known: false },
 };

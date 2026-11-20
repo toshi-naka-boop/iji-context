@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { claimPreviewOf } from "../../src/chart/claim";
 import { eventsFromNotes } from "../../src/chart/notes";
 import { evaluate } from "../../src/engine";
 import { derivedKubun, deriveLines, manualLinesOf, type DeriveInput, type DeriveResult } from "../../src/engine/derive";
@@ -155,9 +156,12 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
   /** R10・R08・R15 の指摘は、どの場合も 0 件 */
   const quiet = (c: ClaimContext, r: DeriveResult) => expect(judge(c, r).findings.filter((f) => ["R10", "R08", "R15"].includes(f.ruleId))).toEqual([]);
 
+  /** その日、訪問診療のあとに、急変などで往診したか */
+  const after = (c: ClaimContext, v: Record<string, boolean>) => withFact(c, "sameDayOushinAfterVisit", sep(v));
+
   it("その日の答えがなければ、訪問診療料と往診料の両方が事実不足（医療事務）で保留になり、どちらも行に入らない", () => {
     const r = derive(BOTH);
-    expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "sameDaySeparate", target: "clerk", date: D })]);
+    expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "sameDayOushinAfterVisit", target: "clerk", date: D })]);
     expect(datesOf(r, VISIT)).toEqual([day(28)]);
     expect(kubunOf(r)).not.toContain(OUSHIN);
     // 回数に依存する管理料と、その日の加算も立てない
@@ -196,8 +200,37 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
     quiet(c, v);
     quiet(c, o);
   });
-  it("別々の診療（真）で文書提供済みなら両方が立つ。再診時等の区分は重ねない", () => {
-    const c = withFact(BOTH, "sameDaySeparate", sep({ [D]: true }));
+  it("別々の診療と確かめただけでは往診料を立てない（あとの往診かを聞く）。あとの往診でなければ、別々の診療かを聞く", () => {
+    const r = derive(withFact(BOTH, "sameDaySeparate", sep({ [D]: true })));
+    expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "sameDayOushinAfterVisit", target: "clerk", date: D })]);
+    expect(kubunOf(r)).not.toContain(OUSHIN);
+    const r2 = derive(after(BOTH, { [D]: false }));
+    expect(r2.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "sameDaySeparate", target: "clerk", date: D })]);
+    expect(kubunOf(r2)).not.toContain(OUSHIN);
+  });
+  it("別々の診療だが、あとの往診ではない（往診が先など）：往診料は立てず notBilled に残し、訪問診療料は文書提供によらず立つ", () => {
+    for (const doc of [yes, no, unknown]) {
+      const c = withFact(after(withFact(BOTH, "sameDaySeparate", sep({ [D]: true })), { [D]: false }), "contactDocProvided", doc);
+      const r = derive(c);
+      expect(r.pending).toEqual([]);
+      expect(datesOf(r, VISIT)).toEqual([D, day(28)]);
+      expect(kubunOf(r)).not.toContain(OUSHIN);
+      expect(kubunOf(r)).not.toContain(C.oushin.revisit);
+      expect(r.notBilled).toEqual([{ event: { type: "oushin", date: D }, reason: "oushin_not_after_visit" }]);
+      expect(sorted(r.lines)).toEqual(sorted(K2.lines));
+      expect(judge(c, r).findings).toEqual([]);
+    }
+  });
+  it("月に 2 日あるとき、片方の日の答えはもう片方に効かない", () => {
+    const D2 = day(28);
+    const two = withEvents(BOTH, { type: "oushin", date: D2, kind: "normal" });
+    const r = derive(after(two, { [D]: true }));
+    expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "sameDayOushinAfterVisit", date: D2 })]);
+    expect(datesOf(r, VISIT)).toEqual([D]);
+    expect(datesOf(r, OUSHIN)).toEqual([D]);
+  });
+  it("訪問診療のあとの往診（真）で文書提供済みなら両方が立つ。別々の診療かは聞かない。再診時等の区分は重ねない", () => {
+    const c = withFact(after(BOTH, { [D]: true }), "sameDaySeparate", unknown);
     const r = derive(c);
     expect(r.pending).toEqual([]);
     expect(datesOf(r, VISIT)).toEqual([D, day(28)]);
@@ -207,8 +240,8 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
     expect(kubunOf(r)).not.toContain(C.oushin.revisit);
     expect(judge(c, r).findings).toEqual([]);
   });
-  it("別々の診療で文書提供なしなら往診料だけが立ち、訪問診療は notBilled に残る。文書提供が不明なら訪問診療料が事実不足（医療事務）", () => {
-    const base = withFact(BOTH, "sameDaySeparate", sep({ [D]: true }));
+  it("あとの往診で文書提供なしなら往診料だけが立ち、訪問診療は notBilled に残る。文書提供が不明なら訪問診療料が事実不足（医療事務）", () => {
+    const base = after(BOTH, { [D]: true });
     const c = withFact(base, "contactDocProvided", no);
     const r = derive(c);
     expect(datesOf(r, VISIT)).toEqual([day(28)]);
@@ -262,16 +295,37 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
       expect(datesOf(ok, VISIT)).toEqual([D, day(28)]);
       expect(judge(base, ok).findings).toEqual([]);
     });
-    it("不変条件：保留のない導出の行を検証に通すと、R10 の指摘が出ない（同じ日の答え × 選択 × 文書提供の全組み合わせ）", () => {
-      for (const separate of [true, false])
-        for (const pick of ["visit", "oushin"])
-          for (const doc of [yes, no]) {
-            const c = withFact(withFact(base, "sameDaySeparate", sep({ [D]: separate })), "contactDocProvided", doc);
-            const r = derive(c, { choices: separate ? {} : { [id]: pick } });
-            const label = `separate=${separate} pick=${pick} doc=${doc.value}`;
-            expect(r.pending, label).toEqual([]);
-            expect(r10(c, r), label).toEqual([]);
-          }
+    it("表示：往診料が立たない理由（1 回の診療として訪問診療料を選んだ）と、訪問診療料の保留（文書の提供）を分けて出す（§11-5）", () => {
+      const u = withFact(base, "contactDocProvided", unknown);
+      const r = derive(u, { choices: { [id]: "visit" } });
+      const p = claimPreviewOf(r, judge(u, r), REV);
+      const md = `${Number(D.slice(5, 7))}/${Number(D.slice(8, 10))}`;
+      expect(p.notBilled).toEqual([`往診 ${md}：1 回の診療として訪問診療料を選んだので、行にしていません`]);
+      expect(p.pending.map((x) => [x.kind, x.text])).toEqual([["事実不足", `連絡担当者・往診担当医などの文書を患者に提供しているか（${md}）`]]);
+      // 文書の提供がないと分かれば、訪問診療料の理由は別の文で出る
+      const n = withFact(base, "contactDocProvided", no);
+      const rn = derive(n, { choices: { [id]: "visit" } });
+      expect(claimPreviewOf(rn, judge(n, rn), REV).notBilled).toEqual([
+        `往診 ${md}：1 回の診療として訪問診療料を選んだので、行にしていません`,
+        `訪問診療 ${md}：往診の日・その翌日の訪問診療で、連絡先などの文書を提供している患者ではないので、行にしていません`,
+      ]);
+    });
+    it("不変条件：保留のない導出の行を検証に通すと、R10 の指摘が出ない（同じ日の 2 つの答え × 選択 × 文書提供の全組み合わせ）", () => {
+      const answers = [true, false, undefined];
+      for (const separate of answers)
+        for (const afterVisit of answers)
+          for (const pick of ["visit", "oushin"])
+            for (const doc of [yes, no]) {
+              const table = (v: boolean | undefined) => sep(v === undefined ? {} : { [D]: v });
+              const c = withFact(withFact(withFact(base, "sameDaySeparate", table(separate)), "sameDayOushinAfterVisit", table(afterVisit)), "contactDocProvided", doc);
+              const r = derive(c, { choices: { [id]: pick } });
+              const label = `separate=${separate} after=${afterVisit} pick=${pick} doc=${doc.value}`;
+              // 決まらない組み合わせ（保留が残る）でも、立てた行に R10 の指摘は出ない
+              expect(r10(c, r).filter((f) => f.kind !== "情報不足"), label).toEqual([]);
+              if (r.pending.length === 0) expect(r10(c, r), label).toEqual([]);
+              // 保留が残るのは、関係が決まらない組み合わせだけ
+              expect(r.pending.length > 0, label).toBe(separate !== false && afterVisit !== true && (afterVisit === undefined || separate === undefined));
+            }
     });
   });
   it("緊急の往診は、対象の患者と確かめたときだけ緊急往診加算を立てる。不明なら事実不足（医療事務）", () => {

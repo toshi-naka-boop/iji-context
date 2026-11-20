@@ -26,6 +26,8 @@ const withFacility = <K extends FacilityFactKey>(ctx: ClaimContext, key: K, valu
 const setDates = (ctx: ClaimContext, kubun: string, dates: string[]): ClaimContext => ({ ...ctx, lines: ctx.lines.map((l) => (l.kubun === kubun ? { ...l, count: dates.length, dates } : l)) });
 const replaceKubun = (ctx: ClaimContext, from: string, to: string): ClaimContext => ({ ...ctx, lines: ctx.lines.map((l) => (l.kubun === from ? { ...l, kubun: to } : l)) });
 const separate = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "sameDaySeparate", { known: true, value: table });
+/** その日、訪問診療のあとに、急変などで往診したか */
+const afterVisit = (ctx: ClaimContext, table: Record<string, boolean>) => withFact(ctx, "sameDayOushinAfterVisit", { known: true, value: table });
 
 const of = (ctx: ClaimContext, ...ruleIds: string[]): Finding[] => evaluate(ctx).findings.filter((f) => ruleIds.includes(f.ruleId));
 const kinds = (ctx: ClaimContext, ruleId: string): FindingKind[] => of(ctx, ruleId).map((f) => f.kind);
@@ -254,8 +256,8 @@ describe("R05・R14（施設総管にも当たる）", () => {
 // R08・R15：訪問診療の日は、訪問診療料を算定した行の日で決める。両方を算定した日の重ねは、加算ごとの施設の設定で決める
 
 describe("R08・R15 訪問診療時と再診時等", () => {
-  /** 14 日に訪問診療料と往診料の両方（別々の診療と確かめ済み）。ベースアップ評価料・物価対応料の再診時等を重ねる */
-  const BOTH = separate(K1_BOTH, { [FIRST]: true });
+  /** 14 日に訪問診療料と往診料の両方（訪問診療のあとの往診と確かめ済み）。ベースアップ評価料・物価対応料の再診時等を重ねる */
+  const BOTH = afterVisit(K1_BOTH, { [FIRST]: true });
   const OVERLAP_BU = withLines(BOTH, line("O001_2", 1, [FIRST]));
   const OVERLAP_PRICE = withLines(BOTH, line("O100_1RO", 1, [FIRST]));
 
@@ -313,22 +315,34 @@ describe("R10 往診と訪問診療の同日・翌日", () => {
   const events2 = (c: ClaimContext) => withEvents(c, { type: "oushin", date: FIRST, kind: "normal" });
   const noEvents = (c: ClaimContext): ClaimContext => ({ ...c, events: c.events.filter((e) => e.type !== "visit" && e.type !== "oushin") });
 
-  it("A：同じ日に両方の行があり、別々の診療かを確かめていない → 情報不足（出来事が 2 つあっても、1 つもなくても同じ）", () => {
-    for (const c of [events2(K1_BOTH), noEvents(K1_BOTH)]) {
+  it("不明：同じ日に両方の行があり、何も確かめていない → 訪問診療のあとの往診かの情報不足（出来事が 2 つあっても、1 つもなくても同じ）", () => {
+    for (const c of [events2(K1_BOTH), noEvents(K1_BOTH), withFact(withFact(K1_BOTH, "sameDaySeparate", unknown), "sameDayOushinAfterVisit", unknown)]) {
       const f = of(c, "R10");
-      expect(f).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "sameDaySeparate", date: FIRST } })]);
+      expect(f).toEqual([expect.objectContaining({ kind: "情報不足", lineRefs: ["C000", "C001_1I"], missing: { target: "clerk", field: "sameDayOushinAfterVisit", date: FIRST } })]);
+    }
+    // 別々の診療と確かめてあっても、あとの往診かは聞く（別々なだけでは往診料を立てられない。§11-5）
+    expect(of(separate(K1_BOTH, { [FIRST]: true }), "R10").map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDayOushinAfterVisit", date: FIRST }]);
+  });
+  it("1 回の診療（sameDaySeparate が偽）→ 背反 same_encounter（往診料と、その日の訪問診療料の両方を指す）。あとの往診かは聞かずに偽として扱う", () => {
+    for (const c of [separate(K1_BOTH, { [FIRST]: false }), afterVisit(separate(K1_BOTH, { [FIRST]: false }), { [FIRST]: false })]) {
+      expect(of(c, "R10").map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["背反", "R10.same_encounter", ["C000", "C001_1I"]]]);
     }
   });
-  it("B：別々の診療でないと確かめた → 背反 same_encounter（往診料と、その日の訪問診療料の両方を指す）", () => {
-    const f = of(separate(K1_BOTH, { [FIRST]: false }), "R10");
-    expect(f.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["背反", "R10.same_encounter", ["C000", "C001_1I"]]]);
-  });
-  it("C：別々の診療と確かめた同じ日。在支診で文書提供済みなら通す、なしなら要件不足、不明なら情報不足", () => {
-    const c = separate(K1_BOTH, { [FIRST]: true });
+  it("真：訪問診療のあとの往診なら往診料を立てられる。別々の診療かは聞かない。訪問診療料の側は、在支診で文書提供済みなら通す、なしなら要件不足、不明なら情報不足", () => {
+    const c = afterVisit(K1_BOTH, { [FIRST]: true });
     expect(tags(c, "R10")).toEqual([]);
+    expect(tags(withFact(c, "sameDaySeparate", unknown), "R10")).toEqual([]);
     const ng = of(withFact(c, "contactDocProvided", no), "R10");
     expect(ng.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["要件不足", "R10.same_day_as_visit", ["C001_1I"]]]);
     expect(of(withFact(c, "contactDocProvided", unknown), "R10")).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "contactDocProvided" } })]);
+  });
+  it("偽：あとの往診でなく、別々の診療かが不明なら、別々の診療かを聞く。別々の診療（往診が先など）なら往診料の行に oushin_not_after_visit", () => {
+    const notAfter = afterVisit(K1_BOTH, { [FIRST]: false });
+    expect(of(notAfter, "R10").map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDaySeparate", date: FIRST }]);
+    const f = of(separate(notAfter, { [FIRST]: true }), "R10");
+    expect(f.map((x) => [x.kind, x.messageKey, x.lineRefs])).toEqual([["要件不足", "R10.oushin_not_after_visit", ["C000"]]]);
+    // 往診料を立てられない日なので、訪問診療料の側の文書提供は聞かない・指摘しない
+    for (const doc of [no, unknown]) expect(tags(withFact(separate(notAfter, { [FIRST]: true }), "contactDocProvided", doc), "R10")).toEqual(["R10:要件不足:oushin_not_after_visit"]);
   });
   it("D：往診料の翌日の訪問診療料。文書提供の 3 通り。在支診でなければ要件不足", () => {
     expect(tags(K1_DAY_AFTER, "R10")).toEqual([]);
@@ -341,12 +355,17 @@ describe("R10 往診と訪問診療の同日・翌日", () => {
     expect(tags(events2(K1), "R10")).toEqual([]);
     expect(evaluate(events2(K1)).applied).not.toContain("R10");
   });
-  it("答えのある日とない日が混ざると、ない日の分だけが情報不足になり、missing.date がその日になる（C-77 (a)）", () => {
-    const c = separate(setDates(K1_BOTH, "C000", [FIRST, SECOND]), { [FIRST]: true });
-    const f = of(c, "R10");
-    expect(f).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "sameDaySeparate", date: SECOND } })]);
+  it("月に 2 日あるとき、片方の日の答えはもう片方に効かない。ない日の分だけが情報不足になり、missing.date がその日になる（C-77 (a)・X-68）", () => {
+    const two = setDates(K1_BOTH, "C000", [FIRST, SECOND]);
+    for (const answer of [true, false]) {
+      const f = of(afterVisit(separate(two, { [FIRST]: true }), { [FIRST]: answer }), "R10").filter((x) => x.kind === "情報不足");
+      expect(f.map((x) => x.missing)).toEqual([{ target: "clerk", field: "sameDayOushinAfterVisit", date: SECOND }]);
+    }
+    // 14 日は 1 回の診療、28 日はあとの往診：指摘は 14 日の分だけ
+    const mixed = afterVisit(separate(two, { [FIRST]: false }), { [SECOND]: true });
+    expect(of(mixed, "R10").map((x) => [x.messageKey, x.lineRefs])).toEqual([["R10.same_encounter", ["C000", "C001_1I"]]]);
     // 2 日とも答えがなければ、日付の違う 2 件
-    expect(of(separate(c, {}), "R10").map((x) => x.missing?.date)).toEqual([FIRST, SECOND]);
+    expect(of(two, "R10").map((x) => x.missing?.date)).toEqual([FIRST, SECOND]);
   });
   it("緊急往診加算の対象外は要件不足。対象かどうかが不明なら情報不足", () => {
     const c = withLines(K1_OUSHIN, line("C000_N1_KINKYU", 1, [OTHER]));

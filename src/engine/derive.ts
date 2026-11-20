@@ -10,6 +10,7 @@ import {
   kanriKubun,
   oushinOnlyBilledDays,
   rxKubun,
+  sameDayOf,
   terminalVisitsOk,
   visitBillable,
   visitKubunOn,
@@ -51,7 +52,7 @@ export type LineBasis = {
 
 export type PendingOption = { id: string; label: string; kubun: string[] };
 export type Pending =
-  /** date は、日付ごとの事実（sameDaySeparate）の対象の日 */
+  /** date は、日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
   | { kind: "事実不足"; id: string; need: NeedKey; target: "doctor" | "clerk"; blocks: string[]; date?: string }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
@@ -70,7 +71,7 @@ export type DeriveResult = {
   /** 今の pending にない id への答え（無視した） */
   staleChoices: string[];
   /** 出来事はあるが行を立てなかったもの（§2-3-4） */
-  notBilled: { event: EventRef; reason: "after_oushin" | "same_encounter" }[];
+  notBilled: { event: EventRef; reason: "after_oushin" | "same_encounter" | "oushin_not_after_visit" }[];
 };
 
 /** 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す */
@@ -153,17 +154,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
 
   if (facility.kyokagata) unsupported.push({ code: "kyokagata", detail: "機能強化型の在宅療養支援診療所の点数は扱っていません" });
 
-  // --- D01・D02：訪問診療料と往診料（§2-3-4）。同じ日の両方は、出来事だけでは立てない
-  const separate = facts.sameDaySeparate.known ? facts.sameDaySeparate.value : {};
+  // --- D01・D02：訪問診療料と往診料（§2-3-4・§11-5）。同じ日の両方は、出来事だけでは立てない。関係は R10 と同じ述語（sameDayOf）で決める
   const sameDay = new Map<string, { visit: Decision | "check"; oushin: Decision }>();
   for (const d of [...new Set(visits.map((v) => v.date))].filter((x) => oushins.some((o) => o.date === x))) {
     const visitK = [...new Set(visits.filter((v) => v.date === d).map(visitKubunOf))];
     const blocks = [...visitK, c.oushin.kubun, ...dayBlocks, ...kanriBlocks];
-    const answer = separate[d];
-    if (answer === undefined) {
-      lack(`D01-sameDay:${d}`, "sameDaySeparate", blocks, d);
+    const s = sameDayOf(ctx, d);
+    if (s.known === false) {
+      lack(`D01-sameDay:${d}`, s.need, blocks, d);
       sameDay.set(d, { visit: "hold", oushin: "hold" });
-    } else if (answer === false) {
+    } else if (s.value === "same") {
       const id = `D01-encounter:${d}`;
       const picked = ask(id, "同じ日の訪問診療と往診は 1 回の診療です。診療の中身に合うほうを選んでください", [
         { id: "visit", label: "訪問診療料（定期の訪問診療）", kubun: visitK },
@@ -172,10 +172,15 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       sameDay.set(d, picked === undefined ? { visit: "hold", oushin: "hold" } : picked === "visit" ? { visit: "bill", oushin: "skip" } : { visit: "skip", oushin: "bill" });
       if (picked === "visit") for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: "same_encounter" });
       if (picked === "oushin") for (const v of visits.filter((x) => x.date === d)) notBilled.push({ event: ref(v), reason: "same_encounter" });
-    } else sameDay.set(d, { visit: "check", oushin: "bill" });
+    } else if (s.value === "after") sameDay.set(d, { visit: "check", oushin: "bill" });
+    else {
+      // 別々の診療だが、訪問診療のあとの往診ではない：往診料は立てない。往診料を立てない日なので、訪問診療料に同じ日の制限は掛からない
+      sameDay.set(d, { visit: "bill", oushin: "skip" });
+      for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: "oushin_not_after_visit" });
+    }
   }
   const oushinDecision = (date: string): Decision => sameDay.get(date)?.oushin ?? "bill";
-  /** 訪問診療料を立てるか。往診と同じ日（別々の診療）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
+  /** 訪問診療料を立てるか。往診料を立てる同じ日（訪問診療のあとの往診）・往診の翌日は、制限の判定（visitBillable。R10 と共有）で決める */
   function visitDecision(v: (typeof visits)[number]): Decision {
     const same = sameDay.get(v.date);
     // 同じ日の要選択で訪問診療料を選んだ日（bill）も、前日の往診料の制限は下で調べる（X-74）
@@ -197,7 +202,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const billedVisits = decided.filter((x) => x.d === "bill").map((x) => x.v);
   for (const k of c.visitKubun) {
     const mine = billedVisits.filter((v) => visitKubunOf(v) === k);
-    add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate"] : [] });
+    add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate", "sameDayOushinAfterVisit"] : [] });
   }
   const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill");
   add(c.oushin.kubun, billedOushins.map((o) => o.date), { derive: "D02", events: billedOushins });

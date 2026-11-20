@@ -67,8 +67,13 @@ export type Facts = {
   residence: Fact<Residence>;
   /** 24 時間対応の体制の連絡担当者・往診担当医などを、文書でその患者に提供しているか（R10） */
   contactDocProvided: Fact<boolean>;
-  /** 同じ日に訪問診療料と往診料の両方を算定した日ごとに、別々の診療かを確かめた答え（日付 → 真偽）。載っていない日は不明（R10） */
+  /**
+   * 同じ日の訪問診療と往診が、別々の診療かを確かめた答え（日付 → 真偽）。載っていない日は不明。
+   * 役目は、実施の回数を数える（R09）ことと、1 回の診療かを見る（R10 の same_encounter）ことだけ。往診料を立てる条件は sameDayOushinAfterVisit で見る（design.md §11-5）
+   */
   sameDaySeparate: Fact<Record<string, boolean>>;
+  /** その日、訪問診療のあとに、病状の急変などで往診したか（日付 → 真偽）。載っていない日は不明。同じ日の往診料を立てる条件（R10・D02。EM #7-8 改） */
+  sameDayOushinAfterVisit: Fact<Record<string, boolean>>;
   /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
@@ -114,7 +119,7 @@ export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  /** 情報不足のとき。施設の設定は field が "facility.<key>"。date は日付ごとの事実（sameDaySeparate）の対象の日 */
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。date は日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
   reference: string;

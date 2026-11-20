@@ -130,6 +130,32 @@ export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
   return doc.known ? doc.value : "unknown";
 }
 
+/** 日付ごとの事実の、その日の答え（載っていない日・事実が丸ごと不明なら undefined） */
+const answerOn = (f: Fact<Record<string, boolean>>, day: string): boolean | undefined => (f.known ? f.value[day] : undefined);
+
+/**
+ * 同じ日の訪問診療と往診の関係（design.md §11-5）。R10 と導出の D01・D02 が同じ答えを使う。
+ * same＝1 回の診療（sameDaySeparate が偽。訪問診療のあとの往診かは聞かずに偽として扱う）／
+ * after＝訪問診療のあとに、急変などで往診した（sameDayOushinAfterVisit が真。別々の診療かは聞かずに真として扱う）／
+ * not_after＝別々の診療だが、訪問診療のあとの往診ではない（往診が先、など。実施は 2 回だが、往診料は立てられない）。
+ * 決まらないときは、次に確かめる事実を 1 つ返す。2 つの答えが食い違う日（1 回の診療で、かつ、あとの往診）は 1 回の診療として扱う
+ */
+export function sameDayOf(ctx: ClaimContext, day: string): { known: true; value: "same" | "after" | "not_after" } | { known: false; need: "sameDayOushinAfterVisit" | "sameDaySeparate" } {
+  const separate = answerOn(ctx.facts.sameDaySeparate, day);
+  const after = answerOn(ctx.facts.sameDayOushinAfterVisit, day);
+  if (separate === false) return { known: true, value: "same" };
+  if (after === true) return { known: true, value: "after" };
+  if (after === undefined) return { known: false, need: "sameDayOushinAfterVisit" };
+  if (separate === undefined) return { known: false, need: "sameDaySeparate" };
+  return { known: true, value: "not_after" };
+}
+
+/** 同じ日の訪問診療と往診を、別々の診療（実施 2 回）と数えるか。sameDayOf と同じ関係で読み、決まらなければ undefined（確かめるのは sameDaySeparate） */
+function separateOn(ctx: ClaimContext, day: string): boolean | undefined {
+  const separate = answerOn(ctx.facts.sameDaySeparate, day);
+  return separate === false ? false : answerOn(ctx.facts.sameDayOushinAfterVisit, day) === true ? true : separate;
+}
+
 /** 処方 1 件の処方箋料の区分。処方ごとに、内服の種類数が閾値以上かで決める（D10・R07 が共有。X-77） */
 export function rxKubun(c: RevisionConsts, e: { oralKinds: number }): string {
   return e.oralKinds >= c.rx.oralKindsThreshold ? c.rx.many : c.rx.other;
@@ -149,7 +175,7 @@ export function rxKubunOn(ctx: ClaimContext, c: RevisionConsts, day: string): st
 
 /**
  * ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽。
- * 同じ日の訪問診療と往診の出来事は、別々の診療でないと確かめた日（sameDaySeparate が偽）なら 1 回と数える（X-73）。
+ * 同じ日の訪問診療と往診の出来事は、別々の診療でないと確かめた日（sameDaySeparate が偽）なら 1 回、別々の診療の日（往診が先でも）は 2 回と数える（X-73・C-88）。
  * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す
  */
 export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[] } {
@@ -157,14 +183,13 @@ export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: bo
   if (!death) return { ok: false, ask: [] };
   const from = addDays(death.date, -c.terminal.days);
   const done = [...eventsOf(ctx, "visit"), ...eventsOf(ctx, "oushin")].filter((e) => e.date >= from && e.date <= death.date);
-  const separate = ctx.facts.sameDaySeparate.known ? ctx.facts.sameDaySeparate.value : {};
   let min = 0;
   let max = 0;
   const ask: string[] = [];
   for (const d of [...new Set(done.map((e) => e.date))].sort()) {
     const types = done.filter((e) => e.date === d).map((e) => e.type);
     const both = types.includes("visit") && types.includes("oushin");
-    const answer = both ? separate[d] : true;
+    const answer = both ? separateOn(ctx, d) : true;
     min += answer === true ? types.length : 1;
     max += answer === false ? 1 : types.length;
     if (answer === undefined) ask.push(d);
