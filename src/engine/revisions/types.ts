@@ -19,11 +19,14 @@ export type KanriTierKey = "イ" | "ロ" | "ニ";
 export type RevisionConsts = {
   /** 訪問診療料。[同一建物居住者以外, 同一建物居住者] */
   visitKubun: string[];
-  /** 管理料（R01・R02・R03・R16）。族×区分 → kubun、居住の場所 → 族、注16 で替わる区分（from → to。両方の族） */
+  /**
+   * 管理料（R01・R02・R03・R16）。族×区分 → kubun、居住の場所 → 族、注16 で替わる区分（from → to。両方の族）。
+   * note16.enabled が偽の版（注16 のない版）では、施設の設定 note16Met を読まず、月 2 回以上は 2ロ のまま（design.md §11-2）
+   */
   kanri: {
     table: Record<KanriFamily, Record<KanriTierKey, string>>;
     familyOf: Record<Residence, KanriFamily>;
-    note16: { from: KanriTierKey; to: KanriTierKey };
+    note16: { enabled: boolean; from: KanriTierKey; to: KanriTierKey };
   };
   /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分。要介護度・障害支援区分がそれぞれの下限以上なら対象 */
   hokatsu: { kubun: string; careLevelMin: number; disabilityLevelMin: number; tiers: KanriTierKey[] };
@@ -39,8 +42,11 @@ export type RevisionConsts = {
   baseUp: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };
   /** 物価対応料（R15）。形は baseUp と同じ */
   price: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };
-  /** 看取り・死亡診断・ターミナルケア（R09）。死亡日前 days 日以内に minVisits 回以上 */
-  terminal: { mitori: string; shibou: string; terminal: string; days: number; minVisits: number };
+  /**
+   * 看取り・死亡診断・ターミナルケア（R09）。死亡日前 days 日以内に minVisits 回以上。
+   * 請求の判定に使う版（REVISIONS）は days・minVisits を必ず持つ。持たない版（比較用の版で、値を EM で確かめていないもの）では、ターミナルケア加算を導出しない
+   */
+  terminal: { mitori: string; shibou: string; terminal: string; days?: number; minVisits?: number };
   /** 往診料と緊急往診加算（R10）。revisit は往診料と併せて算定する再診料（導出の D02） */
   oushin: { kubun: string; kinkyu: string; revisit: string };
   /** 検体検査判断料・BNP・外来迅速検体検査加算（R11）。bloodDraw は血液採取（導出の D09） */
@@ -126,4 +132,18 @@ export type Revision = {
   commentCodes: Record<string, CommentCodeNote>;
   /** consts（R17 は comments・commentCodes も）から工場関数で組み立てたもの */
   rules: Rule[];
+  /** その版で、前の改定から変わった点（design.md §11-2）。人が EM を見て書く。値の変更の版は持たない（空） */
+  changes: RevisionChange[];
+};
+
+/**
+ * 前の改定から変わった点の 1 件（値は EM §2-9「変わった点」の行だけ）。
+ * target は対象の区分とルール（前の版にしかない区分も入る）。summary は要旨（120 字まで）、em は EM の出どころ
+ */
+export type RevisionChange = {
+  id: string;
+  target: { kubun?: string[]; ruleId?: string };
+  kind: "新設" | "廃止" | "点数" | "要件" | "区分の再編";
+  summary: string;
+  em: string;
 };

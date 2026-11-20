@@ -3,7 +3,8 @@
 診療報酬の改定（偶数年 6 月）や、同じ改定の中での値の変更があったときに行う作業です。
 点数とルールは「改定の版」に属し、診療年月から版を 1 つに決めます。該当する版がない診療年月は判定しません（近い版で代用しません）。
 
-- 版の置き場：`src/engine/revisions/`（版 1 つ＝ファイル 1 つ。今は `r2026.ts` と、その値の変更の `r2027-06.ts`）
+- 版の置き場：`src/engine/revisions/`（版 1 つ＝ファイル 1 つ。今は `r2026.ts` と、その値の変更の `r2027-06.ts`。請求の判定に使う版の一覧は `REVISIONS`）
+- 改定の比較と試算の表示にだけ使う前の版は、`COMPARE_REVISIONS` に置きます（今は `r2024.ts`。値は EM §2-9。ルールとコードは持たず、請求の判定には使いません）
 - 既存の版のファイルは書き換えません。足すだけです
 - 数字・区分番号・要件は、EM（`design/iji-context/sources/evidence-master-iji-context.md`）の採用値だけを使います
 
@@ -18,6 +19,9 @@
 - 値だけが変わるとき：`extendRevision(直前の版, { id, label, effectiveFrom, effectiveUntil, points })` で、変わる区分の点数だけを書きます（区分・定数・ルールは足せません）
 - 直前の版の `effectiveUntil` と、新しい版の `effectiveFrom` を続けます（空白・重なりは読み込み時に例外になります）。直前の版の終了月を変える必要があるときは、その 1 行だけを直し、理由を EM に残します
 - `src/engine/revisions/index.ts` の `REVISIONS` に足します
+- **前の版を `REVISIONS` から `COMPARE_REVISIONS` へ移すかを決めます**。`REVISIONS` に残すと、その版の診療年月の請求を今までどおり判定します（遅れて出す請求・再請求のため）。`COMPARE_REVISIONS` へ移すと、その診療年月には版がなくなり、改定の比較と試算でだけ選べます。移した版が持つ `rules`・`codes` はそのままで構いません（比較用の版に掛かる検査は、id・期間の形・点数表だけです）
+- **新しい版の `changes` を書きます**。前の改定から変わった点（新設・廃止・点数・要件・区分の再編）を、EM に「変わった点」の表として足して承認を取ってから、その行を写します（今の版は `r2026-changes.ts`。表の行と 1 対 1 であることを `tests/engine/compare.test.ts` が縛ります）。値の変更の版（`extendRevision`）は `changes` を持ちません
+- 版で有無が変わる導出（新設・廃止の区分）は、`src/engine/derive.ts` が「その版の点数表に区分があるか」で決めます。if 文に版の id を書きません。版で読む・読まないが変わる施設の設定は、版の定数（例：`consts.kanri.note16.enabled`）で切り替えます
 - 要件が変わったルールは `src/engine/rules/` の工場関数と `src/engine/predicates.ts` を直します。区分・閾値はルールに直書きせず、版の定数で渡します。番号（R01…）は振り直さず、新設は続きの番号にします
 - 指摘のキーを足したら `src/messages.ts` に文を足し、制度層の知識の文（`scripts/seed-knowledge.ts` の `RULE_TEXT`。点数は書かない）も合わせます
 
@@ -62,6 +66,6 @@ npx tsx scripts/gen-uke.ts && git diff --exit-code fixtures/uke
 npx tsx scripts/gen-connect.ts && git diff --exit-code fixtures/connect
 ```
 
-- ルールごとの合格・不合格の最小例（`tests/engine/rules/`）、症例の合計（`tests/engine/totals.test.ts`）、版の境界（`tests/engine/revisions.test.ts`）を新しい版に合わせます
+- ルールごとの合格・不合格の最小例（`tests/engine/rules/`）、症例の合計（`tests/engine/totals.test.ts`）、版の境界（`tests/engine/revisions.test.ts`）、改定の比較（`tests/engine/compare.test.ts`）を新しい版に合わせます
 - テストの年月・日付は `tests/helpers/period.ts` から作り、直書きしません。`src`・`app`・`scripts` に年月を直書きすると `check:dates` が落ちます
 - README の「守っていること」と、CLAUDE.md の固定条件（診療年月・改定年度）を直します

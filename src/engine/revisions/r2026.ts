@@ -1,5 +1,5 @@
 // 令和8年度改定後の版（design.md §2-4・§2-5）。適用は 2026年6月〜2027年5月診療分
-// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-47）。採用値にない値は書かない。診療行為コードは r2026-codes.ts（EM §2-8）、摘要欄の記載は r2026-comments.ts（EM §2-10）。
+// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-47）。採用値にない値は書かない。診療行為コードは r2026-codes.ts（EM §2-8）、摘要欄の記載は r2026-comments.ts（EM §2-10）、令和6年度から変わった点は r2026-changes.ts（EM §2-9）。
 // このファイルは書き換えない。次の改定・値の変更は、新しいファイルを足す（docs/revision-howto.md）
 import { makeR01 } from "../rules/r01";
 import { makeR02 } from "../rules/r02";
@@ -18,6 +18,7 @@ import { makeR14 } from "../rules/r14";
 import { makeR15 } from "../rules/r15";
 import { makeR16 } from "../rules/r16";
 import { makeR17 } from "../rules/r17";
+import { changes } from "./r2026-changes";
 import { bundles, codes, shikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
 import type { KubunDef, Revision, RevisionConsts } from "./types";
@@ -97,7 +98,7 @@ const consts: RevisionConsts = {
     },
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16：基準を満たさない施設は 2ロ に代えて 2ニ を算定する（R8-17。重症区分の 2イ は対象外）
-    note16: { from: "ロ", to: "ニ" },
+    note16: { enabled: true, from: "ロ", to: "ニ" },
   },
   hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, disabilityLevelMin: 2, tiers: ["ロ", "ニ"] },
   shidoKanriKubun: ["C101_2I", "C103_2"],
@@ -143,4 +144,5 @@ export const r2026: Revision = {
     ...[makeR01, makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
     makeR17({ consts, comments, commentCodes }),
   ],
+  changes,
 };
