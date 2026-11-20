@@ -1,6 +1,7 @@
 // deriveLines(input, rev)：出来事と確かめた事実から、算定行を決定的に導出する（design.md §2-8。spec FR-94〜103）
 // 決めるのは「どの区分を何回・どの日に立てるか」だけ。要件（背反・要件不足・週の限度など）は evaluate が判定する。
 // 判定の述語は predicates.ts のものを検証（ルール）と共有する。LLM は使わない（src/mentor と LLM の SDK を import しない）
+import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
   billedVisitDays,
@@ -72,6 +73,8 @@ export type DeriveResult = {
   staleChoices: string[];
   /** 出来事はあるが行を立てなかったもの（§2-3-4） */
   notBilled: { event: EventRef; reason: "after_oushin" | "same_encounter" | "oushin_not_after_visit" }[];
+  /** 行（導出した行と manual）に要る、摘要欄に書くこと（§11-13）。ready は値まで決まったもの、needsInput は医療事務が入れるもの */
+  comments: RequiredComment[];
 };
 
 /** 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す */
@@ -362,14 +365,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     }
   }
 
+  const all = [...lines, ...input.manual];
   return {
     revisionId: rev.id,
-    lines: [...lines, ...input.manual],
+    lines: all,
     basis,
     pending,
     unsupported,
     totalStatus: pending.length || unsupported.length ? "withheld" : tentative ? "tentative" : "ok",
     staleChoices: Object.keys(input.choices).filter((id) => !asked.has(id)),
     notBilled,
+    comments: requiredComments({ ...ctx, lines: all }, rev),
   };
 }

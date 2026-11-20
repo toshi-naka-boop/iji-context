@@ -309,13 +309,33 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
 });
 
 describe("コメントを持つ請求か（commentsKnown。design.md §11-13）", () => {
-  it("UKE から作った請求は真。練習問題と選択モードの請求は偽（行を入れ替えるだけで、コメントを直さないため）", () => {
+  it("UKE から作った請求は真。問題の請求（通常モード・選択モード・練習問題）は偽（行を入れ替えるだけで、コメントを直さないため）", () => {
     expect(app.cases().map((c) => c.commentsKnown)).toEqual(Array.from({ length: 7 }, () => true));
     app.importUke("new1", "kokuhoren.UKE");
     const normal = app.start("new1", claimId("K1"));
     const choice = app.start("new1", claimId("K2"), "選択");
     const drill = app.startDrill("new1", "d04");
-    expect([normal, choice, drill].map((q) => app.caseFor(q).commentsKnown)).toEqual([true, false, false]);
+    expect([normal, choice, drill].map((q) => app.caseFor(q).commentsKnown)).toEqual([false, false, false]);
+  });
+  it("摘要欄の記載（R17）は、UKE から作った請求をそのまま判定するときだけ当たる。問題の判定（下書き・確定・選択）には当たらない（§11-13 完了条件 (g)）", () => {
+    // UKE のままの請求：R17 が当たり、同梱の UKE は必須のコメントが付いているので指摘は出ない
+    for (const k of ["K1", "K2", "K3", "K4", "K5", "K7"]) {
+      const r = app.judgeFor(app.start("new1", claimId(k)))(app.caseOf(claimId(k)));
+      expect(r.applied, k).toContain("R17");
+      expect(r.findings.filter((f) => f.ruleId === "R17"), k).toEqual([]);
+    }
+    // 通常モードの月末の問題：行を消して下書き・確定しても、UKE のコメントと行を突き合わせた指摘（記載もれ）は出ない
+    const normal = app.start("new1", claimId("K2"));
+    const cut = app.caseFor(normal).lines.filter((l) => l.kubun !== "C002_N10_HOKATSU" && l.kubun !== "C002_2RO1");
+    const draft = app.draft(normal.id, cut).result;
+    const done = app.confirm(normal.id, cut).confirmed!.result;
+    for (const r of [draft, done]) expect([r.applied.includes("R17"), r.findings.some((f) => f.kind === "記載もれ")]).toEqual([false, false]);
+    // 選択モードと練習問題も同じ
+    const choice = app.start("new1", claimId("K2"), "選択");
+    const drill = app.startDrill("new1", "d04");
+    for (const q of [choice, drill]) expect(app.judgeFor(q)(app.caseFor(q)).applied).not.toContain("R17");
+    const item = app.choices(choice.id)[0];
+    if (item) expect(app.pick(choice.id, item.lineIndex, item.options[0]).findings.every((f) => f.ruleId !== "R17")).toBe(true);
   });
 });
 

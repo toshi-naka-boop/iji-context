@@ -31,6 +31,8 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     uncoded: { [kubun]: "作り物の区分" },
     shikibetsu: {},
     consts: {} as RevisionConsts,
+    comments: [],
+    commentCodes: {},
     rules: [fakeRule(kubun, maxCount)],
     ...over,
   };

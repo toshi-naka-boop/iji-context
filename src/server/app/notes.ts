@@ -8,6 +8,7 @@ import { resolveRevision } from "../../engine/revisions";
 import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../patient/profile";
 import type { Chart } from "../../uke/crosscheck";
+import { commentOf } from "../../uke/uke";
 import { badRequest, conflict, notFound } from "../errors";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
 import { chartFileOf } from "./case-files";
@@ -67,7 +68,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
   /**
    * 確定したカルテの算定プレビュー（FR-94〜102）：その日までの出来事に、書いた人の確定済みのカルテを重ね、算定行をコードで導出して検証に通す。
-   * 月の途中は見込み（月末まで決まらないルールは指摘にしない）。読むだけで、適用記録・件数には数えない。choices は要選択への答え（保存しない）
+   * 月の途中は見込み（月末まで決まらないルールは指摘にしない）。読むだけで、適用記録・件数には数えない。choices は要選択への答え（保存しない）。
+   * 摘要欄の記載（R17）は、導出が値まで決めた記載（ready）だけを付けて点検する。UKE のコメントは使わない（行を作り直しているので、行と合わない）。
+   * 人が入れる記載（needsInput）は、付いていないので記載もれとして出る（design.md §11-13）
    */
   function claimOfNote(id: number, choices: Record<string, string>) {
     const r = noteRow(id);
@@ -78,7 +81,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const upTo = midMonth ? contextAsOf(base, r.date) : base;
     const { events, facts } = eventsFromNotes(upTo.events, upTo.facts, confirmedNotes(r.claim_id, r.clerk_id).filter((n) => n.date <= r.date));
     const derived = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual: manualLinesOf(upTo.lines, rev), choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
-    const result = evaluate({ ...upTo, events, facts, lines: derived.lines });
+    const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
+    const result = evaluate({ ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true });
     return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
   }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */

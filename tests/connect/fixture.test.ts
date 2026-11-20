@@ -28,9 +28,11 @@ describe("請求の境界", () => {
       const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       // choices（導出の入力）は症例 JSON だけが持ち、UKE には載らない
       const { choices: _choices, ...fromUke } = want as typeof want & { choices?: unknown };
-      // UKE から作った請求は、コメントを持つ（commentsKnown が真）
-      expect(got).toEqual({ ...fromUke, comments: [], commentsKnown: true });
-      expect(evaluate(got)).toEqual(evaluate(want));
+      // UKE から作った請求は、コメントを持つ（commentsKnown が真。必須のコメントが付いている）
+      expect(got).toEqual({ ...fromUke, comments: file.receipts.find((r) => r.claimId === want.claimId)!.comments, commentsKnown: true });
+      // 判定は、摘要欄の記載（R17）が当たることを除いて同じ（R17 の指摘は出ない）
+      const r = evaluate(got);
+      expect({ ...r, applied: r.applied.filter((id) => id !== "R17") }).toEqual(evaluate(want));
     }
   });
 

@@ -47,7 +47,35 @@ export const FINDING_TEXT: Record<string, string> = {
   "R15.no_revisit_on_both_day": "訪問診療料と往診料の両方がある日に、再診時等の物価対応料が重なっています。この行は算定できないので外してください",
   "R16.use_shisetsu": "施設に入居している患者なので、在医総管ではなく施設入居時等医学総合管理料で算定します",
   "R16.use_zaii": "居宅の患者なので、施設入居時等医学総合管理料ではなく在医総管で算定します",
+  // R17 摘要欄の記載。{what} は何の記載か（版の表の要旨）。日付の食い違いは、findingText が足りない日・多い日を後ろに添える
+  "R17.comment_missing": "摘要欄に「{what}」の記載がないか、数が足りません",
+  "R17.comment_format": "摘要欄の「{what}」の記載が、決められた形（年月日・時刻・数値・文字）で読めません",
+  "R17.comment_mismatch_visitDates": "摘要欄の「{what}」が、訪問診療料・往診料を算定した日と合いません",
+  "R17.comment_mismatch_acuteVisitDates": "摘要欄の訪問診療を行った年月日に、週の回数の限度を超えた週の訪問診療料の日が足りません",
+  "R17.comment_mismatch_deathDate": "摘要欄の死亡年月日が、死亡の記録の日と合いません",
+  "R17.comment_mismatch_hokatsuState": "摘要欄の包括的支援加算の状態の記載が、確かめた要介護度・障害支援区分と合いません",
+  "R17.comment_mismatch_ikouStart": "摘要欄の初回の管理料を算定した年月日が、管理料の算定開始月と合いません",
 };
+
+/**
+ * 摘要欄の記載の点検（R17）の範囲（design.md §11-13）。checked は点検している項目（版の表＝EM §2-10 表 1 の行と同じ並び）、
+ * uncheckedCount は、別表Ⅰ に定めがあるが点検していない項目の数（EM §2-10 表 2 の行数）。どちらも tests/engine/comments.test.ts が表と突き合わせる
+ */
+export const COMMENT_CHECK_SCOPE = {
+  checked: [
+    "管理料の月の、往診・訪問診療の年月日",
+    "包括的支援加算の状態",
+    "在宅移行早期加算の、初回の管理料の算定日",
+    "在宅ターミナルケア加算の死亡年月日",
+    "在宅以外で亡くなったときの、死亡前 24 時間以内の訪問診療の日時",
+    "在宅酸素療法指導管理料の、動脈血酸素分圧又は飽和度",
+    "訪問診療と同じ日の往診の理由",
+    "急性増悪で週 4 回以上訪問したときの、必要性と日付",
+  ],
+  uncheckedCount: 19,
+};
+/** 画面の点検の説明に出す文 */
+export const COMMENT_CHECK_NOTE = `摘要欄の必須の記載のうち、点検しているのは次の ${COMMENT_CHECK_SCOPE.checked.length} 項目です：${COMMENT_CHECK_SCOPE.checked.join("／")}。記載要領の別表Ⅰ に定めがあっても、点検していない項目が ${COMMENT_CHECK_SCOPE.uncheckedCount} 件あります。`;
 
 /**
  * 審査支払機関の表示名（design.md §8 L-26、EM #8-5）。内部の名前（"支払基金"）は変えず、画面に出すときだけ今の名称にする
@@ -128,7 +156,11 @@ export function findingText(f: Finding): string {
       ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
       : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
-  return FINDING_TEXT[f.messageKey] ?? f.messageKey;
+  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
+  // 日付の食い違い（R17）：足りない日・多い日を添える
+  const days = (v: string | undefined) => (v ? v.split(",").map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、") : "");
+  const detail = [f.params?.lacking ? `記載のない日：${days(f.params.lacking)}` : "", f.params?.extra ? `算定のない日：${days(f.params.extra)}` : ""].filter(Boolean).join("。");
+  return detail ? `${text}（${detail}）` : text;
 }
 
 /**

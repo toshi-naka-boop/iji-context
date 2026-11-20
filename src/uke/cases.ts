@@ -1,11 +1,38 @@
 // 症例（ClaimContext）と合成 UKE のあいだの変換（F4）
 // UKE が持つのは請求の中身（コード・回数・日付・コメント）と患者・保険の情報だけ。
 // 事実（facts）・出来事（events）・過去月（history）は合成カルテ・受給者証・設定ファイルから来る（spec FR-07、design.md §6）
-import type { ClaimContext, Facility, Payer } from "../engine/types";
+import { requiredComments } from "../engine/comments";
+import { resolveRevision } from "../engine/revisions";
+import type { ClaimContext, Comment, Facility, Payer } from "../engine/types";
 import type { UkeClinic, UkeFile, UkePatient } from "./types";
+import { commentOf } from "./uke";
 
-/** bundleItems は、包括の検査の区分の行を UKE に書くときに並べる検査項目のコード（請求 id → 区分 → コード。合成の設定で、EM 5-1 の表による） */
-export type UkeSources = { clinic: UkeClinic; patients: Record<string, UkePatient>; bundleItems?: Record<string, Record<string, string[]>> };
+/**
+ * bundleItems は、包括の検査の区分の行を UKE に書くときに並べる検査項目のコード（請求 id → 区分 → コード。合成の設定で、EM 5-1 の表による）。
+ * commentValues は、症例の事実・出来事からは決まらない摘要欄の記載の値（請求 id → EM §2-10 表 1 の行の id → コードと文字データ（半角）。同じく EM 5-1 の合成の設定）
+ */
+export type UkeSources = {
+  clinic: UkeClinic;
+  patients: Record<string, UkePatient>;
+  bundleItems?: Record<string, Record<string, string[]>>;
+  commentValues?: Record<string, Record<string, { code: string; text: string }[]>>;
+};
+
+/**
+ * 症例の UKE に書く、摘要欄の必須の記載（design.md §11-13）。導出の comments と同じ関数（requiredComments）で作る。
+ * 値が事実・出来事から決まらない記載（needsInput）は、合成の設定（values：行の id → コードと文字データ）から順に取る。設定がなければ例外（記載もれの UKE を黙って作らない）
+ */
+export function commentsOfCase(c: ClaimContext, values: Record<string, { code: string; text: string }[]> = {}): Comment[] {
+  const used = new Map<string, number>();
+  return requiredComments(c, resolveRevision(c.yearMonth)).map((r) => {
+    if (r.status === "ready") return commentOf(r.code!, r.text!, [r.kubun]);
+    const n = used.get(r.rule) ?? 0;
+    used.set(r.rule, n + 1);
+    const v = values[r.rule]?.[n];
+    if (!v || (r.code !== null && r.code !== v.code)) throw new Error(`${c.claimId}: 摘要欄の記載の値がない: ${r.rule}`);
+    return commentOf(v.code, v.text, [r.kubun]);
+  });
+}
 
 /**
  * 保険者番号から審査支払機関を決める（保険証の情報で区別する。2026-11-06 ユーザー判断）。
@@ -43,7 +70,7 @@ export function buildUkeFiles(cases: ClaimContext[], src: UkeSources, billingMon
         const lines = c.lines.map((l) => (Object.hasOwn(items, l.kubun) ? { ...l, items: items[l.kubun] } : l));
         // 施設に入居する患者かは、居住の場所の事実から（在宅ターミナルケア加算のコードを決める。design.md §11-14）
         const facilityResident = c.facts.residence.known && c.facts.residence.value === "施設入居等";
-        return { claimId: c.claimId, yearMonth: c.yearMonth, patient, lines, comments: c.comments ?? [], commentsKnown: true, facilityResident };
+        return { claimId: c.claimId, yearMonth: c.yearMonth, patient, lines, comments: [...(c.comments ?? []), ...commentsOfCase(c, src.commentValues?.[c.claimId])], commentsKnown: true, facilityResident };
       }),
     };
   }

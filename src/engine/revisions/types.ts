@@ -71,6 +71,35 @@ export type CodeDef = { primary: string; accept: string[]; facility?: string; qu
  */
 export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[] };
 
+/**
+ * 摘要欄に要る記載（design.md §11-13。値は EM §2-10 表 1 の行だけ）。
+ * kubun のどれかの行があり、when が成り立つとき、codes のコメントが要る（need が any ならどれか 1 つ、each なら全部）。
+ * when：always＝算定すれば必ず／sameDayVisitAndOushin＝訪問診療料と往診料の両方を算定した日がある（要る数は、その日の数以上）／
+ * acuteOver3PerWeek＝別表第七に当たらず、急性増悪で、週の上限を超える訪問診療料がある／deathNotAtHome＝在宅以外で死亡した。
+ * compare は、コメントの中身と行・事実の突き合わせ（R17 の comment_mismatch_*）
+ */
+export type CommentRule = {
+  /** EM §2-10 表 1 の行の id */
+  id: string;
+  kubun: string[];
+  codes: string[];
+  need: "any" | "each";
+  when: "always" | "sameDayVisitAndOushin" | "acuteOver3PerWeek" | "deathNotAtHome";
+  compare?: "visitDates" | "acuteVisitDates" | "deathDate" | "hokatsuState" | "ikouStart";
+  /** 何を書くか（画面に出す要旨） */
+  summary: string;
+  /** EM の出どころ */
+  em: string;
+};
+
+/**
+ * コメントコードごとの補足（EM §2-10 表 1・表 1-a）。CommentRule の形では表せないことだけを持つ。
+ * family：その族の管理料の行があるときに使うコード（在医総管と施設総管でコードが違う記載）／
+ * careLevel：その要介護度に当たる状態のコード／disabilityLevelMin：障害支援区分がその数以上に当たる状態のコード／
+ * visited：急性増悪の「訪問診療を行った年月日」のコード（acuteVisitDates が比べる）
+ */
+export type CommentCodeNote = { family?: KanriFamily; careLevel?: number; disabilityLevelMin?: number; visited?: true };
+
 export type Revision = {
   id: string;
   label: string;
@@ -92,6 +121,9 @@ export type Revision = {
   /** 区分 → 診療識別（別表20。2 桁）。UKE の書き出しにだけ使い、読み取りでは判定に使わない。codes・bundles の区分は必ず持つ */
   shikibetsu: Record<string, string>;
   consts: RevisionConsts;
-  /** consts から工場関数で組み立てたもの */
+  /** 摘要欄に要る記載（R17 と、導出の「摘要欄に書くこと」が同じ表を使う） */
+  comments: CommentRule[];
+  commentCodes: Record<string, CommentCodeNote>;
+  /** consts（R17 は comments・commentCodes も）から工場関数で組み立てたもの */
   rules: Rule[];
 };

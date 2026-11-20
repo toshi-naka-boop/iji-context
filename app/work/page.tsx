@@ -5,7 +5,7 @@ import type { ClaimContext, ClaimLine, EngineResult, Finding } from "../../src/e
 import type { MentorOutput, Situation } from "../../src/mentor/output";
 import { faceFor, faceImage, type Face } from "../../src/mentor/face";
 import type { Question } from "../../src/practice/practice";
-import { findingText, payerLabel } from "../../src/messages";
+import { COMMENT_CHECK_NOTE, findingText, payerLabel } from "../../src/messages";
 import { TopBar } from "../nav";
 import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { unlockAudio, Welcome } from "../welcome";
@@ -530,6 +530,8 @@ export default function Work() {
                     <span className="muted">{f.ruleId}・{f.kind}・根拠：{f.reference}</span>
                   </div>
                 ))}
+                {/* 摘要欄の記載（R17）の範囲。問題の判定は、行を入れ直すので摘要欄を見ない（src/server/app/question-case.ts） */}
+                {!q.drill && !q.asOf && <p className="muted">{COMMENT_CHECK_NOTE}この画面の判定は、明細を入れ直すので摘要欄の記載を見ていません（カルテの算定の見込みで点検します）。</p>}
                 {q.phase === "判定" && <button className="primary" onClick={() => explanation()} disabled={busy}>解説を聞く</button>}
                 {q.phase === "解説" && <button className="primary" onClick={next}>次のレセプトへ</button>}
               </div>

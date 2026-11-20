@@ -52,6 +52,17 @@ const fromYm = (s: string) => `${s.slice(0, 4)}-${s.slice(4, 6)}`;
 /** コメントの文字データの、全角の数字・記号を半角に寄せる（英字とかな・漢字はそのまま。design.md §11-13） */
 const normalizeCommentText = (raw: string): string => raw.replace(/[！-～]/g, (c) => (/[Ａ-Ｚａ-ｚ]/.test(c) ? c : String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
 
+/**
+ * 半角に寄せた文字データから、UKE に書くコメントを作る。数字・記号は全角で記録する（EM §2-10 表 3）ので、原文（raw）は全角に直す。
+ * on は、そのコメントが付く行の区分
+ */
+export const commentOf = (code: string, text: string, on: string[]): Comment => ({
+  code,
+  text,
+  raw: text.replace(/[!-~]/g, (c) => (/[A-Za-z]/.test(c) ? c : String.fromCharCode(c.charCodeAt(0) + 0xfee0))),
+  on,
+});
+
 // ───────────────────────────────────────────────────────────────────────────
 // 書き出し
 

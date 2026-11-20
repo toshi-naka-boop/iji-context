@@ -3,6 +3,7 @@
 // 算定行はコードで導出したもの（GET /api/chart/[id]/claim）。看取り加算などは本人が選ぶまで行にしない。宛先は医療事務（医師向けの画面には出さない）
 import { useEffect, useState, type ReactNode } from "react";
 import type { ClaimPreview as Preview } from "../../src/chart/claim";
+import { COMMENT_CHECK_NOTE } from "../../src/messages";
 
 type PatientFinding = { checkId: string; kind: string; text: string };
 type Claim = Preview & { claimId: string; date: string; patientFindings: PatientFinding[] };
@@ -57,6 +58,19 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
               <td>
                 {l.name}
                 {l.basis?.tentative && <span className="badge sky" style={{ marginLeft: 6 }}>見込み</span>}
+                {/* 摘要欄に書くこと（コメントコードと値）。値を入れる欄はまだない：決まっていない記載は「入力が要ります」と出すだけ */}
+                {l.comments.map((c, n) => (
+                  <div key={n} className="muted" style={{ marginTop: 4 }}>
+                    摘要欄に書くこと：{c.what}
+                    {c.entries.map((e, m) => (
+                      <div key={m} style={{ marginLeft: 12 }}>
+                        {e.status === "ready"
+                          ? <>コード {e.code}{e.text ? `「${e.text}」` : ""}</>
+                          : <><span className="badge warn">入力が要ります</span> {e.code ? `コード ${e.code}` : "当たるコードを選びます"}</>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </td>
               <td>{l.count}</td>
               <td>{l.points === null ? "—" : num(l.points)}</td>
@@ -121,6 +135,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       ))}
 
       <h3 style={{ margin: 0 }}>ユスティの指摘</h3>
+      <p className="muted" style={{ margin: 0 }}>{COMMENT_CHECK_NOTE}</p>
       {claim.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
       {claim.findings.map((f, i) => (
         <div key={i} className="notice warn">
