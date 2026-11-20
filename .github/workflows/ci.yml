@@ -42,3 +42,6 @@ jobs:
 
       # 診療年月は config/demo.json の 1 か所で持ち、コードに直書きしない（CLAUDE.md 固定条件）
       - run: npm run check:dates
+
+      # 以前の作り物の診療行為コード（99 で始まる 9 桁）を残さない。同梱の UKE は Shift_JIS から読んで確かめる
+      - run: npm run check:codes
