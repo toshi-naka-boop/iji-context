@@ -85,6 +85,7 @@ const MARK = {
   clinicName: "目印診療所丙",
   clinicPhone: "0377135519",
   extra: "目印の追加項目丁",
+  chartNo: "MKCHART7735",
 };
 /** 利用者が自分で打ち込む文（外せないもの。そのまま送られる）に入れる印：送られたものを取りこぼしていないことの確かめに使う */
 const FREE_TEXT = "自由記述の印戊";
@@ -127,7 +128,8 @@ beforeAll(async () => {
   const file: UkeFile = {
     ...base,
     clinic: { code: MARK.clinicCode, name: MARK.clinicName, phone: MARK.clinicPhone },
-    receipts: [{ claimId: "X1", yearMonth: YM, patient, lines: base.receipts.find((r) => r.claimId === claimId("K2"))!.lines, comments: [], commentsKnown: true }],
+    // カルテ番号（患者の番号）も識別子。請求 id にはアプリの番号が振られるので、AI には届かない
+    receipts: [{ claimId: MARK.chartNo, yearMonth: YM, patient, lines: base.receipts.find((r) => r.claimId === claimId("K2"))!.lines, comments: [], commentsKnown: true }],
   };
   uploaded = instance.runAs(user, () => {
     const a = instance.getApp();

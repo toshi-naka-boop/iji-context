@@ -363,7 +363,8 @@ export default function Work() {
           <div className="chips">
             {cases.filter((c) => ukeClaims?.includes(c.claimId)).map((c) => (
               <button key={c.claimId} onClick={() => begin(c.claimId).catch((e) => setErr(e.message))}>
-                {c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
+                {/* 取り込んだ請求の id（U12-3）は、ハイフンの後ろまでで 1 件を指す */}
+                {c.claimId.startsWith("U") ? c.claimId : c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
               </button>
             ))}
           </div>
