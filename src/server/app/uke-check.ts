@@ -14,8 +14,11 @@ import type { Cases } from "./cases";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
 
-/** 1〜31 日の回数を、算定日（"YYYY-MM-DD"。回数ぶん重ねる）にする */
-const datesOf = (yearMonth: string, days: number[]): string[] => days.flatMap((n, i) => Array.from({ length: n }, () => `${yearMonth}-${String(i + 1).padStart(2, "0")}`));
+/**
+ * 1〜31 日の回数を、算定のある日（"YYYY-MM-DD"）にする。回数ぶんは重ねない：1 日の欄は 999 まであり（投薬は処方した日に日数分が入る）、
+ * 重ねると対象外の単位だけで数百万個の文字列になり得る。回数は count で別に返している
+ */
+const datesOf = (yearMonth: string, days: number[]): string[] => days.flatMap((n, i) => (n > 0 ? [`${yearMonth}-${String(i + 1).padStart(2, "0")}`] : []));
 
 /** 試算で選べる版（画面の選択肢）。own は、その診療年月の版か */
 const trialRevisions = (yearMonth: string) => revisionChoices(UKE_TRIAL_REVISIONS, yearMonth);

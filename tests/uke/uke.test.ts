@@ -121,12 +121,26 @@ describe("傷病名（design.md §11-1）", () => {
     expect(file.receipts[0].patient.diseases).toEqual([{ name: "", code: "8830001", start: expect.stringMatching(/^\d{8}$/), main: true }]);
     // 保持したコードは、書き出しでもそのまま書く
     expect(formatUke(file)).toMatch(/\r\nSY,8830001,\d{8},1,,,01,\r\n/);
-    expect(() => readUke(enc(text.replace(/^SY,0000999,/m, "SY,883000,")))).toThrow("4 行目：傷病名コードの形が違う");
+    expect(() => readUke(enc(text.replace(/^SY,0000999,/m, "SY,883000,")))).toThrow("7 行目：傷病名コードの形が違う");
+  });
+
+  it("修飾語コード（4 桁ずつ）・主傷病・転帰・補足コメントを読んで保持し、書き出しても同じ（手引き p24 の記録例の形。値は合成）", () => {
+    const text = textOf(read(UKE_FILES.支払基金));
+    const sy = "SY,8830001,20260707,1,20568002,,,\r\nSY,8830002,20260710,4,,,01,\r\nSY,8830003,20260712,1,,,,健診にて\r\nSY,0000999,20260714,2,,架空の病名,,\r\n";
+    const file = readUke(enc(text.replace(/^SY,.*\r\n/m, sy)));
+    expect(file.receipts[0].patient.diseases).toEqual([
+      { name: "", code: "8830001", start: "20260707", modifiers: ["2056", "8002"] },
+      { name: "", code: "8830002", start: "20260710", main: true, outcome: 4 },
+      { name: "", code: "8830003", start: "20260712", note: "健診にて" },
+      { name: "架空の病名", start: "20260714", outcome: 2 },
+    ]);
+    expect(formatUke(file)).toContain(`\r\n${sy}`);
+    expect(() => readUke(enc(text.replace(/^(SY,\d+,\d+,1,),/m, "$1205,")))).toThrow("7 行目：修飾語コードの形が違う");
   });
 });
 
 describe("形式（FR-06）", () => {
-  it("Shift_JIS・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SY→SI/CO)×n→GO", () => {
+  it("Shift_JIS・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SN→JD→MF→SY→SI/CO)×n→GO", () => {
     for (const f of Object.values(UKE_FILES)) {
       const b = read(f);
       expect(b[b.length - 1]).toBe(0x1a);
@@ -134,15 +148,32 @@ describe("形式（FR-06）", () => {
       expect(text.endsWith("\r\n")).toBe(true);
       expect(text.replaceAll("\r\n", "").includes("\n")).toBe(false);
       const kinds = text.slice(0, -2).split("\r\n").map((l) => l.slice(0, 2));
-      expect(kinds.join(" ")).toMatch(/^IR( RE HO( KO)*( SY)+( SI( CO)*)+)+ GO$/);
+      expect(kinds.join(" ")).toMatch(/^IR( RE HO( KO)*( SN)+( JD)+ MF( SY)+( SI( CO)*)+)+ GO$/);
     }
   });
 
-  it("列数は IR 10・RE 38・HO 15・KO 12・SY 8・SI 44・GO 4", () => {
-    const want: Record<string, number> = { IR: 10, RE: 38, HO: 15, KO: 12, SY: 8, SI: 44, CO: 5, GO: 4 };
+  it("列数は IR 10・RE 38・HO 15・KO 12・SN 9・JD 33・MF 33・SY 8・SI 44・GO 4", () => {
+    const want: Record<string, number> = { IR: 10, RE: 38, HO: 15, KO: 12, SN: 9, JD: 33, MF: 33, SY: 8, SI: 44, CO: 5, GO: 4 };
     for (const f of Object.values(UKE_FILES)) {
       for (const l of textOf(read(f)).slice(0, -2).split("\r\n")) expect(l.split(",").length).toBe(want[l.slice(0, 2)]);
     }
+  });
+
+  it("見本の資格確認（SN）・受診日等（JD）・窓口負担額（MF）：SN は保険者レコードごとに 1 つ（枝番は後期高齢者医療では書かない。54 の公費には書かない）、JD は負担者ごとに算定のある日、MF は区分だけ。読むと、HO の診療実日数と JD の日数が合う", () => {
+    for (const f of Object.values(UKE_FILES)) {
+      for (const c of parseUke(read(f)).claims) {
+        expect(c.eligibility).toEqual([{ payerKind: "1", confirmation: "01" }]);
+        expect(c.visits.map((v) => v.payerKind)).toEqual(["1", ...c.patient.kohi.map((_, i) => String(i + 2))]);
+        const visited = c.units.reduce<number[]>((days, u) => days.map((n, i) => (u.days[i] > 0 ? 1 : n)), Array(31).fill(0));
+        for (const v of c.visits) expect(v.days).toEqual(visited);
+        expect(c.realDays).toBe(visited.filter((n) => n === 1).length);
+        expect(c.copay).toEqual(["00"]);
+        expect([c.dpcExclusions, c.notes]).toEqual([[], []]);
+      }
+    }
+    const sn = (f: string) => textOf(read(f)).split("\r\n").filter((l) => l.startsWith("SN,"));
+    expect(new Set(sn(UKE_FILES.国保連))).toEqual(new Set(["SN,1,01,,,,,,"]));
+    expect(sn(UKE_FILES.支払基金)).toEqual(["SN,1,01,,,,01,,"]);
   });
 
   it("書き出しは入力だけで決まる（作り直したものとファイルが一致）", () => {
@@ -209,13 +240,14 @@ describe("形式（FR-06）", () => {
       rows[n - 1][col] = value;
       return enc(`${rows.map((r) => r.join(",")).join("\r\n")}\r\n`);
     };
-    /** K6 の見本の行：1 IR・2 RE・3 HO・4 SY・5 SI・6 SI・7 GO。SI の 14 列目（0 起算で 13）からが 1 日〜31 日の回数 */
-    const SI = 5;
+    /** K6 の見本の行：1 IR・2 RE・3 HO・4 SN・5 JD・6 MF・7 SY・8 SI・9 SI・10 GO。SI の 14 列目（0 起算で 13）からが 1 日〜31 日の回数 */
+    const SI = 8;
 
     it("列数の不足・未対応のレコード・項目の長すぎ・制御文字", () => {
       expect(reject(enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")))).toEqual([SI, "列数が合わない"]);
-      expect(reject(enc(text.replace(/^SY,/m, "XX,")))).toEqual([4, "未対応のレコード"]);
-      expect(reject(enc(text.replace(/^constructor,/m, "").replace(/^SY,/m, "constructor,")))).toEqual([4, "未対応のレコード"]);
+      // 識別情報の形（英大文字 2 字）でないレコードは、ファイルごと断る。形が合っていて知らないレコードは、そのレセプトだけが読めなくなる（下の「レコードの種類」）
+      expect(reject(enc(text.replace(/^SY,/m, "Xx,")))).toEqual([7, "未対応のレコード"]);
+      expect(reject(enc(text.replace(/^constructor,/m, "").replace(/^SY,/m, "constructor,")))).toEqual([7, "未対応のレコード"]);
       expect(reject(withCell(2, 4, "あ".repeat(UKE_LIMITS.maxFieldLength + 1)))).toEqual([2, "項目が長すぎる"]);
       expect(reject(withCell(2, 4, "架空\u0000六郎"))).toEqual([2, "制御文字がある"]);
     });
@@ -250,7 +282,9 @@ describe("形式（FR-06）", () => {
     it("1 日の回数は上限まで。大きな数を入れても、日付の並びを作らずに断る", () => {
       const day1 = 13;
       const started = Date.now();
-      for (const v of ["10", "999999999", "1e9", "-1", "1.5"]) expect(reject(withCell(SI, day1, v))).toEqual([SI, "1 日の回数が上限を超えている"]);
+      // 1 日の回数は 3 桁まで（記録条件仕様 p17）
+      for (const v of ["1000", "999999999", "1e9", "-1", "1.5"]) expect(reject(withCell(SI, day1, v))).toEqual([SI, "1 日の回数が上限を超えている"]);
+      for (const v of ["1000", "9999"]) expect(reject(withCell(SI, 6, v))).toEqual([SI, "回数が範囲の外"]);
       expect(Date.now() - started).toBeLessThan(1000);
       // 上限の中でも、回数と合わなければ断る
       expect(reject(withCell(SI, day1, String(UKE_LIMITS.maxDailyCount)))).toEqual([SI, "算定日の合計と回数が合わない"]);
@@ -259,7 +293,8 @@ describe("形式（FR-06）", () => {
     it("「カルテ番号等」の欄は患者の番号として読むだけで、請求 id として確かめない（文字種も重複も見ない）。請求 id は読む側が渡す。診療年月に当たる版がないものは断らず、区分に引かないまま残す（design.md §11-12）", () => {
       // 空・記号・全角・同じ番号の 2 枚目も読める。請求 id は渡した決め方（ここでは取り込みの連番 7）で決まり、欄の値は patientNo に残る
       for (const v of ["../K6", "K6/x", "K6 2026", "", "K6.json", "Ｋ６", "x".repeat(21)]) {
-        const r = readUke(withCell(2, 12, v), uploadClaimIdOf(7)).receipts[0];
+        // 「カルテ番号等」は RE の項目 14（0 起算で 13。記録条件仕様 p6、手引き p8 の記録例）
+        const r = readUke(withCell(2, 13, v), uploadClaimIdOf(7)).receipts[0];
         expect([r.claimId, r.patientNo]).toEqual(["U7-1", v]);
       }
       const twice = text.replace(/^(RE,[\s\S]*)(GO,1,)(\d+)(,99\r\n)$/m, (_, body: string, go: string, total: string, tail: string) => `${body}${body}GO,2,${Number(total) * 2}${tail}`);
@@ -344,7 +379,7 @@ const si = (shikibetsu: string, c: string, o: SiOpt = {}) =>
 const co = (shikibetsu: string, c: string, text = "") => rec(5, { 1: "CO", 2: shikibetsu, 3: 1, 4: c, 5: text });
 /** 見本（K6）の IR・RE・HO・SY を借りて、摘要の行（5 行目から）と合計を差し替えた UKE */
 function ukeOf(rows: string[], total: number): Buffer {
-  const head = textOf(read(UKE_FILES.支払基金)).split("\r\n").slice(0, 4);
+  const head = textOf(read(UKE_FILES.支払基金)).split("\r\n").filter((l) => !/^(SN|JD|MF),/.test(l)).slice(0, 4);
   head[2] = head[2].replace(/^(HO,[^,]*,[^,]*,[^,]*,\d+,)\d+/, `$1${total}`);
   return enc(`${[...head, ...rows, `GO,1,${total},99`].join("\r\n")}\r\n`);
 }

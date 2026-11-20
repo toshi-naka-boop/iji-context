@@ -96,12 +96,12 @@ describe("UKE のアップロード", () => {
       x[n - 1][col] = value;
       return enc(`${x.map((c) => c.join(",")).join("\r\n")}\r\n`);
     };
-    /** 見本（K6）の行：1 IR・2 RE・3 HO・4 SY・5 SI・6 SI・7 GO */
+    /** 見本（K6）の行：1 IR・2 RE・3 HO・4 SN・5 JD・6 MF・7 SY・8 SI・9 SI・10 GO */
     const broken: [string, Buffer, string][] = [
-      ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "5 行目：列数が合わない"],
-      ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
-      ["版の点数表と合わない点数", withCell(5, 5, "131"), "5 行目：点数が診療年月の版の点数表と合わない"],
-      ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
+      ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "8 行目：列数が合わない"],
+      ["範囲外の数値", withCell(8, 6, "0"), "8 行目：回数が範囲の外"],
+      ["版の点数表と合わない点数", withCell(8, 5, "131"), "8 行目：点数が診療年月の版の点数表と合わない"],
+      ["上限を超える日別回数", withCell(8, 13, "999999999"), "8 行目：1 日の回数が上限を超えている"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
       ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "末尾に EOF(0x1A) がない"],
     ];
@@ -420,6 +420,39 @@ describe("取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/c
       const q = a.start(me, "U1-1");
       const result = a.confirm(q.id, a.caseFor(q).lines).confirmed!.result;
       expect([result.total, result.subtotal]).toEqual([null, c.subtotal]);
+    });
+  });
+
+  it("実在の形の検証用の合成の UKE（jitsurei.UKE。医薬品・特定器材・症状詳記・資格確認・受診日等を含む 4 件）：取り込みのルートで受け取れ、4 件とも点検が 200 を返す。対象外の単位は、回数ぶんの日付に広げない", async () => {
+    const r = await routes();
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    resetLimits();
+    const owner = auth().register("uke_check_j", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    const up = await r.upload(upload(cookie, sample("jitsurei.UKE")));
+    expect(up.status).toBe(200);
+    const listed = ((await up.json()) as Listed).filter((u) => u.uploaded);
+    expect(listed.map((u) => [u.imported, u.unreadable, u.receipts.map((x) => [x.claimId, x.patientNo, x.otherRows, x.unreadable, x.revisionId !== null])])).toEqual([
+      [true, null, [["U1-1", "200011", 8, null, true], ["U1-2", "200012", 13, null, true], ["U1-3", "200013", 14, null, true], ["U1-4", "200014", 2, null, true]]],
+    ]);
+    const checks: Check[] = [];
+    for (const id of ["U1-1", "U1-2", "U1-3", "U1-4"]) {
+      const res = await check(id, cookie);
+      expect([id, res.status]).toEqual([id, 200]);
+      checks.push((await res.json()) as Check);
+    }
+    expect(checks.map((c) => [c.unreadable, c.partial, c.declared.ho, c.lines.map((l) => l.kubun), c.others.length, c.subtotal])).toEqual([
+      [null, true, 845, ["A001", "D007_5", "D005_5", "D026_3", "D026_4"], 7, 152 + 93 + 21 + 125 + 144],
+      [null, true, 919, ["A001"], 8, 76],
+      [null, true, 744, ["A001"], 8, 76],
+      [null, true, 8350, ["C001_1I", "C103_2", "F400_3"], 2, 1780 + 2400 + 120],
+    ]);
+    // 14 日分を 2 回処方した内服薬の単位：回数は 28、日は処方した 2 日だけ（回数ぶんに重ねない）
+    expect(checks[0].others[1]).toEqual({ codes: ["620491801", "610463223"], points: 1, count: 28, dates: [`${YM}-15`, `${YM}-29`] });
+    // 対象外の単位があるので、合計は出さない（月末の点検でも同じ）。4 件とも月末の点検に並ぶ
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      expect(["U1-1", "U1-2", "U1-3", "U1-4"].map((id) => a.caseOf(id).partial)).toEqual([true, true, true, true]);
     });
   });
 

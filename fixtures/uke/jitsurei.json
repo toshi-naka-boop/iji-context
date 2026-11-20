@@ -1,0 +1,118 @@
+{
+  "_note": "実在の請求と同じ形のレセプトを読めることを確かめるための、合成の UKE の設定（scripts/gen-uke.ts の generateJitsurei が fixtures/uke/jitsurei.UKE にする。EM 5-1 の「実在の形の検証用の合成の UKE」の表）。患者は合成で、氏名・生年月日・番号はすべて架空（同梱の症例の患者とは別の人）。診療行為・医薬品・特定器材・コメントのコードと 1 回分の点数は、「電子レセプトの作成手引き（医科）令和8年10月版」の記録例に出てくるものを組み合わせ、令和8年度版のマスターで確かめた（判断料の 2 コードだけは手引きに記録例がなく、EM §2-8 の採用値）。組み合わせに臨床上の根拠はない。商品名・症状詳記の文は作り物。rows は摘要のレコードの並びで、points は算定単位の最後の行にだけ書く 1 回分の点数、days は「日 → その日の回数」（投薬は処方した日に日数分）、minus は合計から引く行（薬剤料逓減）。visits は受診日等（日 → 受診等区分。1 は診療実日数に計上する受診、2 は計上しない受診）。診療年月は config/demo.json の基準月",
+  "file": "fixtures/uke/jitsurei.UKE",
+  "payer": "国保連",
+  "receipts": [
+    {
+      "patientNo": "200011",
+      "receiptType": "1112",
+      "patient": { "name": "架空　春男", "sex": 1, "birth": "19750304", "insurer": { "number": "139998", "symbol": "99", "no": "0000031" } },
+      "diseases": [
+        { "name": "高血圧症", "start": "20250610", "main": true },
+        { "name": "", "code": "7262006", "start": "20261015", "modifiers": ["2056", "8002"] },
+        { "name": "便秘症", "start": "20260115" }
+      ],
+      "visits": { "15": 1, "29": 1 },
+      "rows": [
+        { "rec": "SI", "shikibetsu": "12", "code": "112007410", "points": 76, "days": { "15": 1, "29": 1 } },
+        { "rec": "SI", "code": "112011010", "points": 52, "days": { "15": 1, "29": 1 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "620491801", "quantity": "0.5", "days": { "15": 14, "29": 14 } },
+        { "rec": "IY", "code": "610463223", "quantity": "1", "points": 1, "days": { "15": 14, "29": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "622095502", "quantity": "1", "points": 1, "days": { "15": 28 } },
+        { "rec": "SI", "shikibetsu": "21", "code": "120000710", "points": 11, "days": { "15": 1, "29": 1 } },
+        { "rec": "IY", "shikibetsu": "23", "code": "620631201", "quantity": "5", "points": 14, "days": { "15": 1, "29": 1 } },
+        { "rec": "SI", "shikibetsu": "23", "code": "120001010", "points": 8, "days": { "15": 1, "29": 1 } },
+        { "rec": "SI", "shikibetsu": "25", "code": "120001210", "points": 42, "days": { "15": 1, "29": 1 } },
+        { "rec": "SI", "shikibetsu": "60", "code": "160017410", "days": { "15": 1 } },
+        { "rec": "SI", "code": "160020010", "days": { "15": 1 } },
+        { "rec": "SI", "code": "160020410", "days": { "15": 1 } },
+        { "rec": "SI", "code": "160020510", "days": { "15": 1 } },
+        { "rec": "SI", "code": "160022510", "days": { "15": 1 } },
+        { "rec": "SI", "code": "160022610", "points": 93, "days": { "15": 1 } },
+        { "rec": "SI", "shikibetsu": "60", "code": "160008010", "points": 21, "days": { "15": 1 } },
+        { "rec": "SI", "shikibetsu": "60", "code": "160061810", "points": 125, "days": { "15": 1 } },
+        { "rec": "SI", "shikibetsu": "60", "code": "160061910", "points": 144, "days": { "15": 1 } }
+      ],
+      "notes": []
+    },
+    {
+      "patientNo": "200012",
+      "receiptType": "1118",
+      "patient": { "name": "架空　夏子", "sex": 2, "birth": "19530811", "insurer": { "number": "139998", "symbol": "99", "no": "0000032" } },
+      "diseases": [
+        { "name": "２型糖尿病", "start": "20230405", "main": true },
+        { "name": "", "code": "5908007", "start": "20261028" },
+        { "name": "", "code": "8835114", "start": "20260902", "note": "健診にて" }
+      ],
+      "visits": { "28": 1, "30": 2 },
+      "rows": [
+        { "rec": "SI", "shikibetsu": "12", "code": "112007410", "points": 76, "days": { "28": 1 } },
+        { "rec": "SI", "shikibetsu": "31", "code": "130000510", "points": 25, "days": { "28": 1 } },
+        { "rec": "IY", "code": "641140046", "quantity": "1", "points": 10, "days": { "28": 1 } },
+        { "rec": "SI", "shikibetsu": "33", "code": "130003810", "points": 102, "days": { "28": 1 } },
+        { "rec": "IY", "code": "643310347", "quantity": "1", "days": { "28": 1 } },
+        { "rec": "IY", "code": "620002556", "quantity": "2", "days": { "28": 1 } },
+        { "rec": "IY", "code": "643140004", "quantity": "1", "days": { "28": 1 } },
+        { "rec": "IY", "code": "621344901", "quantity": "2", "days": { "28": 1 } },
+        { "rec": "IY", "code": "622345201", "quantity": "1", "points": 183, "days": { "28": 1 } },
+        { "rec": "SI", "shikibetsu": "40", "code": "140005610", "points": 65, "days": { "28": 1 } },
+        { "rec": "TO", "code": "739210000", "quantity": "1000", "price": "0.32", "days": { "28": 1 } },
+        { "rec": "TO", "code": "770020070", "points": 42, "days": { "28": 1 } },
+        { "rec": "SI", "shikibetsu": "60", "code": "160081550", "points": 400, "days": { "30": 1 } },
+        { "rec": "TO", "code": "729780000", "quantity": "4", "points": 16, "price": "50", "product": "架空インスタントフィルム　ＦＰ－１００　８．５ｃｍ×１０．８ｃｍ", "days": { "30": 1 } }
+      ],
+      "notes": [
+        { "kind": "03", "text": "合成の症状詳記です。発熱と背部痛があり、尿所見から腎盂腎炎と診断し、経口摂取が不良のため外来で点滴による抗菌薬の投与を行いました。" },
+        { "kind": "", "text": "来院時に酸素飽和度の低下があり、点滴のあいだ酸素吸入を行いました。" }
+      ]
+    },
+    {
+      "patientNo": "200013",
+      "receiptType": "1318",
+      "patient": { "name": "架空　秋雄", "sex": 1, "birth": "19460219", "insurer": { "number": "39139993", "symbol": "", "no": "00000033" } },
+      "diseases": [
+        { "name": "高血圧症", "start": "20190712", "main": true },
+        { "name": "心房細動", "start": "20210318" },
+        { "name": "慢性心不全", "start": "20220905" }
+      ],
+      "visits": { "9": 1 },
+      "rows": [
+        { "rec": "SI", "shikibetsu": "12", "code": "112007410", "points": 76, "days": { "9": 1 } },
+        { "rec": "SI", "code": "112011010", "points": 52, "days": { "9": 1 } },
+        { "rec": "CO", "shikibetsu": "21", "code": "820000047" },
+        { "rec": "IY", "shikibetsu": "21", "code": "622452901", "quantity": "2", "days": { "9": 14 } },
+        { "rec": "IY", "code": "610443044", "quantity": "2", "days": { "9": 14 } },
+        { "rec": "IY", "code": "612170710", "quantity": "2", "days": { "9": 14 } },
+        { "rec": "IY", "code": "621932501", "quantity": "2", "points": 27, "days": { "9": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "612140702", "quantity": "1", "days": { "9": 14 } },
+        { "rec": "IY", "code": "610470002", "quantity": "1", "days": { "9": 14 } },
+        { "rec": "IY", "code": "620000168", "quantity": "1", "days": { "9": 14 } },
+        { "rec": "IY", "code": "620005824", "quantity": "1", "points": 6, "days": { "9": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "612120358", "quantity": "1", "points": 7, "days": { "9": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "610421327", "quantity": "2", "points": 3, "days": { "9": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "613330001", "quantity": "5", "points": 5, "days": { "9": 14 } },
+        { "rec": "IY", "shikibetsu": "21", "code": "630010002", "points": 67, "minus": true, "days": { "9": 1 } },
+        { "rec": "SI", "shikibetsu": "21", "code": "120000710", "points": 11, "days": { "9": 1 } }
+      ],
+      "notes": [{ "kind": "07", "text": "合成の症状詳記です。内服薬は１１種類で、減らせる薬がないかを毎月見直しています。" }]
+    },
+    {
+      "patientNo": "200014",
+      "receiptType": "1318",
+      "patient": { "name": "架空　冬美", "sex": 2, "birth": "19400127", "insurer": { "number": "39139993", "symbol": "", "no": "00000034" } },
+      "diseases": [
+        { "name": "慢性心不全", "start": "20240520", "main": true },
+        { "name": "脳梗塞後遺症", "start": "20230211" }
+      ],
+      "visits": { "8": 1, "22": 1 },
+      "rows": [
+        { "rec": "SI", "shikibetsu": "14", "code": "114001110", "points": 890, "days": { "8": 1, "22": 1 } },
+        { "rec": "SI", "code": "114001470", "quantity": "70", "points": 100, "days": { "22": 1 } },
+        { "rec": "SI", "shikibetsu": "14", "code": "114003710", "points": 2400, "comments": [["842100072", "５０"]], "days": { "8": 1 } },
+        { "rec": "SI", "code": "114006110", "points": 3950, "days": { "8": 1 } },
+        { "rec": "SI", "shikibetsu": "80", "code": "120002910", "points": 60, "days": { "8": 1, "22": 1 } }
+      ],
+      "notes": []
+    }
+  ]
+}

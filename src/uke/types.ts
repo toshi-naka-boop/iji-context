@@ -14,9 +14,10 @@ export type UkePatient = {
   /**
    * 傷病名。名称が src/uke/diseases.ts の表にあるものは傷病名マスターのコードで、ほかは未コード化（0000999）で名称を書く。
    * code は、読み取った UKE の傷病名コードが表になかったときだけ持つ（コードを保持し、名称は持たない＝name は空）。
-   * outcome は転帰（1 継続、2 治ゆ、3 死亡、4 中止。既定 1）
+   * outcome は転帰（1 継続、2 治ゆ、3 死亡、4 中止。既定 1）。
+   * modifiers は修飾語コード（4 桁ずつ、20 個まで。名称は持たない）、note は補足コメント（どちらも、あるときだけ）
    */
-  diseases: { name: string; code?: string; start: string; main?: boolean; outcome?: 1 | 2 | 3 | 4 }[];
+  diseases: { name: string; code?: string; start: string; main?: boolean; outcome?: 1 | 2 | 3 | 4; modifiers?: string[]; note?: string }[];
 };
 
 export type UkeClinic = { code: string; name: string; phone: string };
@@ -45,7 +46,8 @@ export type UkeReceipt = {
   /** UKE に書いてある請求の合計点数（HO と、KO の並び）。UKE から読んだレセプトだけが持つ。点検した行の小計とは別のもの */
   declared?: { ho: number | null; ko: number[] };
   /**
-   * 保存済みのレセプトを読み直したら、いまの表では読めなかった（design.md §11-12。取り込んだ後にコードの表・点数表が変わった）。
+   * 読めなかったレセプト。保存済みのレセプトを読み直したら、いまの表では読めなかった（design.md §11-12。取り込んだ後にコードの表・点数表が変わった）か、
+   * 未対応のレセプト（入院・臓器提供者のレセプト情報つき・未対応のレコードつき。UkeClaim.unsupported）。
    * 理由だけを持ち、lines・comments は空。点検には並べない（一覧には出す）
    */
   unreadable?: { reason: string };
@@ -78,9 +80,9 @@ export type UkeItem = { line: number; kind: "SI" | "IY" | "TO"; code: string; qu
 
 /**
  * 点数・回数の算定単位。単位の終わりは点数が書いてある行で、line はその行。
- * points は 1 回分の点数、count は回数（単位の各行に同じ値）、days は 1〜31 日の回数（単位の各行に同じ値）
+ * points は 1 回分の点数、count は回数（単位の各行に同じ値）、days は 1〜31 日の回数（単位の各行に同じ値）、futan は負担区分（別表21。点数の行のもの）
  */
-export type UkeUnit = { line: number; items: UkeItem[]; points: number; count: number; days: number[] };
+export type UkeUnit = { line: number; items: UkeItem[]; points: number; count: number; days: number[]; futan: string };
 
 /**
  * コメント（診療行為などのレコードのコメント欄と、CO レコード）。
@@ -92,17 +94,35 @@ export type UkeComment = { line: number; code: string; raw: string; unit: number
 export type UkeClaim = {
   /** RE の行番号 */
   line: number;
-  /** 「カルテ番号等」の欄（RE の 13 列目）。患者ごとの番号で、空でもよく、同じ患者の別の月・同じファイルの 2 枚目で重なる。請求 id にはしない（design.md §11-11） */
+  /** 「カルテ番号等」の欄（RE の項目 14）。患者ごとの番号で、空でもよく、同じ患者の別の月・同じファイルの 2 枚目で重なる。請求 id にはしない（design.md §11-11） */
   patientNo: string;
+  /**
+   * 読めないレセプトの理由（定型文。src/uke/uke.ts の UNREADABLE）：入院のレセプト、臓器提供者のレセプト情報を含むレセプト、未対応のレコードを含むレセプト。
+   * 保険・公費と、そこまでに読んだものは持つが、units・comments は空にする。同じファイルのほかのレセプトは読む
+   */
+  unsupported?: string;
   /** 診療年月 YYYY-MM */
   yearMonth: string;
   patient: UkePatient;
   /** HO に書いてある合計点数と、その行番号（HO がなければ null） */
   total: { line: number; points: number } | null;
+  /** HO に書いてある診療実日数（HO がなければ null） */
+  realDays: number | null;
   /** KO（公費）に書いてある合計点数（KO の並びの順） */
   kohiTotals: number[];
   units: UkeUnit[];
   comments: UkeComment[];
+  // ここから下は、読んで持つだけ（使い道は別の段）。番号（枝番など）は持たない。AI に渡す文脈（src/llm/outbound.ts の claimForAi）には入らない
+  /** 資格確認（SN）：負担者種別（別表28）と確認区分（別表29） */
+  eligibility: { payerKind: string; confirmation: string }[];
+  /** 受診日等（JD）：負担者種別（別表28）と、1〜31 日の受診等区分（別表30。受診等のない日は 0） */
+  visits: { payerKind: string; days: number[] }[];
+  /** 窓口負担額（MF）の区分（別表31）。金額の項目は予備で、医療機関は記録しない */
+  copay: string[];
+  /** 包括評価対象外理由（GR）：医科点数表算定理由（別表17）と DPC コード */
+  dpcExclusions: { reason: string; dpcCode: string }[];
+  /** 症状詳記（SJ）：症状詳記区分（別表23。省略された行は、前の行の区分）と文 */
+  notes: { kind: string; text: string }[];
 };
 
 export type UkeParsed = {
