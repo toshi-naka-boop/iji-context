@@ -12,7 +12,7 @@ import { drugPoints, EXCLUDE_TEXT, kizamiCenti, recalcUnit, type RecalcItem } fr
 import { genericScopeOf } from "../../src/generic/scope";
 import type { GenericAboutMore, GenericClaim, GenericUnitDetail } from "../../src/generic/types";
 import { parseEm, verifyMasters } from "../../src/masters/verify";
-import { GENERIC_TEXT, genericText } from "../../src/messages";
+import { GENERIC_TEXT, GENERIC_TEXT_CERTAIN, genericText } from "../../src/messages";
 import { YM } from "../helpers/period";
 import { DEVICE, DRUG, GEN, put, smallMasters } from "./small-masters";
 
@@ -210,8 +210,13 @@ describe("G02 点数の検算", () => {
     ]);
     const f = (found as Exclude<typeof found, { skip: string }>)[0];
     expect(f).toMatchObject({ check: "G02", kind: "点数", certainty: "確定", messageKey: "G02.points", source: { data: "shinryo", ref: `code=${OUSHIN}, code=${KINKYU}` } });
-    expect(genericText(f)).toBe("この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）。コード・数量・点数を確かめてください");
-    expect(GENERIC_TEXT["G02.points"]).toBeDefined();
+    // 出荷の時点では一覧が空なので、出るのは言い切らない文。一覧に載せたときの文は別に持つ
+    expect(genericText({ ...f, certainty: "条件つき" })).toBe("この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）。コード・数量・点数を確かめてください");
+    expect(genericText(f)).toBe("この単位の 1 回分の点数が、マスターからの再計算と合っていません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）");
+    // G02・G03 の種類は、どれも 2 つの文を持つ
+    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k));
+    expect(mine).toHaveLength(5);
+    expect(mine.filter((k) => !GENERIC_TEXT_CERTAIN[k])).toEqual([]);
   });
 
   it("言い切りの一覧が空なので、出るのは条件つき。一覧に載れば確定", () => {
@@ -276,7 +281,8 @@ describe("G03 行の属性", () => {
     // 病院なら、診療所に限るコード
     expect(keys(db, claim(POST_OP_CLINIC), { ...about, outpatient: false, clinic: false })).toEqual([["G03.clinic_only", POST_OP_CLINIC]]);
     const f = (g03.run(claim(POST_OP_CLINIC), db, about) as { messageKey: string; params: Record<string, string> }[])[0];
-    expect(genericText(f)).toBe(`コード ${POST_OP_CLINIC}（手作りの行 ${POST_OP_CLINIC}）は、マスターでは入院のレセプトに限るコードです。入院外のレセプトで算定できるか、告示・通知を確かめてください`);
+    expect(genericText({ ...f, certainty: "確定" })).toBe(`コード ${POST_OP_CLINIC}（手作りの行 ${POST_OP_CLINIC}）は、入院のレセプトに限るコードです。入院外のレセプトでは算定できません`);
+    expect(genericText({ ...f, certainty: "条件つき" })).toBe(`コード ${POST_OP_CLINIC}（手作りの行 ${POST_OP_CLINIC}）は、マスターでは入院のレセプトに限るコードです。入院外のレセプトで算定できるか、告示・通知を確かめてください`);
   });
 
   it("年齢：上下限が数字の行で、診療年月の初日・末日のどちらの年齢でも範囲の外のときだけ", () => {
@@ -295,7 +301,7 @@ describe("G03 行の属性", () => {
     const forty: GenericAboutMore = { ...about, birth: born(40, "0101") };
     const f = (g03.run(claim(ASTHMA_65), db, forty) as { messageKey: string; params: Record<string, string> }[])[0];
     expect(f.params).toMatchObject({ range: "65 歳以上", ageFrom: "40", ageTo: "40" });
-    expect(genericText(f)).toMatch(/年齢の範囲（65 歳以上）の外です（診療年月の初日は 40 歳、末日は 40 歳）/);
+    expect(genericText({ ...f, certainty: "条件つき" })).toMatch(/年齢の範囲（65 歳以上）の外です（診療年月の初日は 40 歳、末日は 40 歳）/);
     // 数字でない年齢の区分（生後の日数など）は、点検しない
     db.prepare("UPDATE shinryo SET age_upper = 'AA' WHERE code = ?").run(INFANT);
     expect(keys(db, claim(INFANT), about)).toEqual([]);
