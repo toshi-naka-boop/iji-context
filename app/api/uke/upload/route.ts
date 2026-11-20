@@ -1,5 +1,5 @@
 // API Route（薄い入口。処理は src/server/app/uke.ts）。UKE のアップロード（spec FR-106〜109）
-// 受け取るのは、対応しているコードだけで作られた UKE。条件を 1 つでも満たさないファイルは、ファイルごと断る
+// 形式・点数・合計の条件を 1 つでも満たさないファイルは、ファイルごと断る。対応していないコードの行は断らず、点検の対象外として残す（design.md §11-11）
 import { badRequest, UserError } from "../../../../src/server/errors";
 import { route } from "../../../../src/server/http";
 import { getApp } from "../../../../src/server/instance";

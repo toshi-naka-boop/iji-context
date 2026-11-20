@@ -15,6 +15,7 @@ export function makeR05(c: RevisionConsts): Rule {
     reference: "C002 注2・注3、留意事項（所定点数に含まれる項目）。C002-2 注5 で準用",
     // 処方の出来事を読む指摘（記録のない請求では出さない。包括項目の bundled は行だけで決まる）
     recordFindings: ["no_rx_addition_with_rx"],
+    soundWhenPartial: ["bundled"],
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

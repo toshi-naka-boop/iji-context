@@ -59,11 +59,10 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
 
   // 行ごとの点数と合計は、渡された行のまま出す
   const byLine = input.lines.map((l) => ({ kubun: l.kubun, points: pointsOf(rev, l.kubun) }));
-  // 点数未収載の行か、判定の対象外の行（FR-111）があれば、合計は出さない
-  const total =
-    excludedCount > 0 || byLine.some((b) => b.points === null)
-      ? null
-      : input.lines.reduce((s, l, i) => s + (byLine[i].points as number) * l.count, 0);
+  // 点数未収載の行があれば、行の合計は出さない
+  const sum = byLine.some((b) => b.points === null) ? null : input.lines.reduce((s, l, i) => s + (byLine[i].points as number) * l.count, 0);
+  // 判定の対象外の行（FR-111）か、点検の対象外の単位（partial。§11-11）があれば、合計は出さない（partial では、点検した行の小計を別に返す）
+  const total = excludedCount > 0 || input.partial ? null : sum;
 
   // ルールには、同じ区分の行を束ねた請求を渡す
   const ctx: ClaimContext = { ...input, lines: mergeLines(input.lines) };
@@ -98,7 +97,20 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
     }
     const found = rule.check(ctx);
     // カルテ側の記録がない請求：出来事を読んで決める指摘は捨てる（空の出来事を「なかった」と読まない）。行と事実だけで決まる指摘はそのまま出す
-    findings.push(...(ctx.recordsKnown ? found : found.filter((f) => !rule.recordFindings.includes(f.messageKey.slice(rule.id.length + 1)))));
+    const kept = ctx.recordsKnown ? found : found.filter((f) => !rule.recordFindings.includes(f.messageKey.slice(rule.id.length + 1)));
+    // 点検の対象外の単位がある請求：いまある行と確かめた事実だけから言えると申告のある種類（soundWhenPartial）だけを出す。
+    // 捨てた指摘があれば、決められないことを情報不足として 1 件返す。入力では消えない。情報不足（確かめる事実）はそのまま出す
+    const sound = ctx.partial ? kept.filter((f) => f.kind === "情報不足" || rule.soundWhenPartial.includes(f.messageKey.slice(rule.id.length + 1))) : kept;
+    if (sound.length < kept.length)
+      findings.push({
+        ruleId: rule.id,
+        kind: "情報不足",
+        lineRefs: rule.kubun.filter((k) => ctx.lines.some((l) => l.kubun === k)),
+        missing: { target: "clerk", field: "unsupportedLines" },
+        messageKey: `${rule.id}.missing_fact`,
+        reference: rule.reference,
+      });
+    findings.push(...sound);
   }
-  return { claimId: ctx.claimId, revisionId: rev.id, total, byLine, findings, applied, excludedCount };
+  return { claimId: ctx.claimId, revisionId: rev.id, total, ...(input.partial ? { subtotal: sum } : {}), byLine, findings, applied, excludedCount };
 }

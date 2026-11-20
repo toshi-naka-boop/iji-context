@@ -1,7 +1,7 @@
-// UKE のアップロードと見本のダウンロード（spec FR-106〜109）。実際のルート（app/api/uke/**/route.ts）を呼んで確かめる
+// UKE のアップロードと見本のダウンロード（spec FR-106〜109）、取り込んだレセプトの点検（design.md §11-11）。実際のルート（app/api/uke/**/route.ts）を呼んで確かめる
 import iconv from "iconv-lite";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -48,6 +48,9 @@ const routes = async () => ({
   sample: (await import("../../app/api/uke/sample/route")).GET,
   list: (await import("../../app/api/uke/route")).GET,
 });
+/** 取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/check） */
+const check = async (id: string, cookie: string | null) =>
+  (await import("../../app/api/uke/claims/[claimId]/check/route")).GET(get(`/api/uke/claims/${encodeURIComponent(id)}/check`, cookie), { params: Promise.resolve({ claimId: id }) });
 const sample = (name: string) => readFileSync(path.join(repo, "fixtures", "uke", name));
 const enc = (s: string) => Buffer.concat([iconv.encode(s, "Shift_JIS"), Buffer.from([0x1a])]);
 const textOf = (b: Buffer) => new TextDecoder("shift_jis").decode(b.subarray(0, -1));
@@ -56,7 +59,13 @@ const stored = (u: User): string[] => {
   const dir = path.join(path.dirname(instance.tenantPaths(u.tenantId).dbFile), "uke");
   return existsSync(dir) ? readdirSync(dir) : [];
 };
-type Listed = { name: string; uploaded: boolean; imported: boolean; receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean }[] }[];
+type Listed = {
+  name: string;
+  uploaded: boolean;
+  imported: boolean;
+  unreadable: { reason: string } | null;
+  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null }[];
+}[];
 
 describe("UKE のアップロード", () => {
   it("未ログインは 401、医師の役割は 403。ファイルがなければ 400", async () => {
@@ -87,7 +96,7 @@ describe("UKE のアップロード", () => {
     const broken: [string, Buffer, string][] = [
       ["列数の不足", enc(text.replace(/^(SI,.*),\r\n/m, "$1\r\n")), "5 行目：列数が合わない"],
       ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
-      ["表にないコード", withCell(5, 3, "160000310"), "5 行目：診療年月の版の表にないコード"],
+      ["版の点数表と合わない点数", withCell(5, 5, "131"), "5 行目：点数が診療年月の版の点数表と合わない"],
       ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
       ["版のない診療年月", withCell(2, 3, "202503"), "2 行目：診療年月に当たる版がない"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
@@ -100,7 +109,7 @@ describe("UKE のアップロード", () => {
       const res = await r.upload(upload(cookie, bytes));
       const body = await res.text();
       expect([what, res.status, JSON.parse(body).error]).toEqual([what, 400, `この UKE は取り込めません（${reason}）`]);
-      expect(body).not.toMatch(/160000310|六郎|01139997|999999999|PDF/);
+      expect(body).not.toMatch(/六郎|01139997|999999999|PDF|131/);
     }
     expect(stored(owner)).toEqual([]);
     const list = (await (await r.list(get("/api/uke", cookie))).json()) as Listed;
@@ -261,9 +270,9 @@ describe("UKE のアップロード", () => {
     expect([...j1.findings, ...j2.findings].some((f) => f.missing?.field === "visitsComplete")).toBe(false);
     expect(out.map((q) => q.correct)).toEqual([true, true]);
 
-    // 版のコードの表にないコードを 1 行でも含めば、ファイルごと断る
-    const unknownCode = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,)\d+/m, "$1160000310"))));
-    expect([unknownCode.status, (await unknownCode.json()).error]).toEqual([400, expect.stringContaining("診療年月の版の表にないコード")]);
+    // 対応しているコードの点数が版の点数表と合わなければ、今までどおりファイルごと断る（対応していないコードの行は断らない。下の「取り込んだレセプトの点検」）
+    const wrongPoints = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,\d+,,)890,/m, "$1891,"))));
+    expect([wrongPoints.status, (await wrongPoints.json()).error]).toEqual([400, expect.stringContaining("点数が診療年月の版の点数表と合わない")]);
     expect(stored(owner)).toEqual([name]);
 
     // ほかのクリニックには見えず、名前（ハッシュ）を知っていても取り込めない
@@ -331,5 +340,166 @@ describe("UKE のアップロード", () => {
     const log = await instance.runAs(owner, () => instance.getApp().audit.list());
     expect(JSON.stringify(log)).not.toMatch(/evil|架空/);
     expect(log.filter((l: { action: string }) => l.action === "POST /api/uke/upload")).toHaveLength(2);
+  });
+});
+
+describe("取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/check。design.md §11-11 完了条件 (f)）", () => {
+  type Check = {
+    claimId: string;
+    yearMonth: string;
+    patient: string;
+    patientNo: string | null;
+    unreadable: { reason: string } | null;
+    declared: { ho: number | null; ko: number[] };
+    lines: { kubun: string; name: string; count: number; dates: string[]; points: number | null }[];
+    subtotal: number | null;
+    others: { codes: string[]; points: number | null; count: number; dates: string[] }[];
+    otherRows: number;
+    partial: boolean;
+    recordsKnown: boolean;
+    commentsKnown: boolean;
+    findings: { ruleId: string; kind: string; messageKey: string; params?: Record<string, string>; lineRefs: string[] }[];
+    commentMissingCount: number;
+    missing: { ruleId: string; kind: string; missing?: { target: string; field: string } }[];
+    comments: { code: string; text: string }[];
+    patientFindings: unknown[];
+  };
+  const sumOf = (c: Check) => c.lines.reduce((s, l) => s + (l.points ?? 0) * l.count, 0);
+
+  it("未ログインは 401、医師の役割は 403、一覧にないレセプトは 404。形の違う id は 400", async () => {
+    const owner = auth().register("uke_check_a", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    expect((await check(claimId("K1"), null)).status).toBe(401);
+    expect((await check("U9-9", cookie)).status).toBe(404);
+    expect((await check("../x", cookie)).status).toBe(400);
+    expect((await check(claimId("K1"), cookie)).status).toBe(200);
+    // 事務長は見られる（一覧と同じ役割）。医師は見られない
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    expect((await check(claimId("K1"), cookie)).status).toBe(200);
+    expect((await switchTo(cookie, "doctor")).status).toBe(200);
+    expect((await check(claimId("K1"), cookie)).status).toBe(403);
+  });
+
+  it("対象外の行がある合成の UKE：断らずに取り込み、対象外の行の件数・点検した行の小計・UKE の合計を別々に返す。指摘は申告のある種類だけで、合計を小計で代用しない", async () => {
+    const r = await routes();
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    resetLimits();
+    const owner = auth().register("uke_check_b", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    const up = await r.upload(upload(cookie, sample("taishogai.UKE")));
+    expect(up.status).toBe(200);
+    const listed = ((await up.json()) as Listed).filter((u) => u.uploaded);
+    expect(listed.map((u) => [u.imported, u.unreadable, u.receipts.map((x) => [x.claimId, x.patientNo, x.otherRows, x.unreadable])])).toEqual([[true, null, [["U1-1", "100021", 2, null]]]]);
+    const res = await check("U1-1", cookie);
+    expect(res.status).toBe(200);
+    const c = (await res.json()) as Check;
+    expect([c.claimId, c.yearMonth, c.patientNo, c.unreadable, c.partial, c.recordsKnown, c.commentsKnown]).toEqual(["U1-1", YM, "100021", null, true, false, true]);
+    // 対象外の単位は 1 つ（往診料と、扱っていない加算の 2 行）。コード・点数・回数・日は UKE に書いてあるまま
+    expect(c.others).toEqual([{ codes: ["114000110", "114704470"], points: 1045, count: 1, dates: [`${YM}-20`] }]);
+    expect(c.otherRows).toBe(2);
+    // 合計は 2 つ：UKE に書いてある請求の合計と、点検した行の小計。小計＋対象外の単位＝UKE の合計
+    expect(c.subtotal).toBe(sumOf(c));
+    expect(c.declared).toEqual({ ho: (c.subtotal as number) + 1045, ko: [] });
+    expect(c.lines.some((l) => l.kubun === "C000")).toBe(false);
+    expect(c.lines[0]).toEqual({ kubun: "C001_1I", no: expect.any(String), name: expect.stringContaining("訪問診療料"), count: 2, dates: [`${YM}-14`, `${YM}-28`], points: 890 });
+    // 指摘は出ない（訪問日の記載と往診の日の食い違いは、往診料の行が対象外にあるので比べない）。足りない事実は情報不足として出る
+    expect(c.findings).toEqual([]);
+    expect(c.commentMissingCount).toBe(0);
+    expect(c.missing.length).toBeGreaterThan(0);
+    expect(c.missing.every((m) => m.kind === "情報不足")).toBe(true);
+    expect(c.comments.map((x) => x.code)).toEqual(expect.arrayContaining(["850100106", "850100108"]));
+    expect(Array.isArray(c.patientFindings)).toBe(true);
+    // 月末の点検（利用者が行を入力する問題）でも、合計は出さない
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      const me = instance.clerkIdOf(owner);
+      expect(a.caseOf("U1-1").partial).toBe(true);
+      const q = a.start(me, "U1-1");
+      const result = a.confirm(q.id, a.caseFor(q).lines).confirmed!.result;
+      expect([result.total, result.subtotal]).toEqual([null, c.subtotal]);
+    });
+  });
+
+  it("必須の記載を 1 つ欠いた合成の UKE：記載もれの指摘が 1 件出て、件数に数える。対象外の行はなく、小計は UKE の合計と同じ", async () => {
+    const r = await routes();
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    resetLimits();
+    const owner = auth().register("uke_check_c", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    expect((await r.upload(upload(cookie, sample("kisaimore.UKE")))).status).toBe(200);
+    const c = (await (await check("U1-1", cookie)).json()) as Check;
+    expect([c.partial, c.otherRows, c.others, c.subtotal, c.declared.ho]).toEqual([false, 0, [], 14806, 14806]);
+    expect(c.findings.map((f) => [f.ruleId, f.kind, f.messageKey, f.params?.rule, f.lineRefs])).toEqual([["R17", "記載もれ", "R17.comment_missing", "T216-spo2", ["C103_2"]]]);
+    expect(c.commentMissingCount).toBe(1);
+    // コメントは UKE に書いてあるまま（文字データは原文＝全角）
+    expect(c.comments).toEqual([{ code: "850100106", text: "５０８１０１４" }, { code: "850100106", text: "５０８１０２８" }]);
+  });
+
+  it("同梱の見本から取り込んだレセプトも、UKE に書いてあるとおりのまま点検する（カルテ側の記録は使わない）。月末の点検の判定（コメントを見ない）は今のまま", async () => {
+    const owner = auth().register("uke_check_d", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    const c = (await (await check(claimId("K5"), cookie)).json()) as Check;
+    expect([c.partial, c.recordsKnown, c.commentsKnown, c.patientNo, c.declared.ho, c.subtotal]).toEqual([false, false, true, null, 10175, 10175]);
+    // 必須の記載は付いているので、記載もれは 0 件。記録を読む点検（ターミナルケア加算の訪問の回数）は、していないと返す
+    expect([c.findings, c.commentMissingCount]).toEqual([[], 0]);
+    expect(c.missing.map((m) => [m.ruleId, m.missing?.field])).toContainEqual(["R09", "chartRecord"]);
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      const q = a.start(instance.clerkIdOf(owner), claimId("K5"));
+      expect([a.caseFor(q).commentsKnown, a.caseFor(q).partial]).toEqual([false, undefined]);
+    });
+  });
+
+  it("保存済みのレセプトが、あとから表と合わなくなっても、一覧とほかのレセプトは動き、そのレセプトにだけ理由が出る（design.md §11-12 完了条件 (f)）", async () => {
+    const r = await routes();
+    const owner = auth().register("uke_check_e", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    // 取り込んだ後に点数表が変わった、と見立てる：保存済みのファイルの 2 件目のレセプトで、対応しているコードの点数がいまの版と合わない
+    // （取り込みでは断られる内容なので、置き場と取り込みの一覧に直接置く）
+    const base = readUke(sample("shiharaikikin.UKE"));
+    const person = (name: string, no: string): UkePatient => ({ ...base.receipts[0].patient, name, birth: "19520303", insurer: { number: "06139991", symbol: "7", no } });
+    const two = textOf(writeUke({ ...base, receipts: [{ ...base.receipts[0], claimId: "A1", patient: person("架空 松子", "801") }, { ...base.receipts[0], claimId: "A2", patient: person("架空 竹子", "802") }] }));
+    // 2 件目の BNP の点数（130）と、その HO・GO の合計を 1 点ずらす
+    const rows = two.split("\r\n");
+    const second = rows.findIndex((l, i) => l.startsWith("RE,") && i > 1);
+    const bump = (i: number, col: number) => (rows[i] = rows[i].split(",").map((v, n) => (n === col ? String(Number(v) + 1) : v)).join(","));
+    bump(second + 1, 5);
+    bump(rows.findIndex((l, i) => i > second && l.startsWith("SI,")), 5);
+    bump(rows.findIndex((l) => l.startsWith("GO,")), 2);
+    const bytes = enc(rows.join("\r\n"));
+    expect((await r.upload(upload(cookie, bytes))).status).toBe(400);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const dir = path.join(path.dirname(instance.tenantPaths(owner.tenantId).dbFile), "uke");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, `${sha256}.UKE`), bytes);
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      a.setSetting("uke-uploads", JSON.stringify({ next: 2, files: [{ seq: 1, sha256 }] }));
+      a.importUke(instance.clerkIdOf(owner), `${sha256}.UKE`);
+    });
+    const reason = "取り込んだ後に表が変わり、点数が合わなくなりました";
+    const list = (await (await r.list(get("/api/uke", cookie))).json()) as Listed;
+    expect(list.map((u) => [u.unreadable, u.receipts.map((x) => [x.claimId, x.unreadable])])).toEqual([
+      [null, ["K1", "K2", "K3", "K4", "K5", "K7"].map((k) => [claimId(k), null])],
+      [null, [[claimId("K6"), null]]],
+      [null, [["U1-1", null], ["U1-2", reason]]],
+    ]);
+    // 読めなかったレセプトの点検は、理由だけを返す。同じファイルのもう 1 件と、見本は今までどおり
+    const bad = await check("U1-2", cookie);
+    expect([bad.status, await bad.json()]).toEqual([200, { claimId: "U1-2", yearMonth: YM, patient: "架空 竹子", patientNo: "A2", unreadable: { reason } }]);
+    const ok = (await (await check("U1-1", cookie)).json()) as Check;
+    expect([ok.unreadable, ok.declared.ho, ok.subtotal]).toEqual([null, 274, 274]);
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      // 月末の点検には、読めたレセプトだけが並ぶ。症例の一覧も止まらない
+      expect(a.importedClaims(instance.clerkIdOf(owner))).toEqual(["U1-1"]);
+      expect(a.cases().map((x) => x.claimId)).toEqual([...["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId), "U1-1"]);
+      expect(() => a.caseOf("U1-2")).toThrow();
+    });
+    // 事務長は、読めないレセプトを含むファイルも消せる
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    const del = await (await import("../../app/api/uke/uploads/[sha256]/route")).DELETE(new Request(`http://localhost/api/uke/uploads/${sha256}`, { method: "DELETE", headers: { cookie } }), { params: Promise.resolve({ sha256 }) });
+    expect([del.status, await del.json()]).toEqual([200, { deleted: sha256, claims: 2 }]);
+    expect(stored(owner)).toEqual([]);
   });
 });

@@ -15,6 +15,8 @@ export function makeR17(spec: CommentSpec): Rule {
     reference: "診療報酬請求書等の記載要領 別表Ⅰ（摘要欄への記載事項）",
     // 死亡年月日の突き合わせだけが、出来事（死亡の記録）を読む。算定開始月の突き合わせは、記録になければ比べない
     recordFindings: ["comment_mismatch_deathDate"],
+    // 点検の対象外の行がある請求で出すのは、必ず要る記載（when が always）の記載もれと、形式だけ。条件つきの記載と日付の突き合わせは申告しない（design.md §11-11）
+    soundWhenPartial: ["comment_missing", "comment_format"],
     appliesTo: (ctx) => ctx.commentsKnown && present(ctx, kubun).length > 0,
     // 条件を決める事実の不明は、記載ごとに check が情報不足で返す（needs に入れると、ほかの記載の点検まで止まる）
     needs: () => [],
@@ -41,12 +43,12 @@ export function makeR17(spec: CommentSpec): Rule {
           continue;
         }
         if (when.times === 0) continue;
-        // 段 7 で partial（対象外の単位がある請求）が入ったら：comment_missing は when が always の行だけ出し、visitDates・acuteVisitDates は soundWhenPartial に入れない（比べない）
         const codes = commentCodesFor(rule, ctx, spec);
         const countOf = (code: string) => comments.filter((x) => x.code === code).length;
         const enough = rule.need === "each" ? codes.every((code) => countOf(code) >= when.times) : codes.reduce((s, code) => s + countOf(code), 0) >= when.times;
         if (!enough) {
-          out.push(found("comment_missing"));
+          // 点検の対象外の行がある請求では、条件つきの記載の記載もれを、申告のない種類にする（evaluate が捨てて、決められないと返す）
+          out.push(found(ctx.partial && rule.when !== "always" ? "comment_missing_conditional" : "comment_missing"));
           continue;
         }
         // 形式の合わない記載がある項目は、中身を比べない（読めない値を「食い違い」と言わない）

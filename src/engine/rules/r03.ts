@@ -12,6 +12,8 @@ export function makeR03(c: RevisionConsts): Rule {
     kubun: [...kanriKubun(c), HOKATSU],
     reference: "C002 注10 包括的支援加算（C002-2 注5 で施設入居時等医学総合管理料に準用）",
     recordFindings: [],
+    // not_eligible は申告しない：見る月か（hokatsuInScope）が訪問診療料の回数で決まり、重症で月 2 回以上の月は R02 の担当。訪問診療料の行が対象外に移ると、R03 が新しく出る
+    soundWhenPartial: [],
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs(ctx) {
       if (!hokatsuInScope(ctx, c)) return [];

@@ -17,6 +17,7 @@ export function makeR11(c: RevisionConsts): Rule {
     kubun: [...D026, BNP, RAPID],
     reference: "D026 検体検査判断料・外来迅速検体検査加算（第3部第1節第1款 通則3）",
     recordFindings: [],
+    soundWhenPartial: [],
     appliesTo: (ctx) => [...D026, BNP, RAPID].some((k) => has(ctx, k)),
     needs: (ctx) => (rapidAtHome(ctx) ? ["rapidSameDayDocumented"] : []),
     check(ctx) {

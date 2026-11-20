@@ -23,6 +23,8 @@ export function makeR10(c: RevisionConsts): Rule {
     kubun: [OUSHIN, KINKYU, ...c.visitKubun],
     reference: "C000 注1・C001 注1・注10（留意事項 C001 (11)(21)）",
     recordFindings: [],
+    // kinkyu_not_eligible は申告しない：同じ日・翌日の訪問診療料の行があると文書提供を先に聞いて止まる（needs）ので、その行が対象外に移ると、指摘が新しく出る
+    soundWhenPartial: [],
     appliesTo: (ctx) => has(ctx, OUSHIN) || has(ctx, KINKYU),
     needs(ctx) {
       const out: NeedKey[] = [];

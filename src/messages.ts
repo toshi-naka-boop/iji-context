@@ -149,6 +149,8 @@ export function findingText(f: Finding): string {
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
     // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
     if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
+    // 点検の対象外の行がある請求：ほかの行の有無や回数で決まる点は決められない（design.md §11-11）
+    if (f.missing.field === "unsupportedLines") return "この請求には点検の対象外の行があるため、決められません";
     // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
     if (f.missing.field === "rxRecord") return `処方箋料の行${day}に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください`;
     const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;

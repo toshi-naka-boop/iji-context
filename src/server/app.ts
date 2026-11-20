@@ -17,6 +17,7 @@ import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
 import { createRevision } from "./app/revision";
 import { createUke } from "./app/uke";
+import { createUkeCheck } from "./app/uke-check";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
 
@@ -50,6 +51,8 @@ export function openApp(paths: AppPaths) {
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
+  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
+  const { ukeCheck } = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
@@ -103,6 +106,7 @@ export function openApp(paths: AppPaths) {
     importUke,
     sampleUke,
     uploadUke,
+    ukeCheck,
     deleteUpload,
     importedClaims,
     clerk,

@@ -12,6 +12,7 @@ export function makeR09(c: RevisionConsts): Rule {
     reference: "C001 注6・注7・注8",
     // 回数は訪問・往診・死亡の出来事で数える（看取りと死亡診断の背反 mitori_with_shibou は行だけで決まる）
     recordFindings: ["terminal_visits"],
+    soundWhenPartial: ["mitori_with_shibou"],
     appliesTo: (ctx) => [MITORI, SHIBOU, TERMINAL].some((k) => has(ctx, k)),
     needs: () => [],
     check(ctx) {

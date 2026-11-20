@@ -2,9 +2,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { UkeFile, UkePatient } from "../../uke/types";
-import { readUke, UkeError } from "../../uke/uke";
-import { readUploadedUke } from "../../uke/upload";
+import type { UkeFile, UkePatient, UkeReceipt } from "../../uke/types";
+import { readStoredUke, readUke, UkeError } from "../../uke/uke";
+import { uploadClaimIdOf } from "../../uke/upload";
 import { badRequest, notFound } from "../errors";
 import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
@@ -14,6 +14,8 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   const { clerk } = clerks;
 
   const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
+  /** 形式そのものが読めなくなった、保存済みのファイルの理由（以前の形式で作られた UKE など） */
+  const FILE_UNREADABLE = "いまの形式では読めない UKE です。いまの形式で書き出した UKE を取り込み直してください";
   const sampleBytes = () => UKE_FILES.map((f) => readFileSync(path.join(paths.root, f)));
 
   /** アップロードした UKE の置き場（クリニックごと。DB と同じ場所の下） */
@@ -36,19 +38,19 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   const uploadOf = (name: string): Upload | undefined => uploads().find((u) => nameOf(u) === name);
   /**
    * 保存した UKE を読み返す。読むのは置き場の中のハッシュ名だけ。同じ名前は同じ内容なので、読んだ結果は覚えておく。
-   * 受け取ったあとでコードの表が変わり、いまの表では読めなくなったもの（以前の作り物のコードで作られた UKE。design.md §11-1 の移行）は null。
-   * 一覧からは落とさず「古い形式」として出し、点検には並べない（1 件のために一覧ごと止めない）
+   * 読み直しでは断らない（design.md §11-12）：受け取ったあとでコードの表・点数表が変わり、いまの表と食い違うようになったレセプトは、
+   * そのレセプトだけが unreadable（理由つき）になり、ほかのレセプトは今までどおり読める。形式そのものが読めなくなったファイルは null（ファイルごと「読めない」と出す）。
+   * どちらも一覧からは落とさず、点検には並べない（1 件のために一覧ごと止めない）
    */
-  type Stored = { file: UkeFile; patientNos: string[] };
-  const parsed = new Map<string, Stored | null>();
+  const parsed = new Map<string, UkeFile | null>();
   /** 請求 id は、取り込みの連番とファイルの中の通し番号から決まる（src/uke/upload.ts）。同じファイルを読み直しても同じ id になる */
-  function storedUke(u: Upload): Stored | null {
+  function storedUke(u: Upload): UkeFile | null {
     const name = nameOf(u);
     if (!STORED_NAME.test(name)) throw notFound("取り込んだ UKE ではありません");
     let stored = parsed.get(name);
     if (stored === undefined) {
       try {
-        stored = readUploadedUke(readFileSync(path.join(uploadDir(), name)), u.seq);
+        stored = readStoredUke(readFileSync(path.join(uploadDir(), name)), uploadClaimIdOf(u.seq));
       } catch (e) {
         if (!(e instanceof UkeError)) throw e;
         stored = null;
@@ -57,15 +59,23 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     }
     return stored;
   }
-  /**
-   * 見本の 2 本と、クリニックが受け取った UKE。名前は見本のファイル名か、内容のハッシュ名。file が null のものは、いまの表では読めない。
-   * patientNos は、取り込んだ UKE のレセプトごとの「カルテ番号等」（患者の番号。表示にだけ使う）
-   */
-  const named = (): { name: string; uploaded: boolean; file: UkeFile | null; patientNos: string[] }[] => [
-    ...sampleBytes().map((b, i) => ({ name: path.basename(UKE_FILES[i]), uploaded: false, file: readUke(b), patientNos: [] })),
-    ...uploads().map((u) => ({ name: nameOf(u), uploaded: true, file: storedUke(u)?.file ?? null, patientNos: storedUke(u)?.patientNos ?? [] })),
+  /** 見本の 2 本と、クリニックが受け取った UKE。名前は見本のファイル名か、内容のハッシュ名。file が null のものは、いまの形式では読めない */
+  const named = (): { name: string; uploaded: boolean; file: UkeFile | null }[] => [
+    ...sampleBytes().map((b, i) => ({ name: path.basename(UKE_FILES[i]), uploaded: false, file: readUke(b) })),
+    ...uploads().map((u) => ({ name: nameOf(u), uploaded: true, file: storedUke(u) })),
   ];
-  const ukeFiles = () => named().flatMap((u) => (u.file ? [u.file] : []));
+  /** 読めたレセプトだけ（点検・患者マスタ・照合が使う）。読み直しで読めなかったレセプト（unreadable）は入れない */
+  const ukeFiles = (): UkeFile[] => named().flatMap((u) => (u.file ? [{ ...u.file, receipts: u.file.receipts.filter((r) => !r.unreadable) }] : []));
+  /** 一覧にあるレセプトをすべて（読み直しで読めなかったものも含む。請求 id と患者の情報は持っている） */
+  const ukeReceipts = (): UkeReceipt[] => named().flatMap((u) => u.file?.receipts ?? []);
+  /** 一覧にあるレセプト 1 件（取り込んだレセプトの点検が使う）。uploaded は、見本ではなくアップロードで受け取ったものか */
+  function receiptOf(claimId: string): { receipt: UkeReceipt; uploaded: boolean } {
+    for (const u of named()) {
+      const receipt = u.file?.receipts.find((x) => x.claimId === claimId);
+      if (receipt) return { receipt, uploaded: u.uploaded };
+    }
+    throw notFound("UKE にないレセプトです");
+  }
   /** UKE の取り込み（利用者ごとに記録） */
   const importedUke = (clerkId: string): string[] => JSON.parse(setting(`uke:${clerkId}`) ?? "[]") as string[];
   /** 同じ患者（氏名・生年月日・性別）の、同じ診療年月・同じレセプト種別のレセプトか、を比べる鍵 */
@@ -76,17 +86,27 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     /** 鍵 → その鍵のレセプトがあるファイルの数。別のファイルにもあれば、断らずに両方に知らせる（どちらが正しいかは人が決め、要らないファイルを消す） */
     const filesWith = new Map<string, number>();
     for (const u of all) for (const k of new Set((u.file?.receipts ?? []).map(sameMonthKey))) filesWith.set(k, (filesWith.get(k) ?? 0) + 1);
-    return all.map(({ name, uploaded, file: u, patientNos }) => ({
+    return all.map(({ name, uploaded, file: u }) => ({
       name,
       /** 見本ではなく、アップロードで受け取ったものか */
       uploaded,
-      /** いまのコードの表では読めない、古い形式の UKE か（取り込み直しが要る。中身は出さない） */
-      outdated: u === null,
+      /** いまの形式では読めないファイルか（取り込み直しが要る。中身は出さない）。読めれば null */
+      unreadable: u === null ? { reason: FILE_UNREADABLE } : null,
       payer: u?.payer ?? null,
       prefecture: u?.prefecture ?? null,
       billingMonth: u?.billingMonth ?? null,
-      /** patientNo は UKE の「カルテ番号等」（取り込んだ UKE だけ）。sameMonth は「同じ月のレセプトがすでにあります」（別のファイルに、同じ患者・同じ診療年月・同じレセプト種別のレセプトがある） */
-      receipts: (u?.receipts ?? []).map((x, i) => ({ claimId: x.claimId, patient: x.patient.name, patientNo: uploaded ? (patientNos[i] ?? "") : null, sameMonth: (filesWith.get(sameMonthKey(x)) ?? 0) > 1 })),
+      /**
+       * patientNo は UKE の「カルテ番号等」（取り込んだ UKE だけ）。sameMonth は「同じ月のレセプトがすでにあります」（別のファイルに、同じ患者・同じ診療年月・同じレセプト種別のレセプトがある）。
+       * otherRows は点検の対象外の行の数。unreadable は、読み直しで読めなかったレセプトの理由（読めれば null）
+       */
+      receipts: (u?.receipts ?? []).map((x) => ({
+        claimId: x.claimId,
+        patient: x.patient.name,
+        patientNo: uploaded ? (x.patientNo ?? "") : null,
+        sameMonth: (filesWith.get(sameMonthKey(x)) ?? 0) > 1,
+        otherRows: (x.others ?? []).reduce((s, o) => s + o.codes.length, 0),
+        unreadable: x.unreadable?.reason ?? null,
+      })),
       imported: u !== null && done.includes(name),
     }));
   }
@@ -94,7 +114,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     clerk(clerkId);
     const upload = uploadOf(name);
     if (!UKE_FILES.some((f) => path.basename(f) === name) && !upload) throw badRequest(`取り込める UKE ではない: ${name}`);
-    if (upload && storedUke(upload) === null) throw badRequest("古い形式の UKE です。いまの形式で書き出した UKE を取り込み直してください");
+    if (upload && storedUke(upload) === null) throw badRequest(FILE_UNREADABLE);
     const done = importedUke(clerkId);
     if (!done.includes(name)) setSetting(`uke:${clerkId}`, JSON.stringify([...done, name]));
     return ukeList(clerkId);
@@ -111,7 +131,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
    * 断る理由は行番号つきの定型文で、ファイルの中の値（氏名・番号・コード）は返さない。
    * 保存は、クリニックごとの場所に、内容のハッシュを名前にして行う（請求 id やファイル名をパスに使わない）。
    *
-   * 読み込みを通ったものは、見本と違う内容でも受け取る。請求 id はアプリが振る（U<取り込みの連番>-<通し番号>。design.md §11-11）ので、
+   * 読み込みを通ったものは、見本と違う内容でも受け取る。対応していないコードの行は断らず、点検の対象外として残す。請求 id はアプリが振る（U<取り込みの連番>-<通し番号>。design.md §11-11）ので、
    * 同じ患者の別の月・同じファイルの 2 枚目・カルテ番号が空のレセプトも受け取れる。カルテ側の事実を持たないまま点検に並ぶ（src/server/app/cases.ts）。
    * 断るのは、同じファイル（同じ内容のハッシュ）の取り込み直しだけ。見本と同じ内容のファイルは、見本として取り込む（請求 id は症例の番号のまま）
    */
@@ -125,9 +145,9 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     const state = uploadState();
     if (hit < 0 && state.files.some((u) => u.sha256 === sha256)) return reject("同じファイルをすでに取り込んでいます。取り込み直すときは、取り込み済みのファイルを消してからにしてください");
     const upload: Upload = { seq: state.next, sha256 };
-    let read: Stored;
+    let read: UkeFile;
     try {
-      read = hit >= 0 ? { file: readUke(buf), patientNos: [] } : readUploadedUke(buf, upload.seq);
+      read = hit >= 0 ? readUke(buf) : readUke(buf, uploadClaimIdOf(upload.seq));
     } catch (e) {
       if (e instanceof UkeError) return reject(e.message);
       throw e;
@@ -143,19 +163,19 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return importUke(clerkId, nameOf(upload));
   }
 
-  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象） */
-  const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.map((x) => x.claimId));
+  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象）。読み直しで読めなかったレセプトは並べない */
+  const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.filter((x) => x.unreadable === null).map((x) => x.claimId));
   function patientOf(claimId: string): UkePatient {
     const r = ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
     if (!r) throw notFound(`UKE にないレセプト: ${claimId}`);
     return r.patient;
   }
 
-  /** 取り込んだファイルの中のレセプト（消す操作が使う）。取り込みの一覧にないハッシュは「ない」。いまの表では読めないファイルは、レセプトなしとして返す（ファイルだけ消せる） */
+  /** 取り込んだファイルの中のレセプト（消す操作が使う。読み直しで読めなかったレセプトも含む）。取り込みの一覧にないハッシュは「ない」。いまの形式では読めないファイルは、レセプトなしとして返す（ファイルだけ消せる） */
   function uploadedFile(sha256: string): { receipts: UkeFile["receipts"] } {
     const u = uploads().find((x) => x.sha256 === sha256);
     if (!u) throw notFound("取り込んだファイルが見つかりません（消してあるかもしれません）");
-    return { receipts: storedUke(u)?.file.receipts ?? [] };
+    return { receipts: storedUke(u)?.receipts ?? [] };
   }
   /**
    * 取り込みの一覧・利用者ごとの取り込みの記録・読み直しのキャッシュから外し、原本のファイルのパスを返す（ファイルを消すのは呼び出し側。src/server/app/erase.ts）。
@@ -173,7 +193,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return path.join(uploadDir(), name);
   }
 
-  return { ukeFiles, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
+  return { ukeFiles, ukeReceipts, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
 }
 
 export type Uke = ReturnType<typeof createUke>;

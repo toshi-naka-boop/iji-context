@@ -71,10 +71,10 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           const peers = sqlite.prepare(`DELETE FROM peer_questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds).changes;
           if (peers > 0) clerkIds.add(VETERAN_CLERK);
         }
-        // 取り込みの一覧・取り込みの記録・読み直しのキャッシュから外す（このあとの ukeFiles() には、このファイルは出ない）
+        // 取り込みの一覧・取り込みの記録・読み直しのキャッシュから外す（このあとの ukeReceipts() には、このファイルは出ない）
         const original = uke.forgetUpload(sha256);
-        // ほかのどの請求（見本と、残っているファイル）からも参照されなくなった患者だけを消す
-        for (const r of uke.ukeFiles().flatMap((f) => f.receipts)) gone.delete(patients.ingest(r.patient));
+        // ほかのどの請求（見本と、残っているファイル。読み直しで読めなかったレセプトも含む）からも参照されなくなった患者だけを消す
+        for (const r of uke.ukeReceipts()) gone.delete(patients.ingest(r.patient));
         for (const id of gone) {
           for (const table of ["patient_facts", "patient_coverages"]) sqlite.prepare(`DELETE FROM ${table} WHERE patient_id = ?`).run(id);
           sqlite.prepare("DELETE FROM patients WHERE id = ?").run(id);
