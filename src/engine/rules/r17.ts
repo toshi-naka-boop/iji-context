@@ -22,6 +22,8 @@ export function makeR17(spec: CommentSpec): Rule {
     reads() {
       return [...new Set([...this.kubun, ...spec.consts.visitKubun, spec.consts.oushin.kubun, ...kanriKubun(spec.consts)])];
     },
+    // 必ず要る記載（when が always）の記載もれを判定する。データで動く点検（G07）と重ねるための申告で、判定は変えない。同じ記載（コメントコード）かどうかは、重なりの規則が版の表で見る
+    covers: () => ({ kind: "記載もれ", finding: "comment_missing", kubun: [...new Set(spec.comments.filter((r) => r.when === "always").flatMap((r) => r.kubun))].map((k) => [k]) }),
     appliesTo: (ctx) => ctx.commentsKnown && present(ctx, kubun).length > 0,
     // 条件を決める事実の不明は、記載ごとに check が情報不足で返す（needs に入れると、ほかの記載の点検まで止まる）
     needs: () => [],

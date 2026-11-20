@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { loadSources } from "../../scripts/gen-uke";
 import { evaluate } from "../../src/engine";
 import { hasRevision, resolveRevision } from "../../src/engine/revisions";
-import type { ClaimContext } from "../../src/engine/types";
+import type { ClaimContext, Rule } from "../../src/engine/types";
 import { evaluateGeneric } from "../../src/generic";
 import { g04 } from "../../src/generic/g04";
 import { g05 } from "../../src/generic/g05";
@@ -53,6 +53,11 @@ const daysOf = (days: number[]) => {
 };
 const unit = (codes: string[], days: number[]): Unit => ({ items: codes.map((code) => ({ kind: "SI" as const, code })), count: days.length, days: daysOf(days) });
 const tables = (fs: GenericFinding[]) => fs.filter((f) => ["G04", "G05", "G06"].includes(f.check));
+/** 電子点数表と突き合わせる申告（包括・背反・回数）。記載もれ（R17）・傷病名（R06）の申告は、段 13 のテスト（comments-real.test.ts）が見る */
+const tableCovers = (rule: Rule) => {
+  const c = rule.covers?.(rev);
+  return c && ["包括", "背反", "回数"].includes(c.kind) ? c : undefined;
+};
 const run = (db: MastersDb, units: Unit[], certain: ReadonlySet<string> = ALL) => tables(evaluateGeneric({ units }, db, about, undefined, certain).findings);
 const brief = (fs: GenericFinding[]) => fs.map((f) => [f.messageKey, f.certainty, ...f.codes]);
 const kubunOfCode = (code: string) => Object.keys(rev.codes).find((k) => rev.codes[k].primary === code || rev.codes[k].accept.includes(code));
@@ -128,7 +133,7 @@ describe("段 12：実データの masters.db で", () => {
     const missing: string[] = [];
     const counts: Record<string, number> = {};
     for (const rule of rev.rules) {
-      const c = rule.covers?.(rev);
+      const c = tableCovers(rule);
       if (!c) continue;
       counts[rule.id] = 0;
       for (const set of c.kubun) {
@@ -181,7 +186,7 @@ describe("段 12：実データの masters.db で", () => {
       const generic = tables(evaluateGeneric(claim, db, about).findings);
       const codeOf = (k: string) => rev.codes[k].primary;
       for (const rule of rev.rules) {
-        const c = rule.covers?.(rev);
+        const c = tableCovers(rule);
         if (!c) continue;
         for (const f of hand.findings.filter((x) => x.messageKey === `${rule.id}.${c.finding}`)) {
           // 手書きの指摘の組：申告した組のうち、区分が全部請求にあり、指摘の行を含むもの
@@ -198,7 +203,7 @@ describe("段 12：実データの masters.db で", () => {
       // 重ねると、手書きが指摘した組は、データの側からは出ない（2 回言わない）
       const o = overlap(hand, rev, ctx.recordsKnown, mapped, generic);
       for (const rule of rev.rules) {
-        const c = rule.covers?.(rev);
+        const c = tableCovers(rule);
         if (!c) continue;
         const said = hand.findings.filter((x) => x.messageKey === `${rule.id}.${c.finding}`).flatMap((x) => x.lineRefs.map((k) => rev.codes[k]?.primary));
         expect(o.findings.filter((g) => g.kind === c.kind && g.codes.every((code) => mapped.some((m) => m.codes.includes(code))) && g.codes.some((code) => said.includes(code)) && c.kubun.some((set) => set.map((k) => rev.codes[k].primary).sort().join() === [...g.codes].sort().join())), `${name} ${rule.id}`).toEqual([]);
