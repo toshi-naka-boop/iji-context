@@ -7,6 +7,7 @@ import path from "node:path";
 import { syncSkills } from "../scripts/sync-skills";
 import { period } from "../src/demo/period";
 import { evaluate } from "../src/engine";
+import { claimForAi, type Sender } from "../src/llm/outbound";
 import { facilityOf } from "../src/engine/facility";
 import type { ClaimContext } from "../src/engine/types";
 import { modelFor } from "../src/mentor/models";
@@ -82,7 +83,7 @@ function crossOf(root: string, claimId: string) {
 
 const nums = (s: string) => new Set(s.match(/\d+/g) ?? []);
 
-async function runCase(root: string, c: Case): Promise<Result> {
+async function runCase(root: string, c: Case, by: Sender): Promise<Result> {
   const started = Date.now();
   const failures: Result["failures"] = [];
   const fail = (check: string, category: Category, detail: string) => failures.push({ check, category, detail });
@@ -90,7 +91,7 @@ async function runCase(root: string, c: Case): Promise<Result> {
   let output: unknown = null;
   try {
     if (c.kind === "scribe") {
-      const r = await tidy(c.input!, modelFor("scribe"));
+      const r = await tidy(by, c.input!, modelFor("scribe"));
       output = r;
       const e = c.expect;
       for (const w of e.mustNotMatch ?? []) if (r.text.includes(w)) fail(`mustNotMatch:${w}`, "解釈違い", `書かれていない「${w}」を足した`);
@@ -116,11 +117,12 @@ async function runCase(root: string, c: Case): Promise<Result> {
     const r = await askMentor(
       { store, queryLog, askPeerMentor: async () => null, askHuman: async () => ({ queued: "eval" }), crosscheck: () => crossOf(root, ctx.claimId) },
       {
+        by,
         clerkId: "eval",
         sessionId: null,
         character: { id: "a", name: "メンター", firstPerson: "僕", tone: "ていねい" },
         level: 1,
-        ctx,
+        ctx: claimForAi(ctx),
         engine,
         situation: c.kind === "doctor" ? "カルテ不足" : (c.situation ?? "通常"),
         message: c.message!,
@@ -163,15 +165,18 @@ async function runCase(root: string, c: Case): Promise<Result> {
   return { id: c.id, title: c.title, pass: failures.length === 0, failures, output, ms: Date.now() - started };
 }
 
-/** 全件を回し、eval/runs/<run-id>/ に results.jsonl と summary.md を書く。ids を渡すとその分だけ */
-export async function runEval(root: string, opts: { ids?: string[]; runId?: string } = {}): Promise<{ runId: string; passed: number; total: number; summaryPath: string }> {
+/**
+ * 全件を回し、eval/runs/<run-id>/ に results.jsonl と summary.md を書く。ids を渡すとその分だけ。
+ * by は誰の操作か（開発用の入口 /api/eval からは、ログインした本人。送るのは同梱の合成データと評価セットだけ）
+ */
+export async function runEval(root: string, opts: { ids?: string[]; runId?: string } = {}, by: Sender): Promise<{ runId: string; passed: number; total: number; summaryPath: string }> {
   const cases = readFileSync(path.join(root, "eval", "datasets", "resemen.jsonl"), "utf8")
     .split("\n")
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l) as Case)
     .filter((c) => !opts.ids || opts.ids.includes(c.id));
   const results: Result[] = [];
-  for (const c of cases) results.push(await runCase(root, c));
+  for (const c of cases) results.push(await runCase(root, c, by));
   const runsDir = path.join(root, "eval", "runs");
   const prev = existsSync(runsDir) ? readdirSync(runsDir).sort().at(-1) : undefined;
   const prevResults = new Map<string, boolean>();

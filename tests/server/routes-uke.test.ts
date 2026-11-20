@@ -8,10 +8,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
 import { pointsOf, resolveRevision } from "../../src/engine/revisions";
-import { UKE_LIMITS } from "../../src/uke/limits";
+import { UKE_CLAIM_ID, UKE_LIMITS } from "../../src/uke/limits";
 import type { UkeFile, UkePatient } from "../../src/uke/types";
 import { readUke, writeUke } from "../../src/uke/uke";
-import { claimId, YM } from "../helpers/period";
+import { claimId, month, YM } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -23,6 +24,7 @@ beforeAll(async () => {
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   delete process.env.RESEMEN_OPEN_SIGNUP;
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
@@ -54,7 +56,7 @@ const stored = (u: User): string[] => {
   const dir = path.join(path.dirname(instance.tenantPaths(u.tenantId).dbFile), "uke");
   return existsSync(dir) ? readdirSync(dir) : [];
 };
-type Listed = { name: string; imported: boolean; receipts: { claimId: string }[] }[];
+type Listed = { name: string; uploaded: boolean; imported: boolean; receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean }[] }[];
 
 describe("UKE のアップロード", () => {
   it("未ログインは 401、医師の役割は 403。ファイルがなければ 400", async () => {
@@ -87,7 +89,6 @@ describe("UKE のアップロード", () => {
       ["範囲外の数値", withCell(5, 6, "0"), "5 行目：回数が範囲の外"],
       ["表にないコード", withCell(5, 3, "160000310"), "5 行目：診療年月の版の表にないコード"],
       ["上限を超える日別回数", withCell(5, 13, "999999999"), "5 行目：1 日の回数が上限を超えている"],
-      ["文字種の外の請求 id", withCell(2, 12, "../../etc/passwd"), "2 行目：請求 id に使えない文字がある"],
       ["版のない診療年月", withCell(2, 3, "202503"), "2 行目：診療年月に当たる版がない"],
       ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
       ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "末尾に EOF(0x1A) がない"],
@@ -99,7 +100,7 @@ describe("UKE のアップロード", () => {
       const res = await r.upload(upload(cookie, bytes));
       const body = await res.text();
       expect([what, res.status, JSON.parse(body).error]).toEqual([what, 400, `この UKE は取り込めません（${reason}）`]);
-      expect(body).not.toMatch(/160000310|passwd|六郎|01139997|999999999|PDF/);
+      expect(body).not.toMatch(/160000310|六郎|01139997|999999999|PDF/);
     }
     expect(stored(owner)).toEqual([]);
     const list = (await (await r.list(get("/api/uke", cookie))).json()) as Listed;
@@ -112,18 +113,81 @@ describe("UKE のアップロード", () => {
     resetLimits();
   });
 
-  it("同梱の症例と同じ請求 id で見本と内容が違うものは断る（どちらを点検しているかが食い違うため）", async () => {
+  it("請求 id はアプリが振る（U<取り込みの連番>-<通し番号>）。カルテ番号が同梱の症例の番号と同じでも、症例には結びつかない。請求 id に使えない文字のカルテ番号も、患者の番号として受け取る", async () => {
+    expect(["U1-1", "U12-3", "U123456-999"].every((id) => UKE_CLAIM_ID.test(id))).toBe(true);
     const r = await routes();
     const owner = auth().register("uke_owner_c", "やまだ", "password123");
     const cookie = cookieOf(owner);
     const text = textOf(sample("shiharaikikin.UKE"));
+    // 見本と内容が違う（医療機関の名前だけ違う）ファイル：カルテ番号は見本と同じ K6 の番号
     const changed = await r.upload(upload(cookie, enc(text.replace("架空在宅クリニック", "架空在宅診療所"))));
-    expect([changed.status, (await changed.json()).error]).toEqual([400, expect.stringContaining("2 行目：同梱の症例と同じ請求 id で、見本と内容が違う")]);
-    // 症例の番号で始まる別の請求 id も、症例の事実に結びついてしまうので断る
-    const prefixed = await r.upload(upload(cookie, enc(text.replace(claimId("K6"), "K6-other"))));
-    expect([prefixed.status, (await prefixed.json()).error]).toEqual([400, expect.stringContaining("2 行目：同梱の症例と同じ請求 id")]);
-    expect(stored(owner)).toEqual([]);
-    expect(((await (await r.list(get("/api/uke", cookie))).json()) as Listed).map((u) => u.imported)).toEqual([false, false]);
+    expect(changed.status).toBe(200);
+    const first = ((await changed.json()) as Listed).filter((u) => u.uploaded);
+    expect(first.map((u) => u.receipts.map((x) => [x.claimId, x.patientNo]))).toEqual([[["U1-1", claimId("K6")]]]);
+    // パスの形をしたカルテ番号も、表示にだけ使う値として受け取る（請求 id にも保存先にも使わない）
+    const odd = await r.upload(upload(cookie, enc(text.replace(claimId("K6"), "../../etc/passwd").replace("架空在宅クリニック", "架空在宅医院"))));
+    expect(odd.status).toBe(200);
+    const list = ((await odd.json()) as Listed).filter((u) => u.uploaded);
+    expect(list.map((u) => u.receipts.map((x) => [x.claimId, x.patientNo]))).toEqual([[["U1-1", claimId("K6")]], [["U2-1", "../../etc/passwd"]]]);
+    expect(stored(owner).every((n) => /^[0-9a-f]{64}\.UKE$/.test(n))).toBe(true);
+    await instance.runAs(owner, () => {
+      const a = instance.getApp();
+      // 取り込んだ請求は、症例（K6）の事実を持たない。見本の K6 は取り込んでいない
+      expect(a.importedClaims(instance.clerkIdOf(owner))).toEqual(["U1-1", "U2-1"]);
+      expect([a.caseOf("U1-1").recordsKnown, a.caseOf("U1-1").facts.mainDisease.known, a.caseOf(claimId("K6")).recordsKnown]).toEqual([false, false, true]);
+    });
+    // 同じ内容の 3 つのファイルは、同じ患者・同じ月・同じレセプト種別なので、断らずに全部に知らせる（見本にも）
+    const all = (await (await r.list(get("/api/uke", cookie))).json()) as Listed;
+    expect(all.map((u) => [u.name.length === 68 ? "upload" : u.name, u.receipts.map((x) => x.sameMonth)])).toEqual([["kokuhoren.UKE", [false, false, false, false, false, false]], ["shiharaikikin.UKE", [true]], ["upload", [true]], ["upload", [true]]]);
+  });
+
+  it("同じ患者の 2 か月分・同じ患者のレセプトが 2 枚あるファイル・カルテ番号が空のファイルを取り込める。断るのは同じファイルの取り込み直しだけ（完了条件 (g)）", async () => {
+    const r = await routes();
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    resetLimits();
+    const owner = auth().register("uke_owner_i", "やまだ", "password123");
+    const cookie = cookieOf(owner);
+    const base = readUke(sample("shiharaikikin.UKE"));
+    const k6 = base.receipts[0];
+    const person: UkePatient = { ...k6.patient, name: "架空 梅子", birth: "19500606", insurer: { number: "06139991", symbol: "12", no: "345" } };
+    const next = month(1);
+    const inMonth = (ym: string) => k6.lines.map((l) => ({ ...l, dates: l.dates.map((d) => `${ym}${d.slice(7)}`) }));
+    const receipt = (chartNo: string, ym: string) => ({ claimId: chartNo, yearMonth: ym, patient: person, lines: inMonth(ym), comments: [], commentsKnown: true });
+    const send = async (file: UkeFile) => {
+      resetLimits();
+      const res = await r.upload(upload(cookie, writeUke(file)));
+      return { status: res.status, body: (await res.json()) as Listed & { error?: string } };
+    };
+    const mine = (l: Listed) => l.filter((u) => u.uploaded).map((u) => u.receipts.map((x) => [x.claimId, x.patientNo, x.sameMonth]));
+
+    // 1 つ目：今月分。カルテ番号は患者の番号（P77）
+    const a = await send({ ...base, receipts: [receipt("P77", YM)] });
+    expect([a.status, mine(a.body)]).toEqual([200, [[["U1-1", "P77", false]]]]);
+    // 2 つ目：同じ患者（同じカルテ番号）の翌月分。請求 id が重ならないので受け取る
+    const b = await send({ ...base, billingMonth: month(2), receipts: [receipt("P77", next)] });
+    expect([b.status, mine(b.body)]).toEqual([200, [[["U1-1", "P77", false]], [["U2-1", "P77", false]]]]);
+    // 3 つ目：同じ患者のレセプトが 2 枚（同じカルテ番号）と、カルテ番号が空のレセプト。今月分は 1 つ目と同じ月なので、両方に知らせる
+    const c = await send({ ...base, receipts: [receipt("P77", YM), { ...receipt("P77", YM), patient: { ...person, receiptType: "1112" } }, { ...receipt("", YM), patient: { ...person, name: "架空 桃子", birth: "19510707", insurer: { ...person.insurer, no: "346" } } }] });
+    expect(c.status).toBe(200);
+    expect(mine(c.body)).toEqual([[["U1-1", "P77", true]], [["U2-1", "P77", false]], [["U3-1", "P77", true], ["U3-2", "P77", false], ["U3-3", "", false]]]);
+    // 同じファイルの取り込み直しは断る（増えない。連番も進まない）
+    const again = await send({ ...base, receipts: [receipt("P77", YM)] });
+    expect([again.status, again.body.error]).toEqual([400, expect.stringContaining("同じファイルをすでに取り込んでいます")]);
+    expect(stored(owner)).toHaveLength(3);
+    // 断られたファイル（壊れた UKE）でも連番は進まない
+    expect((await r.upload(upload(cookie, Buffer.from("x")))).status).toBe(400);
+    const d = await send({ ...base, receipts: [{ ...receipt("P78", YM), patient: { ...person, name: "架空 桜子" } }] });
+    expect(mine(d.body).at(-1)).toEqual([["U4-1", "P78", false]]);
+
+    await instance.runAs(owner, () => {
+      const app = instance.getApp();
+      // 同じ患者の請求は、患者マスタでは 1 人に寄る（請求はファイルごとに別）
+      expect(new Set(["U1-1", "U2-1", "U3-1", "U3-2"].map((id) => app.patientFacts(id).patientId)).size).toBe(1);
+      expect(app.patientFacts("U3-3").patientId).not.toBe(app.patientFacts("U1-1").patientId);
+      expect([app.caseOf("U2-1").yearMonth, app.caseOf("U1-1").yearMonth]).toEqual([next, YM]);
+      // 読み直しても（キャッシュを捨てても）同じ id になる：一覧に連番を保存している
+      expect(JSON.parse(app.setting("uke-uploads")!)).toMatchObject({ next: 5, files: [{ seq: 1 }, { seq: 2 }, { seq: 3 }, { seq: 4 }] });
+    });
   });
 
   it("見本と違う内容の UKE（同梱の症例にない患者・請求 id、複数レセプト）を受け取り、月末の点検に並べる。足りない事実は情報不足として出て、合計は出る", async () => {
@@ -136,15 +200,16 @@ describe("UKE のアップロード", () => {
     const base = readUke(sample("kokuhoren.UKE"));
     const linesOf = (k: string) => base.receipts.find((x) => x.claimId === claimId(k))!.lines;
     const person = (n: number, name: string): UkePatient => ({ name, sex: 2, birth: "19440505", receiptType: "1318", insurer: { number: "39139993", symbol: "", no: `0000009${n}` }, kohi: [], diseases: [{ name: "慢性心不全", start: "20250401", main: true }] });
-    const X1 = `X1-${YM}`;
-    const X2 = `X2-${YM}`;
+    // 請求 id はアプリが振る（UKE のカルテ番号は X1・X2 のまま、患者の番号として残る）
+    const X1 = "U1-1";
+    const X2 = "U1-2";
     const file: UkeFile = {
       ...base,
       receipts: [
         // 在宅移行早期加算（退院・算定開始月の記録がないと決められない）を含む行
-        { claimId: X1, yearMonth: YM, patient: person(1, "架空 花子"), lines: linesOf("K2"), comments: [], commentsKnown: true },
+        { claimId: `X1-${YM}`, yearMonth: YM, patient: person(1, "架空 花子"), lines: linesOf("K2"), comments: [], commentsKnown: true },
         // ターミナルケア加算（訪問の記録がないと決められない）を含む行
-        { claimId: X2, yearMonth: YM, patient: person(2, "架空 月子"), lines: linesOf("K5"), comments: [], commentsKnown: true },
+        { claimId: `X2-${YM}`, yearMonth: YM, patient: person(2, "架空 月子"), lines: linesOf("K5"), comments: [], commentsKnown: true },
       ],
     };
     const bytes = writeUke(file);
@@ -156,8 +221,8 @@ describe("UKE のアップロード", () => {
     expect(after.map((u) => [u.name, u.uploaded, u.imported])).toEqual([["kokuhoren.UKE", false, false], ["shiharaikikin.UKE", false, false], [name, true, true]]);
     expect(after[2].receipts.map((x) => x.claimId)).toEqual([X1, X2]);
     expect(stored(owner)).toEqual([name]);
-    // 同じものをもう一度送っても増えない
-    expect((await r.upload(upload(cookie, bytes))).status).toBe(200);
+    // 同じものをもう一度送ると断る（増えない）
+    expect((await r.upload(upload(cookie, bytes))).status).toBe(400);
     expect(stored(owner)).toHaveLength(1);
 
     const total = (k: string) => linesOf(k).reduce((s, l) => s + pointsOf(resolveRevision(YM), l.kubun)! * l.count, 0);
@@ -196,11 +261,6 @@ describe("UKE のアップロード", () => {
     expect([...j1.findings, ...j2.findings].some((f) => f.missing?.field === "visitsComplete")).toBe(false);
     expect(out.map((q) => q.correct)).toEqual([true, true]);
 
-    // すでに取り込んだ UKE と同じ請求 id で内容が違うものは断り、保存しない
-    resetLimits();
-    const again = await r.upload(upload(cookie, writeUke({ ...file, receipts: [{ ...file.receipts[0], patient: person(3, "架空 星子") }] })));
-    expect([again.status, (await again.json()).error]).toEqual([400, expect.stringContaining("2 行目：すでに取り込んだ UKE と同じ請求 id で、内容が違う")]);
-    expect(stored(owner)).toEqual([name]);
     // 版のコードの表にないコードを 1 行でも含めば、ファイルごと断る
     const unknownCode = await r.upload(upload(cookie, enc(textOf(writeUke({ ...file, receipts: [{ ...file.receipts[0], claimId: `X3-${YM}` }] })).replace(/^(SI,\d+,\d+,)\d+/m, "$1160000310"))));
     expect([unknownCode.status, (await unknownCode.json()).error]).toEqual([400, expect.stringContaining("診療年月の版の表にないコード")]);

@@ -1,9 +1,8 @@
 // 電子カルテの画面を撮った画像から、病名・診療記録・処方の文字を書き写す（2026-11-08 ユーザー判断。モデルは config/models.json の chartImage）
 // AI は書き写すだけで、要約・補足・判定をしない。書き写した文は自由記述の欄に入り、本人が目で確かめてから SOAP に整える。
 // 画像はどこにも保存しない（読み取ったら捨てる）
-import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { modelOptions, type ModelChoice } from "../mentor/models";
-import { runOnce } from "../mentor/run";
+import { runOnce, type SDKUserMessage, type Sender } from "../llm/outbound";
 import { badRequest } from "../server/errors";
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -55,7 +54,7 @@ export function toFreeText(t: ChartImageText): string {
 }
 
 /** 画像を Claude に読ませ、書き写した文を返す（画像は保存しない） */
-export async function readChartImage(image: Buffer, model?: ModelChoice): Promise<{ text: string; parts: ChartImageText }> {
+export async function readChartImage(by: Sender, image: Buffer, model?: ModelChoice): Promise<{ text: string; parts: ChartImageText }> {
   if (image.length === 0 || image.length > MAX_IMAGE_BYTES) throw badRequest("画像が空か、5MB を超えています");
   const mediaType = imageTypeOf(image);
   if (!mediaType) throw badRequest("PNG・JPEG・WebP の画像を選んでください");
@@ -72,7 +71,7 @@ export async function readChartImage(image: Buffer, model?: ModelChoice): Promis
       },
     } as SDKUserMessage;
   }
-  const r = await runOnce("chartImage", prompt(), {
+  const r = await runOnce(by, "chartImage", prompt(), {
     systemPrompt: CHART_IMAGE_PROMPT,
     tools: [],
     settingSources: [],

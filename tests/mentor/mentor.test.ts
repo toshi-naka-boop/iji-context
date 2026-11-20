@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import characters from "../../config/characters.json";
 import { evaluate } from "../../src/engine";
+import { claimForAi } from "../../src/llm/outbound";
 import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import { guardExpression, leakedTerms, parseMentorOutput } from "../../src/mentor/output";
 import { buildSystemPrompt, levelBehavior } from "../../src/mentor/prompt";
@@ -123,7 +124,7 @@ describe("Agent SDK への登録（API は呼ばない）", () => {
       askPeerMentor: async () => null,
       askHuman: async () => ({ queued: "x" }),
     };
-    const server = mentorServer(deps, loadCase("K2"), () => T);
+    const server = mentorServer(deps, claimForAi(loadCase("K2")), () => T);
     expect(server).toMatchObject({ type: "sdk", name: "resemen" });
   });
 });
@@ -249,7 +250,7 @@ describe("医師に聞く前に正しい決まりを読む（照合の不一致 
     try {
       const offered: string[] = [];
       const deps = { store: { knowledgeDir: path.join(root, "k"), skillsDir: path.join(root, "s") }, queryLog: { dir: path.join(root, "q") }, askPeerMentor: async () => null, askHuman: async () => ({ queued: "x" }), crosscheck: () => [item] };
-      const server = mentorServer(deps, loadCase("K4"), () => T, (items) => offered.push(...items.map((m) => m.ruleId)));
+      const server = mentorServer(deps, claimForAi(loadCase("K4")), () => T, (items) => offered.push(...items.map((m) => m.ruleId)));
       const tools = (server.instance as unknown as { _registeredTools: Record<string, { handler?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }>; callback?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> })._registeredTools;
       const t = tools.ask_doctor;
       const fn = t.handler ?? t.callback!;

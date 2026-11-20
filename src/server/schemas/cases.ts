@@ -15,5 +15,7 @@ export const date = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
 export const crosscheckQuery = z.strictObject({ claimId, asOf: date.optional() });
 export const crosscheckBody = z.strictObject({ claimId, ruleId: id, asOf: date.optional() });
 
+/** 取り込んだファイルの指定（内容のハッシュ。消す操作で使う） */
+export const uploadParams = z.strictObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/) });
 /** 取り込む UKE のファイル名（用意してある 2 本のどれかは、処理の側で確かめる）。見本のダウンロードのクエリも同じ形 */
 export const ukeBody = z.strictObject({ name: z.string().regex(/^[A-Za-z0-9_-]{1,64}\.UKE$/) });

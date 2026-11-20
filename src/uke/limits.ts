@@ -12,5 +12,5 @@ export const UKE_LIMITS = {
   maxPoints: 9_999_999,
 } as const;
 
-/** 請求 id に使える文字（英数字とハイフン、20 文字まで）。パスの区切り・. ・空白を通さない */
+/** 請求 id に使える文字（英数字とハイフン、20 文字まで）。パスの区切り・. ・空白を通さない。取り込んだ請求の id（U12-3。src/uke/upload.ts）も、同梱の症例の id もこの形 */
 export const UKE_CLAIM_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,19}$/;

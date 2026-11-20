@@ -1,6 +1,7 @@
 // 電子カルテの画面の画像から書き写す（2026-11-08）：受け付ける画像の決まりと、形の違う出力の扱い。モデルは呼ばない
 import { describe, expect, it } from "vitest";
 import { imageTypeOf, readChartImage, toFreeText, toImageText, MAX_IMAGE_BYTES } from "../../src/chart/image";
+import { outboundForBundled } from "../../src/llm/outbound";
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]);
@@ -18,9 +19,10 @@ describe("受け付ける画像", () => {
     expect(imageTypeOf(Buffer.alloc(0))).toBeNull();
   });
   it("空・5MB 超え・画像でないものは、モデルを呼ぶ前に断る", async () => {
-    await expect(readChartImage(Buffer.alloc(0))).rejects.toThrow("5MB");
-    await expect(readChartImage(Buffer.concat([png, Buffer.alloc(MAX_IMAGE_BYTES)]))).rejects.toThrow("5MB");
-    await expect(readChartImage(Buffer.from("%PDF-1.7"))).rejects.toThrow("PNG");
+    const by = outboundForBundled();
+    await expect(readChartImage(by, Buffer.alloc(0))).rejects.toThrow("5MB");
+    await expect(readChartImage(by, Buffer.concat([png, Buffer.alloc(MAX_IMAGE_BYTES)]))).rejects.toThrow("5MB");
+    await expect(readChartImage(by, Buffer.from("%PDF-1.7"))).rejects.toThrow("PNG");
   });
 });
 

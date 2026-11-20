@@ -94,7 +94,7 @@ describe("migrate", () => {
     expect(version(db)).toBe(1);
     db.prepare("INSERT INTO users (id, login, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run("t0123456789ab", "old_user", "まえから", "scrypt$x$x$x", "2026-11-01T00:00:00.000Z");
     db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('h', 't0123456789ab', '2099-01-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')").run();
-    expect(migrate(db, AUTH_MIGRATIONS)).toBe(2);
+    expect(migrate(db, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
     expect(db.prepare("SELECT id, login, name, tenant_id, role FROM users").all()).toEqual([{ id: "t0123456789ab", login: "old_user", name: "まえから", tenant_id: "t0123456789ab", role: "clerk" }]);
     // セッションは残り、招待と監査の表ができる
     expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });

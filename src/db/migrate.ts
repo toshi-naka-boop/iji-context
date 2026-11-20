@@ -57,6 +57,13 @@ ALTER TABLE patient_facts RENAME COLUMN patient_key TO patient_id;
 DROP TABLE patient_key_map;
 `,
   },
+  {
+    // ベテランへの問いが、どの請求の相談から出たか（design.md §11-11「消す」：取り込んだファイルを消すとき、その請求の問いも消す）。それまでの問いは空
+    version: 5,
+    sql: `
+ALTER TABLE peer_questions ADD COLUMN claim_id TEXT;
+`,
+  },
 ];
 
 /** ログインの auth.db */
@@ -81,6 +88,14 @@ UPDATE users SET tenant_id = id WHERE tenant_id IS NULL;
 CREATE INDEX users_tenant ON users (tenant_id);
 CREATE TABLE invites (code_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, role TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT);
 CREATE TABLE auth_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, event TEXT NOT NULL, result TEXT NOT NULL, user_id TEXT, tenant_id TEXT, ip TEXT);
+`,
+  },
+  {
+    // 注意書きへの同意（design.md §11-11）：利用者ごとに、同意した注意書きの版と時刻。それまでの利用者は空（次の操作で聞かれる）
+    version: 3,
+    sql: `
+ALTER TABLE users ADD COLUMN accepted_notice_version TEXT;
+ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
 `,
   },
 ];

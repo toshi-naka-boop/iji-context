@@ -1,5 +1,6 @@
 // 声で答えた名前をひらがなにする（2026-11-07）：直すのは漢字が混じるときだけ。モデルの答えはひらがなだけのときに使う
 import { describe, expect, it } from "vitest";
+import { outboundForBundled } from "../../src/llm/outbound";
 import { acceptReading, needsKana, toHiragana } from "../../src/voice/kana";
 
 describe("聞き取った名前のひらがな化", () => {
@@ -18,6 +19,6 @@ describe("聞き取った名前のひらがな化", () => {
     expect(acceptReading(null, "敏之")).toBe("敏之");
   });
   it("漢字がなければモデルを呼ばずにそのまま返す", async () => {
-    expect(await toHiragana("トシ")).toBe("トシ");
+    expect(await toHiragana(outboundForBundled(), "トシ")).toBe("トシ");
   });
 });

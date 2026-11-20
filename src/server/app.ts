@@ -6,6 +6,7 @@ import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
+import { createErase } from "./app/erase";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
@@ -38,6 +39,7 @@ export function openApp(paths: AppPaths) {
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
+  const { deleteUpload } = createErase(ctx, uke, patientFactsOf);
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
@@ -98,6 +100,7 @@ export function openApp(paths: AppPaths) {
     importUke,
     sampleUke,
     uploadUke,
+    deleteUpload,
     importedClaims,
     clerk,
     setSession,

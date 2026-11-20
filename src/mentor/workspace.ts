@@ -5,7 +5,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { HookCallbackMatcher, HookEvent } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallbackMatcher, HookEvent } from "../llm/outbound";
 import { listKnowledge, type StoreOptions } from "../lifecycle/store";
 import type { Question } from "../practice/practice";
 import { MISMATCH_RULES } from "../uke/crosscheck";

@@ -7,6 +7,7 @@ import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
 import { month } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -16,6 +17,7 @@ beforeAll(async () => {
   process.env.RESEMEN_DATA = tmp;
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });

@@ -13,6 +13,18 @@ export class UserError extends Error {
   }
 }
 
+/** 注意書きへの同意を求めるときの定型の文言 */
+export const CONSENT_MESSAGE = "この操作の前に、注意書きへの同意が必要です";
+/**
+ * 今の版の注意書きに同意していない利用者の操作（design.md §11-11）。共通のルートヘルパは 403 と、画面が同意を出すための印（consent: "required"）を返す。
+ * ルートの申告で止めるとき（src/server/http.ts）と、外部へ送る直前に止めるとき（src/llm/outbound.ts）の両方が使う
+ */
+export class ConsentRequired extends UserError {
+  constructor() {
+    super(403, CONSENT_MESSAGE);
+  }
+}
+
 export const badRequest = (message: string, fields?: string[]) => new UserError(400, message, fields);
 export const forbidden = (message: string) => new UserError(403, message);
 export const notFound = (message: string) => new UserError(404, message);

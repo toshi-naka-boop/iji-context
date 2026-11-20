@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { isRole, type Role } from "./roles";
@@ -158,6 +159,20 @@ export function openAuth(dbFile: string) {
     return { ...user, role };
   }
 
+  /**
+   * 注意書きへの同意（design.md §11-11）。利用者ごとに、注意書きの版ごとに 1 回。同意できるのは今の版だけ
+   * （古い画面が持っている版で同意しても、今の版に同意したことにしない）
+   */
+  function acceptNotice(userId: string, version: string, now = new Date()): { version: string; at: string } {
+    if (version !== NOTICE.version) throw conflict("注意書きが更新されています。画面を読み込み直してから、もう一度確かめてください");
+    const at = now.toISOString();
+    db.prepare("UPDATE users SET accepted_notice_version = ?, accepted_notice_at = ? WHERE id = ?").run(version, at, userId);
+    return { version, at };
+  }
+  /** その利用者が、今の版の注意書きに同意しているか。呼ぶたびに DB を読む（セッションに覚えさせない） */
+  const acceptedNotice = (userId: string): boolean =>
+    (db.prepare("SELECT accepted_notice_version AS v FROM users WHERE id = ?").get(userId) as { v: string | null } | undefined)?.v === NOTICE.version;
+
   /** ログインまわりの監査（FR-140）：ログインの成功・失敗、登録、招待の作成・使用・取り消し、役割の切替。氏名・パスワード・招待コードは入れない */
   function recordEvent(e: { event: string; result: string; userId?: string | null; tenantId?: string | null; ip?: string | null }, now = new Date()) {
     db.prepare("INSERT INTO auth_events (at, event, result, user_id, tenant_id, ip) VALUES (?, ?, ?, ?, ?, ?)").run(now.toISOString(), e.event, e.result, e.userId ?? null, e.tenantId ?? null, e.ip ?? null);
@@ -199,6 +214,6 @@ export function openAuth(dbFile: string) {
   function endSession(token: string | undefined) {
     if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha256(token));
   }
-  return { register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { acceptNotice, acceptedNotice, register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

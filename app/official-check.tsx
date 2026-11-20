@@ -34,7 +34,7 @@ export function useCheckRights(): CheckRights {
       .then((r) => (r.ok ? r.json() : null))
       .then((me: { role: Role; canSwitchRole: boolean } | null) => {
         if (!me) return;
-        const can = (kind: "applies" | "not-applies") => permits(POLICY[`POST /api/knowledge/[id]/official-check/${kind}`], me, () => me.canSwitchRole);
+        const can = (kind: "applies" | "not-applies") => permits(POLICY[`POST /api/knowledge/[id]/official-check/${kind}`].rule, me, () => me.canSwitchRole);
         setRights({ applies: can("applies"), notApplies: can("not-applies") });
       })
       .catch(() => {});

@@ -35,7 +35,7 @@ afterAll(() => {
 beforeEach(() => resetLimits());
 
 // ヘルパだけを試すので、権限表の行は手で組む（キーは監査ログの操作名になる）
-const anyRole = (key: string): Allowed => ({ key: key as Allowed["key"], rule: ["clerk", "veteran", "manager", "doctor"] });
+const anyRole = (key: string): Allowed => ({ key: key as Allowed["key"], rule: ["clerk", "veteran", "manager", "doctor"], external: "none", patientData: false });
 const schema = z.strictObject({ name: z.string().max(5), items: z.array(z.string().max(10)).max(2).optional() });
 
 const post = (body: unknown, headers: Record<string, string> = {}) =>
@@ -129,7 +129,7 @@ describe("エラーの扱い", () => {
 
   it("許されていないロールは 403 で、処理に入らない", async () => {
     const handler = vi.fn(() => ({ ok: true }));
-    const POST = http.route({ roles: { key: "POST /api/test-403" as Allowed["key"], rule: ["doctor"] } }, handler);
+    const POST = http.route({ roles: { key: "POST /api/test-403" as Allowed["key"], rule: ["doctor"], external: "none", patientData: false } }, handler);
     const r = await POST(post({}));
     expect(r.status).toBe(403);
     expect((await r.json()).error).toContain("医師");
@@ -140,7 +140,7 @@ describe("エラーの扱い", () => {
 describe("開発用のルート（権限表の dev）", () => {
   it("本番では 404。本番でなくてもログインが要り、ログインしていればどのロールでも通る", async () => {
     const handler = vi.fn(() => ({ ok: true }));
-    const GET = http.route({ roles: { key: "GET /api/test-dev" as Allowed["key"], rule: "dev" } }, handler);
+    const GET = http.route({ roles: { key: "GET /api/test-dev" as Allowed["key"], rule: "dev", external: "none", patientData: false } }, handler);
     const req = (c: string | null) => new Request("http://localhost/api/test", { headers: c ? { cookie: c } : {} });
     expect((await GET(req(null))).status).toBe(401);
     expect(handler).not.toHaveBeenCalled();
