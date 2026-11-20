@@ -50,7 +50,11 @@ function mergeLines(lines: ClaimLine[]): ClaimLine[] {
 }
 
 export function evaluate(input: ClaimContext, revs: Revision[] = REVISIONS): EngineResult {
-  const rev = resolveRevision(input.yearMonth, revs);
+  return evaluateWith(input, resolveRevision(input.yearMonth, revs));
+}
+
+/** evaluate の中身。版の解決だけを飛ばし、渡された版の点数表とルールで判定する（試算が使う。design.md §11-12） */
+export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
   const excludedCount = input.excluded?.length ?? 0;
 
   // 行ごとの点数と合計は、渡された行のまま出す
