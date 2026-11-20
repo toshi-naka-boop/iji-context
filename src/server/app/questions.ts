@@ -109,10 +109,10 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     saveQ(next);
     return next;
   }
-  /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛ける。読むだけで、問題には保存しない */
+  /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛け、確定のときの手書きの結果との重なりの規則を通す。読むだけで、問題には保存しない */
   function genericOf(q: Question) {
-    const yearMonth = caseFor(q).yearMonth;
-    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth);
+    const { yearMonth, recordsKnown } = caseFor(q);
+    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth, q.confirmed?.result ?? { findings: [] }, recordsKnown);
   }
   function explain(id: string) {
     const cur = loadQ(id);

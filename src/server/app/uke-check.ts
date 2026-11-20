@@ -11,13 +11,15 @@ import { trial } from "../../engine/trial";
 import type { ClaimContext, ClaimLine, Finding } from "../../engine/types";
 import { evaluateGeneric } from "../../generic";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
-import { genericView } from "../../generic/view";
+import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
+import { tensuhyoNotesOf } from "../../generic/tensuhyo";
 import { withMasters } from "../../masters/db";
 import { diseaseCodeOf } from "../../uke/diseases";
 import type { UkeClaim, UkeOther } from "../../uke/types";
 import { mapClaim } from "../../uke/uke";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
+import { genericOut, type Hand } from "./generic";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
 
@@ -54,25 +56,30 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
  * マスターを引いて作る部分（design.md §12-4・§12-5）。点検と試算で同じ形：
  * names＝全部の行（対象外の単位の行も）・コメント・傷病名の名称（診療年月に使う 1 枚のマスターから。マスターがなければ持たない＝画面はコードだけ）／
  * sheetNotes＝使う 1 枚についての断り書き（診療年月より後の 1 枚で代えている／読み方を確かめた版より新しい。design.md §12-1）／
- * diseases＝傷病名（UKE の並びのまま。表にもマスターにもないコードは name が null）／generic＝データで動く点検の指摘と、点検の範囲／
+ * diseases＝傷病名（UKE の並びのまま。表にもマスターにもないコードは name が null）／
+ * generic＝データで動く点検の指摘と、点検の範囲。指摘は、手書きの結果 hand と、行とコードの対応 mapped で、重なりの規則（src/generic/overlap.ts）を通したもの／
  * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
  * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない
  */
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside">, all: Finding[]) {
+/** 基本マスターの断り書きに、電子点数表の分を足す */
+const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: { later: boolean; newer: boolean }) => ({ later: [...notes.later, ...(t.later ? ["電子点数表"] : [])], newer: [...notes.newer, ...(t.newer ? ["電子点数表"] : [])] });
+
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside">, hand: Hand, mapped: MappedLine[]) {
   const about = { yearMonth: claim.yearMonth, generation: rev.generation };
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
   return withMasters((db) => {
     const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
     return {
       ...(names ? { names } : {}),
-      ...(db ? { sheetNotes: sheetNotesOf(db, about) } : {}),
+      ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about)) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
-      generic: genericView(evaluateGeneric(claim, db, about), names),
+      // カルテ側の記録がない請求として判定している（recordsKnown は偽）
+      generic: genericOut(evaluateGeneric(claim, db, about), names, hand, rev, false, mapped),
       stopped: rev.rules.flatMap((rule) => {
         const by = partialBy(rule, rev, ctx);
         if (by === null) return [];
         const codes = Array.isArray(by) ? by.map((c) => ({ code: c.code, known: c.known, name: names?.items[c.code]?.name ?? null, no: names?.items[c.code]?.no ?? null })) : [];
-        return [{ ruleId: rule.id, all: !Array.isArray(by), codes, dropped: all.some((f) => f.ruleId === rule.id && f.missing?.field === "unsupportedLines") }];
+        return [{ ruleId: rule.id, all: !Array.isArray(by), codes, dropped: hand.findings.some((f) => f.ruleId === rule.id && f.missing?.field === "unsupportedLines") }];
       }),
     };
   });
@@ -90,6 +97,8 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
     // UKE に書いてあることだけで点検する：行とコメントは UKE のまま、出来事は持たない（同梱の症例でも、カルテ側の記録は使わない）
     const ctx: ClaimContext = { ...cases.caseOf(claimId), events: [], recordsKnown: false };
     const result = cases.judge(ctx);
+    const parsed = claim();
+    const mapped = mapClaim(parsed, rev);
     return {
       ...head,
       unreadable: null,
@@ -98,7 +107,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       /** UKE に書いてある請求の合計（HO と、KO の並び） */
       declared: r.declared ?? { ho: null, ko: [] },
       ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], result.findings),
-      ...mastersPartOf(claim(), rev, ctx, result.findings),
+      ...mastersPartOf(parsed, rev, ctx, result, mappedLinesOf(mapped.lines, mapped.origins)),
       /** 点検した行の小計（請求の合計ではない） */
       subtotal: result.subtotal !== undefined ? result.subtotal : result.total,
       applied: result.applied,
@@ -155,7 +164,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       /** UKE に書いてある請求の合計（HO と、KO の並び。UKE の点数のまま） */
       declared: { ho: parsed.total?.points ?? null, ko: parsed.kohiTotals },
       ...bodyOf(r.yearMonth, rev, mapped.lines, mapped.others, findings),
-      ...mastersPartOf(parsed, rev, ctx, findings),
+      ...mastersPartOf(parsed, rev, ctx, { findings }, mappedLinesOf(mapped.lines, mapped.origins)),
       /** 点検した行の小計（選んだ版の点数で数えたもの。請求の合計ではない） */
       subtotal: subtotal !== undefined ? subtotal : result.total,
       pointDiffs,

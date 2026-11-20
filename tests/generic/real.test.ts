@@ -77,7 +77,7 @@ describe("段 10b：実データの masters.db で", () => {
     expect(claim.units.flatMap((u) => u.items.map((x) => x.code))).toContain(DRUG_CHANGED_LATER);
     const r = evaluateGeneric(claim, db, { yearMonth: claim.yearMonth, generation: rev.generation });
     expect(claim.yearMonth).toBe(YM);
-    expect([r.findings, r.ran.map((x) => x.check)]).toEqual([[], ["G01"]]);
+    expect([r.findings, r.ran.map((x) => x.check).includes("G01")]).toEqual([[], true]);
     for (const c of parseUke(sample("jitsurei.UKE")).claims) expect(evaluateGeneric(c, db, about).findings).toEqual([]);
     db.close();
   });
@@ -170,7 +170,7 @@ describe("段 10b：実データの masters.db で", () => {
         expect(c.others.flatMap((o) => o.codes).filter((code) => !c.names.items[code]), id).toEqual([]);
         expect(c.comments.filter((x) => !c.names.comments[x.code]), id).toEqual([]);
         expect(c.diseases.filter((d) => d.name === null), id).toEqual([]);
-        expect([c.generic.ran, c.generic.findings], id).toEqual([[{ check: "G01", kind: "コード" }], []]);
+        expect([c.generic.ran.some((x) => x.check === "G01"), c.generic.findings], id).toEqual([true, []]);
         expect(c.stopped.every((s) => !s.all), id).toBe(true);
         expect(c.stopped.length, id).toBeLessThan(rev.rules.length);
       }

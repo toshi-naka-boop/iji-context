@@ -219,6 +219,12 @@ export type Rule = {
    * 申告のないルールは、対象外の単位が 1 つでもあれば止める（v23 のまま）。申告が足りていることは tests/engine/reads.test.ts が縛る
    */
   reads?(rev: Revision): string[];
+  /**
+   * このルールが「判定する」と申告する組（design.md §12-2。データで動く点検との重なりを、src/generic/overlap.ts が決めるのに使う）。
+   * kind は、データで動く点検の種類（包括・背反・回数・記載もれ）。finding は、その組が当たるときにこのルールが出す指摘の種類（messageKey の「ルール id.」より後ろ）。
+   * kubun は組の一覧：包括・背反は 2 つの区分の組、回数は 1 つの区分。判定そのものは変えない（申告だけ）。申告と電子点数表の行の対応は tests/generic/overlap-real.test.ts が確かめる
+   */
+  covers?(rev: Revision): { kind: "包括" | "背反" | "回数" | "記載もれ"; finding: string; kubun: string[][] };
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];

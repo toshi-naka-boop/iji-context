@@ -15,6 +15,8 @@ export function makeR04(c: RevisionConsts): Rule {
     reads() {
       return this.kubun;
     },
+    // 主たるもの 1 つ：指導管理料の区分の、2 つずつの組（通則2。電子点数表では同一月内の背反）
+    covers: () => ({ kind: "背反", finding: "only_main", kubun: KANRI.flatMap((a, i) => KANRI.slice(i + 1).map((b) => [a, b])) }),
     appliesTo: (ctx) => present(ctx, KANRI).length > 0,
     needs: () => [],
     check(ctx) {
