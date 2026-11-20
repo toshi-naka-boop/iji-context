@@ -176,11 +176,14 @@ export function rxKubunOn(ctx: ClaimContext, c: RevisionConsts, day: string): st
 /**
  * ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽。
  * 同じ日の訪問診療と往診の出来事は、別々の診療でないと確かめた日（sameDaySeparate が偽）なら 1 回、別々の診療の日（往診が先でも）は 2 回と数える（X-73・C-88）。
- * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す
+ * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す。
+ * 別の経路（EM #7-11）：回数が足りなくても、退院時共同指導料1 を算定し、訪問診療を実施していれば満たす。
+ * 退院時共同指導料1 を聞く（askGuidance）のは、回数が足りないと決まり、訪問診療が 1 回以上あるときだけ。
+ * 死亡日の出来事は、死亡の前後を問わず数える（死亡後だけの診療を入れるかは未確認。要件不足を出さない側に倒れる。design.md L-49）
  */
-export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[] } {
+export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[]; askGuidance: boolean } {
   const death = eventsOf(ctx, "death")[0];
-  if (!death) return { ok: false, ask: [] };
+  if (!death) return { ok: false, ask: [], askGuidance: false };
   const from = addDays(death.date, -c.terminal.days);
   const done = [...eventsOf(ctx, "visit"), ...eventsOf(ctx, "oushin")].filter((e) => e.date >= from && e.date <= death.date);
   let min = 0;
@@ -194,9 +197,11 @@ export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: bo
     max += answer === false ? 1 : types.length;
     if (answer === undefined) ask.push(d);
   }
-  if (min >= c.terminal.minVisits) return { ok: true, ask: [] };
-  if (max < c.terminal.minVisits) return { ok: false, ask: [] };
-  return { ok: "unknown", ask };
+  const guidance = ctx.facts.dischargeJointGuidance;
+  const visited = done.some((e) => e.type === "visit");
+  if (min >= c.terminal.minVisits || (visited && guidance.known && guidance.value)) return { ok: true, ask: [], askGuidance: false };
+  if (max < c.terminal.minVisits) return visited && !guidance.known ? { ok: "unknown", ask: [], askGuidance: true } : { ok: false, ask: [], askGuidance: false };
+  return { ok: "unknown", ask, askGuidance: false };
 }
 
 /** 週ごとの、訪問診療料を算定した回数の最大値。算定しなかった訪問は数えない */

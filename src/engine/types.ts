@@ -74,6 +74,8 @@ export type Facts = {
   sameDaySeparate: Fact<Record<string, boolean>>;
   /** その日、訪問診療のあとに、病状の急変などで往診したか（日付 → 真偽）。載っていない日は不明。同じ日の往診料を立てる条件（R10・D02。EM #7-8 改） */
   sameDayOushinAfterVisit: Fact<Record<string, boolean>>;
+  /** 退院時共同指導料1 を算定したか。在宅ターミナルケア加算の別の経路（R09・D12。EM #7-11）。医療事務が確かめる */
+  dischargeJointGuidance: Fact<boolean>;
   /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */

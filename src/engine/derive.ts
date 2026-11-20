@@ -339,6 +339,8 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
         if (held) held.blocks.push(terminal);
         else lack(`D12-sameDay:${d}`, "sameDaySeparate", [terminal], d);
       }
+      // 回数が足りず、訪問診療はある：退院時共同指導料1 を算定していれば満たす（R09 と同じ述語）
+      if (enough.askGuidance) lack(`D12-guidance:${death.date}`, "dischargeJointGuidance", [terminal]);
     } else if (enough.ok) {
       const tid = `D12-terminal:${death.date}`;
       const yes = ask(tid, "在宅ターミナルケア加算を算定しますか（訪問の回数のほかの要件は、記録で確かめてください）", [

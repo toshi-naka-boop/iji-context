@@ -31,6 +31,7 @@ const UNKNOWN_FACTS: Facts = {
   contactDocProvided: { known: false },
   sameDaySeparate: { known: false },
   sameDayOushinAfterVisit: { known: false },
+  dischargeJointGuidance: { known: false },
   rapidSameDayDocumented: { known: false },
   comprehensiveCare: { known: false },
 };

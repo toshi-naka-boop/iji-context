@@ -451,9 +451,9 @@ describe("ターミナルケア加算の回数：同じ日の訪問診療と往�
   const DEATH = day(22);
   const TERMINAL = C.terminal.terminal;
   const tid = `D12-terminal:${DEATH}`;
-  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない。退院時共同指導料1 は算定していない */
   const ONE_DAY: ClaimContext = {
-    ...K5,
+    ...withFact(K5, "dischargeJointGuidance", no),
     events: [
       { type: "visit", date: D, sameBuildingCount: 1 },
       { type: "oushin", date: D, kind: "normal" },
@@ -475,6 +475,19 @@ describe("ターミナルケア加算の回数：同じ日の訪問診療と往�
     const r = derive(c, { choices });
     expect(kubunOf(r)).toContain(TERMINAL);
     expect(judge(c, r).findings.filter((f) => f.ruleId === "R09")).toEqual([]);
+  });
+  it("別の経路：回数が 1 回でも、退院時共同指導料1 を算定していれば選べば立つ。不明なら事実不足（医療事務）で保留し、合計を出さない（§11-5）", () => {
+    const short = withFact(ONE_DAY, "sameDaySeparate", sep({ [D]: false }));
+    const ok = withFact(short, "dischargeJointGuidance", yes);
+    const r = derive(ok, { choices });
+    expect(r.pending).toEqual([]);
+    expect(kubunOf(r)).toContain(TERMINAL);
+    expect(judge(ok, r).findings.filter((f) => f.ruleId === "R09")).toEqual([]);
+    const u = withFact(short, "dischargeJointGuidance", unknown);
+    const ru = derive(u, { choices });
+    expect(ru.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "dischargeJointGuidance", target: "clerk", blocks: [TERMINAL] })]);
+    expect(kubunOf(ru)).not.toContain(TERMINAL);
+    expect(ru.totalStatus).toBe("withheld");
   });
   it("確かめていない日で回数が決まらないときは、その日の事実不足がターミナルケア加算も保留にする", () => {
     const r = derive(ONE_DAY, { choices });

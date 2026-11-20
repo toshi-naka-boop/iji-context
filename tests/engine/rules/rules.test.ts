@@ -428,9 +428,9 @@ describe("R16 管理料の族", () => {
 describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
   const D = day(21);
   const DEATH = day(22);
-  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない */
+  /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない。退院時共同指導料1 は算定していない */
   const ONE_DAY: ClaimContext = {
-    ...loadCase("K5"),
+    ...withFact(loadCase("K5"), "dischargeJointGuidance", no),
     events: [
       { type: "visit", date: D, sameBuildingCount: 1 },
       { type: "oushin", date: D, kind: "normal" },
@@ -452,6 +452,34 @@ describe("R09 ターミナルケア加算の回数：同じ日の訪問診療と
     const c = withEvents(ONE_DAY, { type: "visit", date: day(19), sameBuildingCount: 1 });
     expect(tags(c, "R09")).toEqual([]);
     expect(tags(separate(c, { [D]: false }), "R09")).toEqual([]);
+  });
+  it("往診が先でも、別々の診療なら 2 回と数える（訪問診療のあとの往診でなくてよい。C-88）。あとの往診と確かめた日も 2 回", () => {
+    expect(tags(afterVisit(separate(ONE_DAY, { [D]: true }), { [D]: false }), "R09")).toEqual([]);
+    expect(tags(afterVisit(ONE_DAY, { [D]: true }), "R09")).toEqual([]);
+  });
+  describe("別の経路：退院時共同指導料1 を算定し、訪問診療を実施（EM #7-11。design.md §11-5。§11-8 完了条件 9）", () => {
+    /** 回数が 1 回（1 回の診療と確かめた日だけ）で、訪問診療はある */
+    const SHORT = separate(ONE_DAY, { [D]: false });
+    it("回数が足りず訪問診療が 1 回以上あるとき：真なら満たす、偽なら terminal_visits、不明なら情報不足（医療事務）", () => {
+      expect(tags(withFact(SHORT, "dischargeJointGuidance", yes), "R09")).toEqual([]);
+      expect(tags(withFact(SHORT, "dischargeJointGuidance", no), "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+      expect(of(withFact(SHORT, "dischargeJointGuidance", unknown), "R09")).toEqual([
+        expect.objectContaining({ kind: "情報不足", lineRefs: ["C001_N6_TERMINAL"], missing: { target: "clerk", field: "dischargeJointGuidance" } }),
+      ]);
+    });
+    it("回数が 2 回に届いていれば聞かない。訪問診療が 1 回もなければ（往診だけ）聞かずに要件不足", () => {
+      expect(tags(withFact(separate(ONE_DAY, { [D]: true }), "dischargeJointGuidance", unknown), "R09")).toEqual([]);
+      const oushinOnly: ClaimContext = { ...ONE_DAY, events: ONE_DAY.events.filter((e) => e.type !== "visit"), facts: { ...ONE_DAY.facts, dischargeJointGuidance: unknown } };
+      expect(tags(oushinOnly, "R09")).toEqual(["R09:要件不足:terminal_visits"]);
+    });
+    it("同じ日の数え方で回数が変わる間は、先にその日を聞く。真と分かっていれば、その日を聞かずに満たす", () => {
+      expect(of(withFact(ONE_DAY, "dischargeJointGuidance", unknown), "R09").map((f) => f.missing)).toEqual([{ target: "clerk", field: "sameDaySeparate", date: D }]);
+      expect(tags(withFact(ONE_DAY, "dischargeJointGuidance", yes), "R09")).toEqual([]);
+    });
+    it("不明のときも、看取り加算と死亡診断加算の背反は出る", () => {
+      const c = withLines(withFact(SHORT, "dischargeJointGuidance", unknown), line("C001_N7_MITORI", 1, [DEATH]), line("C001_N8_SHIBOU", 1, [DEATH]));
+      expect(tags(c, "R09")).toEqual(["R09:背反:mitori_with_shibou", "R09:情報不足:dischargeJointGuidance"]);
+    });
   });
 });
 

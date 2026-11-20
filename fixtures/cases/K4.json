@@ -75,6 +75,9 @@
       "known": true,
       "value": {}
     },
+    "dischargeJointGuidance": {
+      "known": false
+    },
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
