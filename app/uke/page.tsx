@@ -18,8 +18,8 @@ type Uke = {
   payer: string | null;
   prefecture: string | null;
   billingMonth: string | null;
-  /** otherRows は点検の対象外の行の数。unreadable は、読み直しで読めなかったレセプトの理由 */
-  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null }[];
+  /** otherRows は点検の対象外の行の数。unreadable は、読み直しで読めなかったレセプトの理由。revisionId は診療年月から決まる版（なければ null。月末の点検には並ばず、試算だけできる） */
+  receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null; revisionId: string | null }[];
   imported: boolean;
 };
 
@@ -69,7 +69,7 @@ export default function UkeImport() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return setErr(d.error ?? "アップロードできませんでした");
       setList(d);
-      setDone("取り込みました。算定画面の「月末の点検」に並びます。UKE に書いてあるとおりの点検は、上の一覧から開けます。");
+      setDone("取り込みました。診療年月に版があるレセプトは、算定画面の「月末の点検」に並びます。UKE に書いてあるとおりの点検と、版を選ぶ試算は、上の一覧から開けます。");
     } catch {
       setErr("アップロードできませんでした。通信の状態を確かめて、もう一度試してください");
     } finally {
@@ -121,6 +121,11 @@ export default function UkeImport() {
                   いまは点検できないレセプトがあります（{u.receipts.filter((r) => r.unreadable).map((r) => `${r.claimId} ${r.patient}：${r.unreadable}`).join("、")}）。ほかのレセプトは今までどおり点検できます。
                 </div>
               )}
+              {u.receipts.some((r) => r.revisionId === null) && (
+                <div className="notice warn">
+                  この診療年月の版はありません（試算できます）：{u.receipts.filter((r) => r.revisionId === null).map((r) => `${u.uploaded ? r.claimId : r.claimId.split("-")[0]} ${r.patient}`).join("、")}。月末の点検と提出には並びません。下の「開く」から、版を選んで試算できます。
+                </div>
+              )}
               {u.receipts.some((r) => r.otherRows > 0) && (
                 <div className="notice warn">
                   点検の対象外の行があるレセプトがあります（{u.receipts.filter((r) => r.otherRows > 0).map((r) => `${u.uploaded ? r.claimId : r.claimId.split("-")[0]} ${r.patient}：${r.otherRows} 行`).join("、")}）。対応していないコードの行は点検せず、点検した行の小計と、UKE に書いてある合計を別々に出します。
@@ -128,7 +133,7 @@ export default function UkeImport() {
               )}
               {u.imported && (
                 <div style={{ margin: "0 0 14px" }}>
-                  <div className="muted">UKE に書いてあるとおりの点検（摘要欄の記載を含む）</div>
+                  <div className="muted">UKE に書いてあるとおりの点検（摘要欄の記載を含む）と、版を選ぶ試算</div>
                   <div className="chips">
                     {u.receipts.map((r) => <a key={r.claimId} href={`/uke/${encodeURIComponent(r.claimId)}`}>{u.uploaded ? r.claimId : r.claimId.split("-")[0]} を開く →</a>)}
                   </div>
@@ -155,6 +160,7 @@ export default function UkeImport() {
           <p className="muted" style={{ margin: "0 0 12px" }}>
             対応していないコードの行があっても断らず、その行（算定の単位）を点検の対象外として残します。対象外の行があるレセプトは、合計を 2 つ（UKE に書いてある合計と、点検した行の小計）出し、出す指摘を絞ります。
             形式が違う・対応しているコードの点数が点数表と合わない・合計が合わないファイルは、行番号つきで断ります。取り込んだレセプトには、アプリが請求の番号（U1-1 など）を振ります。UKE のカルテ番号は、患者の番号として表示にだけ使います。カルテ側の記録（訪問・処方など）がないまま点検に並び、足りない事実は「情報不足」として出ます。同じファイルの取り込み直しは断ります。
+            診療年月に当たる版がないレセプト（改定前の診療年月など）も断りません。月末の点検には並べず、版を選んで試算できます。
           </p>
           <Notice />
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

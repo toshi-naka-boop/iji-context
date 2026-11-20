@@ -49,6 +49,11 @@ export type UkeReceipt = {
    * 理由だけを持ち、lines・comments は空。点検には並べない（一覧には出す）
    */
   unreadable?: { reason: string };
+  /**
+   * 診療年月に当たる版がない（design.md §11-12）。コードを区分に引いていないので、lines・comments は空。
+   * 月末の点検・提出には並べない（一覧には出す）。版を選んで試算できる（src/server/app/uke-check.ts の ukeTrial）
+   */
+  noRevision?: true;
   comments: Comment[];
   /** コメントを持つ出どころか（UKE は真。コメントの載らない連携は偽）。ClaimContext.commentsKnown になる */
   commentsKnown: boolean;

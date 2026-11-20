@@ -10,6 +10,7 @@ import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
+import type { UkeFile, UkeReceipt } from "../../uke/types";
 import { notFound } from "../errors";
 
 /** カルテ側の事実がないレセプトの事実：どれも「不明」。推測で埋めない（年齢・保険種別・負担割合だけは、UKE から作った患者マスタで上書きする） */
@@ -57,25 +58,21 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     return f.known ? f.value : null;
   }
 
-  function cases(): ClaimContext[] {
-    const files = ukeFiles();
-    const out: ClaimContext[] = [];
-    for (const file of files) {
-      for (const r of file.receipts) {
-        // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる
-        const c = fixtureOf(r.claimId) ?? { facts: UNKNOWN_FACTS, events: [], recordsKnown: false, facility: undefined, history: undefined };
-        // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
-        // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
-        const patientId = ingest(r.patient);
-        const master = masterFacts(patientId, r.yearMonth);
-        const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
-        // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
-        const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
-        out.push(toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }));
-      }
-    }
-    return out;
+  /** UKE のレセプト 1 件を、カルテ側の事実・患者マスタと合わせた請求にする */
+  function contextOf(file: UkeFile, r: UkeReceipt): ClaimContext {
+    // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる
+    const c = fixtureOf(r.claimId) ?? { facts: UNKNOWN_FACTS, events: [], recordsKnown: false, facility: undefined, history: undefined };
+    // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
+    // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
+    const patientId = ingest(r.patient);
+    const master = masterFacts(patientId, r.yearMonth);
+    const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
+    // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
+    const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
+    return toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
   }
+  /** 診療年月の版で読めたレセプトの請求（版のないレセプト・読み直しで読めなかったレセプトは入らない。src/server/app/uke.ts の ukeFiles） */
+  const cases = (): ClaimContext[] => ukeFiles().flatMap((file) => file.receipts.map((r) => contextOf(file, r)));
   const caseOf = (claimId: string): ClaimContext => {
     const c = cases().find((x) => x.claimId === claimId);
     if (!c) throw notFound(`症例がない: ${claimId}`);
@@ -87,7 +84,16 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   /** 判定。カルテ側の記録がないレセプト（recordsKnown が偽）の扱いは、エンジンが決める（design.md §11-6） */
   const judge = (ctx: ClaimContext): EngineResult => evaluate(ctx);
 
-  return { cases, caseOf, caseBurdenRatioOf, isUploaded, judge };
+  /**
+   * 試算の土台（design.md §11-12）：一覧にあるレセプト 1 件の、事実・施設の設定・審査支払機関など。診療年月に版がないレセプトでも作れる。
+   * 行とコメントは、試算が選んだ版で引いたものに入れ替える（src/server/app/uke-check.ts）。月末の点検（cases）には並ばない
+   */
+  const trialBaseOf = (claimId: string): ClaimContext => {
+    const { file, receipt } = uke.receiptOf(claimId);
+    return contextOf(file, receipt);
+  };
+
+  return { cases, caseOf, caseBurdenRatioOf, isUploaded, judge, trialBaseOf };
 }
 
 export type Cases = ReturnType<typeof createCases>;

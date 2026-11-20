@@ -72,6 +72,8 @@ export const POLICY = {
   // カルテ・患者情報・UKE
   "POST /api/chart": row(WORK, "ai", true),
   "POST /api/chart/[id]": row(WORK, "none", true),
+  // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
+  "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
   "GET /api/chart/[id]/claim": row(WORK, "none", true),
   // 改定の比較（design.md §11-2）：同じ記録を 2 つの版で導出して並べる。読むだけ。全ロール
@@ -95,6 +97,8 @@ export const POLICY = {
   "POST /api/uke/upload": row(WORK, "none", true),
   // 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11）。一覧と同じ役割
   "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
+  // 取り込んだレセプトの試算（design.md §11-12）：版を選んで、その場で計算して返す。保存しない。点検と同じ役割
+  "GET /api/uke/claims/[claimId]/trial": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
   "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 

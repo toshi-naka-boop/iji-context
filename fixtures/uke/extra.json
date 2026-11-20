@@ -1,5 +1,5 @@
 {
-  "_note": "見本の 2 本とは別に、アップロードで試すための合成の UKE の設定（design.md §11-11。EM 5-1 の「見本以外で試す合成の UKE」の表）。患者は合成で、氏名・生年月日・番号はすべて架空（同梱の症例の患者とは別の人。保険者番号は症例と同じ架空の番号）。base は、行・事実・傷病名のもとにする同梱の症例。patientNo は UKE の「カルテ番号等」の欄に書く患者の番号（請求 id ではない）。taishogai.extraUnit は、点検の対象外になる算定単位（扱っていない実在の診療行為コードを含む。day は診療年月の中の日、points は単位の 1 回分の点数）。kisaimore.dropComment は、付けない必須の記載のコメントコード",
+  "_note": "見本の 2 本とは別に、アップロードで試すための合成の UKE の設定（design.md §11-11。EM 5-1 の「見本以外で試す合成の UKE」の表）。患者は合成で、氏名・生年月日・番号はすべて架空（同梱の症例の患者とは別の人。保険者番号は症例と同じ架空の番号）。base は、行・事実・傷病名のもとにする同梱の症例。patientNo は UKE の「カルテ番号等」の欄に書く患者の番号（請求 id ではない）。taishogai.extraUnit は、点検の対象外になる算定単位（扱っていない実在の診療行為コードを含む。day は診療年月の中の日、points は単位の 1 回分の点数）。kisaimore.dropComment は、付けない必須の記載のコメントコード。kaiteimae は、改定前の診療年月のレセプト（design.md §11-12 の試算で使う）：monthsBack は基準月から何か月前の診療年月にするか、pointsOf は点数を取る版の id（EM §2-9 の令和6年度の値）、drop は入れない行の区分（令和6年度にない区分と、コードを令和6年度版で照合していない区分）。コメントは付けず、傷病名は未コード化で書く",
   "taishogai": {
     "file": "fixtures/uke/taishogai.UKE",
     "base": "K2",
@@ -13,5 +13,14 @@
     "patientNo": "100011",
     "patient": { "name": "架空　正雄", "sex": 1, "birth": "19400923", "insurerNo": "00000011" },
     "dropComment": "842100044"
+  },
+  "kaiteimae": {
+    "file": "fixtures/uke/kaiteimae.UKE",
+    "base": "K2",
+    "patientNo": "100022",
+    "patient": { "name": "架空　敏子", "sex": 2, "birth": "19450820", "insurerNo": "00000022" },
+    "monthsBack": 7,
+    "pointsOf": "r2024",
+    "drop": ["O100_1HA", "D007_10", "D026_4"]
   }
 }

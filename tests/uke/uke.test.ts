@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BILLING_MONTH, CASES, EXTRA, generate, generateExtra, loadSources, UKE_FILES } from "../../scripts/gen-uke";
 import { evaluate } from "../../src/engine";
-import { pointsOf, resolveRevision } from "../../src/engine/revisions";
+import { hasRevision, pointsOf, resolveRevision, revisionById, UKE_TRIAL_REVISIONS } from "../../src/engine/revisions";
 import { codeOf } from "../../src/engine/revisions/codes";
 import type { Revision } from "../../src/engine/revisions/types";
 import type { Comment } from "../../src/engine/types";
@@ -17,7 +17,7 @@ import type { UkeFile } from "../../src/uke/types";
 import { formatUke, mapClaim, parseUke, readStoredUke, readUke, UkeError, UNREADABLE, writeUke } from "../../src/uke/uke";
 import { uploadClaimIdOf } from "../../src/uke/upload";
 import { loadCase } from "../engine/helpers";
-import { claimId, dateIn, day, YM } from "../helpers/period";
+import { claimId, dateIn, day, month, YM } from "../helpers/period";
 
 const root = path.join(__dirname, "..", "..");
 const read = (f: string) => readFileSync(path.join(root, f));
@@ -256,7 +256,7 @@ describe("形式（FR-06）", () => {
       expect(reject(withCell(SI, day1, String(UKE_LIMITS.maxDailyCount)))).toEqual([SI, "算定日の合計と回数が合わない"]);
     });
 
-    it("「カルテ番号等」の欄は患者の番号として読むだけで、請求 id として確かめない（文字種も重複も見ない）。請求 id は読む側が渡す。診療年月に当たる版がないものは断る", () => {
+    it("「カルテ番号等」の欄は患者の番号として読むだけで、請求 id として確かめない（文字種も重複も見ない）。請求 id は読む側が渡す。診療年月に当たる版がないものは断らず、区分に引かないまま残す（design.md §11-12）", () => {
       // 空・記号・全角・同じ番号の 2 枚目も読める。請求 id は渡した決め方（ここでは取り込みの連番 7）で決まり、欄の値は patientNo に残る
       for (const v of ["../K6", "K6/x", "K6 2026", "", "K6.json", "Ｋ６", "x".repeat(21)]) {
         const r = readUke(withCell(2, 12, v), uploadClaimIdOf(7)).receipts[0];
@@ -266,9 +266,18 @@ describe("形式（FR-06）", () => {
       expect(readUke(enc(twice), uploadClaimIdOf(7)).receipts.map((r) => [r.claimId, r.patientNo])).toEqual([["U7-1", claimId("K6")], ["U7-2", claimId("K6")]]);
       // 決め方を渡さなければ、欄の値がそのまま請求 id（同梱の見本は、この欄に症例の請求 id を書いてある）
       expect(readUke(good).receipts.map((r) => r.claimId)).toEqual([claimId("K6")]);
-      expect(reject(withCell(2, 3, "202503"))).toEqual([2, "診療年月に当たる版がない"]);
-      // 版がないことは、形式の読み取り（parseUke）では断らない。取り込み（readUke）で断る
-      expect(parseUke(withCell(2, 3, "202503")).claims[0].yearMonth).toBe("2025-03");
+      // 版がないことは、形式の読み取り（parseUke）でも取り込み（readUke）でも断らない。コードを区分に引かず、UKE に書いてある合計だけを持つ
+      const old = withCell(2, 3, "202503");
+      expect(parseUke(old).claims[0].yearMonth).toBe("2025-03");
+      const r = readUke(old).receipts[0];
+      expect([r.noRevision, r.yearMonth, r.lines, r.comments, r.declared, r.unreadable]).toEqual([true, "2025-03", [], [], { ho: 274, ko: [] }, undefined]);
+      expect(readStoredUke(old).receipts[0]).toEqual(r);
+      // 版のあるレセプトは、印を持たない
+      expect(readUke(good).receipts[0].noRevision).toBeUndefined();
+      // 合計の検査は版によらないので、版のないレセプトでも断る（3 行目は HO）
+      const rows = textOf(old).slice(0, -2).split("\r\n").map((l) => l.split(","));
+      rows[2][5] = "275";
+      expect(reject(enc(`${rows.map((c) => c.join(",")).join("\r\n")}\r\n`))).toEqual([3, "合計点数が行の合計と合わない"]);
     });
 
     it("大きすぎるファイル・多すぎる行・Shift_JIS でないバイト列・空のファイル", () => {
@@ -520,7 +529,7 @@ describe("単位で読む（§11-14 完了条件 (a)・(b)・(d)）", () => {
 });
 
 describe("点検の対象外の単位がある請求（design.md §11-11 完了条件 (f)）と、見本以外で試す合成の UKE", () => {
-  const extra = { taishogai: read(EXTRA.taishogai.file), kisaimore: read(EXTRA.kisaimore.file) };
+  const extra = { taishogai: read(EXTRA.taishogai.file), kisaimore: read(EXTRA.kisaimore.file), kaiteimae: read(EXTRA.kaiteimae.file) };
   const k = (name: string) => loadCase(name);
   /** 取り込んだ UKE と同じ形の請求にする：カルテ側の記録なし。事実は、もとの症例のものを使う（突き合わせのため） */
   const ctxOf = (buf: Buffer, base: string) => {
@@ -529,10 +538,11 @@ describe("点検の対象外の単位がある請求（design.md §11-11 完了�
     return { file, ctx: toClaimContext(file, "U1-1", { facility: b.facility, facts: b.facts, events: [], recordsKnown: false }) };
   };
 
-  it("合成の 2 本は入力だけで決まり（作り直したものとファイルが一致）、見本の 2 本とは別のファイル。患者は見本の誰とも違う", () => {
+  it("合成の 3 本は入力だけで決まり（作り直したものとファイルが一致）、見本の 2 本とは別のファイル。患者は見本の誰とも違う", () => {
     const out = generateExtra();
     expect(out.taishogai.equals(extra.taishogai)).toBe(true);
     expect(out.kisaimore.equals(extra.kisaimore)).toBe(true);
+    expect(out.kaiteimae.equals(extra.kaiteimae)).toBe(true);
     const known = [...files.国保連.receipts, ...files.支払基金.receipts].map((r) => `${r.patient.name}|${r.patient.birth}|${r.patient.insurer.no}`);
     for (const buf of Object.values(extra)) {
       const p = parseUke(buf).claims[0].patient;
@@ -573,6 +583,60 @@ describe("点検の対象外の単位がある請求（design.md §11-11 完了�
     expect(result.findings.filter((f) => f.kind !== "情報不足").map((f) => [f.messageKey, f.kind, f.params?.rule, f.lineRefs])).toEqual([["R17.comment_missing", "記載もれ", "T216-spo2", ["C103_2"]]]);
     expect(file.receipts[0].comments.some((c) => c.code === EXTRA.kisaimore.dropComment)).toBe(false);
   });
+
+  it("改定前の診療年月の例（EM 5-1。design.md §11-12 完了条件 (b)）：診療年月に版がないので、取り込みでは区分に引かない。最新の版で引くと、点数の違いが単位ごとに並ぶ", () => {
+    const o = EXTRA.kaiteimae;
+    const ym = month(-o.monthsBack);
+    expect(hasRevision(ym)).toBe(false);
+    const parsed = parseUke(extra.kaiteimae);
+    const c = parsed.claims[0];
+    expect([c.yearMonth, parsed.billingMonth, c.patientNo, c.comments]).toEqual([ym, month(1 - o.monthsBack), o.patientNo, []]);
+    // 行は、もとの症例から drop の区分を除いたもの。コードは基準月の版と同じ、点数は令和6年度の版（EM §2-9）。傷病名は未コード化で名称を持つ
+    const old = revisionById(o.pointsOf)!;
+    const kept = k(o.base).lines.filter((l) => !o.drop.includes(l.kubun));
+    expect(kept.length).toBe(k(o.base).lines.length - o.drop.length);
+    expect(c.units.map((u) => [u.items.map((it) => it.code), u.points, u.count])).toEqual(kept.map((l) => [[code(l.kubun)], old.points[l.kubun].points, l.count]));
+    expect(c.patient.diseases.map((d) => [d.name !== "", d.code])).toEqual(c.patient.diseases.map(() => [true, undefined]));
+    // 合計は EM 5-1 の行の数（6,013）。令和6年度の訪問診療料は 888、ベースアップ評価料(Ⅰ) 訪問診療時イは 28
+    expect([c.total?.points, old.points.C001_1I.points, old.points.O001_3I.points]).toEqual([6013, 888, 28]);
+    expect(em).toMatch(/\| kaiteimae\.UKE \| K2 \|.*HO の合計 \*\*6,013\*\*/);
+    // 取り込みでは断らず、版のないレセプトとして残る
+    const r = readUke(extra.kaiteimae, uploadClaimIdOf(1)).receipts[0];
+    expect([r.claimId, r.noRevision, r.lines, r.declared]).toEqual(["U1-1", true, [], { ho: 6013, ko: [] }]);
+    // 診療年月の版として読む読み方（取り込み）では、点数の違う単位は食い違いのまま
+    expect(mapClaim(c, rev).units.filter((u) => !u.ok)).toHaveLength(2);
+    // 試算の読み方：最新の版で、断らずに全部の行を引き、違う単位に版の点数を添える
+    const latest = UKE_TRIAL_REVISIONS.at(-1)!;
+    const diffsIn = (r8: Revision) => {
+      const m = mapClaim(c, r8, true);
+      expect([m.units.every((u) => u.ok), m.others, m.lines.map((l) => l.kubun)]).toEqual([true, [], kept.map((l) => l.kubun)]);
+      return m.units.flatMap((u, i) => (u.ok && u.revPoints !== undefined ? [[u.lines.map((l) => l.kubun), c.units[i].points, u.revPoints, c.units[i].count]] : []));
+    };
+    expect(diffsIn(rev)).toEqual([[["C001_1I"], 888, 890, 2], [["O001_3I"], 28, 79, 2]]);
+    expect(diffsIn(latest)).toEqual([[["C001_1I"], 888, pointsOf(latest, "C001_1I"), 2], [["O001_3I"], 28, pointsOf(latest, "O001_3I"), 2]]);
+  });
+
+  it("試算の読み方（lenient）：複数の区分がある単位は、区分ごとに分けず、単位の合算どうしを比べる。点数のほかの食い違いの単位は、点検の対象外に残す。既定の読み方は変わらない", () => {
+    const sum = pts("C000") + pts("C000_N1_KINKYU");
+    const two = parseUke(ukeOf([si("14", code("C000")), si("", code("C000_N1_KINKYU"), { points: sum - 5 })], sum - 5)).claims[0];
+    const m = mapClaim(two, rev, true);
+    expect(m.units).toEqual([{ ok: true, lines: [expect.objectContaining({ kubun: "C000" }), expect.objectContaining({ kubun: "C000_N1_KINKYU" })], revPoints: sum }]);
+    expect(mapClaim(two, rev).units[0]).toMatchObject({ ok: false, unsupported: false });
+    // 数量データが読めない単位（きざみで算定する区分）：試算では対象外の単位として残り、行には入らない
+    const q = parseUke(ukeOf([si("60", code("D_GAIRAI_JINSOKU"), { points: pts("D_GAIRAI_JINSOKU") })], pts("D_GAIRAI_JINSOKU"))).claims[0];
+    expect(mapClaim(q, rev).others).toEqual([]);
+    expect(mapClaim(q, rev, true)).toMatchObject({ lines: [], others: [{ unit: 0, codes: [code("D_GAIRAI_JINSOKU")] }] });
+    // 見本のレセプトは、どちらの読み方でも同じ（点数の違いはない）
+    for (const claim of parseUke(read(UKE_FILES.国保連)).claims) expect(mapClaim(claim, rev, true)).toEqual(mapClaim(claim, rev));
+  });
+
+  it("UKE の試算で選べる版は、コードの表を持つ版だけ（design.md §11-12 完了条件 (e)）：令和6年度の版（コードの表が空）は入らない", () => {
+    expect(UKE_TRIAL_REVISIONS.map((r) => r.id)).toEqual(["r2026", "r2027-06"]);
+    expect(Object.keys(revisionById("r2024")!.codes)).toEqual([]);
+    // 仮に選べたとすると、全部の単位が対象外になり、行が 1 つも残らない（空の結果が「問題なし」に見える）
+    const all = mapClaim(parseUke(extra.kaiteimae).claims[0], revisionById("r2024")!, true);
+    expect([all.lines, all.others.length]).toEqual([[], all.units.length]);
+  });
 });
 
 describe("保存済みのレセプトの読み直し（design.md §11-12 完了条件 (f)）", () => {
@@ -601,9 +665,9 @@ describe("保存済みのレセプトの読み直し（design.md §11-12 完了�
     expect(() => readUke(buf, undefined, changed)).toThrow(/^\d+ 行目：点数が診療年月の版の点数表と合わない$/);
   });
 
-  it("表が変わっていなければ、読み直しは取り込みと同じ結果。診療年月に版がなくなったレセプトは「この診療年月の版はありません」", () => {
+  it("表が変わっていなければ、読み直しは取り込みと同じ結果。診療年月に版がなくなったレセプトは、読めないのではなく「版のないレセプト」として残る", () => {
     expect(readStoredUke(buf)).toEqual(files.国保連);
-    expect(readStoredUke(buf, undefined, []).receipts.map((r) => r.unreadable?.reason)).toEqual(Array.from({ length: 6 }, () => UNREADABLE.noRevision));
+    expect(readStoredUke(buf, undefined, []).receipts.map((r) => [r.noRevision, r.unreadable, r.lines.length])).toEqual(Array.from({ length: 6 }, () => [true, undefined, 0]));
   });
 
   it("形式そのものが読めないファイルは、読み直しでも UkeError（ファイルごと読めない）", () => {

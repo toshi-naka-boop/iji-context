@@ -112,6 +112,19 @@ export default function Chart() {
       setErr((e as Error).message);
     }
   }
+  /** いま書いたカルテを消す（確かめてから）。本文と、そこから確かめた事実が消える。算定の見込みは、残りのカルテから計算し直される */
+  async function remove() {
+    if (!ex) return;
+    if (!window.confirm("このカルテを消します。カルテの本文と、そこから確かめた事実が消え、元に戻せません。AI のサービスに送った内容は、こちらからは消せません。よろしいですか")) return;
+    setErr("");
+    const r = await fetch(`/api/chart/${ex.id}`, { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return setErr(d.error ?? "消せませんでした");
+    setEx(null);
+    setRows([]);
+    setConfirmed(null);
+    setNote(EMPTY);
+  }
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
 
@@ -205,6 +218,7 @@ export default function Chart() {
                 <ClaimPreview noteId={ex.id} />
                 <div className="chips">
                   <button className="primary" onClick={() => router.push(`/work?visit=${encodeURIComponent(`${confirmed.claimId}|${confirmed.date}`)}`)}>レセメンで訪問の記録を確かめる</button>
+                  <button onClick={remove}>このカルテを消す</button>
                 </div>
               </>
             )}
@@ -225,7 +239,10 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <button className="primary" onClick={hand}>これで確定する（{ex.date} の訪問）</button>
+                <div className="chips">
+                  <button className="primary" onClick={hand}>これで確定する（{ex.date} の訪問）</button>
+                  <button onClick={remove}>このカルテを消す</button>
+                </div>
               </div>
             )}
           </>
