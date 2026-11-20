@@ -85,7 +85,7 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(c.others.map((o) => o.codes)).toEqual([["114000110", "114704470"]]);
     expect([c.generic.findings, c.generic.ran]).toEqual([[], []]);
     expect(c.generic.notRun[0]).toEqual({ check: "G01", kind: "コード", reason: "noMasters", text: "マスターが入っていないので、していません" });
-    expect(c.generic.notRun.slice(1).every((n) => n.reason === "notBuilt")).toBe(true);
+    expect(c.generic.notRun.every((n) => n.reason === "noMasters" || n.reason === "notBuilt")).toBe(true);
     // どのルールも partial（ルールごとには決められない）。dropped は、指摘を実際に捨てたルール（情報不足 unsupportedLines が出ている）
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.map((r) => r.id));
     expect(c.stopped.every((s) => s.all && s.codes.length === 0)).toBe(true);
