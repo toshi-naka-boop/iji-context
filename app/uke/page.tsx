@@ -19,10 +19,23 @@ export default function UkeImport() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
+  /** 消せるのは事務長とベテラン（サーバーでも確かめる） */
+  const [canDelete, setCanDelete] = useState(false);
   useEffect(() => {
     if (!user) return;
     getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
+    getJson<{ role: string }>("/api/auth/me").then((me) => setCanDelete(me.role === "veteran" || me.role === "manager")).catch(() => {});
   }, [user]);
+  /** 取り込んだファイルを消す（確かめてから）。原本と、そのファイルのレセプトにぶら下がる記録が消える */
+  async function remove(u: Uke) {
+    if (!window.confirm(`このファイル（レセプト ${u.receipts.length} 件）を消します。原本と、このファイルのレセプトの点検の記録・医師確認・メンターとのやり取りが消え、元に戻せません。AI のサービス側に送った内容は消せません。消しますか？`)) return;
+    setErr("");
+    setDone("");
+    const r = await fetch(`/api/uke/uploads/${u.name.slice(0, 64)}`, { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return setErr(d.error ?? "消せませんでした");
+    getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
+  }
   async function take(name: string) {
     if (!user) return;
     setErr("");
@@ -69,6 +82,7 @@ export default function UkeImport() {
               <div className="chips"><span className="badge">古い形式</span></div>
               <h2 style={{ margin: "12px 0 4px", fontSize: 18, wordBreak: "break-all" }}>アップロードした UKE（{u.name.slice(0, 8)}）</h2>
               <p className="muted" style={{ margin: "8px 0 0" }}>古い形式の UKE です（取り込み直しが要ります）。以前の作り物のコードで作られているため、いまは開けません。点検には並びません。</p>
+              {canDelete && <p style={{ margin: "12px 0 0" }}><button onClick={() => remove(u)}>消す</button></p>}
             </div>
           </article>
         ) : (
@@ -99,6 +113,7 @@ export default function UkeImport() {
               <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
                 {u.imported ? <a href="/work">算定画面の「月末の点検」で点検する →</a> : <button className="primary" onClick={() => take(u.name)}>取り込む</button>}
                 {!u.uploaded && <a href={`/api/uke/sample?name=${encodeURIComponent(u.name)}`} download={u.name}>見本をダウンロード</a>}
+                {u.uploaded && canDelete && <button onClick={() => remove(u)}>消す</button>}
               </div>
               {u.uploaded && <p className="muted" style={{ margin: "12px 0 0" }}>カルテ側の記録がないレセプトです。足りない事実は「情報不足」として出ます。訪問カルテ・選択モード・練習問題の対象外です。</p>}
             </div>

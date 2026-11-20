@@ -120,7 +120,8 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
         const found = find();
         let id: string;
         if (!found) {
-          const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM patients").get() as { n: number }).n + 1;
+          // 番号は、いまある番号の最大の次（件数から振ると、患者を消したあとで既存の id とぶつかる）
+          const n = (sqlite.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 0) AS n FROM patients WHERE id GLOB 'P[0-9]*'").get() as { n: number }).n + 1;
           id = `P${String(n).padStart(4, "0")}`;
           sqlite.prepare("INSERT INTO patients (id, name, sex, birth, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, p.name, p.sex, p.birth, source, now());
         } else {

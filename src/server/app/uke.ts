@@ -10,7 +10,7 @@ import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
 
 export function createUke(ctx: AppContext, clerks: Clerks) {
-  const { paths, setting, setSetting } = ctx;
+  const { paths, sqlite, setting, setSetting } = ctx;
   const { clerk } = clerks;
 
   const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
@@ -151,7 +151,29 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return r.patient;
   }
 
-  return { ukeFiles, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf };
+  /** 取り込んだファイルの中のレセプト（消す操作が使う）。取り込みの一覧にないハッシュは「ない」。いまの表では読めないファイルは、レセプトなしとして返す（ファイルだけ消せる） */
+  function uploadedFile(sha256: string): { receipts: UkeFile["receipts"] } {
+    const u = uploads().find((x) => x.sha256 === sha256);
+    if (!u) throw notFound("取り込んだファイルが見つかりません（消してあるかもしれません）");
+    return { receipts: storedUke(u)?.file.receipts ?? [] };
+  }
+  /**
+   * 取り込みの一覧・利用者ごとの取り込みの記録・読み直しのキャッシュから外し、原本のファイルのパスを返す（ファイルを消すのは呼び出し側。src/server/app/erase.ts）。
+   * 次の連番（next）は戻さない：消したファイルの連番は使い回さない
+   */
+  function forgetUpload(sha256: string): string {
+    const state = uploadState();
+    const name = nameOf({ seq: 0, sha256 });
+    setSetting("uke-uploads", JSON.stringify({ next: state.next, files: state.files.filter((u) => u.sha256 !== sha256) }));
+    for (const r of sqlite.prepare("SELECT key, value FROM app_settings WHERE key LIKE 'uke:%'").all() as { key: string; value: string }[]) {
+      const kept = (JSON.parse(r.value) as string[]).filter((n) => n !== name);
+      setSetting(r.key, JSON.stringify(kept));
+    }
+    parsed.delete(name);
+    return path.join(uploadDir(), name);
+  }
+
+  return { ukeFiles, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
 }
 
 export type Uke = ReturnType<typeof createUke>;

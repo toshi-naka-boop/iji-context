@@ -61,7 +61,7 @@ export function ConsentGate() {
       <div className="panel consent-panel">
         <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>はじめに確かめてください</h2>
         <Notice />
-        <p className="muted">同意すると、患者の情報を扱う操作と、AI・音声を使う操作ができるようになります。同意しないままでも、取り込んだファイルを消すことはできます。</p>
+        <p className="muted">同意すると、患者の情報を扱う操作と、AI・音声を使う操作ができるようになります。</p>
         {err && <div className="notice warn">{err}</div>}
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
           <button onClick={() => setOpen(false)} disabled={busy}>あとで</button>

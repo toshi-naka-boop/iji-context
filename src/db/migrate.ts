@@ -57,6 +57,13 @@ ALTER TABLE patient_facts RENAME COLUMN patient_key TO patient_id;
 DROP TABLE patient_key_map;
 `,
   },
+  {
+    // ベテランへの問いが、どの請求の相談から出たか（design.md §11-11「消す」：取り込んだファイルを消すとき、その請求の問いも消す）。それまでの問いは空
+    version: 5,
+    sql: `
+ALTER TABLE peer_questions ADD COLUMN claim_id TEXT;
+`,
+  },
 ];
 
 /** ログインの auth.db */

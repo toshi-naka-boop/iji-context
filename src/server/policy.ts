@@ -82,11 +82,14 @@ export const POLICY = {
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),
-  "GET /api/uke": row(WORK, "none", true),
+  // 一覧は、消す操作のために事務長にも見せる
+  "GET /api/uke": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/uke": row(WORK, "none", true),
   // UKE のアップロード（FR-106〜109）と、見本の UKE のダウンロード
   "GET /api/uke/sample": row(WORK, "none", false),
   "POST /api/uke/upload": row(WORK, "none", true),
+  // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
+  "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 
   // 知識：閲覧・投稿・共感は全員。検証（action=verify）はベテランだけ（ハンドラの中で分ける）。
   // 知識の閲覧には同意のゲートも置かない（CLAUDE.md 固定条件「可視性にゲートを置かない」）

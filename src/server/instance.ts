@@ -3,11 +3,11 @@
 // tenant id は、そのクリニックを 1 人で始めた利用者の id（招待で入った利用者は、招待した側の tenant に属する）。
 // ログインしていない呼び出し（テスト・スクリプト・開発用の確認）は従来どおり data/resemen.db の 1 つを使う
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { nextSmalltalkStreak, nextVentStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
-import { claimForAi } from "../llm/outbound";
+import { claimForAi, forgetSession } from "../llm/outbound";
 import type { Character } from "../mentor/prompt";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
@@ -186,6 +186,22 @@ function prepare(a: App, clerkId: string): { workspace: { cwd: string; skills: s
   return { workspace: { cwd, skills: workspaceSkillNames(cwd) }, sessionId: same ? c.session_id : null, generation };
 }
 
+/**
+ * 取り込んだファイルを消す（design.md §11-11）。DB とファイルは app.deleteUpload が 1 つのトランザクションで消す。
+ * ここでは、その請求を相談した人のメンターのやり取り（セッションの記録）と作業場所を消す（作業場所は、次に話しかけたときに作り直される）
+ */
+export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string; claims: number }> {
+  const r = getApp().deleteUpload(sha256);
+  const root = path.join(workspaceRoot(), currentUser()?.tenantId ?? "default");
+  for (const c of r.clerks) {
+    if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
+    const cwd = path.join(root, c.id);
+    if (c.sessionId) await forgetSession(c.sessionId, cwd);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+  return { deleted: sha256, claims: r.claimIds.length };
+}
+
 /** 続きのセッションで失敗したら（作業場所が変わって履歴が見つからないなど）、新しいセッションで一度だけやり直す */
 async function withSession<T>(sessionId: string | null, run: (sid: string | null) => Promise<T>): Promise<T> {
   if (!sessionId) return run(null);
@@ -231,10 +247,10 @@ export async function talkToMentor(input: { user: User; clerkId: string; questio
         askPeerMentor: async (question) => {
           const v = await askVeteran(a, input.user, question);
           if (!v.answer.answerable) return null;
-          a.peerResolvedByMentor(clerk.id, question, v.answer.body);
+          a.peerResolvedByMentor(clerk.id, question, v.answer.body, q.claimId);
           return v.answer.body;
         },
-        askHuman: async (question) => a.peerToHuman(clerk.id, question),
+        askHuman: async (question) => a.peerToHuman(clerk.id, question, q.claimId),
         crosscheck: () =>
           input.skipCrosscheck ? [] : a.crosscheckOf(q.claimId, q.asOf, q.clerkId).mismatches.map((m) => ({
             ruleId: m.ruleId,
