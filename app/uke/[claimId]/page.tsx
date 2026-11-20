@@ -3,7 +3,7 @@
 // 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → 点検した行と小計 → 対象外の行 → UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
 // 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面。
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
-// 診療年月に版がないレセプトは点検できないので、開くと最新の版が選ばれた状態で試算を見せる
+// 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
@@ -67,7 +67,7 @@ export default function UkeClaimCheck() {
     getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`)
       .then((d) => {
         setCheck(d);
-        // 診療年月に版がないレセプトは、選べる版の最初（改定前のレセプトなら、その次に来た改定の版）を選んだ状態にする。
+        // 診療年月に版がないレセプトは、選べる版の最初（コードの表を持つ、いちばん古い版。いまの版の並びでは、改定前のレセプトの次に来た改定の版に当たる）を選んだ状態にする。
         // 最後の版（まだ先の値の変更の版）を初期値にすると、「今の算定」ではない点数が先に出る。
         // 答えを残して読み直すとき（tick）は、選んでいる版を変えない
         setRev((cur) => cur || (d.revisionId ?? d.revisions?.[0]?.id ?? ""));
