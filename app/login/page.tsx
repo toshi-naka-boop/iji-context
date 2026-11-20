@@ -74,7 +74,7 @@ export default function Login() {
         </form>
         {err && <div className="notice warn">{err}</div>}
         {mode === "register" && (
-          <p className="muted">招待コードで登録すると、招待されたクリニック（合成データ・架空コード）に入ります。ほかのクリニックの操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
+          <p className="muted">招待コードで登録すると、招待されたクリニック（合成データ）に入ります。ほかのクリニックの操作とは混ざりません。実在の患者の情報は入力しないでください。</p>
         )}
       </div>
     </main>
