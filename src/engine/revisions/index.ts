@@ -90,6 +90,13 @@ export const revisionById = (id: string): Revision | undefined => SELECTABLE_REV
  */
 export const UKE_TRIAL_REVISIONS: Revision[] = SELECTABLE_REVISIONS.filter((r) => Object.keys(r.codes).length > 0);
 
+/**
+ * 画面の選択肢にする版の一覧（id・名前・その診療年月の請求の判定に使う版か）。作るのはここ 1 か所（比較・取り込んだレセプトの試算・カルテの算定プレビュー）。
+ * own が真になるのは、請求の判定に使う版（REVISIONS）のうち、その診療年月に当たる 1 つだけ。診療年月を渡さなければ、どれも偽
+ */
+export const revisionChoices = (revs: Revision[], yearMonth?: string): { id: string; label: string; own: boolean }[] =>
+  revs.map((r) => ({ id: r.id, label: r.label, own: yearMonth !== undefined && REVISIONS.includes(r) && covers(r, yearMonth) }));
+
 /** 区分が、同梱のどれかの版の点数表にあるか（知識・公的文書の区分のキーの検査に使う。design.md §3） */
 export const isKnownKubun = (kubun: string): boolean => REVISIONS.some((r) => Object.hasOwn(r.points, kubun));
 

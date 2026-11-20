@@ -1,6 +1,6 @@
 // 請求ごとに確かめた事実（履歴を残し、項目と日付ごとに最新の 1 件を使う）。値は、例外の文言とログに出さない。
 // 宛先を守る：医師あての事実（エンジンの宛先の表）を残せるのは医師の役割だけ、医療事務あての事実を残せるのは算定の仕事をする人だけ
-import { applyClaimFacts, isDatedFact, validateClaimFact, type ClaimFact, type ClaimFactInput } from "../../claim/facts";
+import { applyClaimFacts, isClaimFactKey, isDatedFact, validateClaimFact, type ClaimFact, type ClaimFactInput } from "../../claim/facts";
 import { targetOfNeed } from "../../engine";
 import type { Facts } from "../../engine/types";
 import { badRequest, forbidden, notFound } from "../errors";
@@ -16,10 +16,13 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
   const { sqlite } = ctx;
   const { now } = clock;
 
-  /** 項目と日付ごとに、最新の 1 件 */
+  /**
+   * 項目と日付ごとに、最新の 1 件。いま請求ごとに持たない項目の行は使わない：
+   * 居住の場所・文書の提供・緊急往診の対象か・管理料を算定する患者かは、患者ごとに持つように変えた（src/patient/facts.ts）。それより前に請求ごとに残した行は、判定にも一覧にも出さず、患者ごとに確かめ直してもらう
+   */
   function latestClaimFacts(claimId: string): ClaimFact[] {
     const rows = sqlite.prepare("SELECT * FROM claim_facts WHERE id IN (SELECT MAX(id) FROM claim_facts WHERE claim_id = ? GROUP BY key, date) ORDER BY id").all(claimId) as Row[];
-    return rows.map((r) => ({
+    return rows.filter((r) => isClaimFactKey(r.key)).map((r) => ({
       claimId: r.claim_id,
       key: r.key as ClaimFact["key"],
       date: r.date === "" ? null : r.date,

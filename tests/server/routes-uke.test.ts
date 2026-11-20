@@ -583,7 +583,7 @@ describe("版のない診療年月のレセプトと試算（GET /api/uke/claims
 
     // その請求の点検は、版がないことだけを返す（近い版で点検しない）。選べる版に、令和6年度の版はない
     const c = (await (await check("U1-1", cookie)).json()) as Check;
-    expect(c).toEqual({ claimId: "U1-1", yearMonth: OLD, patient: "架空　敏子", patientNo: "100022", unreadable: null, revisionId: null, revisions: UKE_TRIAL_REVISIONS.map((x) => ({ id: x.id, label: x.label })) });
+    expect(c).toEqual({ claimId: "U1-1", yearMonth: OLD, patient: "架空　敏子", patientNo: "100022", unreadable: null, revisionId: null, revisions: UKE_TRIAL_REVISIONS.map((x) => ({ id: x.id, label: x.label, own: false })) });
 
     await instance.runAs(owner, async () => {
       const a = instance.getApp();

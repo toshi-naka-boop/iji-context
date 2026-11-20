@@ -39,7 +39,7 @@ export default function UkeImport() {
   }, [user]);
   /** 取り込んだファイルを消す（確かめてから）。原本と、そのファイルのレセプトにぶら下がる記録が消える */
   async function remove(u: Uke) {
-    if (!window.confirm(`このファイル（レセプト ${u.receipts.length} 件）を消します。原本と、このファイルのレセプトの点検の記録・医師確認・メンターとのやり取りが消え、元に戻せません。AI のサービス側に送った内容は消せません。消しますか？`)) return;
+    if (!window.confirm(`このファイル（レセプト ${u.receipts.length} 件）を消します。原本と、このファイルのレセプトの点検の記録・請求ごとに確かめた事実（情報不足の項目に残した答え）・医師確認・メンターとのやり取りが消え、元に戻せません。AI のサービス側に送った内容は消せません。消しますか？`)) return;
     setErr("");
     setDone("");
     const r = await fetch(`/api/uke/uploads/${u.name.slice(0, 64)}`, { method: "DELETE" });

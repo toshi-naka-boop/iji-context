@@ -205,7 +205,10 @@ describe("訪問カルテ", () => {
 
     const res = await claim(get(`/api/chart/${w.id}/claim`), at);
     expect(res.status).toBe(200);
-    const c = (await res.json()) as { claimId: string; date: string; totalStatus: string; total: number | null; lines: { kubun: string; count: number; dates: string[]; subtotal: number; basis: { tentative: boolean; events: string[] } | null }[]; pending: unknown[]; findings: unknown[]; patientFindings: unknown[] };
+    const c = (await res.json()) as { claimId: string; date: string; totalStatus: string; total: number | null; lines: { kubun: string; count: number; dates: string[]; subtotal: number; basis: { tentative: boolean; events: string[] } | null }[]; pending: unknown[]; findings: unknown[]; patientFindings: unknown[]; revisions: { id: string; label: string; own: boolean }[] };
+    // 試算で選べる版の一覧は、この応答に入っている（比較の API を呼ばない）。診療年月の版に印が付く
+    expect(c.revisions.map((v) => [v.id, v.own])).toEqual([["r2024", false], ["r2026", true], ["r2027-06", false]]);
+    expect(c.revisions.every((v) => v.label !== "")).toBe(true);
     // 時計の初期値（基準月の 13 日）の訪問 1 回：訪問診療料と届出の加算、管理料は月 1 回の区分（見込み）と包括的支援加算
     expect(c).toMatchObject({ claimId: claimId("K1"), date: day(13), totalStatus: "tentative", pending: [], findings: [] });
     expect(c.lines.map((l) => [l.kubun, l.count, l.dates])).toEqual([
@@ -278,6 +281,25 @@ describe("訪問カルテ", () => {
     // 消す前：往診のカルテが同じ日の訪問診療に重なり、「訪問診療のあとに往診したか」が決まるまで算定行が保留になっている。本文と確かめた事実は chart_notes にだけある
     expect(await preview()).toEqual({ lines: [], pending: [`D01-sameDay:${day(13)}`] });
     for (const text of [...Object.values(GONE), "目印の薬"]) expect([text, tablesWith(text)]).toEqual([text, ["chart_notes"]]);
+    // 一覧（消す相手を選ぶ）：書いた本人には自分の分、事務長には全部、書いていないベテランには何も出ない。医師は 403、未ログインは 401。本文と確かめた事実は返らない
+    const list = (await import("../../app/api/chart/route")).GET;
+    const listOf = async (c: string | null) => {
+      const r = await list(new Request("http://localhost/api/chart", { headers: c ? { cookie: c } : {} }));
+      return { status: r.status, text: await r.text() };
+    };
+    const rowsOf = (text: string) => (JSON.parse(text) as { id: number; claimId: string; date: string; kind: string; writer: string; mine: boolean; confirmed: boolean }[]);
+    expect((await listOf(null)).status).toBe(401);
+    expect((await listOf(doc)).status).toBe(403);
+    const own = await listOf(mine);
+    expect(rowsOf(own.text)).toEqual([
+      { id: gone, claimId: claimId("K2"), date: day(13), kind: "往診", writer: "かるて", mine: true, confirmed: true },
+      { id: stay, claimId: claimId("K2"), date: day(13), kind: "訪問診療", writer: "かるて", mine: true, confirmed: true },
+      { id: third, claimId: claimId("K2"), date: day(13), kind: "往診", writer: "かるて", mine: true, confirmed: true },
+    ]);
+    expect(rowsOf((await listOf(vet)).text)).toEqual([]);
+    const all = await listOf(mgr);
+    expect(rowsOf(all.text).map((n) => [n.id, n.mine])).toEqual([[gone, false], [stay, false], [third, false]]);
+    for (const t of [own.text, all.text]) expect(t).not.toMatch(/目印/);
     const before = instance.runAs(owner, () => instance.getApp().audit.list(500)).length;
 
     // 未ログインは 401、形の違う id は 400、ないカルテは 404、医師は 403（権限表）、書いた本人でないベテランは 403（本人の照合）。どれも消えない
@@ -295,6 +317,7 @@ describe("訪問カルテ", () => {
     const res = await del(gone, mine);
     expect([res.status, await res.json()]).toEqual([200, { deleted: gone }]);
     expect((await del(gone, mine)).status).toBe(404);
+    expect(rowsOf((await listOf(mgr)).text).map((n) => n.id)).toEqual([stay]);
 
     // 全表の走査：消したカルテの本文・確かめた事実は、どの表にも（監査ログにも）残っていない。残したカルテはそのまま
     for (const text of [...Object.values(GONE), "目印の薬", "事務長が消す目印"]) expect([text, tablesWith(text)]).toEqual([text, []]);
@@ -426,7 +449,11 @@ describe("一覧・照合・UKE", () => {
     expect((await (await import("../../app/api/master/route")).GET(get("/api/master", docCookie))).status).toBe(200);
     expect((await (await import("../../app/api/cases/route")).GET(get("/api/cases", docCookie))).status).toBe(403);
     expect((await (await import("../../app/api/uke/route")).POST(post("/api/uke", { name: "kokuhoren.UKE" }, docCookie))).status).toBe(403);
-    expect((await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, { fact: { key: "table7", value: true, source: "カルテ", validUntil: null } }, docCookie), params({ claimId: claimId("K1") }))).status).toBe(403);
+    // 患者ごとの事実：医師の役割は、医師あての項目（別表第七など）だけを残せる。医療事務あての項目（要介護度・居住の場所）は 403
+    const patientFact = async (fact: Record<string, unknown>) => (await (await import("../../app/api/patients/[claimId]/facts/route")).POST(post(`/api/patients/${claimId("K1")}/facts`, { fact }, docCookie), params({ claimId: claimId("K1") }))).status;
+    expect(await patientFact({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(6, 1) })).toBe(403);
+    expect(await patientFact({ key: "residence", value: "居宅", source: "カルテ", validUntil: null })).toBe(403);
+    expect(await patientFact({ key: "table7", value: true, source: "医師に確認", validUntil: null })).toBe(200);
   });
 
   it("照合：本人の id は受け取らない（クエリでも本文でも 400）。日付の形でない asOf は 400", async () => {

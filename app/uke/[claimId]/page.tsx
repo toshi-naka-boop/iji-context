@@ -3,7 +3,7 @@
 // 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → 点検した行と小計 → 対象外の行 → UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
 // 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面。
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
-// 診療年月に版がないレセプトは点検できないので、開くと最新の版が選ばれた状態で試算を見せる
+// 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
@@ -49,6 +49,20 @@ const pts = (n: number | null | undefined) => (n === null || n === undefined ? "
 const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
 const signed = (n: number) => (n > 0 ? `+${num(n)}` : num(n));
 const days = (dates: string[]) => [...new Set(dates)].map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、");
+/** 入力では消えない情報不足（カルテ側の記録がない・点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
+const SHARED_MISSING = ["chartRecord", "unsupportedLines"];
+/** 情報不足を、画面に出す形にまとめる：同じ文になる項目は最初の 1 件に寄せ、ルールと対象の行は合わせて出す。ほかの項目はそのまま */
+function groupMissing(missing: Finding[]): { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] {
+  const out: { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] = [];
+  for (const f of missing) {
+    const same = SHARED_MISSING.includes(f.missing?.field ?? "") ? out.find((g) => g.finding.missing?.field === f.missing?.field) : undefined;
+    if (same) {
+      same.ruleIds = [...new Set([...same.ruleIds, f.ruleId])];
+      same.lineRefs = [...new Set([...same.lineRefs, ...f.lineRefs])];
+    } else out.push({ finding: f, ruleIds: [f.ruleId], lineRefs: [...f.lineRefs] });
+  }
+  return out;
+}
 /** 指摘を出す順（種類ごと） */
 const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘れ", "記載もれ"];
 
@@ -67,7 +81,7 @@ export default function UkeClaimCheck() {
     getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`)
       .then((d) => {
         setCheck(d);
-        // 診療年月に版がないレセプトは、選べる版の最初（改定前のレセプトなら、その次に来た改定の版）を選んだ状態にする。
+        // 診療年月に版がないレセプトは、選べる版の最初（コードの表を持つ、いちばん古い版。いまの版の並びでは、改定前のレセプトの次に来た改定の版に当たる）を選んだ状態にする。
         // 最後の版（まだ先の値の変更の版）を初期値にすると、「今の算定」ではない点数が先に出る。
         // 答えを残して読み直すとき（tick）は、選んでいる版を変えない
         setRev((cur) => cur || (d.revisionId ?? d.revisions?.[0]?.id ?? ""));
@@ -175,11 +189,11 @@ export default function UkeClaimCheck() {
 
               <h3 style={{ margin: 0 }}>情報不足</h3>
               {(c.missing ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-              {(c.missing ?? []).map((f, i) => (
+              {groupMissing(c.missing ?? []).map(({ finding: f, ruleIds, lineRefs }, i) => (
                 <div key={i} className="notice">
-                  <span className="badge">{f.ruleId}</span> {findingText(f)}
-                  {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map(nameOf).join("、")}</div>}
-                  <FactInput claimId={c.claimId} finding={f} patientHref="/work" onSaved={() => setTick((t) => t + 1)} />
+                  {ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)} {findingText(f)}
+                  {lineRefs.length > 0 && <div className="muted">対象の行：{lineRefs.map(nameOf).join("、")}</div>}
+                  <FactInput claimId={c.claimId} finding={f} patientHref="/work" patientInline onSaved={() => setTick((t) => t + 1)} />
                 </div>
               ))}
               <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />

@@ -6,8 +6,8 @@ import { claimParams, factBody } from "../../../../../src/server/schemas/patient
 
 export const GET = route({ roles: allow("GET /api/patients/[claimId]/facts"), params: claimParams }, ({ params }) => getApp().patientFacts(params.claimId));
 
-export const POST = route({ roles: allow("POST /api/patients/[claimId]/facts"), params: claimParams, body: factBody }, ({ params, body: { fact }, clerkId }) =>
-  getApp().savePatientFact(params.claimId, clerkId, { key: fact.key, value: fact.value, source: fact.source, validUntil: fact.validUntil }),
+export const POST = route({ roles: allow("POST /api/patients/[claimId]/facts"), params: claimParams, body: factBody }, ({ params, body: { fact }, clerkId, user }) =>
+  getApp().savePatientFact(params.claimId, clerkId, { key: fact.key, value: fact.value, source: fact.source, validUntil: fact.validUntil }, user.role),
 );
 
 export const runtime = "nodejs";

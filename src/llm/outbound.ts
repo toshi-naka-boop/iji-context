@@ -2,7 +2,7 @@
 // - 送る前に「誰の操作か」を受け取り、その利用者が今の版の注意書きに同意しているかを、ここで DB を見て確かめる。ルートの申告（権限表）は信じない
 // - 請求から作る文脈は claimForAi を通ったものだけを受け取る（患者の識別子を持たない形。落とす場所はここ 1 か所）
 // - 記録するのは時間・トークン・モデル名だけで、プロンプトや本文は残さない
-import { createSdkMcpServer, deleteSession, query, tool, type HookCallbackMatcher, type HookEvent, type Options, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, deleteSession, listSessions, query, tool, type HookCallbackMatcher, type HookEvent, type Options, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ClaimContext } from "../engine/types";
 import type { User } from "../server/auth";
 import { getAuth } from "../server/auth-db";
@@ -15,26 +15,14 @@ export type { HookCallbackMatcher, HookEvent, Options, SDKUserMessage };
 // ---------------------------------------------------------------------------
 // 誰の操作か
 
-/** 利用者のいない呼び出しの印。このファイルの外では作れない（同じ形の値を作っても、下の照合を通らない） */
-const BUNDLED = Object.freeze({ bundled: true as const });
-export type Bundled = typeof BUNDLED;
-/** 送る操作の主：セッションから作った利用者（ルートのハンドラが受け取るものをそのまま渡す）か、同梱の合成データだけを送る呼び出し */
-export type Sender = User | Bundled;
-
-/**
- * 利用者のいない呼び出し（種を作るスクリプト・評価のスクリプト）の入口。送ってよいのは同梱の合成データだけ。
- * app/ と src/server/ から読み込むことは、テストで禁じている（利用者の入力がこの入口から出ないように）
- */
-export function outboundForBundled(): Bundled {
-  return BUNDLED;
-}
+/** 送る操作の主：セッションから作った利用者（ルートのハンドラが受け取るものをそのまま渡す）。利用者のいない呼び出しの入口はない（同意を見ない道を置かない） */
+export type Sender = User;
 
 /**
  * 外部のサービス（AI・音声）へ送ってよいかを確かめる。利用者は、今の版の注意書きに同意していなければ送らずに例外にする。
  * 同意は呼ぶたびに DB から読む（呼び出し側が持っている値・ルートの申告を信じない）。音声（src/voice/）も同じ確認を使う
  */
 export function assertMaySend(by: Sender): void {
-  if (by === BUNDLED) return;
   const id = (by as Partial<User> | null | undefined)?.id;
   if (typeof id !== "string" || !getAuth().acceptedNotice(id)) throw new ConsentRequired();
 }
@@ -49,6 +37,21 @@ export async function forgetSession(sessionId: string, cwd: string): Promise<voi
   } catch {
     /* 記録がない */
   }
+}
+
+/**
+ * その作業場所（cwd）で作られたセッションの記録を、全部消す。known は、その人がこれまでに使ったセッションの id（DB に残してあるもの）。
+ * それに加えて、SDK がその作業場所のものとして挙げるセッション（listSessions）も消す：失敗した呼び出しは id を返さないまま記録だけを残すことがあり、DB からはたどれない。
+ * 記録の置き場所は SDK が決める（公開の関数だけを使い、パスを組み立てない）。作業場所のフォルダを消す前に呼ぶ
+ */
+export async function forgetSessions(cwd: string, known: string[]): Promise<void> {
+  let listed: string[] = [];
+  try {
+    listed = (await listSessions({ dir: cwd, includeWorktrees: false })).map((s) => s.sessionId);
+  } catch (e) {
+    console.warn(`[claude] セッションの一覧を取れない: ${e instanceof Error ? e.name : "error"}`);
+  }
+  for (const id of new Set([...known, ...listed])) await forgetSession(id, cwd);
 }
 
 // ---------------------------------------------------------------------------

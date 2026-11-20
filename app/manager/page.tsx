@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { NoteList } from "../chart/note-list";
 import { AuditLog } from "./audit-log";
 
 type Report = {
@@ -33,7 +34,7 @@ export default function Manager() {
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="事務長レポート">
-        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。下には、操作の記録（監査ログ）を新しい順に並べています。
+        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。下には、カルテを書く画面から入れた訪問カルテの一覧（消す操作）と、操作の記録（監査ログ）を新しい順に並べています。
       </PageGuide>
       {err && <p className="muted">{err}</p>}
       {r && (
@@ -47,6 +48,7 @@ export default function Manager() {
           ))}
         </div>
       )}
+      {r && <NoteList />}
       {r && <AuditLog />}
     </main>
   );

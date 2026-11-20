@@ -1,17 +1,15 @@
 // 取り込んだファイルを消す（design.md §11-11「消す」・X-87）。単位は取り込んだファイル（アップロード 1 回）。請求ごとには消さない。
-// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ・請求ごとに確かめた事実、
+// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ・請求ごとに確かめた事実・医師が「その他」「判定不能」と答えた記録、
 // ほかのどの請求からも参照されなくなった患者マスタ・加入情報・確かめた患者情報。読み直しのキャッシュと、取り込みの記録も捨てる。
 // 残るもの：監査ログ（id だけ）、その請求から作った知識の候補（文は人が書いたもの。消すかは責任者が知識の画面で決める）、AI のサービス側に送った内容。
-// メンターのやり取り（セッション）と作業場所は DB の外にあるので、消す相手（医療事務とセッション）を返し、呼び出し側（src/server/instance.ts）が消す
+// メンターのやり取り（セッション）と作業場所は DB の外にあるので、消す相手（医療事務と、その人がこれまでに使ったセッションの全部）を返し、呼び出し側（src/server/instance.ts）が消す
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { listQueries } from "../../query/doctor-query";
+import { VETERAN_CLERK } from "./clerks";
 import type { AppContext } from "./context";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
-
-/** ベテランのメンターの作業場所とセッションを持つ医療事務（src/server/instance.ts の askVeteran と同じ） */
-const VETERAN_CLERK = "vet1";
 
 export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
   const { sqlite, queryLog } = ctx;
@@ -19,11 +17,18 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
   /** id の一覧を IN (...) に並べる（値は ? で渡す） */
   const marks = (ids: string[]) => ids.map(() => "?").join(", ");
 
+  /** その請求の医師確認の記録（1 質問 2 ファイル）を消す */
+  function forgetQueries(claimIds: string[]): void {
+    for (const q of listQueries(queryLog).filter((x) => claimIds.includes(x.claimId))) {
+      for (const ext of ["json", "md"]) rmSync(path.join(queryLog.dir, `${q.id}.${ext}`), { force: true });
+    }
+  }
+
   /**
    * 1 つのトランザクションで消す。途中で失敗したら DB は元のまま（ファイルは、DB の書き換えが全部済んでから最後に消す）。
    * 返すのは、消した請求の id と、メンターのやり取りを消す相手。氏名・番号は返さない
    */
-  function deleteUpload(sha256: string): { claimIds: string[]; clerks: { id: string; sessionId: string | null }[] } {
+  function deleteUpload(sha256: string): { claimIds: string[]; clerks: { id: string; sessionIds: string[] }[] } {
     return sqlite
       .transaction(() => {
         const target = uke.uploadedFile(sha256);
@@ -68,6 +73,7 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           sqlite.prepare(`DELETE FROM questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM chart_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_facts WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
+          sqlite.prepare(`DELETE FROM doctor_fact_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           // ベテランへの問い。ベテランのメンターにも同じ問いが渡っているので、そのやり取りも消す
           const peers = sqlite.prepare(`DELETE FROM peer_questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds).changes;
           if (peers > 0) clerkIds.add(VETERAN_CLERK);
@@ -80,21 +86,21 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           for (const table of ["patient_facts", "patient_coverages"]) sqlite.prepare(`DELETE FROM ${table} WHERE patient_id = ?`).run(id);
           sqlite.prepare("DELETE FROM patients WHERE id = ?").run(id);
         }
-        // メンターのやり取りは 1 人 1 セッションで、請求ごとに切り分けられない。その請求を相談した人のセッションをまるごと切る
+        // メンターのやり取りは 1 人 1 セッションで、請求ごとに切り分けられない。その請求を相談した人のセッションをまるごと切る。
+        // 前に使って捨てたセッション（同期の世代が変わった・作り直した）の記録にも、その請求の相談が残っているので、これまでに使った id を全部返す
         const clerks = [...clerkIds].map((id) => {
-          const row = sqlite.prepare("SELECT session_id FROM clerks WHERE id = ?").get(id) as { session_id: string | null } | undefined;
+          const sessionIds = (sqlite.prepare("SELECT session_id FROM clerk_sessions WHERE clerk_id = ?").all(id) as { session_id: string }[]).map((r) => r.session_id);
+          sqlite.prepare("DELETE FROM clerk_sessions WHERE clerk_id = ?").run(id);
           sqlite.prepare("UPDATE clerks SET session_id = NULL WHERE id = ?").run(id);
-          return { id, sessionId: row?.session_id ?? null };
+          return { id, sessionIds };
         });
-        // ファイル：医師確認の記録（1 質問 2 ファイル）と、原本
-        for (const q of listQueries(queryLog).filter((x) => claimIds.includes(x.claimId))) {
-          for (const ext of ["json", "md"]) rmSync(path.join(queryLog.dir, `${q.id}.${ext}`), { force: true });
-        }
+        // ファイル：医師確認の記録と、原本
+        forgetQueries(claimIds);
         rmSync(original, { force: true });
         return { claimIds, clerks };
       })
       .immediate();
   }
 
-  return { deleteUpload };
+  return { deleteUpload, forgetQueries };
 }

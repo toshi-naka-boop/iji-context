@@ -41,9 +41,6 @@ describe("外部へ送る処理の場所（ソースを走査する）", () => {
     // ほかのファイルは、音声の SDK のクライアントも直接は作らない
     expect(using(/\bElevenLabsClient\b/)).toEqual(["src/voice/elevenlabs.ts"]);
   });
-  it("利用者のいない呼び出しの入口（outboundForBundled）は、app/ と src/server/ から読み込まない", () => {
-    expect(using(/outboundForBundled/).filter((f) => f.startsWith("app/") || f.startsWith("src/server/"))).toEqual([]);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -236,7 +233,7 @@ describe("送る前の確認", () => {
     await expect(listen(user, new Blob([new Uint8Array(8)]))).rejects.toThrow(ConsentRequired);
     expect(sdk.calls.length).toBe(before + 1);
     expect(auth.acceptedNotice(user.id)).toBe(false);
-    // 利用者のいない呼び出しの入口は、同意を見ない（同梱の合成データだけを送る。app/ と src/server/ からは読み込めない）
-    expect(() => outbound.assertMaySend(outbound.outboundForBundled())).not.toThrow();
+    // 利用者のいない呼び出しの入口はない：利用者の形をしていない値は、どれも送れない
+    for (const by of [null, undefined, {}, { bundled: true }]) expect(() => outbound.assertMaySend(by as unknown as User)).toThrow(ConsentRequired);
   });
 });

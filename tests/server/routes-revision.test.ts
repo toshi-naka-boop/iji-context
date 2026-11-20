@@ -51,7 +51,7 @@ describe("GET /api/revision/compare", () => {
     const d = (await r.json()) as Compared;
     expect(d.claims.map((c) => c.claimId).sort()).toEqual(["K1", "K2", "K3", "K4", "K5", "K6", "K7"].map(claimId));
     expect(d.revisions).toEqual([
-      { id: "r2024", label: "令和6年度改定（最終状態）" },
+      { id: "r2024", label: "令和6年度改定（最終状態）", own: false },
       expect.objectContaining({ id: "r2026" }),
       expect.objectContaining({ id: "r2027-06" }),
     ]);

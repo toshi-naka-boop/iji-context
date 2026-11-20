@@ -73,6 +73,24 @@ CREATE TABLE claim_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NO
 CREATE INDEX claim_facts_claim ON claim_facts (claim_id);
 `,
   },
+  {
+    // その人がこれまでに使った、メンターのセッション id の全部（design.md §11-11「消す」：過去のセッションの記録も消すため）。
+    // clerks.session_id は「いま続けるセッション」1 つだけで、世代が変わる・作り直すと前の id を失う。いま入っている id は写す
+    version: 7,
+    sql: `
+CREATE TABLE clerk_sessions (clerk_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (clerk_id, session_id));
+INSERT INTO clerk_sessions (clerk_id, session_id) SELECT id, session_id FROM clerks WHERE session_id IS NOT NULL AND session_id != '';
+`,
+  },
+  {
+    // 医師に確かめてほしい項目に、医師が「その他」「判定不能」と答えた記録（事実は不明のまま。その他の自由記述は free_text）。
+    // 追記型で、請求・項目・日付ごとに最新の 1 行を使う。date は日付ごとの事実だけが持ち、ほかは空文字
+    version: 8,
+    sql: `
+CREATE TABLE doctor_fact_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, key TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', option TEXT NOT NULL, free_text TEXT, answered_by TEXT NOT NULL, answered_at TEXT NOT NULL);
+CREATE INDEX doctor_fact_notes_claim ON doctor_fact_notes (claim_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

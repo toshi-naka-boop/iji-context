@@ -3,7 +3,7 @@
 // 判定は、コメントを持つ請求（commentsKnown が真。摘要欄の記載の点検 R17 が動く）・カルテ側の記録がない請求（recordsKnown が偽）として行う。
 // 点検の対象外の単位があれば partial で、出るのは申告のある種類の指摘だけ。合計は、UKE に書いてある請求の合計と、点検した行の小計を別々に返す。
 // 試算（ukeTrial。design.md §11-12）は、版を名指しして同じことをする：診療年月に版がないレセプトも、診療年月の版と違う版でも読める。保存しない
-import { resolveRevision, revisionById, UKE_TRIAL_REVISIONS } from "../../engine/revisions";
+import { resolveRevision, revisionById, revisionChoices, UKE_TRIAL_REVISIONS } from "../../engine/revisions";
 import type { Revision } from "../../engine/revisions/types";
 import { trial } from "../../engine/trial";
 import type { ClaimContext, ClaimLine, Finding } from "../../engine/types";
@@ -17,8 +17,8 @@ import type { Uke } from "./uke";
 /** 1〜31 日の回数を、算定日（"YYYY-MM-DD"。回数ぶん重ねる）にする */
 const datesOf = (yearMonth: string, days: number[]): string[] => days.flatMap((n, i) => Array.from({ length: n }, () => `${yearMonth}-${String(i + 1).padStart(2, "0")}`));
 
-/** 試算で選べる版（画面の選択肢） */
-const trialRevisions = () => UKE_TRIAL_REVISIONS.map((r) => ({ id: r.id, label: r.label }));
+/** 試算で選べる版（画面の選択肢）。own は、その診療年月の版か */
+const trialRevisions = (yearMonth: string) => revisionChoices(UKE_TRIAL_REVISIONS, yearMonth);
 
 /** 点検と試算で同じ形にして返す部分：点検した行・対象外の単位・指摘・情報不足 */
 function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: UkeOther[], all: Finding[]) {
@@ -47,7 +47,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
     // 読み直しで読めなかったレセプト（表が変わって点数が合わない）は、理由だけを返す
     if (r.unreadable) return { ...head, unreadable: r.unreadable };
     // 診療年月に版がないレセプトは、点検しない（近い版で代用しない）。画面は、選べる版から選んで試算する（ukeTrial）
-    if (r.noRevision) return { ...head, unreadable: null, revisionId: null, revisions: trialRevisions() };
+    if (r.noRevision) return { ...head, unreadable: null, revisionId: null, revisions: trialRevisions(r.yearMonth) };
     const rev = resolveRevision(r.yearMonth);
     // UKE に書いてあることだけで点検する：行とコメントは UKE のまま、出来事は持たない（同梱の症例でも、カルテ側の記録は使わない）
     const result = cases.judge({ ...cases.caseOf(claimId), events: [], recordsKnown: false });
@@ -55,7 +55,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       ...head,
       unreadable: null,
       revisionId: result.revisionId,
-      revisions: trialRevisions(),
+      revisions: trialRevisions(r.yearMonth),
       /** UKE に書いてある請求の合計（HO と、KO の並び） */
       declared: r.declared ?? { ho: null, ko: [] },
       ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], result.findings),
@@ -107,7 +107,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       patientNo: uploaded ? (r.patientNo ?? "") : null,
       /** 診療年月から決まる版（なければ null）と、選べる版 */
       ownRevisionId: r.noRevision ? null : resolveRevision(r.yearMonth).id,
-      revisions: trialRevisions(),
+      revisions: trialRevisions(r.yearMonth),
       revisionLabel: rev.label,
       /** UKE に書いてある請求の合計（HO と、KO の並び。UKE の点数のまま） */
       declared: { ho: parsed.total?.points ?? null, ko: parsed.kohiTotals },

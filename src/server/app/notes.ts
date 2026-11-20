@@ -5,7 +5,7 @@ import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type Vi
 import { evaluate } from "../../engine";
 import { manualIn } from "../../engine/compare";
 import { deriveLines, manualLinesOf } from "../../engine/derive";
-import { resolveRevision, revisionById } from "../../engine/revisions";
+import { resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../patient/profile";
@@ -68,6 +68,18 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
     return { deleted: id };
   }
+  /**
+   * 訪問カルテの一覧（消す相手を選ぶため）。見えるのは消せる分だけ：事務長には全部、ほかの人には自分が書いた分。
+   * 返すのは、id・請求・日付・種類・書いた人の名前・確定済みか。本文と、そこから確かめた事実は返さない
+   */
+  function listNotes(clerkId: string, role: Role) {
+    const rows = sqlite
+      .prepare("SELECT n.id, n.claim_id, n.date, n.kind, n.clerk_id, n.facts IS NOT NULL AS confirmed, c.name FROM chart_notes n LEFT JOIN clerks c ON c.id = n.clerk_id ORDER BY n.id")
+      .all() as { id: number; claim_id: string; date: string; kind: string; clerk_id: string; confirmed: number; name: string | null }[];
+    return rows
+      .filter((r) => role === "manager" || r.clerk_id === clerkId)
+      .map((r) => ({ id: r.id, claimId: r.claim_id, date: r.date, kind: r.kind, writer: r.name ?? "", mine: r.clerk_id === clerkId, confirmed: r.confirmed === 1 }));
+  }
   /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
   function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
     if (!clerkId) return [];
@@ -86,7 +98,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 摘要欄の記載（R17）は、導出が値まで決めた記載（ready）だけを付けて点検する。UKE のコメントは使わない（行を作り直しているので、行と合わない）。
    * 人が入れる記載（needsInput）は、付いていないので記載もれとして出る（design.md §11-13）。
    * revId を渡すと試算（design.md §11-12）：同じ記録を、名指しした版の点数表とルールで導出・判定する。日付は動かさない。
-   * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない
+   * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない。
+   * revisions は、試算で選べる版（画面の選択肢。own は、この請求の診療年月の版）
    */
   function claimOfNote(id: number, choices: Record<string, string>, revId?: string) {
     const r = noteRow(id);
@@ -103,13 +116,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const derived = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
     const ctx: ClaimContext = { ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true };
+    const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
     if (revId === undefined) {
       const result = evaluate(ctx);
-      return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
+      return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev) };
     }
     const result = trial(ctx, rev);
     const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
-    return { claimId: r.claim_id, date: r.date, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
+    return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
   }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
   function patients() {
@@ -159,7 +173,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, deleteNote, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

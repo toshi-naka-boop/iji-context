@@ -14,10 +14,15 @@ import { readUke, writeUke } from "../../src/uke/uke";
 import { autoConsent } from "../helpers/consent";
 import { claimId, day } from "../helpers/period";
 
-const sdk = vi.hoisted(() => ({ deleted: [] as { id: string; dir?: string }[] }));
+/** deleted＝消したセッション／listed＝SDK がその作業場所のものとして挙げるセッション（DB に id のないもの）／hold＝メンターの応答を保留する（返事の前に呼ばれる） */
+const sdk = vi.hoisted(() => ({ deleted: [] as { id: string; dir?: string }[], listed: [] as { id: string; dir: string }[], hold: null as null | ((call: { options: Record<string, unknown> }) => Promise<void>) }));
 vi.mock("@anthropic-ai/claude-agent-sdk", async (original) => ({
-  ...(await import("../helpers/sdk")).fakeSdk(await original<object>(), () => ({ structured: { body: "見るとよい場所があります。", expression: "通常", citedKnowledge: [], topic: "算定" } })),
+  ...(await import("../helpers/sdk")).fakeSdk(await original<object>(), async (call) => {
+    await sdk.hold?.(call);
+    return { structured: { body: "見るとよい場所があります。", expression: "通常", citedKnowledge: [], topic: "算定" } };
+  }),
   deleteSession: async (id: string, o?: { dir?: string }) => void sdk.deleted.push({ id, dir: o?.dir }),
+  listSessions: async (o?: { dir?: string }) => sdk.listed.filter((s) => s.dir === o?.dir).map((s) => ({ sessionId: s.id })),
 }));
 
 const repo = path.join(__dirname, "..", "..");
@@ -80,6 +85,8 @@ describe("取り込んだファイルを消す", () => {
     // 取り込み、消すファイル（U1）と残すファイル（U2）の請求に、ぶら下がる記録をひととおり作る
     const made = await instance.runAs(owner, async () => {
       const a = instance.getApp();
+      // 前に使って捨てたセッション（同期の世代が変わる前のもの）。このあとの相談で、いまのセッションは s-test に替わる
+      a.setSession(me, "s-old");
       a.uploadUke(me, bytesA);
       a.uploadUke(me, bytesB);
       expect(a.importedClaims(me)).toEqual(["U1-1", "U1-2", "U2-1"]);
@@ -98,7 +105,7 @@ describe("取り込んだファイルを消す", () => {
         a.savePatientFact(id, me, { key: "table7", value: true, source: "カルテ", validUntil: null });
         // 請求ごとに確かめた事実（日付ごとの事実と、そうでない事実）
         a.saveClaimFact(id, me, "clerk", { key: "sameDayOushinAfterVisit", date: day(5), value: true, source: "カルテ" });
-        a.saveClaimFact(id, me, "clerk", { key: "contactDocProvided", date: null, value: true, source: "カルテ" });
+        a.saveClaimFact(id, me, "clerk", { key: "dischargeJointGuidance", date: null, value: true, source: "カルテ" });
         a.confirmCoverage(id, me, { coverageId: a.patientProfile(id).coverages[0].coverageId, source: "保険証・資格確認書" });
         out[`patient:${id}`] = a.patientFacts(id).patientId;
         out[`question:${id}`] = q.id;
@@ -126,6 +133,9 @@ describe("取り込んだファイルを消す", () => {
     expect(existsSync(path.join(workspace, "CLAUDE.md"))).toBe(true);
     const sessionBefore = instance.runAs(owner, () => instance.getApp().clerk(me).session_id);
     expect(sessionBefore).toBe("s-test");
+    expect(JSON.parse(before.clerk_sessions)).toEqual([{ clerk_id: me, session_id: "s-old" }, { clerk_id: me, session_id: "s-test" }]);
+    // 失敗した呼び出しが残した記録（id が DB にない）も、SDK がその作業場所のものとして挙げれば消す。ほかの人の作業場所のものは消さない
+    sdk.listed.push({ id: "s-orphan", dir: workspace }, { id: "s-other", dir: path.join(tmp, "ws", owner.tenantId, "someone-else") });
 
     // 権限：未ログインは 401、事務・医師は 403、形の違う指定は 400、取り込んでいないハッシュは 404。何も消えない
     expect((await del(null, sha(bytesA))).status).toBe(401);
@@ -155,7 +165,9 @@ describe("取り込んだファイルを消す", () => {
     expect(queryFiles().filter((f) => f.startsWith(made["query:U2-1"]))).toHaveLength(2);
     expect(queryFiles().map((f) => readFileSync(path.join(instance.tenantPaths(owner.tenantId).queryLogDir, f), "utf8")).some((t) => has(t, "U1-1") || has(t, "U1-2"))).toBe(false);
     expect(existsSync(workspace)).toBe(false);
-    expect(sdk.deleted).toEqual([{ id: "s-test", dir: workspace }]);
+    // メンターのやり取り：いまのセッションだけでなく、前に使って捨てたセッションと、DB に id のない記録も消える（S-6）
+    expect(sdk.deleted).toEqual([{ id: "s-old", dir: workspace }, { id: "s-test", dir: workspace }, { id: "s-orphan", dir: workspace }]);
+    expect(after.clerk_sessions).toBe("[]");
     // 監査ログには、内容のハッシュだけが残る
     const log = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((l) => l.action === "DELETE /api/uke/uploads/[sha256]");
     expect(log.filter((l) => l.result === "ok")).toMatchObject([{ target: sha(bytesA), status: 200, role: "manager" }]);
@@ -168,7 +180,7 @@ describe("取り込んだファイルを消す", () => {
       expect(a.cases().map((c) => c.claimId).filter((id) => id.startsWith("U"))).toEqual(["U2-1"]);
       expect(a.doctorQueries().map((q) => q.claimId)).toEqual(["U2-1"]);
       expect(a.patientFacts("U2-1")).toMatchObject({ patientId: stays, facts: [{ key: "table7" }] });
-      expect(a.claimFacts("U2-1").facts.map((f) => f.key)).toEqual(["sameDayOushinAfterVisit", "contactDocProvided"]);
+      expect(a.claimFacts("U2-1").facts.map((f) => f.key)).toEqual(["sameDayOushinAfterVisit", "dischargeJointGuidance"]);
       // 残った請求は、今までどおり点検できる。同梱の症例も動く
       const q = a.start(me, "U2-1");
       expect(a.confirm(q.id, a.caseFor(q).lines).confirmed).not.toBeNull();
@@ -191,5 +203,71 @@ describe("取り込んだファイルを消す", () => {
     for (const id of ["U1-1", "U2-1", "U3-1", "U3-2", stays, goes]) expect([id, tablesWith(empty, id)]).toEqual([id, []]);
     expect(readdirSync(ukeDir)).toEqual([]);
     expect(queryFiles()).toEqual([]);
+  });
+
+  it("メンターの応答を待っている間にファイルを消すと、応答が戻っても痕跡（セッション・雑談の回数・ベテランへの問い・医師確認）が戻らない（S-8）", async () => {
+    const owner = auth().register("erase_wait", "やまだ", "password123");
+    const me = instance.clerkIdOf(owner);
+    const bytes = readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE"));
+    const base = readUke(bytes);
+    const file = writeUke({ ...base, receipts: [{ ...base.receipts[0], claimId: "A1", patient: { ...base.receipts[0].patient, name: "架空 待機", insurer: { number: "06139991", symbol: "77", no: "601" } } }] });
+    const dbFile = instance.tenantPaths(owner.tenantId).dbFile;
+    const workspace = path.join(tmp, "ws", owner.tenantId, me);
+    auth().switchRole(owner, "veteran");
+    const cookie = cookieOf(owner);
+    sdk.deleted.length = 0;
+
+    const qid = await instance.runAs(owner, async () => {
+      const a = instance.getApp();
+      a.uploadUke(me, file);
+      const q = a.start(me, "U1-1");
+      // 1 回目の相談は最後まで終える（セッション s-test ができる）
+      await instance.talkToMentor({ user: owner, clerkId: me, questionId: q.id, message: "ヒントをください", situation: "通常" });
+      expect(a.clerk(me).session_id).toBe("s-test");
+      return q.id;
+    });
+
+    // 2 回目の相談：応答を保留する。保留が解けたあと、メンターが自前のツール（ベテランへの問い・医師確認）を呼んでから返事をする
+    let arrived!: () => void;
+    let release!: () => void;
+    const waiting = new Promise<void>((ok) => (arrived = ok));
+    const gate = new Promise<void>((ok) => (release = ok));
+    const toolErrors: string[] = [];
+    sdk.hold = async (call) => {
+      sdk.hold = null; // ベテランのメンターの呼び出しは保留しない
+      arrived();
+      await gate;
+      const tools = ((call.options.mcpServers as Record<string, { instance: unknown }>).resemen.instance as { _registeredTools: Record<string, { handler: (a: unknown, e: unknown) => Promise<unknown> }> })._registeredTools;
+      const doctor = { field: "病型", why: "記載がない", question: "病型について、該当するものを選んでください。", indicators: [{ source: "カルテ", text: "AF" }], options: ["発作性", "持続性", "その他", "判定不能"] };
+      for (const [name, args] of [["ask_peer_mentor", { question: "この加算の条件は？" }], ["ask_human", { question: "院内ではどうしていますか" }], ["ask_doctor", doctor]] as const) {
+        try {
+          const r = await tools[name].handler(args, {});
+          if ((r as { isError?: boolean }).isError) toolErrors.push(name);
+        } catch {
+          toolErrors.push(name);
+        }
+      }
+    };
+    const talk = instance.runAs(owner, () => instance.talkToMentor({ user: owner, clerkId: me, questionId: qid, message: "もう少し教えてください", situation: "通常" }));
+    const settled = talk.then(() => "ok", (e: Error & { status?: number }) => e.status);
+    await waiting;
+
+    // 待っている間に、ファイルを消す
+    expect((await del(cookie, createHash("sha256").update(file).digest("hex"))).status).toBe(200);
+    expect(sdk.deleted).toEqual([{ id: "s-test", dir: workspace }]);
+    release();
+    // 応答は戻るが、相談は 404 で終わり、何も書かれない
+    expect(await settled).toBe(404);
+    expect(toolErrors).toEqual(expect.arrayContaining(["ask_peer_mentor", "ask_human"]));
+
+    const after = dump(dbFile);
+    for (const id of ["U1-1", qid, "s-test"]) expect([id, tablesWith(after, id)]).toEqual([id, []]);
+    expect(after.peer_questions).toBe("[]");
+    expect(after.clerk_sessions).toBe("[]");
+    expect(JSON.parse(after.app_settings).filter((r: { key: string }) => /^(smalltalk|vent):/.test(r.key))).toEqual([]);
+    // 応答が運んできたセッションも消してある（消す操作の 1 回と、応答のあとの 1 回）
+    expect(sdk.deleted.filter((d) => d.id === "s-test" && d.dir === workspace).length).toBeGreaterThanOrEqual(2);
+    expect(readdirSync(instance.tenantPaths(owner.tenantId).queryLogDir)).toEqual([]);
+    instance.runAs(owner, () => expect(instance.getApp().clerk(me).session_id).toBeNull());
   });
 });

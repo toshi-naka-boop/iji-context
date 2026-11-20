@@ -7,6 +7,7 @@ import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
+import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
@@ -43,8 +44,9 @@ export function openApp(paths: AppPaths) {
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
-  const { deleteUpload } = createErase(ctx, uke, patientFactsOf);
+  const { deleteUpload, forgetQueries } = createErase(ctx, uke, patientFactsOf);
   const { compareOf } = createRevision(uke, casesOf, notes);
+  const { doctorFacts, noteDoctorFact } = createDoctorFacts(ctx, clock, clerks, casesOf);
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
@@ -57,7 +59,7 @@ export function openApp(paths: AppPaths) {
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
   const { ukeCheck, ukeTrial } = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, noteOf, confirmNote, deleteNote, patients, visits } = notes;
+  const { saveNote, noteOf, confirmNote, deleteNote, listNotes, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
     const claim = notes.claimOfNote(noteId, choices, revId);
@@ -93,6 +95,7 @@ export function openApp(paths: AppPaths) {
     noteOf,
     confirmNote,
     deleteNote,
+    listNotes,
     chartClaim,
     compareOf,
     patients,
@@ -115,6 +118,7 @@ export function openApp(paths: AppPaths) {
     ukeCheck,
     ukeTrial,
     deleteUpload,
+    forgetQueries,
     importedClaims,
     clerk,
     setSession,
@@ -138,6 +142,8 @@ export function openApp(paths: AppPaths) {
     setSetting,
     importClaimResult,
     doctorQueries,
+    doctorFacts,
+    noteDoctorFact,
     answerDoctor,
     approveDoctor,
     agenda,
