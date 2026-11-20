@@ -141,12 +141,23 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
   },
   G07: {
     label: "必須コメント",
-    // 使うのは「算定すれば必要」（01）だけ。「それ以外」（00）は言わない側として読み分ける。02・03（入院か入院外か・複数回）は design.md §12-3 の G07 が使わないので挙げない
-    needs: [...each("comment_kanren", "joken", ["00", "01"]), need("comment_kanren", { code: null, comment_code: null }), need("comment", { code: null })],
+    // 使うのは「算定すれば必要」（01）と、入院外のレセプトでの「入院外で算定した場合」（02・入外区分 2）。「それ以外」（00）は言わない側として読み分ける。03（複数回）は使わないので挙げない。
+    // 記載要領の表（コメント記載通知等）は、別表Ⅰ 医科（1）・別表Ⅱ 医薬品（5）・別表Ⅳ 特定器材（8）。組にする項番・枝番、算定しなかった場合のコメント（使わない側）、変更年月日（診療年月に有効な行）、定型文（コメントマスターの名称）
+    needs: [
+      ...each("comment_kanren", "joken", ["00", "01"]),
+      need("comment_kanren", { joken: "02", nyugai: "2" }),
+      ...each("comment_kanren", "tsuchi", ["1", "5", "8"], { joken: "01" }),
+      need("comment_kanren", { code: null, comment_code: null, kouban: null, edaban: null }),
+      need("comment_kanren", { hisantei: "1" }),
+      need("comment_kanren", { changed_on: null }),
+      need("comment", { code: null, name: null }),
+    ],
   },
   G08: {
     label: "傷病名の要件",
-    needs: [...each("shinryo", "shobyo_kanren", ["3", "4", "5", "7", "9"]), ...each("shobyo", "tokutei_shikkan", ["03", "04", "05", "07", "08"]), need("shobyo", { nanbyo: "09" }), need("shobyo", { hoken_gai: "1" })],
+    // 難病外来指導管理料（傷病名関連区分 9・難病外来対象区分 09）と、保険請求の対象外の傷病名（保険請求外区分 1）は、点検を作っていないので挙げない（原文で確かめられていない。EM §2-11）。
+    // 「対象でない」側（特定疾患等対象区分 00）も、値として読み分ける
+    needs: [...each("shinryo", "shobyo_kanren", ["3", "4", "5", "7"]), ...each("shobyo", "tokutei_shikkan", ["00", "03", "04", "05", "07", "08"])],
   },
   G09: {
     label: "適応・禁忌・量と日数",

@@ -1,6 +1,6 @@
 // データで動く点検（design.md §12-2・§12-3）の型。手書きのルール（src/engine/。区分キーで動く）とは別の道で、UKE の単位とコードのまま点検する
 import type { MastersDb } from "../masters/db";
-import type { UkeItem, UkeUnit } from "../uke/types";
+import type { UkeComment, UkeItem, UkeUnit } from "../uke/types";
 
 export type GenericCheckId = "G01" | "G02" | "G03" | "G04" | "G05" | "G06" | "G07" | "G08" | "G09";
 export type GenericKind = "コード" | "点数" | "行の属性" | "包括" | "背反" | "回数" | "記載もれ" | "傷病名" | "適応";
@@ -38,7 +38,11 @@ export type GenericFinding = {
  * 点検する請求。UKE の単位とコードのまま（parseUke の UkeClaim をそのまま渡せる）。この段（G01）が読むのは、単位の行の種類とコードだけ。
  * カルテから導いた算定行は、区分をコードに直してから渡す（unitsOfLines）
  */
-export type GenericClaim = { units: { items: Pick<UkeItem, "kind" | "code">[] }[] };
+export type GenericClaim = {
+  units: { items: Pick<UkeItem, "kind" | "code">[] }[];
+  /** コメント（行のコメント欄と CO。parseUke の UkeClaim.comments をそのまま渡せる。G07 が読むのはコードだけ）。コメントを持たない請求（区分キーから作った単位）は省く：必須コメント（G07）は掛けない */
+  comments?: (Pick<UkeComment, "code"> & Partial<UkeComment>)[];
+};
 
 /** 請求について分かっていること。この段が使うのは、診療年月と、使うマスターの世代（診療年月の版の世代。試算では選んだ版の世代）だけ */
 export type GenericAbout = { yearMonth: string; generation: string };
@@ -65,10 +69,16 @@ export type GenericCheck = {
 export type GenericUnitDetail = Partial<Pick<UkeUnit, "points" | "count" | "days">> & { items: (Pick<UkeItem, "kind" | "code"> & Partial<Pick<UkeItem, "line" | "quantity" | "shikibetsu" | "unitPrice">>)[] };
 
 /**
- * 請求について分かっていることのうち、G03 が読むもの。分からない項目は省く（その項目に依る点検はしない）：
- * outpatient＝入院外のレセプトか（parseUke が読めるのは入院外だけ）／birth＝生年月日（YYYYMMDD）／clinic＝施設が診療所か（偽＝病院）
+ * 請求について分かっていることのうち、G03・G07・G08 が読むもの。分からない項目は省く（その項目に依る点検はしない）：
+ * outpatient＝入院外のレセプトか（parseUke が読めるのは入院外だけ。G07 も読む）／birth＝生年月日（YYYYMMDD）／clinic＝施設が診療所か（偽＝病院）
  */
-export type GenericAboutMore = GenericAbout & { outpatient?: boolean; birth?: string; clinic?: boolean };
+export type GenericAboutMore = GenericAbout & {
+  outpatient?: boolean;
+  birth?: string;
+  clinic?: boolean;
+  /** 傷病名（SY のコード。未コード化は 0000999）。G08 が読む。持たない請求（区分キーの行）は省く：傷病名の要件は点検しない */
+  diseases?: { code: string }[];
+};
 
 /** 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位、excluded＝検算の対象外の単位（理由ごと） */
 export type RecalcSummary = { units: number; checked: number; matched: number; excluded: { reason: string; text: string; count: number }[] };

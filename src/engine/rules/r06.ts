@@ -16,6 +16,8 @@ export function makeR06(c: RevisionConsts): Rule {
     reads() {
       return this.kubun;
     },
+    // 対象外の主病かどうかを判定する（傷病名マスターでは、対象の傷病名があるか）。データで動く点検（G08）と重ねるための申告で、判定は変えない
+    covers: () => ({ kind: "傷病名", finding: "excluded_disease", kubun: [[KUBUN]] }),
     appliesTo: (ctx) => has(ctx, KUBUN),
     needs: () => ["mainDisease"],
     check(ctx) {

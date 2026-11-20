@@ -175,7 +175,11 @@ describe("段 10b：実データの masters.db で", () => {
         expect([["G01", "G02", "G03"].every((id2) => c.generic.ran.some((x) => x.check === id2)), c.generic.findings], id).toEqual([true, []]);
         // 段 11：検算の数（対象外は、合っている側に数えない）と、していないことが、点検の範囲に付く
         expect(c.generic.scope!.recalc!.matched, id).toBe(c.generic.scope!.recalc!.checked);
-        expect(c.generic.scope!.notDone, id).toHaveLength(1);
+        expect(c.generic.scope!.notDone.filter((t) => t.startsWith("行の属性")), id).toHaveLength(1);
+        // 段 13：必須コメント（G07）・傷病名の要件（G08）も動き、していないこと（見た組の数、未コード化の傷病名があるレセプトでは傷病名の要件を見ていないこと）が付く
+        expect(["G07", "G08"].every((id2) => c.generic.ran.some((x) => x.check === id2)), id).toBe(true);
+        expect(c.generic.scope!.notDone.filter((t) => t.startsWith("必須コメント：")), id).toHaveLength(1);
+        expect(c.generic.scope!.notDone.some((t) => t.startsWith("未コード化の傷病名")), id).toBe(c.diseases.some((d) => d.code === "0000999"));
         expect(c.stopped.every((s) => !s.all), id).toBe(true);
         expect(c.stopped.length, id).toBeLessThan(rev.rules.length);
       }

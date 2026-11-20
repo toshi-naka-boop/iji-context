@@ -1,6 +1,7 @@
 // 手書きのルール（R01〜）と、データで動く点検（G04〜）の重なり（design.md §12-2「手書きのルールとの重なり」。C-99・X-95）。
 // evaluateGeneric は手書きの結果を知らない。呼び出し側が、手書きの結果と、行とコードの対応（mapClaim の origins）と、データで動く点検の指摘をここに渡して、出すものを決める。
-// 重なりは、区分キーではなく、もとの UKE のコードと単位で決める。対象は、ルールが covers で「判定する」と申告した組だけ（R04・R05・R09・R11・R12）：
+// 重なりは、区分キーではなく、もとの UKE のコードと単位で決める。対象は、ルールが covers で「判定する」と申告した組だけ（R04・R05・R06・R09・R11・R12・R17）：
+// 記載もれ（G07 と R17）は、区分に加えて、同じ記載（コメントコード）のときだけ重ねる：G07 の指摘の候補のコードと、版の表（rev.comments）の、その区分の必ず要る行のコードが 1 つでも重なること
 //   (1) 重複：そのルールが、その組の指摘（情報不足でないもの）を出している → データの指摘は出さない（2 回言わない）
 //   (2) そのルールが「確かめてください」（情報不足）で止まった → データの指摘は出す（1 つの不明と関係なく、データから言えることは言える）
 //   (3) そのルールが判定して黙った → 当たる単位が全部エンジンに渡っていて、ルールが動き、情報不足を返さず、記録があるか、その判定が出来事を読まない、の全部を満たす組だけ止める（数を返す）
@@ -69,12 +70,18 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
     const c = rule.covers?.(rev);
     return c ? [{ rule, kind: c.kind, finding: c.finding, sets: new Set(c.kubun.map(setKey)) }] : [];
   });
+  /** 記載もれ：版の表の、その区分の必ず要る行（id を渡せば、その行）が、指摘の候補のコメントコードを持つか。ほかの種類は、いつも真 */
+  const sameComment = (g: GenericFinding, kubun: (string | undefined)[], id?: string): boolean => {
+    if (g.kind !== "記載もれ") return true;
+    const wanted = (g.params.comments ?? "").split(",");
+    return rev.comments.some((r) => (id === undefined || r.id === id) && r.when === "always" && r.kubun.some((k) => kubun.includes(k)) && r.codes.some((c) => wanted.includes(c)));
+  };
   const out: Overlap = { findings: [], duplicate: 0, judged: 0 };
   for (const g of generic) {
     const kubun = g.codes.map((code) => kubunOf.get(code));
     // 当たるコードのどれかが、エンジンに渡っていない（手書きの表にないコード）→ 手書きは、その組を見ていない
-    const owners = kubun.includes(undefined) ? [] : covers.filter((c) => c.kind === g.kind && c.sets.has(setKey(kubun as string[])));
-    const said = owners.some((c) => hand.findings.some((f) => f.ruleId === c.rule.id && f.kind !== "情報不足" && f.messageKey === `${c.rule.id}.${c.finding}` && f.lineRefs.some((k) => kubun.includes(k))));
+    const owners = kubun.includes(undefined) ? [] : covers.filter((c) => c.kind === g.kind && c.sets.has(setKey(kubun as string[])) && sameComment(g, kubun));
+    const said = owners.some((c) => hand.findings.some((f) => f.ruleId === c.rule.id && f.kind !== "情報不足" && f.messageKey === `${c.rule.id}.${c.finding}` && f.lineRefs.some((k) => kubun.includes(k)) && sameComment(g, kubun, f.params?.rule)));
     if (said) {
       out.duplicate++;
       continue;

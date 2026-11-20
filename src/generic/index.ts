@@ -1,6 +1,6 @@
 // evaluateGeneric(claim, masters, about)：データで動く点検（design.md §12-2）。公開データ（masters.db）の行で、UKE の単位とコードのまま点検する。
 // 手書きのルール（src/engine/ の evaluate）は変えない。指摘は定型文と値だけで作り、LLM は使わない。
-// この段で入っているのは G01（コード）だけ。あとの段は、CHECKS に点検を足す
+// 入っているのは G01〜G08。あとの段は、CHECKS に点検を足す
 import raw from "../../config/generic-checks.json";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine } from "../engine/types";
@@ -11,6 +11,8 @@ import { g03 } from "./g03";
 import { g04 } from "./g04";
 import { g05 } from "./g05";
 import { g06 } from "./g06";
+import { g07 } from "./g07";
+import { g08 } from "./g08";
 import { GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
 
 const CHECKS: GenericCheck[] = [g01];
@@ -19,6 +21,8 @@ CHECKS.push(g03);
 CHECKS.push(g04);
 CHECKS.push(g05);
 CHECKS.push(g06);
+CHECKS.push(g07);
+CHECKS.push(g08);
 
 /**
  * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。

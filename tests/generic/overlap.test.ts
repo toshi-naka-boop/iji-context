@@ -29,9 +29,15 @@ const keys = (fs: { messageKey: string }[]) => fs.map((f) => f.messageKey);
 const handKeys = (r: EngineResult, ruleId: string) => r.findings.filter((f) => f.ruleId === ruleId).map((f) => (f.kind === "情報不足" ? `情報不足:${f.missing!.field}` : f.messageKey));
 
 describe("各ルールの申告（covers）", () => {
-  it("R04・R05・R09・R11・R12 が、判定する組を申告している。ほかのルールは申告しない", () => {
+  it("R04・R05・R06・R09・R11・R12・R17 が、判定する組を申告している。ほかのルールは申告しない", () => {
     const covers = Object.fromEntries(r2026.rules.flatMap((r) => (r.covers ? [[r.id, r.covers(r2026)]] : [])));
-    expect(Object.keys(covers)).toEqual(["R04", "R05", "R09", "R11", "R12"]);
+    expect(Object.keys(covers)).toEqual(["R04", "R05", "R06", "R09", "R11", "R12", "R17"]);
+    // 段 13：R06 は特定疾患処方管理加算の傷病名（G08 と重ねる）、R17 は必ず要る記載（EM §2-10 表 1 の「算定すれば必ず」の行の区分。G07 と重ねる）
+    expect(covers.R06).toEqual({ kind: "傷病名", finding: "excluded_disease", kubun: [["F400_N4"]] });
+    expect([covers.R17.kind, covers.R17.finding]).toEqual(["記載もれ", "comment_missing"]);
+    expect(covers.R17.kubun.map((k: string[]) => k[0]).sort()).toEqual([...new Set(r2026.comments.filter((c) => c.when === "always").flatMap((c) => c.kubun))].sort());
+    expect(covers.R17.kubun).toContainEqual(["C103_2"]);
+    expect(covers.R17.kubun).not.toContainEqual(["C000"]);
     expect(covers.R04).toEqual({ kind: "背反", finding: "only_main", kubun: [["C101_2I", "C103_2"]] });
     expect(covers.R09).toEqual({ kind: "背反", finding: "mitori_with_shibou", kubun: [["C001_N7_MITORI", "C001_N8_SHIBOU"]] });
     expect(covers.R11).toEqual({ kind: "回数", finding: "judgement_once_a_month", kubun: [["D026_3"], ["D026_4"], ["D026_5"]] });
