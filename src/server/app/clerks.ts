@@ -3,6 +3,9 @@ import { validateStyle, type Style } from "../../mentor/style";
 import type { AppContext } from "./context";
 import { badRequest, notFound } from "../errors";
 
+/** ベテランのメンターの作業場所とセッションを持つ医療事務（ベテラン役）の id。ベテランへの問い（src/server/instance.ts の askVeteran）と、消す操作（erase.ts）が同じものを指す */
+export const VETERAN_CLERK = "vet1";
+
 /** 本人が決めた名前を検査する（1〜20 文字。改行・制御文字と、指示の書式に使われる記号は受け付けない） */
 export function cleanName(raw: string): string {
   const n = raw.trim();

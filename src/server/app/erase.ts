@@ -6,12 +6,10 @@
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { listQueries } from "../../query/doctor-query";
+import { VETERAN_CLERK } from "./clerks";
 import type { AppContext } from "./context";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
-
-/** ベテランのメンターの作業場所とセッションを持つ医療事務（src/server/instance.ts の askVeteran と同じ） */
-const VETERAN_CLERK = "vet1";
 
 export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
   const { sqlite, queryLog } = ctx;

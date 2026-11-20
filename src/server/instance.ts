@@ -19,6 +19,7 @@ import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
 import { defaultPaths, openApp, storeOptionsOf, type App, type AppPaths } from "./app";
+import { VETERAN_CLERK } from "./app/clerks";
 import type { User } from "./auth";
 import { dataDir, getAuth } from "./auth-db";
 import { seed } from "../../scripts/seed-knowledge";
@@ -52,7 +53,7 @@ export function runAs<T>(user: User, fn: () => T): T {
   return out;
 }
 export const currentUser = (): User | null => current.getStore() ?? null;
-/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は vet1 */
+/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は VETERAN_CLERK（src/server/app/clerks.ts） */
 const OWNER_CLERK = "new1";
 /**
  * tenant の中での、その利用者の医療事務 id（clerks の行）。
@@ -120,7 +121,7 @@ function ensureClerk(a: App, user: User) {
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
 const DEMO_CLERKS = [
   { id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" as const },
-  { id: "vet1", name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
+  { id: VETERAN_CLERK, name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
 ];
 
 export function getApp(): App {
@@ -215,7 +216,7 @@ async function withSession<T>(sessionId: string | null, run: (sid: string | null
 
 /** ベテランのメンターに問う（ベテラン本人の作業場所・セッションで） */
 async function askVeteran(a: App, by: User, question: string) {
-  const vet = a.clerk("vet1");
+  const vet = a.clerk(VETERAN_CLERK);
   const p = prepare(a, vet.id);
   const r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor")));
   a.setSession(vet.id, r.sessionId);
