@@ -57,7 +57,7 @@ export function openApp(paths: AppPaths) {
   const { caseFor, judgeFor, outlookOf } = questionCase;
   const { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
   const { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
-  const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf } = knowledge;
+  const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf, checkOfficial } = knowledge;
   const { importClaimResult, agenda, answerAgenda, runMeeting } = meeting;
   const { personal, manager } = prevented;
 
@@ -135,6 +135,7 @@ export function openApp(paths: AppPaths) {
     empathize,
     propose,
     knowledgeList,
+    checkOfficial,
     resolveNoticeItems,
     registerNotice,
     seedLocalRules,

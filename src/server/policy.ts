@@ -78,6 +78,9 @@ export const POLICY = {
   // 知識：閲覧・投稿・共感は全員。検証（action=verify）はベテランだけ（ハンドラの中で分ける）
   "GET /api/knowledge": ALL,
   "POST /api/knowledge": ALL,
+  // 公的文書の条件に当たるかを確かめる（design.md §11-3）：「当たる」は全員（絞るときはこの行を変える）。「当たらない」は ④ を黙らせられるので責任者だけ
+  "POST /api/knowledge/[id]/official-check/applies": ALL,
+  "POST /api/knowledge/[id]/official-check/not-applies": ["veteran"],
   "GET /api/peer": ALL,
   "POST /api/peer/[id]/answer": ["veteran"],
   // レセメン会議：回答はベテラン。議題は事務長も見られる
