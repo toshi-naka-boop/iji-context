@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BILLING_MONTH, loadSources } from "../../scripts/gen-uke";
 import { seed } from "../../scripts/seed-knowledge";
 import { evaluate } from "../../src/engine";
+import { resolveRevision } from "../../src/engine/revisions";
 import { consecutiveMonths, matchState } from "../../src/lifecycle/match";
 import { applyEvent, listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import type { Notice } from "../../src/notice/notice";
@@ -68,6 +69,36 @@ describe("commentOn", () => {
     expect([matchState(withComment, fromUke([]), []), matchState(noComment, fromUke([]), [])]).toEqual(["nomatch", "match"]);
     // 同梱の UKE（コメントなし）では、今までどおり「コメントなし」の側が当たる
     expect([matchState(withComment, want, []), matchState(noComment, want, [])]).toEqual(["nomatch", "match"]);
+  });
+
+  it("定められた記載（版の comments のコード）は数えない：必須のコメントを付ける前後で、当たり方が変わらない（§11-13 完了条件 (h)）", () => {
+    const { cases, src } = loadSources();
+    const built = buildUkeFiles(cases, src, BILLING_MONTH);
+    const required = new Set(resolveRevision(YM).comments.flatMap((r) => r.codes));
+    let seen = 0;
+    for (const c of cases) {
+      const want = loadCase(c.claimId.split("-")[0]);
+      const file = readUke(writeUke(built[want.payer]));
+      const after = toClaimContext(file, c.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown });
+      // 同梱の UKE のコメントは、どれも定められた記載。区分に付いている（on がある）ものもある
+      expect((after.comments ?? []).every((x) => required.has(x.code))).toBe(true);
+      seen += (after.comments ?? []).filter((x) => x.on.length > 0).length;
+      const before = { ...after, comments: [] };
+      for (const kubun of new Set(after.lines.map((l) => l.kubun))) {
+        for (const present of [true, false]) {
+          const m = makeMeta({ id: `regional/${kubun}-${present}`, match: { kubunAll: [kubun], commentOn: [{ kubun, present }] } });
+          expect(matchState(m, after, []), `${c.claimId} ${kubun} ${present}`).toBe(matchState(m, before, []));
+          expect(matchState(m, after, [])).toBe(present ? "nomatch" : "match");
+        }
+      }
+      // 定められた記載でないコメントが同じ区分に付けば、今までどおり「コメントあり」
+      const kanri = (after.comments ?? []).find((x) => x.on.length > 0)?.on[0];
+      if (kanri) {
+        const free = { ...after, comments: [...(after.comments ?? []), { code: "830000001", text: "任意のコメント", raw: "任意のコメント", on: [kanri] }] };
+        expect(matchState(makeMeta({ id: "regional/free", match: { kubunAll: [kanri], commentOn: [{ kubun: kanri, present: true }] } }), free, [])).toBe("match");
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 
   it("avoid／allow の組は、コメントの有無でちょうど片方だけ当てはまる", () => {

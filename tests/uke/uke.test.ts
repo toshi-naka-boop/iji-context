@@ -9,7 +9,7 @@ import { pointsOf, resolveRevision } from "../../src/engine/revisions";
 import { codeOf } from "../../src/engine/revisions/codes";
 import type { Revision } from "../../src/engine/revisions/types";
 import type { Comment } from "../../src/engine/types";
-import { buildUkeFiles, payerOfInsurer, toClaimContext } from "../../src/uke/cases";
+import { buildUkeFiles, commentsOfCase, payerOfInsurer, toClaimContext } from "../../src/uke/cases";
 import { DISEASE_CODES } from "../../src/uke/diseases";
 import { UKE_LIMITS } from "../../src/uke/limits";
 import type { UkeFile } from "../../src/uke/types";
@@ -36,16 +36,23 @@ describe("2 本を読む", () => {
     expect(files.国保連.billingMonth).toBe(BILLING_MONTH);
   });
 
-  it("読んだレセプトとカルテ側の事実を合わせると、症例 JSON と同じ行・同じ判定になる。UKE から作った請求は commentsKnown が真（§11-8 完了条件 4）", () => {
+  it("読んだレセプトとカルテ側の事実を合わせると、症例 JSON と同じ行・同じ判定になる。UKE から作った請求は commentsKnown が真で、必須のコメントを持ち、摘要欄の記載（R17）の指摘は 0 件（§11-8 完了条件 4・§11-13 完了条件 (b)）", () => {
+    const { src } = loadSources();
+    // UKE の中の並びは行（単位）の順なので、並びは問わない
+    const pairs = (cs: Comment[]) => cs.map((c) => `${c.code} ${c.text}`).sort();
     for (const k of CASES) {
       const want = loadCase(k);
       const file = want.payer === "国保連" ? files.国保連 : files.支払基金;
       const got = toClaimContext(file, want.claimId, { facility: want.facility, facts: want.facts, events: want.events, recordsKnown: want.recordsKnown, history: want.history });
       expect(got.lines).toEqual(want.lines);
-      expect(got.comments).toEqual([]);
+      // コメントは、症例の行・事実・出来事（と EM 5-1 の合成の設定）から作ったもの。文字データは半角に寄せて読める
+      expect(pairs(got.comments ?? [])).toEqual(pairs(commentsOfCase(want, src.commentValues?.[want.claimId])));
       expect([got.commentsKnown, want.commentsKnown]).toEqual([true, false]);
       expect([got.yearMonth, got.payer, got.prefecture]).toEqual([want.yearMonth, want.payer, want.prefecture]);
-      expect(evaluate(got)).toEqual(evaluate(want));
+      // 判定は、R17 が当たる（コメントを持つ請求だけ）ことを除いて同じ。R17 の指摘は出ない
+      const [a, b] = [evaluate(got), evaluate(want)];
+      expect({ ...a, applied: a.applied.filter((id) => id !== "R17") }).toEqual(b);
+      expect(b.applied).not.toContain("R17");
     }
   });
 
@@ -154,7 +161,7 @@ describe("形式（FR-06）", () => {
   it("包括の検査の項目は、EM 5-1 の表の行と同じ（症例ごとの合成の設定）。区分 D007_10 は 10 項目を 1 行ずつ並べ、点数は最後の行だけ", () => {
     const { src } = loadSources();
     const start = em.indexOf("**包括の検査の項目");
-    const rows = em.slice(start, em.indexOf("\n### ", start)).split("\n").map((l) => l.split("|").slice(1, -1).map((c) => c.trim())).filter((c) => /^K\d$/.test(c[0] ?? ""));
+    const rows = em.slice(start, em.indexOf("\n**", start + 2)).split("\n").map((l) => l.split("|").slice(1, -1).map((c) => c.trim())).filter((c) => /^K\d$/.test(c[0] ?? ""));
     const k1 = rows.find((c) => c[0] === "K1")![3].match(/\d{9}/g)!;
     expect(k1).toHaveLength(10);
     // K2・K7 は「K1 と同じ 10 項目」
@@ -491,9 +498,13 @@ describe("書き出し → 読み取りの往復（§11-14 完了条件 (c)）",
     for (const payer of ["国保連", "支払基金"] as const) {
       const back = roundTrip(built[payer]);
       expect(back.receipts.map((r) => r.lines)).toEqual(built[payer].receipts.map((r) => r.lines));
-      expect(back.receipts.map((r) => r.comments)).toEqual(built[payer].receipts.map(() => []));
-      // もう一度書いても同じバイト列（読んだものを書き出せる）
-      expect(writeUke(back).equals(writeUke(built[payer]))).toBe(true);
+      // 必須のコメント（§11-13）も、コードと文字データが同じまま戻る（UKE の中の並びは行の順なので、並びは問わない）
+      const pairs = (f: UkeFile) => f.receipts.map((r) => r.comments.map((c) => `${c.code} ${c.text} ${c.raw}`).sort());
+      expect(pairs(back)).toEqual(pairs(built[payer]));
+      // 読んだものを、もう一度書き出して読める（行は同じ。コメントは、単位の直後の CO に回った分がレセプト全体へのコメントになるので、置き場所だけが変わる）
+      const again = roundTrip(back);
+      expect(again.receipts.map((r) => r.lines)).toEqual(back.receipts.map((r) => r.lines));
+      expect(pairs(again)).toEqual(pairs(back));
     }
   });
 

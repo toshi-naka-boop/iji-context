@@ -146,7 +146,8 @@ export type ClaimContext = {
   excluded?: { code: string; count: number }[];
 };
 
-export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "情報不足";
+/** 「記載もれ」は摘要欄の記載（R17）。宛先は医療事務で、点数は付かない（design.md §11-13） */
+export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "記載もれ" | "情報不足";
 
 export type Finding = {
   ruleId: string;
@@ -155,6 +156,8 @@ export type Finding = {
   /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること（どちらも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
   missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
+  /** 文言に埋める値（R17：何の記載か、足りない日・多い日） */
+  params?: Record<string, string>;
   reference: string;
 };
 

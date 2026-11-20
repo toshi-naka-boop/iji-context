@@ -208,19 +208,30 @@ export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: bo
   return { ok: "unknown", ask, askGuidance: false };
 }
 
-/** 週ごとの、訪問診療料を算定した回数の最大値。算定しなかった訪問は数えない */
-export function maxVisitsPerWeek(ctx: ClaimContext, c: RevisionConsts): number {
-  const perWeek = new Map<string, number>();
+/** 週（始まりの日）ごとの、訪問診療料を算定した日（回数ぶん重ねる）。算定しなかった訪問は数えない */
+function visitDaysByWeek(ctx: ClaimContext, c: RevisionConsts): Map<string, string[]> {
+  const perWeek = new Map<string, string[]>();
   for (const l of ctx.lines) {
     if (l.count <= 0 || !c.visitKubun.includes(l.kubun)) continue;
     for (const date of l.dates) {
       const d = new Date(`${date}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() - c.weekStartsOn + 7) % 7));
       const key = d.toISOString().slice(0, 10);
-      perWeek.set(key, (perWeek.get(key) ?? 0) + 1);
+      perWeek.set(key, [...(perWeek.get(key) ?? []), date]);
     }
   }
-  return Math.max(0, ...perWeek.values());
+  return perWeek;
+}
+
+/** 週ごとの、訪問診療料を算定した回数の最大値 */
+export function maxVisitsPerWeek(ctx: ClaimContext, c: RevisionConsts): number {
+  return Math.max(0, ...[...visitDaysByWeek(ctx, c).values()].map((days) => days.length));
+}
+
+/** 週の上限を超えた週の、訪問診療料を算定した日（重複は除いて昇順）。R13 と同じ数え方で、R17 と導出の「摘要欄に書くこと」が使う */
+export function overLimitVisitDays(ctx: ClaimContext, c: RevisionConsts): string[] {
+  const days = [...visitDaysByWeek(ctx, c).values()].filter((d) => d.length > c.weeklyVisitLimit).flat();
+  return [...new Set(days)].sort();
 }
 
 /** "YYYY-MM" の差（月数） */

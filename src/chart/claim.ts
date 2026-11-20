@@ -19,6 +19,11 @@ export type ClaimPreviewLine = {
   subtotal: number | null;
   /** 導出した行の根拠。入力どおりに通した行（導出しない区分）は null */
   basis: { rule: string; events: string[]; needs: string[]; byChoice: boolean; tentative: boolean } | null;
+  /**
+   * この行について摘要欄に書くこと（design.md §11-13）。what は何の記載か。entries は 1 件ずつ：
+   * ready はコードと値まで決まったもの、needsInput は医療事務が入れるもの（code が null なら、当たるコードも選ぶ）
+   */
+  comments: { what: string; entries: { code: string | null; text: string | null; status: "ready" | "needsInput" }[] }[];
 };
 
 export type ClaimPreview = {
@@ -44,11 +49,20 @@ export function claimPreviewOf(derived: DeriveResult, engine: EngineResult, rev:
     p.kind === "要選択"
       ? { kind: p.kind, id: p.id, text: p.question, options: p.options.map((o) => ({ id: o.id, label: o.label })), blocks: p.blocks.map(nameOf) }
       : { kind: p.kind, id: p.id, text: `${needLabel(p.need)}${p.date ? `（${md(p.date)}）` : ""}`, target: p.target, blocks: p.blocks.map(nameOf) };
+  /** その区分の最初の行に、摘要欄に書くことを記載（版の表の行）ごとにまとめて付ける */
+  const commentsOf = (kubun: string, i: number): ClaimPreviewLine["comments"] => {
+    if (derived.lines.findIndex((l) => l.kubun === kubun) !== i) return [];
+    const mine = derived.comments.filter((c) => c.kubun === kubun);
+    return [...new Set(mine.map((c) => c.rule))].map((rule) => ({
+      what: rev.comments.find((r) => r.id === rule)?.summary ?? rule,
+      entries: mine.filter((c) => c.rule === rule).map(({ code, text, status }) => ({ code, text, status })),
+    }));
+  };
   return {
     revisionId: derived.revisionId,
     lines: derived.lines.map((l, i) => {
       const points = engine.byLine[i]?.points ?? null;
-      return { kubun: l.kubun, name: nameOf(l.kubun), count: l.count, dates: l.dates, points, subtotal: points === null ? null : points * l.count, basis: basisOf(derived.basis[i]) };
+      return { kubun: l.kubun, name: nameOf(l.kubun), count: l.count, dates: l.dates, points, subtotal: points === null ? null : points * l.count, basis: basisOf(derived.basis[i]), comments: commentsOf(l.kubun, i) };
     }),
     totalStatus: derived.totalStatus,
     total: derived.totalStatus === "withheld" ? null : engine.total,

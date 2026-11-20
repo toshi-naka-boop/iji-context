@@ -150,7 +150,7 @@ describe("同梱の版", () => {
   it("どの版でも、点数表の値は EM の採用値（source が EM）で、点数未収載の区分はない", () => {
     for (const rev of REVISIONS) for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual([k, "EM", "number"]);
   });
-  it("ルールは R01〜R16 の 16 本", () => {
-    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 16 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
+  it("ルールは R01〜R17 の 17 本", () => {
+    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 17 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
   });
 });

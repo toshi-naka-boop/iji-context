@@ -217,6 +217,11 @@ describe("訪問カルテ", () => {
     for (const l of c.lines) expect(l.basis?.events.length).toBeGreaterThan(0);
     expect(c.total).toBe(c.lines.reduce((s, l) => s + l.subtotal, 0));
     expect(Array.isArray(c.patientFindings)).toBe(true);
+    // 摘要欄に書くこと（§11-13）：値まで決まる記載（訪問した年月日・包括的支援加算の状態）が行に付き、それを付けて点検するので記載もれは出ない（上の findings: []）
+    const comments = (kubun: string) => (c.lines.find((l) => l.kubun === kubun) as unknown as { comments: { entries: { code: string | null; status: string }[] }[] }).comments.flatMap((x) => x.entries);
+    expect(comments("C002_2NI1")).toEqual([{ code: "850100106", text: expect.stringMatching(/^5\d{6}$/), status: "ready" }]);
+    expect(comments("C002_N10_HOKATSU")).toEqual([{ code: "820100626", text: "", status: "ready" }]);
+    expect(comments("C001_1I")).toEqual([]);
 
     expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("[1]")}`), at)).status).toBe(400);
     expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("{")}`), at)).status).toBe(400);

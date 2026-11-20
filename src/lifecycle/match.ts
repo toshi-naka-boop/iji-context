@@ -1,4 +1,5 @@
 // 知識の適用条件の判定（design.md §3）。宣言的な条件だけを見る決定的関数
+import { hasRevision, resolveRevision } from "../engine/revisions";
 import type { ClaimContext } from "../engine/types";
 import type { KnowledgeMeta } from "./types";
 
@@ -34,9 +35,14 @@ export function matchState(meta: KnowledgeMeta, ctx: ClaimContext, applied: stri
   }
   if (m.payer !== undefined && ctx.payer !== m.payer) return "nomatch";
   if (m.prefecture !== undefined && ctx.prefecture !== m.prefecture) return "nomatch";
-  for (const c of m.commentOn ?? []) {
-    const has = (ctx.comments ?? []).some((x) => x.on.includes(c.kubun));
-    if (has !== c.present) return "nomatch";
+  if (m.commentOn !== undefined && m.commentOn.length > 0) {
+    // 定められた記載（版の comments のコード。R17 が点検するもの）は数えない。数えると、必須のコメントが付いただけで知識の当たり方が変わる（design.md §11-13）
+    const required = new Set(hasRevision(ctx.yearMonth) ? resolveRevision(ctx.yearMonth).comments.flatMap((r) => r.codes) : []);
+    const free = (ctx.comments ?? []).filter((x) => !required.has(x.code));
+    for (const c of m.commentOn) {
+      const has = free.some((x) => x.on.includes(c.kubun));
+      if (has !== c.present) return "nomatch";
+    }
   }
   if (m.consecutiveMonths !== undefined && consecutiveMonths(ctx, m.consecutiveMonths.kubun) < m.consecutiveMonths.min) {
     return "nomatch";
