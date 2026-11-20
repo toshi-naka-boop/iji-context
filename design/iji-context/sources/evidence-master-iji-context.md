@@ -675,6 +675,316 @@ id はコードのレジストリと1対1で対応させる。変えない。要
 - 表 4 の「違う」は (e) と (g) の 2 か所。(e) は設計書 §11-14 のコメントの帰属の場合分けに効く（R17 はコメントの置き場所で判定しないので、点検の結果には効かない。知識の `commentOn` と画面の表示に効く）。(g) は TO を読む場合にだけ効く（いまアプリは TO の行を持たない）
 - 記録条件仕様の令和6年6月版との差（§2-5 L-2 の未確認）は、この照合でも数え直していない
 
+### 2-11. 採用したデータ源（2026-11-20 追記）
+
+設計書 §12-1 の決定による（2026-11-20）。全部の行の点検（G01〜G09）は、この節のデータ源から読む値をそのまま使う（1 行ずつ EM に写さない）。手書きのルールと版の表は、今までどおり §2-2・§2-8・§2-10 の行だけ。
+
+- データも仕様書も**リポジトリに入れない**（どれも再配布の可否が明記されていない。審査支払機関のサイトは「無断使用・転載を禁止」 https://www.hpdx.or.jp/riyo.html ）。使う人が手元で落として読み込む（docs/masters.md）
+- 件数・項目・ページの出どころは調査 sources/research/full-coverage-research.md。この節は、2026-11-20〜21 に実ファイルを `masters.db` に取り込んで数え直した値
+- 列の読み方（項番 → 列の名前、値の区分、仕様書のページ）は src/masters/layout.ts に書いた。表 2・表 3 の「表」「列」は、その `masters.db` の表と列の名前
+- **表 1〜3 は `npm run masters:build`・`npm run check:masters` が機械で読む**（src/masters/verify.ts）。表の形（列の数と並び、`列=値` の書き方）を変えない
+
+#### 表 1　データ源
+
+仕様書の略号：［基］＝レセプト電算処理システム マスターファイル仕様説明書 令和8年度版（本編 https://shinryohoshu.mhlw.go.jp/shinryohoshu/file/spec/R08rec1.pdf ／別紙 R08rec2.pdf ／レイアウト R08rec3.pdf。ページは印字のページ）、［点］＝医科電子点数表の活用手引き 令和8年度版（令和8年7月24日。 https://www.hpdx.or.jp/seikyushiharai/tensuhyo/ikashika/index.files/tensuhyo_01.pdf ）、［関］＝コメント関連テーブル ファイル仕様説明書 令和8年度版（ck_1_20261112.pdf。入手先のページに掲載）、［チ］＝コンピュータチェック対象事例 仕様書（チェックマスタ）2026年10月30日版（入手先のページに掲載。ページは印字のページ）。
+利用条件の確認状況は、どの行も「同梱（再配布）の可否は**未確認**。社内のテストで、使う人の手元に落として読む形で使う。配る製品にする前に公開元へ確認する（設計書 L-67）」。確認日はどの行も 2026-11-20（列の読み方と件数）・2026-11-21（錨）。
+
+| データ | 公開元・入手先 | 確かめた版（更新日） | 取り込んだファイルと件数 | 読んだ項目（仕様書の項番） | 仕様書 |
+|---|---|---|---|---|---|
+| `shinryo` 医科診療行為マスター | 厚生労働省 診療報酬情報提供サービス https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/ （sFile） | 20261102 | s_20261102.csv 11,837 件（150 項目） | 1・3・5・11〜16・19・25・27・28・30〜43・50・51・68・69・72〜81・85・87・88・90〜94 | ［基］p27〜50、レイアウト p227〜230 |
+| `iyakuhin` 医薬品マスター | 同（yFile） | 20261112 | y_20261112.csv 19,324 件（42 項目） | 1・3・5・8・11・12・28・30・31・34 | ［基］p16〜19 |
+| `tokutei` 特定器材マスター | 同（tFile） | 20261001 | t_20261001.csv 1,411 件（38 項目） | 1・3・5・8・11・12・28〜30 | ［基］p21〜24 |
+| `shobyo` 傷病名マスター | 同 https://shinryohoshu.mhlw.go.jp/shinryohoshu/standardMenu/doStandardMasterBz （bFile） | 20260601 | b_20260601.txt 27,684 件（46 項目） | 1・3・6・19〜21・23・24・43 | ［基］p7〜10 |
+| `shushokugo` 修飾語マスター | 同（zFile） | 20260601 | z_20260601.txt 2,390 件（19 項目） | 1・3・7・15・16 | ［基］p12〜13 |
+| `comment` コメントマスター | 同 https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/ （cFile） | 20261112 | c_20261112.csv 4,509 件（30 項目） | 1・4・7・20〜23 | ［基］p25〜26 |
+| `tensuhyo` 電子点数表（医科） | 医療情報基盤・診療報酬審査支払機構 https://www.hpdx.or.jp/seikyushiharai/tensuhyo/ikashika/index.html （tensuhyo_02.zip） | 20261102 | 補助マスター 11,837／包括 248,335／背反 1 日 39,534・同一月 21,670・同時 17,252・1 週間 352／算定回数 6,354。入院基本料テーブル（7,051）は取り込まない | 補助 1・2・4〜13・21・26・27／包括 1〜3・5〜7／背反 1・2・4・6・7・9・10／算定回数 1・2・4・6・7・13・14 | ［点］p15〜30、付表1 p32、ファイル一覧表 |
+| `comment_kanren` コメント関連テーブル | 同 https://www.hpdx.or.jp/seikyushiharai/tensuhyo/kihonmasta/kihonmasta_06.html （ck_ALL_20261112.zip） | 20261112 | ck_ALL_20261112.csv 18,281 件（30 項目） | 1〜3・5・6・9・10・12〜17 | ［関］p2〜8 |
+| `checkmaster` チェックマスタ | 同 https://www.hpdx.or.jp/shinryohoshu/hpdx_cc/index.html （20261030_CC_JIRE_CHECKMASTA.zip） | 20261030 | 医薬品適応関連 1,285,291／医科診療行為傷病名関連 223,888／医薬品併用禁忌関連 4,356（見出しの行を除く）。事例ファイル・投与量グループ・漫然グループ・傷病名禁忌は取り込まない | 適応 1・2・5〜8・13・15・23／診療行為傷病名 1・2・7〜12／併用禁忌 1・2・9 | ［チ］p15〜28 |
+
+実ファイルで確かめたこと（2026-11-20）：どのファイルも Shift_JIS として読め、全行が上の項目数で、取り込んだ項目の値が仕様書の形・値の区分に全部収まる（収まらない行が 1 つでもあれば、その表は作らない）。廃止年月日は、取り込んだ基本マスター 6 本の全行が 99999999。
+
+**未確認のまま残した読み方**（この列に依る点検は、確かめるまで言い切りにしない）：
+- 医科診療行為マスター 項番36「上限回数」の単位（月か、レセプト 1 件か）。［基］p33 に単位の記載がない
+- 医薬品マスター 項番12 の薬価そのもの（薬価基準の PDF から文字が取れず、原文と突き合わせていない）。錨が置けていないので、薬価に依る検算（G02）は動かさない
+- 傷病名マスター 項番21 の 03・04・05・08、項番43 の 09、項番20 の 1（対象の傷病名の一覧の原文＝特掲告示の別表を、文字として読めていない）。錨が置けていないので、G08 は動かさない
+- 医科診療行為マスター 項番14 の 1・2（後期高齢者医療）、項番27 の 1、項番11 の 8：原文に、その値に当たると確かめられる例を見つけていない
+
+#### 表 2　錨（原文で確かめた、データの中の具体的な事実）
+
+`masters.db` の、「行を決める値」に当たる行が 1 つ以上あり、その全部で「確かめる値」が成り立つこと。持っている 1 枚ごとに確かめ、1 つでも外れたら `masters:build` は失敗する。
+原文の略号：告示・留意・記載要領＝§2-1 の文書（ページは PDF のページ）。作成手引き＝電子レセプトの作成手引き（医科）令和8年10月版 https://www.hpdx.or.jp/seikyushiharai/iryokikan/iryokikan_02.files/jiki_i01.pdf （PDF のページ）。［基］［点］［チ］は表 1 の仕様書。どの錨も 2026-11-21 に、原文の該当箇所を開いて確かめた。
+注加算コード（chu_code）の番号そのものは任意の番号で、原文で確かめたのは「加算と、付けられる側が同じ番号を持つこと」。背反の表（`haihan`）の tani は 1＝1 日につき・2＝同一月内・3＝同時・4＝1 週間につき（［点］ファイル一覧表 ※3）。
+
+| 錨 | 表 | 行を決める値 | 確かめる値 | 意味 | 原文で確かめた箇所 |
+|---|---|---|---|---|---|
+| A01 | `shinryo` | `code=114001110` | `point_kind=3, points=890, kokuji1=1` | 在宅患者訪問診療料(Ⅰ) 1 イは 890 点の基本項目 | 告示 C001 1 イ（p136） |
+| A02 | `shinryo` | `code=114001110` | `jitsunissu=2, nissu_kaisu=2, shukei_gai=140` | 訪問診療料は、再診料を含む行為として実日数の集計に入る。点数欄の集計先は在宅 | ［基］別紙7-4 項番4 に「在宅患者訪問診療料」（R08rec2 p115）、別紙7-2 の 140＝在宅（p113） |
+| A03 | `shinryo` | `code=114000110` | `point_kind=3, points=720, kokuji1=1, chu_code=1401, chu_seq=0` | 往診料は 720 点。注加算を付けられる側 | 告示 C000（p135） |
+| A04 | `shinryo` | `code=114011570` | `points=650, kokuji1=7, chu_code=1401, chu_seq=1` | 緊急往診加算（在支診等）650 点は、往診料の注 1 の加算（往診料と同じ注加算コード） | 告示 C000 注1 ロ（p135） |
+| A05 | `shinryo` | `code=111000110` | `points=291, jitsunissu=2, nissu_kaisu=1, shukei_gai=110` | 初診料は 291 点。実日数の集計では初診料。集計先は初診 | 告示 A000（p3）、［基］別紙7-4 項番3（R08rec2 p115）、別紙7-2 の 110＝初診（p113） |
+| A06 | `shinryo` | `code=111000110` | `nyugai=0, hospital_clinic=0, kouki=0` | 初診料には、入院・入院外／病院・診療所／保険の種別の限定がない | 告示 A000 と注（p3〜4）に限定の記載がないことを確かめた |
+| A07 | `shinryo` | `code=111000370` | `points=75, kokuji1=7, age_lower=00, age_upper=06` | 乳幼児加算（初診）75 点は 6 歳未満（上限年齢は「上限＋1」＝06） | 告示 A000 注6（p4） |
+| A08 | `shinryo` | `code=113018210` | `nyugai=2, age_lower=65` | 喘息治療管理料 2（65 歳以上）は入院中の患者以外で、65 歳以上 | 告示 B001「16」注（p101）「入院中の患者以外の喘息の患者（6 歳未満又は 65 歳以上のものに限る。）」 |
+| A09 | `shinryo` | `code=113004510` | `points=1188, nyugai=1, hospital_clinic=1` | 手術後医学管理料 1（病院の場合）1,188 点は、入院している患者に算定する | 告示 B001-5 と注1（p117） |
+| A10 | `shinryo` | `code=113004610` | `points=1056, nyugai=1, hospital_clinic=2` | 手術後医学管理料 2（診療所の場合）1,056 点 | 告示 B001-5 と注1（p117） |
+| A11 | `shinryo` | `code=113004790` | `point_kind=6, points=5` | 手術後医学管理料の逓減は「所定点数の 100 分の 95」＝5％の減算 | 告示 B001-5 注2（p117） |
+| A12 | `shinryo` | `code=160000190` | `point_kind=6, points=10` | 検査逓減は ％減算で、10（100 分の 90 で算定） | ［基］別紙7-1 参考2 の設定例（R08rec2 p112） |
+| A13 | `shinryo` | `code=160072110` | `point_kind=3, points=150` | 超音波検査（Aモード法）は 150 点 | ［基］別紙7-1 参考2 の設定例（R08rec2 p112） |
+| A14 | `shinryo` | `code=140000190` | `point_kind=5, points=40` | 処置の時間外加算 2 は「所定点数の 100 分の 40」の加算 | 告示 第9部処置 通則（p256） |
+| A15 | `shinryo` | `code=160177770` | `kizami_kind=1, kizami_lower=1, kizami_upper=5, kizami_step=1, kizami_points=10, points=10` | 外来迅速検体検査加算は 1 項目ごとに 10 点、5 項目まで | 告示 第3部検査 第1節第1款 通則（p173）「5 項目を限度として…それぞれ 10 点」、式は［基］p33 |
+| A16 | `shinryo` | `code=160061810` | `limit_count=1` | 血液学的検査判断料は月 1 回 | 告示 D026 注（p192）「それぞれ月 1 回に限り」 |
+| A17 | `shinryo` | `code=113001810` | `points=225, hospital_clinic=2, shobyo_kanren=5, limit_count=2` | 特定疾患療養管理料 1（診療所の場合）225 点、月 2 回。傷病名を要件にする | 告示 B000（p93）、［基］p31 項番25 の 5 に「特定疾患療養管理料」 |
+| A18 | `shinryo` | `code=113002850` | `shobyo_kanren=7` | てんかん指導料 | ［基］p31 項番25 の 7、告示 B001「6」（p96） |
+| A19 | `shinryo` | `code=113002910` | `shobyo_kanren=9` | 難病外来指導管理料 | ［基］p31 項番25 の 9 |
+| A20 | `shinryo` | `code=113000910` | `shobyo_kanren=3` | 皮膚科特定疾患指導管理料(Ⅰ) | ［基］p31 項番25 の 3 |
+| A21 | `shinryo` | `code=113002310` | `shobyo_kanren=4` | 皮膚科特定疾患指導管理料(Ⅱ) | ［基］p31 項番25 の 4 |
+| A22 | `iyakuhin` | `code=630010002` | `price_kind=7, price=0, name=薬剤料逓減（９０／１００）（内服薬）` | 薬剤料逓減（90／100）（内服薬）は減点のコードで、金額は 0.00 | ［基］別紙4-2（R08rec2 p102） |
+| A23 | `tokutei` | `code=700080000` | `price_kind=1, price=62, name=四ツ切` | フィルム（四ツ切）は 62 円／枚 | 作成手引き の記録例（p44）「四ツ切 62 円／枚」 |
+| A24 | `tokutei` | `code=799990070` | `price_kind=5, price=10` | フィルム料（乳幼児）加算は 10％ の加算 | ［基］別紙5-1 の記録例（R08rec2 p103） |
+| A25 | `tokutei` | `code=770020070` | `price_kind=5, price=30` | 酸素補正率 1.3（1 気圧）は 30％ の加算 | ［基］別紙5-1 の記録例（R08rec2 p103） |
+| A26 | `tokutei` | `code=770030070` | `price_kind=9, price=0` | 高気圧酸素加算は気圧数を記録するコード（乗算割合）で、金額は 0.00 | ［基］別紙5-1（R08rec2 p103） |
+| A27 | `tokutei` | `code=770050000` | `price_kind=2, price=0` | 高線量率イリジウムは購入価格で算定し、金額は 0.00 | ［基］p22〜23 項番22（購入価格を 50 円で除す器材として高線量率イリジウム）、別紙5-1（R08rec2 p103） |
+| A28 | `comment` | `code=850100106` | `pattern=50` | 「往診又は訪問診療年月日（在医総管）」は年月日を書くコメント | 記載要領 別表Ⅰ 項番176（p124）、［基］p25〜26（パターン 50＝年月日、コードは 8＋パターン＋一連番号） |
+| A29 | `comment_kanren` | `tsuchi=1, kouban=0176, code=114032510, comment_code=850100106` | `joken=01, hisantei=0` | 在医総管は、算定すれば、その月に往診又は訪問診療を行った年月日を必ず書く | 記載要領 別表Ⅰ 項番176（p124。括弧書きの条件がない） |
+| A30 | `comment_kanren` | `tsuchi=1, kouban=0162, code=114000110, comment_code=830100086` | `joken=00` | 往診料の「往診が必要となった理由」は、訪問診療料と同じ日に算定した場合に書く（条件は文章） | 記載要領 別表Ⅰ 項番162（p123） |
+| A31 | `comment_kanren` | `tsuchi=1, kouban=0126, code=113014710, comment_code=850100079` | `joken=02, nyugai=2` | 認知症療養指導料 1（入院外）の治療年月日 | 記載要領 別表Ⅰ 項番126（p121）「（入院外）」 |
+| A33 | `shobyo` | `code=3459001` | `tokutei_shikkan=07, name=てんかん` | てんかんは、てんかん指導料の対象 | 告示 B001「6」てんかん指導料（p96）、［基］p8 項番21 の 07 |
+| A34 | `hojo` | `code=114032510` | `unit1=2, group1=C002001` | 在宅時医学総合管理料（月 1 回）は、同一月内の包括の親 | 告示 C002（p139）・注3（p142）「別に厚生労働大臣が定める診療に係る費用及び投薬の費用は、所定点数に含まれる」 |
+| A35 | `houkatsu` | `group_no=C002001, code=120002910` | `tokurei=0` | 在医総管に、処方箋料（投薬の費用）が含まれる。条件なし | 告示 C002 注3（p142）、§2-2 R8-45 の行の出典（特掲告示 第四 一の六） |
+| A36 | `hojo` | `code=160171310` | `unit1=3, group1=D324001, haihan_same=1, kaisu=1` | 血管内視鏡検査は、同時の包括の親（グループ D324001） | ［点］p15 の補助マスターの例 |
+| A37 | `houkatsu` | `group_no=D324001, code=160027710` | `tokurei=0` | 血管内視鏡検査に、血液ガス分析が含まれる | ［点］p16 の包括テーブルの例、告示 D324 注（p195） |
+| A38 | `hojo` | `code=113004110` | `unit1=5, group1=B001041` | 手術前医学管理料は、手術前 1 週間の包括の親 | 告示 B001-4 注5（p116）「手術を行う前 1 週間以内に行ったものに限る。）は、所定点数に含まれる」 |
+| A39 | `houkatsu` | `group_no=B001041, code=160000310` | `tokurei=1` | 手術前医学管理料に尿中一般物質定性半定量検査が含まれる。条件あり（2 回目以降は別に算定できる） | 告示 B001-4 注5 のただし書とイ（p116） |
+| A40 | `hojo` | `code=113004610` | `unit1=1, group1=B001051` | 手術後医学管理料（1 日につき）は、1 日につきの包括の親 | 告示 B001-5（1 日につき）注3（p117） |
+| A41 | `houkatsu` | `group_no=B001051, code=160000310` | `tokurei=0` | 手術後医学管理料に尿中一般物質定性半定量検査が含まれる | 告示 B001-5 注3 イ（p117） |
+| A42 | `hojo` | `code=150187210` | `unit1=6, group1=K740001` | 直腸切除・切断術（切断術）は、1 手術につきの包括の親 | 留意 K726 の項（p666）「K740 直腸切除・切断術の「5」を行った場合の人工肛門造設に係る…手技料は、それぞれの所定点数に含まれ」 |
+| A43 | `houkatsu` | `group_no=K740001, code=150184510` | `tokurei=0` | 直腸切除・切断術（切断術）に、人工肛門造設術が含まれる | 同上（p666） |
+| A44 | `haihan` | `tani=1, code1=111000110, code2=114001110` | `kubun=1, tokurei=0` | 初診料を算定する初診の日は、訪問診療料を算定しない（初診料の側を算定） | 告示 C001 注1（p136〜137）「初診料を算定する初診の日に訪問して診療を行った場合…を除く」 |
+| A45 | `haihan` | `tani=1, code1=112007410, code2=114001110` | `kubun=2` | 訪問診療料を算定する日は、再診料を算定しない（訪問診療料の側を算定） | 告示 C001 注1（p137）「この場合において、再診料、外来診療料又は往診料は、算定しない」 |
+| A46 | `haihan` | `tani=1, code1=114000110, code2=114001110` | `kubun=3, tokurei=1` | 往診料と訪問診療料は、同じ日にはいずれか 1 つ。条件あり（急変による往診は別） | 留意 第2章第2部 第1節 1（p244）「いずれか 1 つを算定した日においては、他のものを算定できない。ただし…往診料の算定については、この限りではない」 |
+| A47 | `haihan` | `tani=2, code1=114003710, code2=114040610` | `kubun=3, tokurei=0` | 在宅酸素療法指導管理料と在宅自己注射指導管理料は、主たるもの 1 つ | 告示 第2章第2部 第2節第1款 通則2（p163） |
+| A48 | `haihan` | `tani=2, code1=114018570, code2=114018670` | `kubun=1, tokurei=0` | 看取り加算を算定する場合、死亡診断加算は算定できない（看取り加算の側を算定） | 告示 C001 注8（p138） |
+| A49 | `haihan` | `tani=2, code1=114018670, code2=114018570` | `kubun=2, tokurei=0` | 同じ組の逆向き（看取り加算＝コード②の側を算定） | 告示 C001 注8（p138） |
+| A50 | `haihan` | `tani=2, code1=112709570, code2=114746310` | `tokurei=0` | 電子的診療情報連携体制整備加算（再診）を算定した月は、在宅医療DX情報活用加算を算定できない。条件なし。背反区分は確かめていない（告示は一方向の書き方、データは「いずれか一方」） | 告示 C001 注13（p138）「…を算定した月は、在宅医療DX情報活用加算は算定できない」 |
+| A51 | `haihan` | `tani=2, code1=114003710, code2=140005610` | `kubun=1, tokurei=1` | 在宅酸素療法指導管理料を算定している患者に、酸素吸入は算定できない。条件あり（入院中の患者を除く） | 留意 C103 (8)（p300） |
+| A52 | `haihan` | `tani=3, code1=114000110, code2=114061210` | `kubun=2, tokurei=0` | 外来在宅共同指導料 2 を算定する場合、往診料は別に算定できない（共同指導料の側を算定） | 告示 C014 注2（p162） |
+| A53 | `haihan` | `tani=3, code1=114061210, code2=114000110` | `kubun=1, tokurei=0` | 同じ組の逆向き | 告示 C014 注2（p162） |
+| A54 | `haihan` | `tani=3, code1=114000110, code2=114003010` | `kubun=2, tokurei=1` | 救急搬送診療料と往診料は併せて算定できない。条件あり（現場に赴いて診療した後に同乗した場合は算定できる） | 留意 C004 (4)（p266） |
+| A55 | `haihan` | `tani=3, code1=160201050, code2=160201150` | `kubun=3, tokurei=0` | 血小板第4因子-ヘパリン複合体抗体の 2 つは、一連の検査では主たるもののみ | 留意 第3部検査の項（p370）「一連の検査で…測定した場合は、主たるもののみ算定する」 |
+| A56 | `haihan` | `tani=4, code1=111000110, code2=113013910` | `kubun=2, tokurei=1` | 外来リハビリテーション診療料 1 を算定する日から 7 日以内は、初診料を算定しない。条件あり（当該リハビリテーションの実施に係るもの） | 告示 B001-2-7 注3（p109〜110） |
+| A57 | `haihan` | `tani=4, code1=113013910, code2=111000110` | `kubun=1, tokurei=1` | 同じ組の逆向き | 告示 B001-2-7 注3（p109〜110） |
+| A58 | `haihan` | `tani=4, code1=160162350, code2=160116310` | `kubun=3, tokurei=0` | BNP と ANP は、1 週間以内に併せて実施したら主たるもの 1 つ | 留意 D008 (24)（p364） |
+| A59 | `haihan` | `tani=4, code1=150267310, code2=150140210` | `kubun=2, tokurei=0` | 体外ペースメーキング術は、1 週間のうちにペースメーカー移植術（経静脈電極）を行えば、そちらに含まれる | ［点］p16 の背反関連テーブル（1 週間につき）の例 |
+| A60 | `kaisu` | `code=114001110, unit_code=121` | `limit_count=1, tokurei=0` | 訪問診療料は 1 日につき 1 回 | 告示 C001（1 日につき）（p136）、単位コード 121＝日（［点］付表1 p32） |
+| A61 | `kaisu` | `code=114001110, unit_code=138` | `limit_count=3, tokurei=1` | 訪問診療料は週 3 回まで。条件あり（別に厚生労働大臣が定める疾病等の患者を除く） | 告示 C001 注1（p137）、138＝週（［点］付表1 p32） |
+| A62 | `kaisu` | `code=160061810, unit_code=131` | `limit_count=1, tokurei=0` | 血液学的検査判断料は月 1 回 | 告示 D026 注（p192）、131＝月（［点］付表1 p32） |
+| A63 | `kaisu` | `code=113001810, unit_code=131` | `limit_count=2` | 特定疾患療養管理料は月 2 回まで | 告示 B000 注1（p93） |
+| A64 | `kaisu` | `code=114746310, unit_code=131` | `limit_count=1, tokurei=0` | 在宅医療DX情報活用加算は月 1 回 | 告示 C001 注13（p138） |
+| A65 | `cm_tekio` | `code=621867201, shobyo=5559001` | `max_dose=6, max_days=999, sex=0, age_lower=0, age_upper=999.99` | 医薬品適応関連マスタの相関の例（最大投与量 00006.00000、最長投与日数 999＝対象外） | ［チ］p3 の例 |
+| A66 | `cm_tekio` | `code=621867201, shobyo=5569003` | `max_dose=8, max_days=999` | 同（最大投与量 00008.00000） | ［チ］p3 の例 |
+| A67 | `cm_si_shobyo` | `code=160060910, shobyo=6069003` | `sex=1` | 医科診療行為傷病名関連マスタの例（精液一般検査、性別 1） | ［チ］p8 の例 |
+| A68 | `cm_heiyo_kinki` | `code_l=620008918, code_r=620003796` | — | 併用禁忌の組の例（行があること） | ［チ］p7 の例 |
+| A69 | `cm_heiyo_kinki` | `code_l=620003796, code_r=620008918` | — | 同じ組の逆向き（組は両向きに載る） | ［チ］p7 の例 |
+| A70 | `shinryo` | `code=111000110` | `time_kasan=1, alpha=A, sho=1, bu=1, kubun_no=0, eda=0` | 初診料は第1章 第1部 A000。時間外加算等を算定できる | 告示 第1章第1部 A000・注7（p3〜4）、［基］p34〜35・p42〜43 |
+| A71 | `shinryo` | `code=111000670` | `time_kasan=3, kokuji1=7` | 休日加算（初診）は、初診料の休日加算そのもの | 告示 A000 注7（p4）、［基］p35（加算の行の 3＝初診料の休日加算自体） |
+| A72 | `shinryo` | `code=113004610` | `alpha=B, sho=2, bu=1, kubun_no=1, eda=5, kou=2` | 手術後医学管理料（診療所）は第2章 第1部 B001-5 の「2」 | 告示 B001-5「2 診療所の場合」（p117） |
+| A73 | `shinryo` | `code=160061810` | `kensa_kind=2, kensa_group=2, alpha=D, bu=3, kubun_no=26, kou=3` | 血液学的検査判断料は第3部 D026 の「3」。判断料で、グループは血液学的検査 | 告示 D026（p192）、［基］p37（判断料＝2、血液学的検査＝2） |
+| A74 | `shinryo` | `code=160062010` | `kensa_kind=2, kensa_group=4, kou=5` | 生化学的検査(Ⅱ)判断料は D026 の「5」。グループは生化学的検査(Ⅱ) | 告示 D026（p192）、［基］p37（生化学的検査(Ⅱ)＝4） |
+
+錨を置けなかった列・値と、動かさない点検（`masters.db` の `checks_ready` に同じ内容が入る）：
+- G02（点数の検算）：医科診療行為 点数識別 8、医薬品 金額種別 1 の薬価
+- G03（行の属性）：医科診療行為 後期高齢者医療適用区分 1・2、実日数 1
+- G08（傷病名の要件）：傷病名マスター 特定疾患等対象区分 03・04・05・08、難病外来対象区分 09、保険請求外区分 1
+- どの点検にも使う予定がなく、錨も置いていない列（値ごとの件数だけで見ている）：医科診療行為の施設基準①〜⑩（別紙7-8 のコードの意味を読んでいない）、各マスターの名称のうち修飾語・コメント、医薬品・特定器材の単位コード、補助マスターの包括単位②③
+- 置けた：G01（コード）・G04（包括）・G05（背反）・G06（算定回数）・G07（必須コメント）・G09（適応・禁忌・量と日数）
+
+#### 表 3　値ごとの件数（確かめた版で数えた値）
+
+確かめた版と同じ 1 枚では一致すること（違えば失敗）。ほかの更新日の 1 枚では、1 割を超えて違えば警告。「—」は表の全部の行。
+
+| 表 | 値 | 件数 |
+|---|---|---|
+| `shinryo` | — | 11,837 |
+| `iyakuhin` | — | 19,324 |
+| `tokutei` | — | 1,411 |
+| `shobyo` | — | 27,684 |
+| `shushokugo` | — | 2,390 |
+| `comment` | — | 4,509 |
+| `hojo` | — | 11,837 |
+| `houkatsu` | — | 248,335 |
+| `haihan` | — | 78,808 |
+| `kaisu` | — | 6,354 |
+| `comment_kanren` | — | 18,281 |
+| `cm_tekio` | — | 1,285,291 |
+| `cm_si_shobyo` | — | 223,888 |
+| `cm_heiyo_kinki` | — | 4,356 |
+| `shinryo` | `point_kind=1` | 46 |
+| `shinryo` | `point_kind=3` | 11,435 |
+| `shinryo` | `point_kind=4` | 10 |
+| `shinryo` | `point_kind=5` | 71 |
+| `shinryo` | `point_kind=6` | 57 |
+| `shinryo` | `point_kind=7` | 2 |
+| `shinryo` | `point_kind=8` | 216 |
+| `shinryo` | `nyugai=0` | 6,617 |
+| `shinryo` | `nyugai=1` | 3,436 |
+| `shinryo` | `nyugai=2` | 1,784 |
+| `shinryo` | `kouki=0` | 11,242 |
+| `shinryo` | `kouki=1` | 594 |
+| `shinryo` | `kouki=2` | 1 |
+| `shinryo` | `hospital_clinic=0` | 9,274 |
+| `shinryo` | `hospital_clinic=1` | 2,288 |
+| `shinryo` | `hospital_clinic=2` | 275 |
+| `shinryo` | `shobyo_kanren=0` | 11,820 |
+| `shinryo` | `shobyo_kanren=3` | 2 |
+| `shinryo` | `shobyo_kanren=4` | 2 |
+| `shinryo` | `shobyo_kanren=5` | 8 |
+| `shinryo` | `shobyo_kanren=7` | 2 |
+| `shinryo` | `shobyo_kanren=9` | 3 |
+| `shinryo` | `jitsunissu=0` | 9,367 |
+| `shinryo` | `jitsunissu=1` | 1,542 |
+| `shinryo` | `jitsunissu=2` | 65 |
+| `shinryo` | `jitsunissu=3` | 859 |
+| `shinryo` | `jitsunissu=4` | 4 |
+| `shinryo` | `kizami_kind=0` | 11,221 |
+| `shinryo` | `kizami_kind=1` | 616 |
+| `shinryo` | `kokuji1=1` | 9,724 |
+| `shinryo` | `kokuji1=3` | 312 |
+| `shinryo` | `kokuji1=5` | 441 |
+| `shinryo` | `kokuji1=7` | 1,294 |
+| `shinryo` | `kokuji1=9` | 66 |
+| `iyakuhin` | `price_kind=1` | 19,278 |
+| `iyakuhin` | `price_kind=3` | 40 |
+| `iyakuhin` | `price_kind=7` | 6 |
+| `iyakuhin` | `zaikei=1` | 12,095 |
+| `iyakuhin` | `zaikei=3` | 46 |
+| `iyakuhin` | `zaikei=4` | 3,976 |
+| `iyakuhin` | `zaikei=6` | 3,178 |
+| `iyakuhin` | `zaikei=8` | 29 |
+| `tokutei` | `price_kind=1` | 1,392 |
+| `tokutei` | `price_kind=2` | 16 |
+| `tokutei` | `price_kind=5` | 2 |
+| `tokutei` | `price_kind=9` | 1 |
+| `shobyo` | `tokutei_shikkan=00` | 24,220 |
+| `shobyo` | `tokutei_shikkan=03` | 97 |
+| `shobyo` | `tokutei_shikkan=04` | 67 |
+| `shobyo` | `tokutei_shikkan=05` | 3,229 |
+| `shobyo` | `tokutei_shikkan=07` | 70 |
+| `shobyo` | `tokutei_shikkan=08` | 1 |
+| `shobyo` | `nanbyo=00` | 27,209 |
+| `shobyo` | `nanbyo=09` | 475 |
+| `shobyo` | `hoken_gai=0` | 27,578 |
+| `shobyo` | `hoken_gai=1` | 106 |
+| `hojo` | `unit1=0` | 9,980 |
+| `hojo` | `unit1=1` | 998 |
+| `hojo` | `unit1=2` | 432 |
+| `hojo` | `unit1=3` | 267 |
+| `hojo` | `unit1=5` | 1 |
+| `hojo` | `unit1=6` | 159 |
+| `houkatsu` | `tokurei=0` | 246,170 |
+| `houkatsu` | `tokurei=1` | 2,165 |
+| `haihan` | `tani=1, tokurei=0` | 30,814 |
+| `haihan` | `tani=1, tokurei=1` | 8,720 |
+| `haihan` | `tani=2, tokurei=0` | 19,484 |
+| `haihan` | `tani=2, tokurei=1` | 2,186 |
+| `haihan` | `tani=3, tokurei=0` | 16,148 |
+| `haihan` | `tani=3, tokurei=1` | 1,104 |
+| `haihan` | `tani=4, tokurei=0` | 48 |
+| `haihan` | `tani=4, tokurei=1` | 304 |
+| `haihan` | `tani=1, kubun=1` | 11,765 |
+| `haihan` | `tani=1, kubun=2` | 11,765 |
+| `haihan` | `tani=1, kubun=3` | 16,004 |
+| `haihan` | `tani=2, kubun=1` | 5,501 |
+| `haihan` | `tani=2, kubun=2` | 5,501 |
+| `haihan` | `tani=2, kubun=3` | 10,668 |
+| `haihan` | `tani=3, kubun=1` | 7,150 |
+| `haihan` | `tani=3, kubun=2` | 7,150 |
+| `haihan` | `tani=3, kubun=3` | 2,952 |
+| `haihan` | `tani=4, kubun=1` | 171 |
+| `haihan` | `tani=4, kubun=2` | 171 |
+| `haihan` | `tani=4, kubun=3` | 10 |
+| `kaisu` | `tokurei=0` | 5,589 |
+| `kaisu` | `tokurei=1` | 765 |
+| `kaisu` | `unit_code=121` | 2,843 |
+| `kaisu` | `unit_code=131` | 973 |
+| `kaisu` | `unit_code=138` | 210 |
+| `comment_kanren` | `tsuchi=1, joken=00` | 3,929 |
+| `comment_kanren` | `tsuchi=1, joken=01` | 6,552 |
+| `comment_kanren` | `tsuchi=1, joken=02` | 227 |
+| `comment_kanren` | `tsuchi=1, joken=03` | 347 |
+| `comment_kanren` | `tsuchi=1, joken=10` | 2 |
+| `comment_kanren` | `tsuchi=1, joken=20` | 5 |
+| `comment_kanren` | `tsuchi=1, joken=30` | 7 |
+| `cm_tekio` | `check_kubun=0` | 5,899 |
+| `cm_tekio` | `check_kubun=1` | 1,260,677 |
+| `cm_tekio` | `check_kubun=2` | 18,715 |
+| `cm_si_shobyo` | `utagai=0` | 47,318 |
+| `cm_si_shobyo` | `utagai=1` | 176,567 |
+| `cm_si_shobyo` | `utagai=2` | 3 |
+| `shinryo` | `changed_on=20260601` | 11,531 |
+| `iyakuhin` | `changed_on=20260601` | 817 |
+| `tokutei` | `changed_on=20260601` | 1,379 |
+| `shobyo` | `changed_on=20260601` | 129 |
+| `comment` | `changed_on=20260601` | 4,502 |
+| `comment_kanren` | `changed_on=20260601` | 13,336 |
+| `shinryo` | `abolished_on=99999999` | 11,837 |
+| `iyakuhin` | `abolished_on=99999999` | 19,324 |
+| `tokutei` | `abolished_on=99999999` | 1,411 |
+| `shobyo` | `abolished_on=99999999` | 27,684 |
+| `shushokugo` | `abolished_on=99999999` | 2,390 |
+| `comment` | `abolished_on=99999999` | 4,509 |
+| `comment_kanren` | `abolished_on=99999999` | 18,281 |
+| `hojo` | `abolished_on=99999999` | 11,837 |
+| `houkatsu` | `abolished_on=99999999` | 248,335 |
+| `haihan` | `abolished_on=99999999` | 78,808 |
+| `kaisu` | `abolished_on=99999999` | 6,354 |
+| `hojo` | `created_on=20260601` | 1,882 |
+| `houkatsu` | `created_on=20260601` | 23,855 |
+| `haihan` | `created_on=20260601` | 2,144 |
+| `kaisu` | `created_on=20260601` | 1,421 |
+| `tokutei` | `keika_until=00000000` | 1,405 |
+| `iyakuhin` | `keika_until=0` | 18,433 |
+| `iyakuhin` | `unit_code=0` | 53 |
+| `tokutei` | `unit_code=0` | 1,129 |
+| `hojo` | `unit2=0` | 11,832 |
+| `hojo` | `unit2=1` | 5 |
+| `hojo` | `unit3=0` | 11,837 |
+| `hojo` | `haihan_day=1` | 1,698 |
+| `hojo` | `haihan_month=1` | 1,542 |
+| `hojo` | `haihan_same=1` | 1,834 |
+| `hojo` | `haihan_week=1` | 104 |
+| `hojo` | `kaisu=1` | 5,261 |
+| `hojo` | `group2=0` | 11,832 |
+| `hojo` | `group3=0` | 11,837 |
+| `shinryo` | `time_kasan=0` | 7,977 |
+| `shinryo` | `time_kasan=1` | 3,634 |
+| `shinryo` | `time_kasan=2` | 44 |
+| `shinryo` | `time_kasan=3` | 6 |
+| `shinryo` | `time_kasan=4` | 78 |
+| `shinryo` | `time_kasan=5` | 34 |
+| `shinryo` | `time_kasan=6` | 31 |
+| `shinryo` | `time_kasan=7` | 25 |
+| `shinryo` | `time_kasan=8` | 6 |
+| `shinryo` | `time_kasan=9` | 2 |
+| `shinryo` | `kensa_kind=0` | 10,478 |
+| `shinryo` | `kensa_kind=1` | 1,337 |
+| `shinryo` | `kensa_kind=2` | 22 |
+| `shinryo` | `sho=1` | 2,202 |
+| `shinryo` | `sho=2` | 9,224 |
+| `shinryo` | `sho=3` | 2 |
+| `shinryo` | `sho=6` | 355 |
+| `shinryo` | `sho=8` | 46 |
+| `shinryo` | `sho=9` | 8 |
+| `cm_si_shobyo` | `nyugai=0` | 223,888 |
+| `cm_si_shobyo` | `age_lower=0` | 223,888 |
+| `cm_tekio` | `age_lower=0` | 1,184,904 |
+| `cm_tekio` | `max_days=999` | 1,274,552 |
+| `iyakuhin` | `unit_code=33` | 4,184 |
+| `iyakuhin` | `price=0` | 10 |
+| `tokutei` | `unit_code=6` | 62 |
+| `tokutei` | `price=0` | 17 |
+| `shinryo` | `points=0` | 53 |
+| `shushokugo` | `changed_on=20170601` | 12 |
+
 ## 3. 採用値一覧（C. 競合／D. 海外）
 
 | # | 項目 | 採用値 | 出典 | 確度 | 由来 |
