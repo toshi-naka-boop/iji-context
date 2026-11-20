@@ -25,8 +25,8 @@ export type RevisionConsts = {
     familyOf: Record<Residence, KanriFamily>;
     note16: { from: KanriTierKey; to: KanriTierKey };
   };
-  /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分 */
-  hokatsu: { kubun: string; careLevelMin: number; tiers: KanriTierKey[] };
+  /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分。要介護度・障害支援区分がそれぞれの下限以上なら対象 */
+  hokatsu: { kubun: string; careLevelMin: number; disabilityLevelMin: number; tiers: KanriTierKey[] };
   /** 在宅療養指導管理料（R04） */
   shidoKanriKubun: string[];
   /** 管理料に包括される項目と、処方箋を交付しない場合の加算（R05） */

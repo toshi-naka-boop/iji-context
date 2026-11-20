@@ -67,28 +67,35 @@ describe("症例との一致（K1〜K4・K7）", () => {
     expect(kubunOf(r)).toContain("C002-2_2RO1");
     expect(wrongOrMissed(judge(K4, r).findings)).toEqual([]);
   });
-  describe("包括的支援加算（D04）：別表第八の三の場合分けで、導出と検証（R03）が同じ答えになる", () => {
-    const care = (n: number) => ({ known: true, value: n }) as const;
-    const of3 = (careLevel: ClaimContext["facts"]["careLevel"], other: ClaimContext["facts"]["table8_3Other"]) => withFact(withFact(K4, "careLevel", careLevel), "table8_3Other", other);
+  describe("包括的支援加算（D04）：別表第八の三の場合分けで、導出と検証（R03）が同じ答えになる（design.md §11-4）", () => {
+    const num = (n: number) => ({ known: true, value: n }) as const;
+    type F = ClaimContext["facts"];
+    const of3 = (careLevel: F["careLevel"], level: F["disabilitySupportLevel"], other: F["table8_3Other"]) =>
+      withFact(withFact(withFact(K4, "careLevel", careLevel), "disabilitySupportLevel", level), "table8_3Other", other);
     const r03 = (c: ClaimContext) => judge(c, derive(c)).findings.filter((f) => f.ruleId === "R03");
     it.each([
-      ["要介護 3・ほかは不明", of3(care(3), unknown)],
-      ["要介護 2・ほかの状態に当たる", of3(care(2), yes)],
-      ["要介護度は不明・ほかの状態に当たる", of3(unknown, yes)],
+      ["要介護 3・ほかは不明", of3(num(3), unknown, unknown)],
+      ["障害支援区分 2・ほかは不明", of3(unknown, num(2), unknown)],
+      ["要介護 2・障害支援区分なし・ほかの状態に当たる", of3(num(2), num(0), yes)],
+      ["要介護度と障害支援区分は不明・ほかの状態に当たる", of3(unknown, unknown, yes)],
     ])("%s：加算を立て、検証で指摘がない", (_, c) => {
       const r = derive(c);
       expect(r.pending).toEqual([]);
       expect(kubunOf(r)).toContain(C.hokatsu.kubun);
       expect(r03(c)).toEqual([]);
     });
-    it("要介護 2・ほかの状態が不明：加算を保留（宛先は医師）し、検証も同じ事実の情報不足", () => {
-      const c = of3(care(2), unknown);
+    it.each([
+      ["要介護度が不明", of3(unknown, unknown, unknown), "careLevel", "clerk"],
+      ["要介護 2・障害支援区分が不明", of3(num(2), unknown, unknown), "disabilitySupportLevel", "clerk"],
+      ["要介護 2・障害支援区分 1・ほかの状態が不明", of3(num(2), num(1), unknown), "table8_3Other", "doctor"],
+    ] as const)("%s：加算を保留し、検証も同じ事実の情報不足（宛先も同じ）", (_, c, need, target) => {
       const r = derive(c);
-      expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "table8_3Other", target: "doctor", blocks: [C.hokatsu.kubun] })]);
+      expect(r.pending).toEqual([expect.objectContaining({ kind: "事実不足", need, target, blocks: [C.hokatsu.kubun] })]);
       expect(kubunOf(r)).not.toContain(C.hokatsu.kubun);
-      expect(r03(c)).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "doctor", field: "table8_3Other" } })]);
+      expect(r.totalStatus).toBe("withheld");
+      expect(r03(c)).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target, field: need } })]);
     });
-    it("要介護 2・ほかの状態にも当たらない（K4 の筋）：加算を立てず、検証で指摘がない", () => {
+    it("要介護 2・障害支援区分なし・ほかの状態にも当たらない（K4 の筋）：加算を立てず、検証で指摘がない", () => {
       const r = derive(K4_CARE2);
       expect(r.pending).toEqual([]);
       expect(kubunOf(r)).not.toContain(C.hokatsu.kubun);

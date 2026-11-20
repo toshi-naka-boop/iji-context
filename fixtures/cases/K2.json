@@ -28,6 +28,9 @@
       "known": true,
       "value": false
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
     "table8_3Other": {
       "known": false
     },

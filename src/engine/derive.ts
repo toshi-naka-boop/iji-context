@@ -248,7 +248,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     if ((c.hokatsu.tiers as string[]).includes(kanri.tier)) {
       const e = hokatsuEligible(ctx, c);
       if (e.known === false) lack(`D04-${e.need}:${input.yearMonth}`, e.need, [c.hokatsu.kubun]);
-      else if (e.value) add(c.hokatsu.kubun, [kanri.date], { derive: "D04", events: billedVisits, needs: (["careLevel", "table8_3Other"] as const).filter((k) => facts[k].known), tentative });
+      else if (e.value) add(c.hokatsu.kubun, [kanri.date], { derive: "D04", events: billedVisits, needs: (["careLevel", "disabilitySupportLevel", "table8_3Other"] as const).filter((k) => facts[k].known), tentative });
     }
     if (ikouEligible(ctx, c)) add(c.ikou.kubun, [kanri.date], { derive: "D05", events: [...byDate(eventsOf(ctx, "discharge")), ...billedVisits], tentative });
   }

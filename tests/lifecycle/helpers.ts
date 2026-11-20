@@ -40,6 +40,7 @@ export function makeFacts(over: Partial<Facts> = {}): Facts {
     careLevel: known(3),
     table7: known(false),
     table8_2: known(false),
+    disabilitySupportLevel: known(0),
     table8_3Other: known(false),
     mainDisease: known("高血圧"),
     homeOxygen: known(false),

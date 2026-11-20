@@ -12,7 +12,7 @@ export const FINDING_TEXT: Record<string, string> = {
   "R02.not_severe": "別表第八の二に当たらないのに、重症区分になっています",
   "R02.severe_with_hokatsu": "重症区分で算定する月に、包括的支援加算が入っています。加算の行を外してください",
   "R03.missing": "包括的支援加算の要件を満たしていますが、入っていません",
-  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上など、別表第八の三の状態）を満たしていません",
+  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上、障害支援区分2 以上など、別表第八の三の状態）を満たしていません",
   "R04.only_main": "在宅療養指導管理料が 2 つ以上入っています（主たるもの 1 つだけ）",
   "R05.bundled": "管理料の月に、所定点数に含まれる項目が別に入っています",
   "R05.no_rx_addition_with_rx": "処方箋を出している月に、処方箋を交付しない場合の加算が入っています",
@@ -61,7 +61,8 @@ export const FACT_LABEL: Record<FactKey, string> = {
   careLevel: "要介護度",
   table7: "別表第七に当たるか",
   table8_2: "別表第八の二に当たるか",
-  table8_3Other: "要介護度のほかに、別表第八の三の状態（認知症の日常生活自立度Ⅲ以上、週1回以上の訪問看護、処置、麻薬の投薬など）に当たるか",
+  disabilitySupportLevel: "障害支援区分",
+  table8_3Other: "要介護度と障害支援区分のほかに、別表第八の三の状態（認知症の日常生活自立度Ⅲ以上、週1回以上の訪問看護、処置、麻薬の投薬など）に当たるか",
   mainDisease: "主病",
   homeOxygen: "在宅酸素療法中か",
   deathPlace: "看取りの場所",
@@ -94,7 +95,7 @@ export const DERIVE_TEXT: Record<string, string> = {
   D01: "訪問診療の記録 1 件につき 1 回",
   D02: "往診の記録 1 件につき 1 回",
   D03: "その月の訪問診療料の回数と、患者の状態・居住の場所・施設の基準で決まる区分",
-  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上など別表第八の三の状態",
+  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上・障害支援区分 2 以上など別表第八の三の状態",
   D05: "退院後に在宅療養を始め、管理料の算定開始月から 3 か月目まで",
   D06: "訪問診療料を算定した月に 1 回（届出の区分による）",
   D07: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
@@ -116,7 +117,7 @@ export function findingText(f: Finding): string {
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
     return f.missing.target === "doctor"
       ? `${label}がカルテから分かりません。医師確認で確かめましょう`
-      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : ""}確かめて入力してください`;
+      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
   return FINDING_TEXT[f.messageKey] ?? f.messageKey;
 }

@@ -47,7 +47,7 @@ type Case = { id: string; ok: ClaimContext; ng: ClaimContext; kind: FindingKind;
 const cases: Case[] = [
   { id: "R01", ok: K1, ng: without(K1, "C001_1I", "O001_3I", "O100_1HA"), kind: "区分誤り", key: "no_visit" },
   { id: "R02", ok: K1, ng: replaceKubun(K1, "C002_2I1", "C002_2RO1"), kind: "区分誤り", key: "use_severe" },
-  { id: "R03", ok: K2, ng: withFact(withFact(K2, "careLevel", { known: true, value: 2 }), "table8_3Other", no), kind: "要件不足", key: "not_eligible" },
+  { id: "R03", ok: K2, ng: withFact(withFact(withFact(K2, "careLevel", { known: true, value: 2 }), "disabilitySupportLevel", { known: true, value: 0 }), "table8_3Other", no), kind: "要件不足", key: "not_eligible" },
   { id: "R04", ok: K1, ng: withLines(K1, line("C101_2I")), kind: "背反", key: "only_main" },
   { id: "R05", ok: K1, ng: withLines(K1, line("B000")), kind: "背反", key: "bundled" },
   {
@@ -189,33 +189,46 @@ describe("R03 包括的支援加算（施設総管にも当たる。C-66）", ()
   it("要介護 3 の施設総管 2ロ で加算がなければ取り忘れ", () => {
     expect(tags(withFact(K4, "careLevel", { known: true, value: 3 }), "R03")).toEqual(["R03:取り忘れ:missing"]);
   });
-  describe("別表第八の三の場合分け（EM R8-15a）", () => {
-    const care = (n: number) => ({ known: true, value: n }) as const;
+  describe("別表第八の三の場合分け（EM R8-15a。design.md §11-4 の表の 1〜5。§11-8 完了条件 9）", () => {
+    const num = (n: number) => ({ known: true, value: n }) as const;
     const hokatsu = line("C002_N10_HOKATSU", 1, [day(27)]);
-    const of3 = (careLevel: ClaimContext["facts"]["careLevel"], other: ClaimContext["facts"]["table8_3Other"]) => withFact(withFact(K4, "careLevel", careLevel), "table8_3Other", other);
+    type F = ClaimContext["facts"];
+    const of3 = (careLevel: F["careLevel"], level: F["disabilitySupportLevel"], other: F["table8_3Other"]) =>
+      withFact(withFact(withFact(K4, "careLevel", careLevel), "disabilitySupportLevel", level), "table8_3Other", other);
     const missingOf = (c: ClaimContext) => of(c, "R03").map((f) => f.missing);
-    it("要介護 3 以上なら、ほかの状態が不明でも当たらなくても対象（加算ありで 0 件、なしで取り忘れ）", () => {
-      for (const other of [unknown, no, yes]) {
-        expect(tags(withLines(of3(care(3), other), hokatsu), "R03")).toEqual([]);
-        expect(tags(of3(care(3), other), "R03")).toEqual(["R03:取り忘れ:missing"]);
+    /** 対象：加算ありで 0 件、なしで取り忘れ */
+    const eligible = (c: ClaimContext) => {
+      expect(tags(withLines(c, hokatsu), "R03")).toEqual([]);
+      expect(tags(c, "R03")).toEqual(["R03:取り忘れ:missing"]);
+    };
+    /** 決まらない：加算の行があってもなくても、同じ事実の情報不足だけ（要件不足と断定しない） */
+    const undecided = (c: ClaimContext, missing: { target: "doctor" | "clerk"; field: string }) => {
+      expect(missingOf(c)).toEqual([missing]);
+      expect(missingOf(withLines(c, hokatsu))).toEqual([missing]);
+    };
+    it("1：要介護 3 以上と分かっていれば、ほかの 2 つが不明でも当たらなくても対象", () => {
+      for (const level of [unknown, num(0), num(6)]) for (const other of [unknown, no, yes]) eligible(of3(num(3), level, other));
+    });
+    it("1：障害支援区分 2 以上と分かっていれば、要介護度とほかの状態が不明でも当たらなくても対象", () => {
+      for (const c of [unknown, num(0), num(2)]) for (const other of [unknown, no]) eligible(of3(c, num(2), other));
+    });
+    it("1：ほかの状態に当たると分かっていれば、要介護度と障害支援区分が不明でも下限未満でも対象", () => {
+      for (const c of [unknown, num(2)]) for (const level of [unknown, num(0), num(1)]) eligible(of3(c, level, yes));
+    });
+    it("2：要介護度が不明なら、先に要介護度だけを聞く（宛先は医療事務）", () => {
+      for (const level of [unknown, num(1)]) for (const other of [unknown, no]) undecided(of3(unknown, level, other), { target: "clerk", field: "careLevel" });
+    });
+    it("3：要介護 3 未満で、障害支援区分が不明なら障害支援区分を聞く（宛先は医療事務）", () => {
+      for (const other of [unknown, no]) undecided(of3(num(2), unknown, other), { target: "clerk", field: "disabilitySupportLevel" });
+    });
+    it("4：要介護 3 未満・障害支援区分 2 未満で、ほかの状態が不明なら医師に聞く", () => {
+      for (const level of [num(0), num(1)]) undecided(of3(num(2), level, unknown), { target: "doctor", field: "table8_3Other" });
+    });
+    it("5：どれにも当たらないと分かっていれば対象外（加算ありで要件不足、なしで 0 件）", () => {
+      for (const level of [num(0), num(1)]) {
+        expect(tags(withLines(of3(num(2), level, no), hokatsu), "R03")).toEqual(["R03:要件不足:not_eligible"]);
+        expect(tags(of3(num(2), level, no), "R03")).toEqual([]);
       }
-    });
-    it("要介護 3 未満でも、ほかの状態に当たると分かっていれば対象。要介護度が不明でも同じ", () => {
-      for (const c of [care(2), care(0), unknown]) {
-        expect(tags(withLines(of3(c, yes), hokatsu), "R03")).toEqual([]);
-        expect(tags(of3(c, yes), "R03")).toEqual(["R03:取り忘れ:missing"]);
-      }
-    });
-    it("要介護 3 未満で、ほかの状態が不明なら情報不足（宛先は医師）。加算の行があってもなくても要件不足と断定しない", () => {
-      expect(missingOf(of3(care(2), unknown))).toEqual([{ target: "doctor", field: "table8_3Other" }]);
-      expect(tags(withLines(of3(care(2), unknown), hokatsu), "R03")).toEqual(["R03:情報不足:table8_3Other"]);
-    });
-    it("どちらも不明なら、先に要介護度だけを聞く（宛先は医療事務）", () => {
-      expect(missingOf(of3(unknown, unknown))).toEqual([{ target: "clerk", field: "careLevel" }]);
-    });
-    it("要介護 3 未満で、ほかの状態にも当たらないと分かっていれば対象外（加算ありで要件不足、なしで 0 件）", () => {
-      expect(tags(withLines(of3(care(2), no), hokatsu), "R03")).toEqual(["R03:要件不足:not_eligible"]);
-      expect(tags(of3(care(2), no), "R03")).toEqual([]);
     });
   });
 });

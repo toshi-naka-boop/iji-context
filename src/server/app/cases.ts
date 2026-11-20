@@ -19,6 +19,7 @@ const UNKNOWN_FACTS: Facts = {
   careLevel: { known: false },
   table7: { known: false },
   table8_2: { known: false },
+  disabilitySupportLevel: { known: false },
   table8_3Other: { known: false },
   mainDisease: { known: false },
   homeOxygen: { known: false },
