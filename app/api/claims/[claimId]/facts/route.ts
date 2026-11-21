@@ -12,7 +12,7 @@ const ACTION = "POST /api/claims/[claimId]/facts";
 export const GET = route({ roles: allow("GET /api/claims/[claimId]/facts"), params: claimParams }, ({ params }) => getApp().claimFacts(params.claimId));
 
 export const POST = route(
-  { roles: allow(ACTION), params: claimParams, body: claimFactBody, audit: { target: ({ body, params }) => `${params.claimId} ${body.fact.key}` } },
+  { roles: allow("POST /api/claims/[claimId]/facts"), params: claimParams, body: claimFactBody, audit: { target: ({ body, params }) => `${params.claimId} ${body.fact.key}` } },
   ({ params, body: { fact }, clerkId, user }) => {
     const app = getApp();
     let others: string[] = [];
