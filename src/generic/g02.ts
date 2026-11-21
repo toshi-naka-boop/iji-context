@@ -15,12 +15,18 @@ export type UnitRecalc =
   | { unit: number; uke: number; status: "match" | "mismatch"; calc: number; formula: string; table: string; codes: string[]; later: boolean }
   | { unit: number; uke: number; status: "excluded"; reason: ExcludeReason };
 
-/** 版の表の包括の検査の群（EM §2-8）を、項目数 → 点数にする。診療年月の版が、使うマスターの世代と違えば、持たない（その群は「表を持っていない」になる） */
+/**
+ * 版の表の包括の検査の群（EM §2-8）を、項目数 → 点数にする。診療年月の版が、使うマスターの世代と違えば、持たない（その群は「表を持っていない」になる）。
+ * 点数が未収載（null）の段を 1 つでも持つ群も持たない（その群の単位は「表を持っていない」として検算の対象外に数える。合っているとは数えない）
+ */
 function bundlesOf(about: GenericAbout): RecalcBundle[] {
   if (!hasRevision(about.yearMonth)) return [];
   const rev = resolveRevision(about.yearMonth);
   if (rev.generation !== about.generation) return [];
-  return rev.bundles.map((b) => ({ members: b.members, tiers: b.tiers.map((t) => ({ min: t.min, points: rev.points[t.kubun].points })) }));
+  return rev.bundles.flatMap((b) => {
+    const tiers = b.tiers.map((t) => ({ min: t.min, points: rev.points[t.kubun].points }));
+    return tiers.every((t): t is { min: number; points: number } => t.points !== null) ? [{ members: b.members, tiers }] : [];
+  });
 }
 
 /**
