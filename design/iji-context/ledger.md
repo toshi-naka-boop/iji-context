@@ -256,3 +256,4 @@
 - 2026-11-21（Opus）strict を tests 以外のすべてに広げた（統合 1e110f7）。ORCA 形式で性別が null の患者は形式の誤りとして止める（62595ac）。tests/ は残り 20 件。詳細は handoff-opus.md
 - 2026-11-21（Opus）言い切りの標本確認：12 種類 × 30 行。G04.day に外れ 4 行（急性増悪のただし書）。certain は空のまま。結果は sources/research/certain-sample.md
 - 2026-11-21 ユーザー判断：U-P 4 種類だけ言い切り（a50c598）／U-O 人に見てもらう（メールで調査の一覧）／CSP は今のまま／2 人目の招待はそのまま／U-Y ORCA は対象外の単位として残す（6e99e9e）／U-W 全体の 1 日の上限（c18e110）／U-V 全員のまま／U-Q〜U-S・U-U・U-X は調べ直す。詳細は handoff-opus.md
+- 2026-11-21（Opus）UKE の GO の総件数を HO＋KO の数で照合し、EOF のないファイルも読むように直した（統合 28b8e07）。調べ直しの結果：sources/research/recheck-ux.md（改選日・ベースアップ評価料・死亡後の往診）、recheck-data.md（実在の形の材料・本部点検条件・記録例の扱い・partial）
