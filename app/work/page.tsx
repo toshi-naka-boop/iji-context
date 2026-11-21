@@ -295,7 +295,15 @@ export default function Work() {
   }
 
   const findings: Finding[] = q?.confirmed?.result.findings ?? [];
-  const total = lines.reduce((s, l) => s + (pointsOf(l.kubun) ?? 0) * l.count, 0);
+  /**
+   * 合計の表示。確定後はユスティの判定の合計（決められなければ null で「—」）。
+   * 確定前は表の点数で足すが、点数未収載の区分が 1 つでもあれば決められないので「—」（未収載を 0 点として足さない）
+   */
+  const totalLabel = q?.confirmed
+    ? q.confirmed.result.total === null ? "—" : `${q.confirmed.result.total.toLocaleString()} 点`
+    : quiz.some((x) => x.state === "未回答") ? "？ 点"
+    : lines.some((l) => pointsOf(l.kubun) === null) ? "—"
+    : `${lines.reduce((s, l) => s + (pointsOf(l.kubun) as number) * l.count, 0).toLocaleString()} 点`;
   const lastMentorBubble = [...chat].reverse().find((b) => b.from === "mentor");
   const lastFace: Face = lastMentorBubble?.face ?? "通常";
   const lastMentor = lastMentorBubble?.text ?? null;
@@ -484,12 +492,10 @@ export default function Work() {
                 ))}
               </tbody>
             </table>
-            {q.phase === "ヒント" && (
-              <p>
-                <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: [`${ctx.yearMonth}-01`] }])}>行を足す</button>
-                <span className="muted">　合計 {quiz.some((x) => x.state === "未回答") ? "？" : total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
-              </p>
-            )}
+            <p>
+              {q.phase === "ヒント" && <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: [`${ctx.yearMonth}-01`] }])}>行を足す</button>}
+              <span className="muted">　合計 {totalLabel}（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
+            </p>
             <PatientPanel
               claimId={q.claimId}
               facts={ctx.facts}
