@@ -49,6 +49,8 @@ function inMonth(date: string, yearMonth: string): boolean {
 
 /** 入力の検査。日付ごとの事実は、その請求の診療年月の日付が要る。値の型は事実ごと */
 export function validateClaimFact(f: ClaimFactInput, yearMonth: string): void {
+  // 取り消しの印は、利用者の入力としては受け付けない（どの事実でも。印と答えが区別できなくなる。round-36 C-141）
+  if (typeof f.value === "string" && f.value.trim() === CLEARED) throw new Error("この値は残せません");
   if (!CLAIM_FACT_SOURCES.includes(f.source)) throw new Error(`確かめ方が選べない値: ${f.source}`);
   if (isHaihanFactKey(f.key)) {
     const ask = exceptionOf(parseHaihanKey(f.key)!.hx)!.ask!;

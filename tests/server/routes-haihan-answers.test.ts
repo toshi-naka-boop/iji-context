@@ -89,7 +89,10 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
       [haihanKey("HX-22", OUSHIN_CODE, VISIT_CODE), "その他", day(5)],
     ] as const)
       expect([key, value, date, (await save(key, value, date)).status]).toEqual([key, value, date, 400]);
+    // 取り消しの印（"__cleared__"）は、どの事実の値としても受け付けない（round-36 C-141）
+    expect((await save(KEY, "__cleared__", day(5))).status).toBe(400);
     setRole("doctor");
+    for (const v of ["__cleared__", " __cleared__ "]) expect([v, (await save("mainDisease", v, null)).status]).toEqual([v, 400]);
     expect((await save(KEY, YES, day(5))).status).toBe(403);
     setRole("clerk");
     expect(await list()).toEqual([]);
