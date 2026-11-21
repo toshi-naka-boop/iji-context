@@ -87,3 +87,48 @@ describe("クリニックの種類", () => {
     expect(instance.getApp().kind).toBe("demo");
   });
 });
+
+
+describe("今日の日付と、日付を進める操作", () => {
+  it("real の今日は実際の時刻（日本時間・タイムゾーン付き）で、デモの時計の設定を読まない", () => {
+    const u = auth().register("now_real", "いま", "password123", "real");
+    setNow("2026-12-01T10:15:30+09:00");
+    const a = appOf(u);
+    expect(a.now()).toBe("2026-12-01T10:15:30+09:00");
+    // デモの時計の設定が残っていても読まない
+    a.setSetting("now", at(20));
+    expect(a.now()).toBe("2026-12-01T10:15:30+09:00");
+    // 日本時間の日付で返す（UTC ではまだ前の日）
+    setNow("2026-12-01T23:30:00Z");
+    expect(a.now()).toBe("2026-12-02T08:30:00+09:00");
+    expect(() => a.advanceClock(at(20))).toThrow(/日付を進められません/);
+  });
+
+  it("POST /api/clock：real ではどのロールでも断る。demo では事務長が進められる（公開版でも）。公開版の demo の事務以外は断る", async () => {
+    const clock = await import("../../app/api/clock/route");
+    const real = auth().register("clock_real", "じつ", "password123", "real");
+    const demo = auth().register("clock_demo", "でも", "password123", "demo");
+    const realCookie = cookieOf(real);
+    const demoCookie = cookieOf(demo);
+    await switchTo(realCookie, "manager");
+    const refused = await clock.POST(post("/api/clock", realCookie, { now: at(20) }));
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toContain("日付を進められません");
+    const realGet = await (await clock.GET(get("/api/clock", realCookie))).json();
+    expect(realGet).toMatchObject({ kind: "real", canAdvance: false });
+
+    const env = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    try {
+      // 公開版の demo：事務は断る、事務長は進められる
+      expect((await clock.POST(post("/api/clock", demoCookie, { now: at(20) }))).status).toBe(403);
+      expect((await (await clock.GET(get("/api/clock", demoCookie))).json())).toMatchObject({ kind: "demo", canAdvance: false });
+      await switchTo(demoCookie, "manager");
+      const ok = await clock.POST(post("/api/clock", demoCookie, { now: at(20) }));
+      expect(ok.status).toBe(200);
+      expect((await (await clock.GET(get("/api/clock", demoCookie))).json())).toEqual({ now: at(20), kind: "demo", canAdvance: true });
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = env;
+    }
+  });
+});

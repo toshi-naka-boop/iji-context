@@ -11,9 +11,10 @@ const ALL: Role[] = ["clerk", "veteran", "manager", "doctor"];
 
 /**
  * public＝ログインなしで呼べる（ログイン・登録・ログアウト）／dev＝開発用（本番では 404。本番でなくてもログインが要る。ロールは問わない）／
- * ロールの配列＝そのロールだけ／{ roles, solo: true }＝そのロールに加えて、1 人で使っているクリニックの持ち主にも許す
+ * ロールの配列＝そのロールだけ／{ roles, solo: true }＝そのロールに加えて、1 人で使っているクリニックの持ち主にも許す／
+ * { roles, dev: true }＝そのロールに加えて、本番でなければ（開発では）どのロールにも許す（本番でも 404 にしない）
  */
-export type Rule = "public" | "dev" | Role[] | { roles: Role[]; solo: true };
+export type Rule = "public" | "dev" | Role[] | { roles: Role[]; solo: true } | { roles: Role[]; dev: true };
 
 /** その処理が外部のサービスに送るか：ai＝AI のサービス（Anthropic）／voice＝音声のサービス（ElevenLabs）／none＝送らない */
 export type External = "ai" | "voice" | "none";
@@ -137,8 +138,9 @@ export const POLICY = {
   "POST /api/character": row(ALL, "none", false),
   "POST /api/clerk/name": row(ALL, "none", false),
   "GET /api/clock": row(ALL, "none", false),
-  // 時計を進めるのは開発用（本番では 404）。進めると会議の整理と医師確認の期限がクリニック全体で動くため、利用者の操作にしない
-  "POST /api/clock": row("dev", "none", false),
+  // 時計を進める：デモのクリニックの事務長（公開版でも）と、開発ではどのロールでも。進めると会議の整理と医師確認の期限がクリニック全体で動くため、事務長に絞る。
+  // 実在のデータで使うクリニックでは、どのロールでも断る（ハンドラの中。src/server/app/clock.ts の advanceClock）
+  "POST /api/clock": row({ roles: ["manager"], dev: true }, "none", false),
   "GET /api/master": row(ALL, "none", false),
   // 声で答えた名前の聞き取り。音声のサービスに送り、漢字が混じっていれば AI のサービスにも送る（読みをひらがなにする）。申告は 1 つなので voice と書く
   "POST /api/voice/listen": row(ALL, "voice", false),
@@ -166,6 +168,7 @@ export function allow(key: PolicyKey): Allowed {
 export function permits(rule: Rule, user: Pick<User, "role">, solo: () => boolean): boolean {
   if (rule === "public" || rule === "dev") return true;
   if (Array.isArray(rule)) return rule.includes(user.role);
+  if ("dev" in rule) return rule.roles.includes(user.role) || process.env.NODE_ENV !== "production";
   return rule.roles.includes(user.role) || solo();
 }
 

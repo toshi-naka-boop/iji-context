@@ -1,6 +1,6 @@
 "use client";
 // 監査ログの閲覧（spec FR-140）：事務長だけに出す欄。新しい順。操作の記録と、ログインまわりの記録の 2 つ（API が返すまま）。
-// 出すのは日時・操作・対象の id・結果・誰が（役割と利用者 id）・デモの日付だけ。本文と氏名は API にも入っていない
+// 出すのは日時・操作・対象の id・結果・誰が（役割と利用者 id）・デモの日付（デモのクリニックだけ）だけ。本文と氏名は API にも入っていない
 import { useEffect, useState } from "react";
 import { ROLE_LABELS, isRole } from "../../src/server/roles";
 
@@ -33,9 +33,12 @@ export function AuditLog() {
   const [data, setData] = useState<{ log: LogRow[]; auth: AuthRow[] } | null>(null);
   const [filter, setFilter] = useState<Kind | "all">("all");
   const [err, setErr] = useState("");
+  // 実在のデータで使うクリニックでは、デモの日付の欄を出さない（日時と同じ日になる）
+  const [demo, setDemo] = useState(false);
   // 事務長でなければ、欄を出さず、ログも取りにいかない（サーバー側でも断る）
   useEffect(() => {
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u) => setShow(u?.role === "manager")).catch(() => {});
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => setDemo(d?.kind === "demo")).catch(() => {});
   }, []);
   useEffect(() => {
     if (!show) return;
@@ -71,7 +74,7 @@ export function AuditLog() {
             <div style={{ overflowX: "auto" }}>
               <table style={{ minWidth: 720 }}>
                 <thead>
-                  <tr><th>日時</th><th>操作</th><th>対象</th><th>結果</th><th>誰が</th><th>デモの日付</th></tr>
+                  <tr><th>日時</th><th>操作</th><th>対象</th><th>結果</th><th>誰が</th>{demo && <th>デモの日付</th>}</tr>
                 </thead>
                 <tbody>
                   {log.map((r) => (
@@ -81,7 +84,7 @@ export function AuditLog() {
                       <td style={{ overflowWrap: "anywhere" }}>{r.target ?? ""}</td>
                       <td style={{ whiteSpace: "nowrap" }}><Result result={r.result} /></td>
                       <td>{isRole(r.role) ? ROLE_LABELS[r.role] : r.role}<br /><span className="muted">{r.userId}</span></td>
-                      <td style={{ whiteSpace: "nowrap" }}>{r.demoNow ? r.demoNow.slice(0, 10).replaceAll("-", ".") : ""}</td>
+                      {demo && <td style={{ whiteSpace: "nowrap" }}>{r.demoNow ? r.demoNow.slice(0, 10).replaceAll("-", ".") : ""}</td>}
                     </tr>
                   ))}
                 </tbody>

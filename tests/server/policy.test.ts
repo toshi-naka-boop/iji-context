@@ -51,12 +51,27 @@ describe("権限表", () => {
     }
   });
 
-  it("開発用（dev）の行は 4 つだけ（時計を進める操作を含む）。ログインの確かめは route() が持ち、ルートの中には書かない", () => {
+  it("開発用（dev）の行は 3 つだけ。ログインの確かめは route() が持ち、ルートの中には書かない", () => {
     const dev = Object.entries(POLICY).filter(([, r]) => r.rule === "dev").map(([key]) => key);
-    expect(dev).toEqual(["POST /api/clock", "GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]);
+    expect(dev).toEqual(["GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]);
     for (const r of routes.filter((x) => x.keys.some((k) => dev.includes(k)))) expect(/ログインしてください|\bviewer\b/.test(r.src), r.file).toBe(false);
     // ログインした人なら、ロールは問わない
     for (const role of ["clerk", "veteran", "manager", "doctor"] as const) expect(permits("dev", { role }, () => false)).toBe(true);
+  });
+
+  it("時計を進めるのは、事務長と、開発ではどのロールでも（本番でも 404 にしない。real のクリニックで断るのはハンドラ）", () => {
+    const clock: Rule = POLICY["POST /api/clock"].rule;
+    expect(clock).toEqual({ roles: ["manager"], dev: true });
+    const env = process.env.NODE_ENV;
+    try {
+      (process.env as Record<string, string>).NODE_ENV = "production";
+      expect(permits(clock, { role: "manager" }, () => true)).toBe(true);
+      for (const role of ["clerk", "veteran", "doctor"] as const) expect(permits(clock, { role }, () => true)).toBe(false);
+      (process.env as Record<string, string>).NODE_ENV = "development";
+      for (const role of ["clerk", "veteran", "manager", "doctor"] as const) expect(permits(clock, { role }, () => false)).toBe(true);
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = env;
+    }
   });
 
   it("表にないキーは引けない", () => {
