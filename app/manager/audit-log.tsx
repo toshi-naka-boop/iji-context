@@ -88,7 +88,7 @@ export function AuditLog() {
               </table>
             </div>
           )}
-          <h4 style={{ marginBottom: 4 }}>ログイン・登録・招待・役割の切替</h4>
+          <h4 style={{ marginBottom: 4 }}>ログイン・登録・招待・役割の切替・ほかの画面から来て断った操作</h4>
           {auth.length === 0 ? (
             <p className="muted">当てはまる記録はありません。</p>
           ) : (
@@ -103,7 +103,7 @@ export function AuditLog() {
                       <td style={{ whiteSpace: "nowrap" }}>{when(r.at)}</td>
                       <td>{r.event}</td>
                       <td style={{ whiteSpace: "nowrap" }}><Result result={r.result} /></td>
-                      <td><span className="muted">{r.userId ?? ""}</span></td>
+                      <td><span className="muted">{r.userId ?? "不明"}</span></td>
                     </tr>
                   ))}
                 </tbody>
