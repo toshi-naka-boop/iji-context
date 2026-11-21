@@ -1,21 +1,20 @@
 {
-  "currentNode": "完了",
+  "currentNode": "承認CP",
   "status": "awaiting_user",
-  "designVersion": "v25",
-  "approvedDesignVersion": "v25",
-  "approvedDesignSha256": "1689af1f6b1ee7cc5b6c2fc2c58bc42cdd0fad4d7fa70297ce670809986b6ad9",
-  "approvedAt": "2026-11-21T00:00:00+09:00",
-  "approvalEvidence": "「v25:1689af1f6b1e を承認」",
-  "requiredApprovalFingerprint": "v25:1689af1f6b1e",
+  "designVersion": "v26",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v26:a77f85492f72",
   "baseline": "feat/integration（83d1442）",
-  "criticRound": 37,
+  "criticRound": 41,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§13）",
-    "ledger.md",
-    "sources/research/tokurei-summary.md"
+    "design.md（§14・§13・§3）",
+    "ledger.md"
   ],
-  "nextAction": "段 15a を束ねた。codex が戻ったら段 15a の反証 round-38（クロスベンダー）。段 15b（tokurei-group4〜6）は利用者の指示待ち",
+  "nextAction": "v26 の承認を待つ",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
