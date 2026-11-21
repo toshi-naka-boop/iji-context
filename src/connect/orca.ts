@@ -288,6 +288,8 @@ export function createOrcaConnector(): Connector {
           const medical = p.coverages.filter((c) => c.kind === "医保");
           if (medical.length !== 1) throw new ConnectError(ORCA_ID, "format", "医療保険が 1 つに決まらず、審査支払機関を決められない");
           const payer = payerOfInsurer(medical[0].payerNumber);
+          // 性別は患者基本情報の応答の検査（Sex は 1 か 2）で決まっているが、型の上では null があり得るので、ここでも確かめる（UKE のレセプトは性別を欠かせない）
+          if (p.sex === null) throw new ConnectError(ORCA_ID, "format", "性別が読めない");
           // 医療機関の情報・都道府県・請求年月・レセプト種別・傷病名・コメントは、診療行為の API に載っていない（上の注）
           const file = files.get(payer) ?? { payer, prefecture: "", clinic: { code: "", name: "", phone: "" }, billingMonth: "", receipts: [] };
           files.set(payer, file);
