@@ -72,5 +72,13 @@ export function parseHaihanKey(key: string): { hx: string; codes: [string, strin
   const m = KEY.exec(key);
   return m && m[2] < m[3] ? { hx: m[1], codes: [m[2], m[3]] } : null;
 }
+/**
+ * 答えの key のコードの組が、その例外を持つどれかの組（HP）の a・b に当たるか（向きはどちらでも。round-36 C-143）。
+ * selects は区分番号で選ぶ組の照らし方（マスターがなければ null：区分番号で選ぶ側は照らせないので、当たるとみなす。コードで選ぶ側は照らす）
+ */
+export function codesFit(hx: string, codes: [string, string], selects: ((code: string, sel: CodeSel) => boolean) | null, config: HaihanConfig = HAIHAN): boolean {
+  const fit = (code: string, sel: CodeSel) => sel.codes?.includes(code) === true || (sel.section !== undefined && (selects === null || selects(code, sel)));
+  return config.patterns.some((p) => p.exceptions.includes(hx) && ((fit(codes[0], p.a) && fit(codes[1], p.b)) || (fit(codes[0], p.b) && fit(codes[1], p.a))));
+}
 /** 既存の事実を使う問いか（その事実の名前）。haihan:* だけの問いなら null */
 export const sharedFactOf = (x: HaihanException): string | null => (x.ask && !x.ask.factKey.startsWith("haihan:") ? x.ask.factKey : null);

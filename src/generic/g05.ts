@@ -161,8 +161,8 @@ function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: stri
   return { kind: "open", asks, ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
 }
 
-/** 診療行為が選び方に当たるか（区分番号は、診療年月に使う基本マスターの 1 枚で引く。引けなければ当たらない） */
-function selectorOf(db: MastersDb, about: GenericAbout): (code: string, sel: CodeSel) => boolean {
+/** 診療行為が選び方に当たるか（区分番号は、診療年月に使う基本マスターの 1 枚で引く。引けなければ当たらない）。答えの入力の検査も使う */
+export function selectorOf(db: MastersDb, about: GenericAbout): (code: string, sel: CodeSel) => boolean {
   const snap = pickSnapshot(db, "shinryo", about.yearMonth, about.generation)?.snapshot ?? null;
   const rows = new Map<string, ShinryoRow | null>();
   return (code, sel) => {

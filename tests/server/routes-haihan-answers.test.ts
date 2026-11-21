@@ -28,9 +28,10 @@ const rev = resolveRevision(YM);
 const VISIT = rev.consts.visitKubun[0];
 const OUSHIN = rev.consts.oushin.kubun;
 const [VISIT_CODE, OUSHIN_CODE] = [rev.codes[VISIT].primary, rev.codes[OUSHIN].primary];
-/** 5 日と 15 日に、訪問診療料と往診料の両方がある請求 */
+/** 5 日と 15 日に、訪問診療料と往診料の両方がある請求。5 日には、再診料と、訪問診療料(Ⅰ)1ロ（同一建物居住者）もある（再診料×訪問診療料の 2 つの組） */
 const ID = "U1-1";
 const KEY = haihanKey("HX-01", OUSHIN_CODE, VISIT_CODE);
+const [SAISHIN, HOUMON_RO] = [rev.codes.A001.primary, rev.codes.C001_1RO.primary];
 const YES = "はい、訪問診療のあとに、急変などで往診した";
 const masters = process.env.RESEMEN_MASTER_DIR ? path.join(process.env.RESEMEN_MASTER_DIR, "masters.db") : "";
 const hasMasters = masters !== "" && existsSync(masters);
@@ -48,7 +49,7 @@ beforeAll(async () => {
   const r = base.receipts[0];
   const file: UkeFile = {
     ...base,
-    receipts: [{ ...r, claimId: "A1", patient: { ...r.patient, name: "架空 松子", birth: "19480808", insurer: { number: "06139992", symbol: "77", no: "602" } }, lines: [{ kubun: VISIT, count: 2, dates: [day(5), day(15)] }, { kubun: OUSHIN, count: 2, dates: [day(5), day(15)] }], comments: [] }],
+    receipts: [{ ...r, claimId: "A1", patient: { ...r.patient, name: "架空 松子", birth: "19480808", insurer: { number: "06139992", symbol: "77", no: "602" } }, lines: [{ kubun: VISIT, count: 2, dates: [day(5), day(15)] }, { kubun: OUSHIN, count: 2, dates: [day(5), day(15)] }, { kubun: "A001", count: 1, dates: [day(5)] }, { kubun: "C001_1RO", count: 1, dates: [day(5)] }], comments: [] }],
   };
   instance.runAs(owner, () => expect(instance.getApp().uploadUke(instance.clerkIdOf(owner), writeUke(file)).filter((u) => u.uploaded).flatMap((u) => u.receipts.map((x) => x.claimId))).toEqual([ID]));
 });
@@ -132,11 +133,19 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
 
   it("答えは組ごと：同じ日の 2 つの組（haihan:<HX>:<コード①>:<コード②>）に別の答えを残せ、互いに効かない", async () => {
     setRole("clerk");
-    const [a, b] = [haihanKey("HX-03", OUSHIN_CODE, "114004510"), haihanKey("HX-03", OUSHIN_CODE, "114020110")];
-    expect((await save(a, "いいえ、往診のほうが先だった", day(5))).status).toBe(200);
+    const [a, b] = [haihanKey("HX-11", SAISHIN, VISIT_CODE), haihanKey("HX-11", SAISHIN, HOUMON_RO)];
+    const NO = "いいえ、訪問診療と同じ 1 回の診療について算定した";
+    expect((await save(a, NO, day(5))).status).toBe(200);
     expect((await save(b, "その他", day(5))).status).toBe(200);
     const mine = (await list()).filter((f) => f[0] === a || f[0] === b);
-    expect(mine).toEqual([[a, day(5), "いいえ、往診のほうが先だった", "clerk"], [b, day(5), "その他", "clerk"]]);
+    expect(mine).toEqual([[a, day(5), NO, "clerk"], [b, day(5), "その他", "clerk"]]);
+  });
+
+  it("答えの key のコードが、その請求の行にない・その例外の組（HP の a・b）に当たらないなら 400（round-36 C-143）", async () => {
+    setRole("clerk");
+    // 実在しないコード／組に当たるが請求にない訪問診療料(Ⅰ)2（114042110）／請求にあるが HX-01 の組（往診料×訪問診療料）に当たらない再診料×往診料
+    for (const key of [haihanKey("HX-01", "111111111", "222222222"), haihanKey("HX-01", OUSHIN_CODE, "114042110"), haihanKey("HX-01", SAISHIN, OUSHIN_CODE)])
+      expect([key, (await save(key, YES, day(5))).status]).toEqual([key, 400]);
   });
 
   it("監査ログの対象は請求 id とキーだけ（値・氏名は入らない）。共有の事実を使う問いは、その事実のキーも入れる", async () => {
@@ -144,17 +153,22 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
     expect(audit.map((r) => r.target)).toContain(`${ID} ${KEY} sameDayOushinAfterVisit`);
     // R10 の入力で共有の事実を書き、その日の haihan:* を取り消したときも、取り消した key を残す（round-36 C-142）
     expect(audit.map((r) => r.target)).toContain(`${ID} sameDayOushinAfterVisit ${KEY}`);
-    expect(audit.map((r) => r.target)).toContain(`${ID} ${haihanKey("HX-03", OUSHIN_CODE, "114004510")}`);
+    expect(audit.map((r) => r.target)).toContain(`${ID} ${haihanKey("HX-11", SAISHIN, VISIT_CODE)}`);
     expect(JSON.stringify(audit)).not.toMatch(/架空|06139992|やまだ|往診のほうが先|その他/);
   });
 
   it.skipIf(!hasMasters)("（マスターがあるとき）取り込んだレセプトの点検の G05：答えのない日は問いがつき、「その他」と答えた日は、もう問わない", async () => {
     setRole("clerk");
     // 5 日は「いいえ」（往診が先）で、別々の診療かを問う（R10 と同じ問い）。15 日は「はい」と答えてある
-    const asks = g05().flatMap((f) => f.asks ?? []);
-    expect(asks.map((a) => [a.kind, a.key, a.dates])).toEqual([["fact", "sameDaySeparate", [day(5)]]]);
+    const asks = g05().filter((f) => f.codes.some((c) => c.code === OUSHIN_CODE)).flatMap((f) => f.asks ?? []);
+    // 往診料×訪問診療料の 2 つの組（1イ・1ロ）が、同じ日の同じ問いを持つ
+    expect(asks.map((a) => [a.kind, a.key, a.dates])).toEqual([["fact", "sameDaySeparate", [day(5)]], ["fact", "sameDaySeparate", [day(5)]]]);
+    // 「その他」は組ごと：1イの組に答えると、共有の事実を取り消すので、1ロの組は HX-01 の問いになる。1ロの組にも答えると、もう問わない
     expect((await save(KEY, "その他", day(5))).status).toBe(200);
-    expect(g05().flatMap((f) => f.asks ?? [])).toEqual([]);
-    expect(g05().map((f) => f.text).join("")).not.toContain("下の問いに答えてください");
+    expect(g05().filter((f) => f.codes.some((c) => c.code === OUSHIN_CODE)).flatMap((f) => f.asks ?? []).map((a) => [a.kind, a.key])).toEqual([["choice", haihanKey("HX-01", OUSHIN_CODE, HOUMON_RO)]]);
+    expect((await save(haihanKey("HX-01", OUSHIN_CODE, HOUMON_RO), "その他", day(5))).status).toBe(200);
+    const oushin = g05().filter((f) => f.codes.some((c) => c.code === OUSHIN_CODE));
+    expect(oushin.flatMap((f) => f.asks ?? [])).toEqual([]);
+    expect(oushin.map((f) => f.text).join("")).not.toContain("下の問いに答えてください");
   });
 });

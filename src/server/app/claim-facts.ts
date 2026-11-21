@@ -3,7 +3,10 @@
 // 背反の特例条件の例外の問いの答え（haihan:*。design.md §13-3）も同じ表に入れ、宛先は医療事務。答えを書くのは saveClaimFact の 1 か所だけ（X-105）
 import { applyClaimFacts, CLEARED, isClaimFactKey, isDatedFact, isHaihanFactKey, validateClaimFact, type ClaimFact, type ClaimFactInput } from "../../claim/facts";
 import { targetOfNeed } from "../../engine";
-import { exceptionOf, parseHaihanKey, sharedFactOf } from "../../generic/haihan";
+import { hasRevision, resolveRevision } from "../../engine/revisions";
+import { selectorOf } from "../../generic/g05";
+import { codesFit, exceptionOf, parseHaihanKey, sharedFactOf } from "../../generic/haihan";
+import { withMasters } from "../../masters/db";
 import type { Facts } from "../../engine/types";
 import { badRequest, forbidden, notFound } from "../errors";
 import type { Role } from "../roles";
@@ -81,10 +84,21 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
   /**
    * 答えを書く関数（1 か所。X-105）。written は、f.key のほかに書いた・取り消した key を受け取る（監査ログの対象に足す。round-36 C-142）
    */
+  /**
+   * 例外の問いの答えの key のコードが、その請求の行にあり、その例外を持つ組（HP の a・b）に当たるか。合わなければ 400（round-36 C-143）。
+   * 区分番号で選ぶ組は、マスターがあれば診療年月の 1 枚で照らす（なければ照らせない。G05 も動かないので、問いも出ない）
+   */
+  function fitsClaim(claimId: string, yearMonth: string, k: { hx: string; codes: [string, string] }) {
+    const inClaim = new Set(uke.receiptOf(claimId).claim().units.flatMap((u) => u.items.map((it) => it.code)));
+    if (!k.codes.every((c) => inClaim.has(c))) throw badRequest("この請求にないコードの組への答えは残せません");
+    const fits = withMasters((db) => codesFit(k.hx, k.codes, db && hasRevision(yearMonth) ? selectorOf(db, { yearMonth, generation: resolveRevision(yearMonth).generation }) : null));
+    if (!fits) throw badRequest("この例外が掛かる組のコードではありません");
+  }
   function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput, written?: (keys: string[]) => void) {
     clerks.clerk(clerkId);
     const yearMonth = yearMonthOf(claimId);
     admit(f, yearMonth, role);
+    if (isHaihanFactKey(f.key)) fitsClaim(claimId, yearMonth, parseHaihanKey(f.key)!);
     const value = typeof f.value === "string" ? f.value.trim() : f.value;
     const at = now();
     const others = new Set<string>();
