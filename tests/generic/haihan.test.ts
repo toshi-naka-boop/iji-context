@@ -47,8 +47,11 @@ const sameDay = [unit([C.oushin], [6]), unit([C.houmon], [6, 20])];
 const OU_HO = haihanKey("HX-01", C.oushin, C.houmon);
 
 describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急変の往診・HX-02 死亡日の往診だけの日のターミナルケア加算）", () => {
-  it("答えを渡さない点検（月末の点検・算定プレビュー・measure-generic）では、問いを出さず、今までどおり条件つき（L-76）", () => {
-    expect(brief(g05Of(sameDay).findings)).toEqual([["G05.day_cond", "条件つき", C.oushin, C.houmon]]);
+  it("答えを渡さない点検（月末の点検・算定プレビュー・試算・measure-generic）では、選択肢を出さず（L-76）、例外の一言と問いの文を挙げた条件つきの文にする（利用者の判断 2026-11-22）", () => {
+    const fs = g05Of(sameDay).findings;
+    expect(brief(fs)).toEqual([["G05.exception_check", "条件つき", C.oushin, C.houmon]]);
+    expect([fs[0].params.asks, genericText(fs[0])]).toEqual([undefined, expect.stringContaining("医療事務に確かめること：「この日の往診は、同じ日の訪問診療のあとに、患者の病状の急変などで求められて行ったものですか」")]);
+    expect(genericText(fs[0])).toContain("訪問診療の後に、病状の急変等で往診した場合の往診料");
   });
 
   it("答えがない → 条件つき＋問い（HX-01。sameDayOf が名指しする事実）。文は告示・通知の例外の一言を挙げる", () => {
@@ -90,7 +93,8 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
   it("決まらないの答え（その他・判定不能）→ 条件つきで、もう問わない", () => {
     for (const label of ["その他", "判定不能"]) {
       const fs = g05Of(sameDay, { answers: answersOf({ [`${OU_HO}|${day(6)}`]: label }), facts: factsOf({}) }).findings;
-      expect(brief(fs)).toEqual([["G05.day_cond", "条件つき", C.oushin, C.houmon]]);
+      expect(brief(fs)).toEqual([["G05.exception_check", "条件つき", C.oushin, C.houmon]]);
+      expect(genericText(fs[0])).toContain("これまでの答えでは決まりません");
     }
   });
 
@@ -201,12 +205,12 @@ describe("例外の形（テスト用の決まり）", () => {
     const inpatient = g05Of(month, { outpatient: false }, { config });
     expect([inpatient.findings, inpatient.result.silenced]).toEqual([[], [{ hx: "HX-T1", count: 1 }]]);
     // 入院外かが分からない（区分キーの行）なら決まらない
-    expect(brief(g05Of(month, {}, { config }).findings)).toEqual([["G05.month_cond", "条件つき", C.sanso, C.sansoKyunyu]]);
+    expect(brief(g05Of(month, {}, { config }).findings)).toEqual([["G05.exception_check", "条件つき", C.sanso, C.sansoKyunyu]]);
   });
 
   it("確かめられない例外（ウ）が 1 つある組では、ほかの例外が全部当たらなくても exception_none にならない", () => {
     const config = testConfig([RECEIPT, NONE], ["HX-T1", "HX-T2"]);
-    expect(brief(g05Of(month, { outpatient: true }, { config }).findings)).toEqual([["G05.month_cond", "条件つき", C.sanso, C.sansoKyunyu]]);
+    expect(brief(g05Of(month, { outpatient: true }, { config }).findings)).toEqual([["G05.exception_check", "条件つき", C.sanso, C.sansoKyunyu]]);
   });
 
   it("同一月の表の scope: day の問い：b 側の算定日ごとに問い、日によって答えが分かれると「決まらない」で、分かれた日が文に出る", () => {

@@ -9,6 +9,7 @@
 // 背反区分（[点] p28 項番6）：1＝コード①を算定する／2＝コード②を算定する／3＝いずれか一方。残す側が決まる組（1・2）は、指摘の値（keep）に入れる。
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
 import { sameDayOf } from "../engine/predicates";
+import { FACT_LABEL } from "../messages";
 import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
 import { HAIHAN, haihanKey, sharedFactOf, type Check, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence, type TimedClaim } from "./tensuhyo";
@@ -143,7 +144,7 @@ type SlotOutcome =
   | { kind: "silent"; hx: string[] }
   | { kind: "require"; hx: HaihanException[]; checks: string[]; comments: string[] }
   | { kind: "none"; answered: boolean }
-  | { kind: "open"; asks: PendingAsk[]; split?: { hx: string; hit: string[]; miss: string[] } };
+  | { kind: "open"; asks: PendingAsk[]; hx: string[]; split?: { hx: string; hit: string[]; miss: string[] } };
 
 function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: string, day: number | undefined, c: Ctx): SlotOutcome {
   const list = p.exceptions.map((id) => config.exceptions.find((e) => e.id === id)!).map((x) => ({ x, r: judge(x, row, aCode, day, c) }));
@@ -158,7 +159,7 @@ function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: stri
   if (list.every((e) => e.r.r === "miss")) return { kind: "none", answered: list.some((e) => e.r.r === "miss" && e.r.answered) };
   const asks = list.flatMap((e) => (e.r.r === "open" ? e.r.asks : []));
   const split = list.find((e) => e.r.r === "undecided" && e.r.split);
-  return { kind: "open", asks, ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
+  return { kind: "open", asks, hx: list.filter((e) => e.r.r === "open" || e.r.r === "undecided").map((e) => e.x.id), ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
 }
 
 /** 診療行為が選び方に当たるか（区分番号は、診療年月に使う基本マスターの 1 枚で引く。引けなければ当たらない）。答えの入力の検査も使う */
@@ -320,7 +321,13 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
               push(base("G05.exception_ask", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), asks: JSON.stringify(asks), ...dayParams(days) }));
             } else if (split && asks.length === 0)
               push(base("G05.exception_split", "条件つき", { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss), ...dayParams(days) }));
-            else push(base(`G05.${hit2.key}_cond`, "条件つき", hit2.key === "month" || hit2.key === "same_unit" ? {} : { days: daysText(days.filter((d): d is number => d !== undefined)) }));
+            else {
+              // 答えを渡さない経路（月末の点検・算定プレビュー・試算・measure-generic）と、問いの残っていない「決まらない」は、選択肢を出さず、
+              // 何を確かめればよいか（例外の一言と問いの文）を挙げた条件つきの文にする（利用者の判断 2026-11-22。選択肢は出さない：L-76）
+              const hx = [...new Set(groups.open.flatMap((g) => g.o.hx))];
+              const questions = [...new Set(asks.map((x) => (x.key === "sameDaySeparate" ? FACT_LABEL.sameDaySeparate : (config.exceptions.find((e) => e.id === x.hx)?.ask?.question ?? ""))))].filter((q) => q !== "");
+              push(base("G05.exception_check", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), questions: questions.length > 0 ? `医療事務に確かめること：${questions.map((q) => `「${q}」`).join("／")}` : "例外に当たるかは、レセプトとこれまでの答えでは決まりません。告示・通知を確かめてください", ...dayParams(days) }));
+            }
           }
         }
       }

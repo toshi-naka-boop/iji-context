@@ -159,7 +159,7 @@ describe("(4) それ以外は、そのまま出す", () => {
   it("手書きが申告していない組（往診料と訪問診療料。R10）：同じ日にあれば、条件つきの背反がそのまま出る", () => {
     const visit = K1.lines.find((l) => l.kubun === "C001_1I")!.dates[0];
     const r = both(withLines(K1, line("C000", 1, [visit])));
-    expect(r.findings.filter((f) => f.check === "G05").map((f) => [f.messageKey, f.certainty, f.codes])).toEqual([["G05.day_cond", "条件つき", [C.oushin, C.houmon]]]);
+    expect(r.findings.filter((f) => f.check === "G05").map((f) => [f.messageKey, f.certainty, f.codes])).toEqual([["G05.exception_check", "条件つき", [C.oushin, C.houmon]]]);
   });
 
   it("同梱の症例（正しい請求）と小さな表：言い切りの候補は 1 件も出ない", () => {
