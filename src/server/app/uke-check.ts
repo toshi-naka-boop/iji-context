@@ -20,7 +20,7 @@ import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
 import { diseaseCodeOf, SUSPECTED_MODIFIER } from "../../uke/diseases";
 import type { UkeClaim, UkeOther } from "../../uke/types";
-import { mapClaim } from "../../uke/uke";
+import { isDeductionUnit, mapClaim } from "../../uke/uke";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
 import { genericOut, type Hand } from "./generic";
@@ -65,7 +65,8 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
  * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
  * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない／
  * rows＝UKE の全部の算定単位（単位の並びのまま。画面の「レセプトの行」の表）。items は単位の行のコードと、区分番号・名称（マスターのもの。なければ版の表のもの。どちらもなければ null）、
- * kubun は手書きのルールの区分に引けた行の区分（引けない単位は空）、points は UKE に書いてある 1 回分の点数、
+ * kubun は手書きのルールの区分に引けた行の区分（引けない単位は空）、points は UKE に書いてある 1 回分の点数（正の数のまま）、
+ * deduction は点数を請求の合計から引く単位か（薬剤料の逓減など、減じるコードだけの単位。src/uke/uke.ts の isDeductionUnit）、
  * checkedBy はその単位を見た点検：rules+generic／rules（データで動く点検が動いていない）／generic（手書きのルールの区分に引けない）／none（どちらも見ていない）
  */
 /** 基本マスターの断り書きに、電子点数表・コメント関連テーブル・チェックマスタの分を足す */
@@ -100,7 +101,7 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
           return { code, no: n?.no ?? (kubun ? rev.points[kubun].no : null), name: n?.name ?? (kubun ? rev.points[kubun].name : null) };
         });
         const checkedBy: "rules+generic" | "rules" | "generic" | "none" = own.length > 0 ? (genericRan ? "rules+generic" : "rules") : genericRan ? "generic" : "none";
-        return { unit: i, items, kubun: [...new Set(own.map((m) => m.kubun))], count: u.count, dates: datesOf(claim.yearMonth, u.days), points: u.points, checkedBy };
+        return { unit: i, items, kubun: [...new Set(own.map((m) => m.kubun))], count: u.count, dates: datesOf(claim.yearMonth, u.days), points: u.points, deduction: isDeductionUnit(u), checkedBy };
       }),
       stopped: rev.rules.flatMap((rule) => {
         const by = partialBy(rule, rev, ctx);

@@ -40,6 +40,8 @@ export type ClaimPreview = {
     | { kind: "要選択"; id: string; text: string; options: { id: string; label: string }[]; blocks: string[] }
   )[];
   unsupported: { code: string; text: string }[];
+  /** 送られた答えのうち、今の要選択にない id（使わなかった答え。導出の staleChoices のまま） */
+  staleChoices: string[];
   notBilled: string[];
   findings: { ruleId: string; kind: string; text: string; lines: string[] }[];
 };
@@ -72,6 +74,7 @@ export function claimPreviewOf(derived: DeriveResult, engine: Pick<EngineResult,
     total: derived.totalStatus === "withheld" ? null : engine.total,
     pending: derived.pending.map(pendingOf),
     unsupported: derived.unsupported.map((u) => ({ code: u.code, text: unsupportedText(u) })),
+    staleChoices: derived.staleChoices,
     // 行にしなかった理由は、混ぜずに 1 つずつ出す（1 回の診療として片方を選んだ／訪問診療のあとの往診ではない／文書の提供がない。design.md §11-5）
     notBilled: derived.notBilled.map((n) =>
       n.reason === "same_encounter"
