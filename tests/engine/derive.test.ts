@@ -596,6 +596,8 @@ describe("ターミナルケア加算の回数：同じ日の訪問診療と往�
     expect(r.pending).toEqual([]);
     expect(kubunOf(r)).not.toContain(TERMINAL);
     expect(r.staleChoices).toEqual([tid]);
+    // 算定プレビューにも、使わなかった答えとして届く（round-21 O-8）
+    expect(claimPreviewOf(r, judge(c, r), REV).staleChoices).toEqual([tid]);
     expect(judge(c, r).findings.filter((f) => f.ruleId === "R09")).toEqual([]);
   });
   it("別々の診療と確かめた日は 2 回なので、選べば立つ", () => {

@@ -231,8 +231,11 @@ describe("訪問カルテ", () => {
 
     expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("[1]")}`), at)).status).toBe(400);
     expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent("{")}`), at)).status).toBe(400);
-    // 今の保留にない答えは無視する（落とさない）
-    expect((await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent(JSON.stringify({ "D11-mitori:x": "mitori" }))}`), at)).status).toBe(200);
+    // 今の保留にない答えは無視する（落とさない）。使わなかった答えとして応答に入る（round-21 O-8）。答えのない応答では空
+    expect((c as unknown as { staleChoices: string[] }).staleChoices).toEqual([]);
+    const stale = await claim(get(`/api/chart/${w.id}/claim?choices=${encodeURIComponent(JSON.stringify({ "D11-mitori:x": "mitori" }))}`), at);
+    expect(stale.status).toBe(200);
+    expect(((await stale.json()) as { staleChoices: string[] }).staleChoices).toEqual(["D11-mitori:x"]);
     // 読むだけなので、監査ログには残らない
     expect(auditRows(before)).toEqual([]);
   });
