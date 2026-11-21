@@ -26,7 +26,7 @@ CHECKS.push(g09);
 
 /**
  * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。
- * 一覧にない種類は、点検がどう判定しても条件つきで出る（design.md §12-3）。出荷の時点では空
+ * 一覧にない種類は、点検がどう判定しても条件つきで出る（design.md §12-3）。2026-11-21 に、表の行の標本で原文と合った 4 種類を利用者の判断で足した（sources/research/certain-sample.md）
  */
 export const CERTAIN: ReadonlySet<string> = new Set((raw.certain as { messageKey: string; verifiedIn: string }[]).map((c) => c.messageKey));
 

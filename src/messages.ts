@@ -120,7 +120,7 @@ const TABLE_TEXT: Record<string, string> = {
   "G06.master_limit": "コード {code} は、医科診療行為マスターの上限回数が {limit} 回ですが、このレセプトに {count} 回あります。上限回数の単位（月か、ほかの期間か）はマスターの仕様に書かれていないので、告示・通知を確かめてください",
 };
 
-/** 言い切りの文。言い切りの候補（特例条件がなく、単位が日・月・同じ算定単位）の種類だけ。出るのは、config/generic-checks.json の certain に載せた種類に限る（出荷の時点では空） */
+/** 言い切りの文。言い切りの候補（特例条件がなく、単位が日・月・同じ算定単位）の種類だけ。出るのは、config/generic-checks.json の certain に載せた種類に限る（2026-11-21 に 4 種類：G03.inpatient_only・G03.clinic_only・G05.same_unit・G06.day） */
 export const GENERIC_TEXT_CERTAIN: Record<string, string> = {
   "G04.day": "コード {child} は、同じ日の {parent} に含まれるので、別に算定できません。同じ日（{days}日）に両方あります",
   "G04.month": "コード {child} は、同じ月の {parent} に含まれるので、別に算定できません。同じレセプトに両方あります",

@@ -53,8 +53,8 @@ describe("evaluateGeneric の骨組み", () => {
     expect(r.notRun[0]).toMatchObject({ check: "G01", reason: "noSnapshot" });
   });
 
-  it("言い切り（確定）は、一覧（config/generic-checks.json の certain）に載った種類だけ。一覧は空で、点検が確定と判定しても条件つきで出る", () => {
-    expect([...CERTAIN]).toEqual([]);
+  it("言い切り（確定）は、一覧（config/generic-checks.json の certain）に載った種類だけ。一覧にない種類は、点検が確定と判定しても条件つきで出る", () => {
+    expect(CERTAIN.has("G01.fake")).toBe(false);
     const sure: GenericCheck = { id: "G01", kind: "コード", run: () => [{ check: "G01", kind: "コード", certainty: "確定", units: [0], codes: ["x"], messageKey: "G01.fake", params: {}, source: { data: "shinryo", ref: "code=x" } }] };
     const db = smallMasters();
     expect(evaluateGeneric(claimOf(), db, about, [sure]).findings.map((f) => f.certainty)).toEqual(["条件つき"]);

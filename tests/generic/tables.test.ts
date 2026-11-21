@@ -13,7 +13,7 @@ import { put, source, GEN } from "./small-masters";
 import { C, putHaihan, tensuhyoMasters } from "./small-tensuhyo";
 
 const about = { yearMonth: YM, generation: GEN };
-/** 言い切りの候補の種類を、全部一覧に載せたつもりで掛ける（候補かどうかを見るため。出荷の一覧は空） */
+/** 言い切りの候補の種類を、全部一覧に載せたつもりで掛ける（候補かどうかを見るため。出荷の一覧は 4 種類だけ） */
 const ALL: ReadonlySet<string> = new Set(Object.keys(GENERIC_TEXT_CERTAIN));
 type Unit = TimedClaim["units"][number];
 /** 単位 1 つ：コードの並びと、算定日（同じ日を重ねれば、その日の回数） */
@@ -27,8 +27,9 @@ const run = (units: Unit[], db = tensuhyoMasters(), certain = ALL): GenericFindi
 const brief = (fs: GenericFinding[]) => fs.map((f) => [f.messageKey, f.certainty, ...f.codes]);
 
 describe("骨組み", () => {
-  it("出荷の一覧（config/generic-checks.json の certain）は空：G04〜G06 がどう判定しても、条件つきで出る。文も言い切らない", () => {
-    expect([...CERTAIN]).toEqual([]);
+  it("出荷の一覧（config/generic-checks.json の certain）は標本で確かめた 4 種類だけ：一覧にない種類は、G04〜G06 がどう判定しても条件つきで出る。文も言い切らない", () => {
+    // 2026-11-21 の利用者の判断（design/iji-context/sources/research/certain-sample.md で 30 行中 30 行が原文と合った種類）
+    expect([...CERTAIN].sort()).toEqual(["G03.clinic_only", "G03.inpatient_only", "G05.same_unit", "G06.day"]);
     const fs = run([unit([C.zaiisoukan], [20]), unit([C.shohosen], [5]), unit([C.sanso], [20]), unit([C.jikochu], [20]), unit([C.handan], [5, 19])], tensuhyoMasters(), CERTAIN);
     expect(brief(fs)).toEqual([["G04.month", "条件つき", C.zaiisoukan, C.shohosen], ["G05.month", "条件つき", C.sanso, C.jikochu], ["G06.month", "条件つき", C.handan]]);
     for (const f of fs) {
