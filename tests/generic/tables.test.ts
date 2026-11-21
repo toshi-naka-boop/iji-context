@@ -227,18 +227,32 @@ describe("G06 算定回数", () => {
     expect(brief(run([{ items: [{ kind: "SI", code: C.dx }] }, { items: [{ kind: "SI", code: C.dx }] }]))).toEqual([["G06.month", "確定", C.dx]]);
   });
 
-  it("週（A61。特例条件あり）：暦の週（日曜〜土曜）に上限を超えるときだけ、条件つき。7 日以内に 4 回あっても、暦の週で分かれれば出ない", () => {
-    // 4 日（日）〜10 日（土）の週に 4 回
-    const fs = run([unit([C.houmon], [5, 6, 7, 8])]);
+  it("週（A61。特例条件あり）：暦の週（日曜〜土曜）に上限を超え、かつ連続する 7 日に上限の 2 倍を超えるときだけ、条件つき", () => {
+    // 4 日（日）〜10 日（土）の週に 7 回（上限 3 の 2 倍を超える）
+    const fs = run([unit([C.houmon], [4, 5, 6, 7, 8, 9, 10])]);
     expect(brief(fs)).toEqual([["G06.week_cond", "条件つき", C.houmon]]);
-    expect(fs[0].params).toEqual({ code: C.houmon, limit: "3", days: "5・6・7・8", count: "4" });
+    expect(fs[0].params).toEqual({ code: C.houmon, limit: "3", days: "4・5・6・7・8・9・10", count: "7" });
+    // 同じ週に 4 回（上限は超えるが 2 倍以下）：起算日から数える 7 日の期間が 2 つに分かれていれば正しい請求であり得るので、出ない（round-32 codex-2）
+    expect(run([unit([C.houmon], [5, 6, 7, 8])])).toEqual([]);
     // 2 日（金）・3 日（土）｜4 日（日）・5 日（月）：暦の週では 2 回ずつ
     expect(run([unit([C.houmon], [2, 3, 4, 5])])).toEqual([]);
     expect(run([unit([C.houmon], [5, 6, 7])])).toEqual([]);
     // 特例条件のない週の上限でも、言い切らない（数え方がデータにない）
     const db = tensuhyoMasters();
     db.prepare("UPDATE kaisu SET tokurei = '0' WHERE unit_code = 138").run();
-    expect(brief(run([unit([C.houmon], [5, 6, 7, 8])], db))).toEqual([["G06.week", "条件つき", C.houmon]]);
+    expect(brief(run([unit([C.houmon], [4, 5, 6, 7, 8, 9, 10])], db))).toEqual([["G06.week", "条件つき", C.houmon]]);
+  });
+
+  it("週の上限 1（round-32 codex-2）：同じ週の 2 回（別々の期間であり得る）は出ない。同じ週に 3 回あれば出る", () => {
+    const db = tensuhyoMasters();
+    db.prepare("UPDATE kaisu SET tokurei = '0', limit_count = 1 WHERE unit_code = 138").run();
+    db.prepare("DELETE FROM kaisu WHERE unit_code = 121").run();
+    // 5 日（月）・8 日（木）：同じ暦の週に 2 回。指示日から 7 日の期間が 2 つなら正しい
+    expect(run([unit([C.houmon], [5, 8])], db)).toEqual([]);
+    // 5 日・6 日・8 日：同じ週に 3 回（7 日の中に、上限 1 の 2 倍を超える回数）
+    const fs = run([unit([C.houmon], [5, 6, 8])], db);
+    expect(brief(fs)).toEqual([["G06.week", "条件つき", C.houmon]]);
+    expect(fs[0].params).toEqual({ code: C.houmon, limit: "1", days: "5・6・8", count: "3" });
   });
 
   it("特例条件ありの上限は、日・月でも条件つき", () => {
