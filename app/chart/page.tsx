@@ -11,6 +11,7 @@ import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
 import { Notice } from "../consent";
+import { getJson, postJson } from "../get-json";
 import SAMPLES from "../../fixtures/charts/samples.json";
 import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
@@ -26,13 +27,6 @@ const sampleOf = (claimId: string) => (SAMPLES as unknown as Record<string, Samp
 
 const EMPTY: ChartNote = { s: "", o: "", a: "", p: "", rx: "" };
 const yesNo = (b: boolean | null, yes: string, no: string) => (b === null ? "分からない" : b ? yes : no);
-
-async function api<T>(url: string, body?: unknown): Promise<T> {
-  const r = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error ?? "エラー");
-  return d as T;
-}
 
 export default function Chart() {
   const router = useRouter();
@@ -51,7 +45,7 @@ export default function Chart() {
   /** 確定したカルテ（確定したら、同じ画面に算定行と指摘を出す） */
   const [confirmed, setConfirmed] = useState<{ claimId: string; date: string } | null>(null);
   useEffect(() => {
-    api<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
+    getJson<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
   }, []);
 
   async function read() {
@@ -59,7 +53,7 @@ export default function Chart() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api<Extracted>("/api/chart", { claimId: p.claimId, kind, note });
+      const r = await postJson<Extracted>("/api/chart", { claimId: p.claimId, kind, note });
       setEx(r);
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
     } catch (e) {
@@ -72,7 +66,7 @@ export default function Chart() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api<{ note: ChartNote; unmatched: string[] }>("/api/chart/soap", { text: free });
+      const r = await postJson<{ note: ChartNote; unmatched: string[] }>("/api/chart/soap", { text: free });
       setNote(r.note);
       setUnmatched(r.unmatched);
     } catch (e) {
@@ -93,7 +87,7 @@ export default function Chart() {
         fr.onerror = () => ng(new Error("画像を読み込めませんでした"));
         fr.readAsDataURL(file);
       });
-      const r = await api<{ text: string }>("/api/chart/image", { imageBase64: b64 });
+      const r = await postJson<{ text: string }>("/api/chart/image", { imageBase64: b64 });
       setFree(r.text);
       setNote(EMPTY);
       setUnmatched([]);
@@ -107,7 +101,7 @@ export default function Chart() {
     if (!ex || !p) return;
     setErr("");
     try {
-      const r = await api<{ claimId: string; date: string }>(`/api/chart/${ex.id}`, { facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f) });
+      const r = await postJson<{ claimId: string; date: string }>(`/api/chart/${ex.id}`, { facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f) });
       setConfirmed(r);
     } catch (e) {
       setErr((e as Error).message);
