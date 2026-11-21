@@ -14,8 +14,12 @@ const NONE = "動いた点検の、点検した範囲では指摘はありませ
 const names = (list: { check: string; kind: string }[]) => list.map((c) => `${c.check}（${c.kind}）`).join("、");
 const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.code} ${c.name}` : c.code);
 
-/** scope が full なら、点検の範囲を項目ごとに出す。line なら 1 行にまとめる。skippedLines は、コードに直せないので掛けなかった行の数 */
-export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number }) {
+/** scope が full なら、点検の範囲を項目ごとに出す。line なら 1 行にまとめる。skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば） */
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined }) {
+  const rowLink = (c: { code: string; name: string | null }) => {
+    const href = rowHref?.(c.code);
+    return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
+  };
   const noData = generic.notRun.filter((n) => n.reason === "noMasters" || n.reason === "noSnapshot");
   const notReady = generic.notRun.filter((n) => n.reason === "notReady");
   const notBuilt = generic.notRun.filter((n) => n.reason === "notBuilt");
@@ -34,7 +38,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
       {groupSameChild(generic.findings.filter((f) => f.check !== "G09")).map(([f, ...more], i) => (
         <div key={i} className={`notice ${f.certainty === "確定" ? "warn" : ""}`}>
           <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
-          {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map(rowText).join("、")}</div>}
+          {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
           <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
           {more.length > 0 && (
             <div className="muted">

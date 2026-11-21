@@ -400,6 +400,14 @@ describe("取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/c
     // 対象外の単位は 1 つ（往診料と、扱っていない加算の 2 行）。コード・点数・回数・日は UKE に書いてあるまま
     expect(c.others).toEqual([{ codes: ["114000110", "114704470"], points: 1045, count: 1, dates: [`${YM}-20`] }]);
     expect(c.otherRows).toBe(2);
+    // 全部の単位（引けた単位も対象外の単位も）が UKE の並びで 1 つに並び、単位ごとに見た点検が付く。データで動く点検は、動いたとき（マスターがあるとき）だけ全部の単位を見る
+    const ran = (c as Check & { generic: { ran: unknown[] } }).generic.ran.length > 0;
+    const rows = (c as Check & { rows: { unit: number; items: { code: string }[]; kubun: string[]; points: number; count: number; checkedBy: string }[] }).rows;
+    expect(rows.map((x) => x.unit)).toEqual(rows.map((_, i) => i));
+    const other = rows.filter((x) => x.kubun.length === 0);
+    expect(other.map((x) => [x.items.map((it) => it.code), x.points, x.checkedBy])).toEqual([[["114000110", "114704470"], 1045, ran ? "generic" : "none"]]);
+    expect(rows.filter((x) => x.kubun.length > 0).every((x) => x.checkedBy === (ran ? "rules+generic" : "rules"))).toBe(true);
+    expect(rows.reduce((s, x) => s + x.points * x.count, 0)).toBe(c.declared.ho);
     // 合計は 2 つ：UKE に書いてある請求の合計と、点検した行の小計。小計＋対象外の単位＝UKE の合計
     expect(c.subtotal).toBe(sumOf(c));
     expect(c.declared).toEqual({ ho: (c.subtotal as number) + 1045, ko: [] });

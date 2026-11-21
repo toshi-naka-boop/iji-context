@@ -63,7 +63,10 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
  * diseases＝傷病名（UKE の並びのまま。表にもマスターにもないコードは name が null）／
  * generic＝データで動く点検の指摘と、点検の範囲。指摘は、手書きの結果 hand と、行とコードの対応 mapped で、重なりの規則（src/generic/overlap.ts）を通したもの／
  * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
- * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない
+ * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない／
+ * rows＝UKE の全部の算定単位（単位の並びのまま。画面の「レセプトの行」の表）。items は単位の行のコードと、区分番号・名称（マスターのもの。なければ版の表のもの。どちらもなければ null）、
+ * kubun は手書きのルールの区分に引けた行の区分（引けない単位は空）、points は UKE に書いてある 1 回分の点数、
+ * checkedBy はその単位を見た点検：rules+generic／rules（データで動く点検が動いていない）／generic（手書きのルールの区分に引けない）／none（どちらも見ていない）
  */
 /** 基本マスターの断り書きに、電子点数表・コメント関連テーブル・チェックマスタの分を足す */
 type SheetNote = { later: boolean; newer: boolean };
@@ -80,15 +83,25 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
   const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}), diseases: diseaseCodes.map((code, i) => ({ code, suspected: claim.patient.diseases[i].modifiers?.includes(SUSPECTED_MODIFIER) === true })) };
   return withMasters((db) => {
     const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
+    const result = evaluateGeneric(claim, db, about);
+    // データで動く点検は、動いた点検があれば全部の単位を見ている（マスターがなければ、どれも動かない）
+    const genericRan = result.ran.length > 0;
     return {
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about), checkmasterNotesOf(db, about)) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
       // カルテ側の記録がない請求として判定している（recordsKnown は偽）。検算（G02）の数と、G02・G03 がしていないことを、点検の範囲に足す
-      generic: (() => {
-        const result = evaluateGeneric(claim, db, about);
-        return { ...genericOut(result, names, hand, rev, false, mapped), scope: genericScopeOf(claim, db, about, result) };
-      })(),
+      generic: { ...genericOut(result, names, hand, rev, false, mapped), scope: genericScopeOf(claim, db, about, result) },
+      rows: claim.units.map((u, i) => {
+        const own = mapped.filter((m) => m.unit === i);
+        const items = u.items.map(({ code }) => {
+          const kubun = own.find((m) => m.codes.includes(code))?.kubun;
+          const n = names?.items[code];
+          return { code, no: n?.no ?? (kubun ? rev.points[kubun].no : null), name: n?.name ?? (kubun ? rev.points[kubun].name : null) };
+        });
+        const checkedBy: "rules+generic" | "rules" | "generic" | "none" = own.length > 0 ? (genericRan ? "rules+generic" : "rules") : genericRan ? "generic" : "none";
+        return { unit: i, items, kubun: [...new Set(own.map((m) => m.kubun))], count: u.count, dates: datesOf(claim.yearMonth, u.days), points: u.points, checkedBy };
+      }),
       stopped: rev.rules.flatMap((rule) => {
         const by = partialBy(rule, rev, ctx);
         if (by === null) return [];

@@ -1,6 +1,6 @@
 "use client";
 // 取り込んだレセプトの点検（design.md §11-11・§11-13）：UKE に書いてあるとおりのまま（行もコメントも入れ替えずに）点検した結果を見せる。
-// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → 点検した行と小計 → 対象外の行 → UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
+// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → レセプトの行（全部の単位を UKE の並びで 1 つの表に。単位ごとに見た点検と指摘の印）→ 小計と UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
 // 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面。
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
 // 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
@@ -46,7 +46,10 @@ type Check = {
   generic?: GenericView;
   /** 対象外の行に左右されるルール（partial として扱ったルール）と、そうさせた行（all＝ルールごとには決められず、どのルールも） */
   stopped?: Stopped[];
+  /** UKE の全部の算定単位（単位の並びのまま）と、その単位を見た点検 */
+  rows?: Row[];
 };
+type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
 type Stopped = { ruleId: string; all: boolean; codes: { code: string; known: boolean; name: string | null; no: string | null }[] };
 /** 試算の結果。点検と同じ項目に、選んだ版と、点数の違いが付く */
 type Trial = Check & {
@@ -116,7 +119,30 @@ export default function UkeClaimCheck() {
   const findings = c?.findings ?? [];
   const lines = c?.lines ?? [];
   const others = c?.others ?? [];
+  const rows = c?.rows ?? [];
   const nameOf = (kubun: string) => lines.find((l) => l.kubun === kubun)?.name ?? kubun;
+  /** 行（区分）から、その行のある最初の単位への、ページ内のリンク先 */
+  const unitHref = (kubun: string) => {
+    const r = rows.find((x) => x.kubun.includes(kubun));
+    return r ? `#uke-unit-${r.unit}` : undefined;
+  };
+  const codeHref = (code: string) => {
+    const r = rows.find((x) => x.items.some((it) => it.code === code));
+    return r ? `#uke-unit-${r.unit}` : undefined;
+  };
+  /** 単位に当たる指摘を、種類ごとの件数にする（手書きのルールは行の区分で、データで動く点検は行のコードで当てる） */
+  const countBy = (kinds: string[]) => [...new Set(kinds)].map((k) => `${k} ${kinds.filter((x) => x === k).length}`).join("・");
+  const marksOf = (r: Row) => ({
+    hand: countBy(findings.filter((f) => f.lineRefs.some((k) => r.kubun.includes(k))).map((f) => f.kind)),
+    generic: countBy((c?.generic?.findings ?? []).filter((f) => f.codes.some((x) => r.items.some((it) => it.code === x.code))).map((f) => f.kind)),
+  });
+  const CHECKED_BY: Record<Row["checkedBy"], string> = {
+    "rules+generic": "手書きのルール＋データで動く点検",
+    rules: "手書きのルール",
+    generic: "データで動く点検",
+    none: c?.names ? "点検していない" : "マスターがなく、点検していない",
+  };
+  const recalc = c?.generic?.scope?.recalc;
   /** 対象外の行に左右されるルールを、そうさせた行が同じものどうしでまとめる */
   const stoppedGroups: { ruleIds: string[]; all: boolean; codes: Stopped["codes"] }[] = [];
   for (const s of c?.stopped ?? []) {
@@ -199,7 +225,7 @@ export default function UkeClaimCheck() {
               )}
               <div className="notice">カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。</div>
 
-              <h3 style={{ margin: 0 }}>ユスティの指摘</h3>
+              <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
               {(c.commentMissingCount ?? 0) > 0 && <p style={{ margin: 0 }}>記載もれを {c.commentMissingCount} 件見つけました。</p>}
               {KINDS.filter((k) => findings.some((f) => f.kind === k)).map((k) => (
@@ -207,7 +233,7 @@ export default function UkeClaimCheck() {
                   {findings.filter((f) => f.kind === k).map((f, i) => (
                     <div key={i} className="notice warn">
                       <span className="badge warn">{f.kind}</span> {findingText(f)}
-                      {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map(nameOf).join("、")}</div>}
+                      {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map((k, n) => <span key={n}>{n > 0 && "、"}{unitHref(k) ? <a href={unitHref(k)}>{nameOf(k)}</a> : nameOf(k)}</span>)}</div>}
                     </div>
                   ))}
                 </div>
@@ -215,9 +241,9 @@ export default function UkeClaimCheck() {
 
               {c.generic && (
                 <>
-                  <h3 style={{ margin: 0 }}>データで動く点検</h3>
+                  <h3 id="generic-findings" style={{ margin: 0 }}>データで動く点検</h3>
                   <p className="muted" style={{ margin: 0 }}>公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。</p>
-                  <GenericFindings generic={c.generic} scope="full" />
+                  <GenericFindings generic={c.generic} scope="full" rowHref={codeHref} />
                   {(c.sheetNotes?.later ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>診療年月より前の版のマスターを持っていないので、後の版で代えています：{c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。</p>}
                   {(c.sheetNotes?.newer ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>読み方を確かめた版より新しいデータです：{c.sheetNotes!.newer.join("、")}。</p>}
                 </>
@@ -248,55 +274,38 @@ export default function UkeClaimCheck() {
               )}
               <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />
 
-              <h3 style={{ margin: 0 }}>点検した行</h3>
+              <h3 style={{ margin: 0 }}>レセプトの行（{rows.length} 単位）</h3>
+              <p className="muted" style={{ margin: 0 }}>UKE に書いてある全部の行を、単位の並びのまま出しています。コード・点数・回数・日は UKE のままです（名称と区分番号は{c.names ? "マスターのもの。マスターにないコードは版の表の名称、どちらにもなければコードだけ" : "版の表のもの。マスターが入っていないので、版の表にないコードはコードだけ"}）。「点検」の列は、その単位を見た点検です。</p>
               <table className="emr-table">
                 <thead>
-                  <tr><th>区分</th><th>名称</th><th>回数</th><th>日</th><th>点数</th><th>小計</th></tr>
+                  <tr><th>区分番号</th><th>名称</th><th>回数</th><th>日</th><th>点数（1 回分）</th><th>点検</th></tr>
                 </thead>
                 <tbody>
-                  {lines.map((l, i) => (
-                    <tr key={i}>
-                      <td>{l.no}</td>
-                      <td>{l.name}</td>
-                      <td>{l.count}</td>
-                      <td>{days(l.dates)}</td>
-                      <td>{l.points === null ? "—" : num(l.points)}</td>
-                      <td>{l.points === null ? "—" : num(l.points * l.count)}</td>
-                    </tr>
-                  ))}
-                  {lines.length === 0 && <tr><td colSpan={6} className="muted">点検した行はありません。</td></tr>}
+                  {rows.map((r) => {
+                    const m = marksOf(r);
+                    return (
+                      <tr key={r.unit} id={`uke-unit-${r.unit}`}>
+                        <td>{r.items.map((it, n) => <div key={n}>{it.no ?? "—"}</div>)}</td>
+                        <td>{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{c.names?.items[it.code]?.todokede ? "　届出が要ります" : ""}</div>)}</td>
+                        <td>{r.count}</td>
+                        <td>{days(r.dates)}</td>
+                        <td>{num(r.points)}</td>
+                        <td>
+                          <span className="muted">{CHECKED_BY[r.checkedBy]}</span>
+                          {m.hand !== "" && <div><a href="#yusti-findings" className="badge warn">ユスティ：{m.hand}</a></div>}
+                          {m.generic !== "" && <div><a href="#generic-findings" className="badge">データ：{m.generic}</a></div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {rows.length === 0 && <tr><td colSpan={6} className="muted">行はありません。</td></tr>}
                 </tbody>
               </table>
-              <div className="notice">
-                <strong>点検した行の小計{trial ? "（この版の点数）" : ""}：{pts(c.subtotal)}</strong>
-                {others.length > 0 && <div>対象外の行を含まない小計です。請求の合計は、下の「UKE に書いてある合計」です。</div>}
-              </div>
-
-              {others.length > 0 && (
-                <>
-                  <h3 style={{ margin: 0 }}>点検の対象外の行（{c.otherRows} 行）</h3>
-                  <p className="muted" style={{ margin: 0 }}>対応していないコードを含む算定の単位です。UKE に書いてあるコード・点数・回数・日をそのまま出しています（{c.names ? "名称と区分番号は、マスターのものです。マスターにないコードは、コードだけを出します" : "マスターが入っていないので、名称は出せません"}）。</p>
-                  <table className="emr-table">
-                    <thead>
-                      <tr><th>コード{c.names ? "・名称" : ""}</th><th>回数</th><th>日</th><th>点数（1 回分）</th></tr>
-                    </thead>
-                    <tbody>
-                      {others.map((o, i) => (
-                        <tr key={i}>
-                          <td>{c.names ? o.codes.map((code, n) => <div key={n}>{coded(code)}</div>) : o.codes.join("、")}</td>
-                          <td>{o.count}</td>
-                          <td>{days(o.dates)}</td>
-                          <td>{o.points === null ? "—" : num(o.points)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-
               <div className={`notice ${others.length > 0 ? "warn" : "ok"}`}>
-                <strong>UKE に書いてある合計：{pts(c.declared?.ho)}</strong>
+                <strong>手書きのルールで点検した行の小計{trial ? "（この版の点数）" : ""}：{pts(c.subtotal)}　／　UKE に書いてある合計：{pts(c.declared?.ho)}</strong>
                 {(c.declared?.ko ?? []).map((k, i) => <div key={i}>公費 {i + 1}：{pts(k)}</div>)}
+                {others.length > 0 && <div>小計は、手書きのルールの区分に引けない行（{c.otherRows} 行）を含みません。請求の合計は「UKE に書いてある合計」です。</div>}
+                {recalc && <div>データで動く点検の検算：点数の書いてある {recalc.units} 単位のうち、再計算できた {recalc.checked} 単位、UKE の点数と合った {recalc.matched} 単位。</div>}
               </div>
 
               <h3 style={{ margin: 0 }}>摘要欄の記載</h3>
