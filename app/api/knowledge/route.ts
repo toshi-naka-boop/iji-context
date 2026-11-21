@@ -9,8 +9,8 @@ import { knowledgeBody, knowledgeQuery } from "../../../src/server/schemas/knowl
 
 export const GET = route({ roles: allow("GET /api/knowledge"), query: knowledgeQuery }, ({ query }) => (query.view === "queue" ? getApp().queue() : getApp().knowledgeList()));
 
-// 監査ログの対象は知識の id（提案は、直す先の知識があればその id）。要約・本文・却下の理由は入れない
-export const POST = route({ roles: allow("POST /api/knowledge"), body: knowledgeBody, audit: { target: ({ body }) => (body.action === "propose" ? body.relatesTo : body.id) } }, ({ body, user }) => {
+// 監査ログの対象は知識の id（提案は、直す先の知識があればその id。背反の組の知識は、請求 id と組）。要約・本文・条件の文・却下の理由は入れない
+export const POST = route({ roles: allow("POST /api/knowledge"), body: knowledgeBody, audit: { target: ({ body }) => (body.action === "propose" ? body.relatesTo : body.action === "pair" ? `${body.claimId} ${body.a}:${body.b}:${body.tani}` : body.id) } }, ({ body, user }) => {
   const a = getApp();
   if (body.action === "verify") {
     // 検証する人の名前は受け取らない。誰が検証したかは、セッションの本人として監査ログに残る
@@ -18,6 +18,11 @@ export const POST = route({ roles: allow("POST /api/knowledge"), body: knowledge
     return a.verify(body.id, body.approve, body.reason);
   }
   if (body.action === "empathy") return a.empathize(body.id);
+  // 背反の組の院内の知識（design.md §14-2）。権限は院内層の作成（提案）と同じ。サーバーがその請求の G05 を計算し直して照らす
+  if (body.action === "pair") {
+    const { action: _a, ...input } = body;
+    return a.createPair(input);
+  }
   return a.propose(body);
 });
 

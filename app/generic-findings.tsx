@@ -7,6 +7,7 @@
 // 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）は、answer（請求 id と、答えを残したあとに読み直す関数）を渡した画面（取り込んだレセプトの点検）でだけ、指摘の下に選択肢を出す
 // 背反の組の院内の知識（design.md §14-3）は、どの画面でも添えた文を出す
 import { AskInput } from "./fact-input";
+import { LocalPairCreate } from "./local-pair";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
@@ -71,6 +72,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
           {/* 院内の知識（design.md §14-3）：Lv.5 以上は条件とボタン、Lv.1〜4 はヒント。食い違い・前回の確かめ（未検証）は一言だけ */}
           {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
+          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} onSaved={answer.onSaved} />}
           {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
           {more.length > 0 && (
             <div className="muted">

@@ -201,11 +201,13 @@ function withLocal(about: GenericAbout, ym: string, row: Row, days: (number | un
   const allow = approved.filter((k) => k.polarity === "allow");
   const avoid = approved.filter((k) => k.polarity === "avoid");
   const view = (ks: typeof list) => ks.map((k) => ({ id: k.id, rev: k.rev, polarity: k.polarity, conditionNote: k.conditionNote }));
-  const attach = (mode: LocalAttach["mode"], ks: typeof list, dates: string[] = []): Record<string, string> => ({ local: JSON.stringify({ mode, pair, knowledge: view(ks), dates } satisfies LocalAttach) });
+  // 対象の指摘には組を印として付ける（作る入口を出す。design.md §14-2）
+  const tag = { localPair: JSON.stringify(pair) };
+  const attach = (mode: LocalAttach["mode"], ks: typeof list, dates: string[] = []): Record<string, string> => ({ ...tag, local: JSON.stringify({ mode, pair, knowledge: view(ks), dates } satisfies LocalAttach) });
   // 承認済みが 1 つもなければ、判断の軸にしない。未検証だけは「前回の確かめ」として id を添える
   if (approved.length === 0) {
     const unverified = list.filter((k) => k.status === "未検証");
-    return [unverified.length > 0 ? make(days, undefined, attach("unverified", unverified)) : make(days)];
+    return [unverified.length > 0 ? make(days, undefined, attach("unverified", unverified)) : make(days, undefined, tag)];
   }
   if (allow.length > 0 && avoid.length > 0) return [make(days, undefined, attach("conflict", approved))];
   out.used.push(...approved.map((k) => k.id));

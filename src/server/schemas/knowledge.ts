@@ -1,6 +1,8 @@
 // 知識（一覧・検証・共感・提案）と、査定・返戻の通知の入力。検証した人の名前は受け取らない（セッションの本人が監査ログに残る）
 import { z } from "zod";
 import { LAYER_SLUG } from "../../lifecycle/layers";
+import { LOCAL_PAIR_BASES } from "../../messages";
+import { claimId } from "./cases";
 
 /**
  * 知識の id（src/lifecycle/store.ts の createKnowledge が作る「層/slug」の形）。knowledge/ の下のディレクトリ名になるので、
@@ -19,6 +21,17 @@ export const knowledgeBody = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("verify"), id: knowledgeId, approve: z.boolean(), reason: z.string().max(500).optional() }),
   z.strictObject({ action: z.literal("empathy"), id: knowledgeId }),
   z.strictObject({ action: z.literal("propose"), summary: z.string().max(1024), body: z.string().max(4000), relatesTo: knowledgeId.nullable().optional() }),
+  // 背反の組の院内の知識を、取り込んだレセプトの点検の G05 の指摘から作る（design.md §14-2）。condition は根拠を除いた条件の文（根拠と合わせて 200 字まで。長さの文言は処理が持つ）
+  z.strictObject({
+    action: z.literal("pair"),
+    claimId,
+    a: z.string().regex(/^\d{9}$/),
+    b: z.string().regex(/^\d{9}$/),
+    tani: z.literal([1, 2, 3]),
+    polarity: z.enum(["allow", "avoid"]),
+    basis: z.enum(LOCAL_PAIR_BASES),
+    condition: z.string().max(200),
+  }),
 ]);
 
 /** 通知の PDF の上限（5MB）と、それを base64 で包んだ JSON の本文の上限 */

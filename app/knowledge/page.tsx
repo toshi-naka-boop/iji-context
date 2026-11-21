@@ -6,10 +6,11 @@ import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
 import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-check";
+import { LOCAL_PAIR_TEXT } from "../../src/messages";
 
 const STATUS_COLOR: Record<string, string> = { 承認済み: "var(--accent)", 未検証: "var(--sky)", 要再検証: "var(--warn-mark)", 停止: "#5a4632", 保管: "var(--muted)" };
 
-type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null };
+type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null; pair?: { a: string; b: string; tani: number; table: string; conditionNote: string; emDecided: boolean } };
 type Peer = { id: string; question: string; status: string; answer: string | null; answered_by: string | null; knowledge_id: string | null };
 
 async function post(url: string, body: unknown) {
@@ -97,6 +98,8 @@ export default function Knowledge() {
           <div key={k.id} style={{ marginTop: 8 }}>
             <span className={`badge ${k.status === "要再検証" || k.status === "停止" ? "warn" : ""}`} style={{ marginRight: 4 }}>{k.status === "要再検証" ? "要再検証（確かめ直し待ち）" : k.status}</span>
             {k.layer === "地域" ? "地域ルール" : k.layer === "ベテラン" ? "医事責任者の判断" : "院内ルール"}：{k.summary.replace("（中身は伏せています）", "")}
+            {/* 背反の組の院内の知識（design.md §14）：条件の文と、EM の例外の組が入った組か */}
+            {k.pair && <div className="muted">{k.pair.conditionNote}{k.pair.emDecided ? `　${LOCAL_PAIR_TEXT.emDecided}` : ""}</div>}
             <OfficialBlock knowledgeId={k.id} official={k.official!} rights={checkRights} onChanged={load} />
           </div>
         ))}

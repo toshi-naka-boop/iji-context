@@ -11,7 +11,7 @@ import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
-import { createLocalPairs } from "./app/local-pairs";
+import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
 import { createPatients, type CoverageInput } from "./app/patients";
@@ -60,6 +60,7 @@ export function openApp(paths: AppPaths) {
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
   const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (_claimId, clerkId) => localPairs.aboutFor(clerkId));
+  const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
@@ -137,6 +138,7 @@ export function openApp(paths: AppPaths) {
     ...clock,
     ...clerks,
     ...ukeCheck,
+    createPair: localPairOps.createPair,
     ...erase,
     ...revision,
     ...doctorFacts,
