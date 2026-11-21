@@ -1,6 +1,6 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
+  "currentNode": "完了",
+  "status": "awaiting_user",
   "designVersion": "v24",
   "approvedDesignVersion": "v24",
   "approvedDesignSha256": "83fdd8181c1afaa2cd94d8452adf20f619fc92d453c4121253a809385fe21b4c",
@@ -15,7 +15,7 @@
     "ledger.md",
     "handoff-opus.md"
   ],
-  "nextAction": "Opus が段 14 を仕上げて束ね、v24 全体の反証へ。Fable が戻ったら handoff-opus.md のチェックリストで見直す",
+  "nextAction": "v24 の段 10a〜14 と反証 round-32 の修正を feat/integration に束ねた（Opus）。Fable が戻ったら handoff-opus.md のチェックリストで見直す。利用者の判断待ち：K5 のターミナルケア加算の算定日、画面の使い勝手の 2 点、実在のレセプトでの精度の確認（言い切りに上げる種類）",
   "lastUpdated": "2026-11-21",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
