@@ -111,6 +111,10 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(c.generic.findings.length).toBeGreaterThan(0);
     expect(c.generic.findings.every((f) => f.check === "G01" && f.certainty === "条件つき" && f.text.includes("持っているどの版のマスターにもありません"))).toBe(true);
     expect(c.generic.findings.flatMap((f) => f.codes.map((x) => x.code))).not.toContain("114704470");
+    // 全部の単位：引けた単位は手書きのルールとデータで動く点検の両方が、対象外の単位はデータで動く点検だけが見た。名称はマスターのもの
+    const rows = (c as Check & { rows: { kubun: string[]; items: { code: string; no: string | null; name: string | null }[]; checkedBy: string }[] }).rows;
+    expect(rows.filter((x) => x.kubun.length === 0).map((x) => [x.items, x.checkedBy])).toEqual([[[{ code: "114000110", no: "C000", name: r2026.points.C000.name }, { code: "114704470", no: "C000", name: "手作りの加算（往診料）" }], "generic"]]);
+    expect(rows.filter((x) => x.kubun.length > 0).every((x) => x.checkedBy === "rules+generic")).toBe(true);
     // 止まるルール：往診料（C000）を読むルールだけ。止めた行と、その区分番号を返す
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.filter((r) => r.reads!(r2026).some((k) => k.startsWith("C000"))).map((r) => r.id));
     expect(c.stopped.map((s) => s.ruleId)).toEqual(["R08", "R10", "R11", "R15", "R17"]);
