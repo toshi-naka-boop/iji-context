@@ -19,6 +19,7 @@ const dataset = z.strictObject({
   /** 公開ページ */
   page: https,
   download: download.refine((d) => (d.url === undefined) !== (d.href === undefined), "url か href のどちらか 1 つ"),
+  /** 読み取りは Shift_JIS に決め打ち（src/masters/csv.ts）なので、値は読まない。残す理由：公開元が文字コードを変えたら、config の読み込みで止まるように（round-32 O-20） */
   encoding: z.literal("shift_jis"),
   /** この日（西暦 8 桁）より前の更新分は、この世代のデータとして扱わない */
   since: z.string().regex(/^\d{8}$/).optional(),

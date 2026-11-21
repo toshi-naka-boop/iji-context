@@ -2,8 +2,6 @@
 // 手書きのルール（src/engine/ の evaluate）は変えない。指摘は定型文と値だけで作り、LLM は使わない。
 // 入っているのは G01〜G09
 import raw from "../../config/generic-checks.json";
-import type { Revision } from "../engine/revisions/types";
-import type { ClaimLine } from "../engine/types";
 import { checkReady, type MastersDb } from "../masters/db";
 import { g01 } from "./g01";
 import { g02 } from "./g02";
@@ -63,12 +61,4 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
   }
   // G08 と G09 の重複は、ここでは消さない：手書きのルールとの重なり（src/generic/overlap.ts）で G08 が消えることがあるので、その後で消す（round-32 O-16）
   return result;
-}
-
-/**
- * 区分キーの算定行（月末の点検で入力した行・カルテから導いた行）を、点検に渡す形にする（design.md §12-2）：区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。
- * コードに直せない区分（uncoded）と、項目のコードが行に載っていない包括の検査の区分は、掛けない
- */
-export function unitsOfLines(lines: Pick<ClaimLine, "kubun">[], rev: Revision): GenericClaim {
-  return { units: lines.flatMap((l) => (Object.hasOwn(rev.codes, l.kubun) ? [{ items: [{ kind: "SI" as const, code: rev.codes[l.kubun].primary }] }] : [])) };
 }

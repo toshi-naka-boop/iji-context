@@ -36,7 +36,7 @@ export type GenericFinding = {
 
 /**
  * 点検する請求。UKE の単位とコードのまま（parseUke の UkeClaim をそのまま渡せる）。この段（G01）が読むのは、単位の行の種類とコードだけ。
- * カルテから導いた算定行は、区分をコードに直してから渡す（unitsOfLines）
+ * カルテから導いた算定行は、区分をコードに直してから渡す（src/generic/overlap.ts の claimOfLines）
  */
 export type GenericClaim = {
   units: { items: Pick<UkeItem, "kind" | "code">[] }[];

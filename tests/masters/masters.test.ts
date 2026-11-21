@@ -147,6 +147,20 @@ describe("取り込みと形式の検査", () => {
     }
   });
 
+  it("判定に使わない列（layout の loose）は形を見ない：値が仕様の形と違っても、表ごと落とさずに文字のまま持つ（round-32 O-20）", () => {
+    const raw = path.join(tmp, "loose");
+    // 項番 14（後期高齢者医療適用区分）・項番 43（時間加算区分）は判定に使わない。仕様にない値を入れる
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis([SHINRYO[0], shinryoRow(HOUMON, "x", 890, { 14: "9", 43: "AB" })]));
+    const { db, rejected } = build(raw);
+    expect(rejected).toEqual([]);
+    expect(count(db, "shinryo", "20261102")).toBe(2);
+    expect(db.prepare("SELECT kouki, time_kasan FROM shinryo WHERE code = ?").get(HOUMON)).toEqual({ kouki: "9", time_kasan: "AB" });
+    // 判定に使う列は、今までどおり形を見る（上の「値の区分」の例）
+    for (const l of LAYOUTS) for (const col of l.loose ?? []) expect(l.columns.some((x) => x.col === col), `${l.id}.${col}`).toBe(true);
+    const shinryo = LAYOUTS.find((l) => l.id === "shinryo")!;
+    expect(shinryo.loose).not.toContain("nyugai");
+  });
+
   it("見出しの行が仕様と違うファイル・同じ形の名前が 2 つあるフォルダ・世代より前の更新分は取り込まない", () => {
     const raw = path.join(tmp, "b");
     put(raw, "checkmaster", "20261030", "IY_HeiyoKinki_x.csv", sjis([["医薬品コード", "相手", "予備1", "予備2", "予備3", "予備4", "予備5", "予備6", "変更区分", "参照範囲"]]));

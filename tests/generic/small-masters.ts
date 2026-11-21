@@ -43,6 +43,6 @@ export function smallMasters(file = ":memory:", snapshot = "20261001"): Database
   put(db, "tokutei", snapshot, { code: DEVICE, name: "手作りの特定器材" });
   put(db, "comment", snapshot, { code: COMMENT, name: "手作りのコメントの定型文" });
   put(db, "shobyo", snapshot, { code: DISEASE, name: "手作りの傷病名" });
-  db.prepare("INSERT INTO checks_ready (check_id, ready, reason, missing) VALUES ('G01', 1, '', '[]'), ('G02', 0, '錨がない：手作りの表', '[]')").run();
+  db.prepare("INSERT INTO checks_ready (check_id, ready, reason) VALUES ('G01', 1, ''), ('G02', 0, '錨がない：手作りの表')").run();
   return db;
 }

@@ -85,7 +85,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(c.others.map((o) => o.codes)).toEqual([["114000110", "114704470"]]);
     expect([c.generic.findings, c.generic.ran]).toEqual([[], []]);
     expect(c.generic.notRun[0]).toEqual({ check: "G01", kind: "コード", reason: "noMasters", text: "マスターが入っていないので、していません" });
-    expect(c.generic.notRun.every((n) => n.reason === "noMasters" || n.reason === "notBuilt")).toBe(true);
+    // G01〜G09 が全部入っている（まだ入っていない点検＝notBuilt はない。round-32 O-20）：どれも、マスターがないので動かなかった
+    expect(c.generic.notRun.map((n) => [n.check, n.reason])).toEqual(["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"].map((id) => [id, "noMasters"]));
     // どのルールも partial（ルールごとには決められない）。dropped は、指摘を実際に捨てたルール（情報不足 unsupportedLines が出ている）
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.map((r) => r.id));
     expect(c.stopped.every((s) => s.all && s.codes.length === 0)).toBe(true);

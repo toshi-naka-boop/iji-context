@@ -20,7 +20,7 @@ export const mappedLinesOf = (lines: Pick<ClaimLine, "kubun">[], origins: { unit
 
 /**
  * 区分キーの算定行（月末の点検で入力した行・カルテから導いた行）を、算定日つきの請求と、行とコードの対応にする（design.md §12-2）：
- * 区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。コードに直せない区分（uncoded）と、包括の検査の区分は掛けない（src/generic/index.ts の unitsOfLines と同じ）。
+ * 区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。コードに直せない区分（uncoded）と、包括の検査の区分は掛けない。
  * きざみで数える区分（行の回数が 項目数 × 回数 になっている）は、算定のある日ごとに 1 回として渡す（少なく数える側）
  */
 export function claimOfLines(lines: ClaimLine[], rev: Revision): { claim: TimedClaim; mapped: MappedLine[] } {

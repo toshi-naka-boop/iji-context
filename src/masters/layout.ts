@@ -48,6 +48,11 @@ export type TableLayout = {
   index: string[][];
   /** 最初の索引を一意にする（1 枚の中で、同じコードの行は 1 つ） */
   unique?: true;
+  /**
+   * 判定に使わない列（src/generic・src/server・app から読まれない列）。取り込むが、値の形は見ない：形に合わない値は文字のまま持つ（round-32 O-20）。
+   * 公開元の次の版で、使わない列の桁が変わっても、使う表ごと取り込まれなくならないようにする。判定に使う列（ここにない列）は、今までどおり形を見て、合わなければ表を作らない
+   */
+  loose?: string[];
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -106,6 +111,7 @@ const shinryo: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["kouki", "shukei_gai", "jitsunissu", "nissu_kaisu", "limit_error", "chu_code", "chu_seq", "tsusoku_age", "time_kasan", "kensa_kind", "kensa_group", "kokuji2", "kou"],
 };
 
 /** 医薬品マスター（[基] p16〜19。42 項目） */
@@ -126,6 +132,7 @@ const iyakuhin: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["zaikei", "keika_until"],
 };
 
 /** 特定器材マスター（[基] p21〜24。38 項目） */
@@ -148,6 +155,7 @@ const tokutei: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["keika_until"],
 };
 
 /** 傷病名マスター（[基] p7〜10。46 項目） */
@@ -168,9 +176,13 @@ const shobyo: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["tandoku_kinshi", "hoken_gai", "nanbyo"],
 };
 
-/** 修飾語マスター（[基] p12〜13。19 項目） */
+/**
+ * 修飾語マスター（[基] p12〜13。19 項目）。判定には使わない（疑い病名は、UKE の修飾語コード 8002 で見る。src/uke/diseases.ts）。
+ * 残す理由：基本マスター 6 本の件数と値ごとの件数の照合（EM §2-11 表 1・表 3）と、設定の画面の取り込んだデータの一覧に出すため（round-32 O-20）
+ */
 const shushokugo: TableLayout = {
   id: "shushokugo",
   table: "shushokugo",
@@ -201,6 +213,7 @@ const comment: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["pattern", "sentaku"],
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -233,6 +246,7 @@ const hojo: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
+  loose: ["unit2", "group2", "unit3", "group3", "haihan_day", "haihan_month", "haihan_same", "haihan_week"],
 };
 
 /** 包括・被包括テーブル（[点] p16・p20・p27。7 項目）。補助マスターのグループ番号と同じグループ番号の行の行為（子）が、その行為（親）に包括される */
@@ -311,6 +325,7 @@ const commentKanren: TableLayout = {
     c(17, "kaisu", "算定回数", { check: /^\d{3}$/, as: "int" }), // p7。条件区分 03・13 のとき、コメントが要る算定回数。ほかは 000
   ],
   index: [["code"], ["comment_code"]],
+  loose: ["jotai_code"],
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -344,6 +359,7 @@ const cmTekio: TableLayout = {
     c(23, "change", "変更区分", oneOf("0", "1", "3", "5", "9")), // ★ p19・別表5 p30。9＝今回の公開で廃止した事例
   ],
   index: [["code", "shobyo"]],
+  loose: ["check_kubun", "max_dose", "max_days"],
 };
 
 /** 医科診療行為傷病名関連マスタファイル（[チ] p27〜28。13 項目） */

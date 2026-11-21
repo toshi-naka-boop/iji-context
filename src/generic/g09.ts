@@ -37,7 +37,7 @@ const BEFORE_R8_CASES: ReadonlySet<string> = new Set(["20261030"]);
 type Why = "none" | "uncoded" | "unknown";
 /** 見た数：all＝レセプトにあるコードの数（重複を除く）、inTable＝そのうち表にあるコード、conditioned＝そのうち性別・年齢の条件つきの行があるので適応を見なかったコード */
 type Seen = { all: number; inTable: number; conditioned: number };
-export type G09Look = { findings: GenericFinding[]; iy: Seen; si: Seen; why: Why | null; snapshot: string; later: boolean; shohosen: boolean };
+export type G09Look = { findings: GenericFinding[]; iy: Seen; si: Seen; why: Why | null; snapshot: string; shohosen: boolean };
 
 /** コード → そのコードのある単位（請求の units の添字） */
 function unitsOf(claim: GenericClaim, kind: "SI" | "IY"): Map<string, number[]> {
@@ -65,7 +65,7 @@ export function g09Look(claim: GenericClaim, masters: MastersDb, about: GenericA
   const s = pick.snapshot;
   const drugs = unitsOf(claim, "IY");
   const acts = unitsOf(claim, "SI");
-  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0, conditioned: 0 }, si: { all: acts.size, inTable: 0, conditioned: 0 }, why: null, snapshot: s, later: pick.later, shohosen: false };
+  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0, conditioned: 0 }, si: { all: acts.size, inTable: 0, conditioned: 0 }, why: null, snapshot: s, shohosen: false };
 
   // レセプトの傷病名。confirmed＝疑い病名でない記載が 1 つでもあるコード
   const diseases = (about as GenericAboutMore).diseases;

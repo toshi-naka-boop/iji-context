@@ -68,7 +68,7 @@ function masters(snapshot = SNAP): Database.Database {
   device(OXYGEN, { price_kind: "1", price: 0.42, sanso: "4" });
   device(OXYGEN_RATE, { price_kind: "5", price: 30, sanso: "1" });
   device(IRIDIUM, { price_kind: "2", price: 0 });
-  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason, missing) VALUES ('G02', 1, '', '[]'), ('G03', 1, '', '[]')").run();
+  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G02', 1, ''), ('G03', 1, '')").run();
   return db;
 }
 
