@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { hxRowsOf } from "../../scripts/check-haihan-exceptions";
-import { CLAIM_FACT_KEYS } from "../../src/claim/facts";
+import { DATED_FACT_KEYS } from "../../src/claim/facts";
+import { targetOfNeed } from "../../src/engine";
+import type { NeedKey } from "../../src/engine/types";
 import { HAIHAN } from "../../src/generic/haihan";
 
 const em = readFileSync(path.join(__dirname, "../../design/iji-context/sources/evidence-master-iji-context.md"), "utf8");
@@ -52,8 +54,9 @@ describe("config/haihan-exceptions.json と EM §2-12", () => {
       for (const label of ["その他", "判定不能"]) expect([id, ask.choices.find((c) => c.label === label)?.means]).toEqual([id, "決まらない"]);
       for (const t of [ask.question, ...ask.choices.map((c) => c.label)]) expect([id, t, /点数|金額|点|円/.test(t)]).toEqual([id, t, false]);
       expect(new Set(ask.choices.map((c) => c.label)).size).toBe(ask.choices.length);
-      // key は、既存の事実（意味が同じもの）か haihan:<HX-nn>
-      expect([id, ask.factKey === `haihan:${id}` || (CLAIM_FACT_KEYS as readonly string[]).includes(ask.factKey)]).toEqual([id, true]);
+      // key は haihan:<HX-nn> か、既存の事実（意味が同じもの）。既存の事実は、日ごとの事実で、医療事務あてで、問いも日ごとのものに限る
+      // （答えを書く関数が、共有の事実を答えの選択肢から真偽で書くため。医師あての事実を事務の答えで書かない。round-36 C-140）
+      expect([id, ask.factKey === `haihan:${id}` || ((DATED_FACT_KEYS as readonly string[]).includes(ask.factKey) && targetOfNeed(ask.factKey as NeedKey) === "clerk" && ask.scope === "day")]).toEqual([id, true]);
     }
   });
 });

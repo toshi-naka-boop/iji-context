@@ -66,9 +66,8 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     const x = k ? exceptionOf(k.hx) : undefined;
     return x ? sharedFactOf(x) : null;
   };
-  function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput) {
-    clerks.clerk(clerkId);
-    const yearMonth = yearMonthOf(claimId);
+  /** 入力の検査（文言を利用者に返す）と、宛先の確認。共有の事実を書く道も、同じ 2 つを通す（round-36 C-140） */
+  function admit(f: ClaimFactInput, yearMonth: string, role: Role) {
     // 入力の検査で落ちたものは、利用者に文言を返す（検査は src/claim/facts.ts）
     try {
       validateClaimFact(f, yearMonth);
@@ -78,6 +77,11 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     const target = targetOf(f.key);
     if (target === "doctor" && role !== "doctor") throw forbidden("これは医師が確かめる項目です。医師の役割の利用者が残します");
     if (target === "clerk" && role === "doctor") throw forbidden("これは医療事務が確かめる項目です。事務・ベテランの役割で残します");
+  }
+  function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput) {
+    clerks.clerk(clerkId);
+    const yearMonth = yearMonthOf(claimId);
+    admit(f, yearMonth, role);
     const value = typeof f.value === "string" ? f.value.trim() : f.value;
     const at = now();
     const insert = (key: string, date: string | null, v: unknown) =>
@@ -92,6 +96,8 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
         // 共有の事実を使う問い（X-105）：「その他」「判定不能」→ その日の共有の事実を取り消し（R10 も不明に戻る）、haihan:* に答えを残す（もう問わない記録）。
         // 当たる・当たらない → haihan:* を取り消して、共有の事実を書く（当たる＝真）
         const means = exceptionOf(parseHaihanKey(f.key)!.hx)!.ask!.choices.find((c) => c.label === value)!.means;
+        // 共有の事実の側も、値の検査と宛先の確認を通す（取り消すときも、宛先は同じ。round-36 C-140）
+        admit({ key: shared as ClaimFactInput["key"], date: f.date, value: means === "当たる", source: f.source }, yearMonth, role);
         if (means === "決まらない") {
           clear(shared, f.date);
           insert(f.key, f.date, value);
