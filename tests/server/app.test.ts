@@ -294,8 +294,8 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     const name = `${createHash("sha256").update(bytes).digest("hex")}.UKE`;
     mkdirSync(path.join(tmp, "uke"), { recursive: true });
     writeFileSync(path.join(tmp, "uke", name), bytes);
-    // 形式そのものが読めないファイル（末尾の EOF がない）
-    const broken = bytes.subarray(0, -1);
+    // 形式そのものが読めないファイル（最後のレコードが CRLF で終わらない。EOF がないだけなら読める）
+    const broken = Buffer.concat([bytes.subarray(0, -3), Buffer.from([0x1a])]);
     const brokenName = `${createHash("sha256").update(broken).digest("hex")}.UKE`;
     writeFileSync(path.join(tmp, "uke", brokenName), broken);
     app.setSetting("uke-uploads", JSON.stringify([name, brokenName]));

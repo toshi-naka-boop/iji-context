@@ -212,9 +212,16 @@ describe("形式（FR-06）", () => {
     expect([of("C001_1I"), of("C002_2I1"), of("D005_5"), of("O001_3I"), of("C000")]).toEqual(["14", "14", "60", "80", "14"]);
   });
 
-  it("壊れた UKE は例外：EOF なし・GO の合計違い・算定日と回数の不一致・RE より前の SI", () => {
+  it("壊れた UKE は例外：GO の合計違い・算定日と回数の不一致・RE より前の SI。EOF のないファイルは、あるときと同じに読む", () => {
     const good = read(UKE_FILES.支払基金);
-    expect(() => readUke(good.subarray(0, -1))).toThrow(/EOF/);
+    // EOF(0x1A) は仕様では必須だが、受け渡しの途中で落ちることがあるので、ないファイルも中身は同じに読む
+    expect(readUke(good.subarray(0, -1))).toEqual(readUke(good));
+    // GO の総件数は、HO と KO の数の合計（公費の併用は 2 件以上と数える）。国保連の見本には公費の併用のレセプトがある
+    const kokuho = textOf(read(UKE_FILES.国保連));
+    const records = (k: string) => kokuho.split("\r\n").filter((l) => l.startsWith(`${k},`)).length;
+    expect(records("KO")).toBeGreaterThan(0);
+    expect(kokuho).toMatch(new RegExp(`^GO,${records("HO") + records("KO")},`, "m"));
+    expect(() => readUke(enc(kokuho.replace(/^GO,\d+,/m, `GO,${records("RE")},`)))).toThrow(/総件数/);
     const text = textOf(good);
     expect(() => readUke(enc(text.replace(/GO,1,(\d+),99/, "GO,1,1,99")))).toThrow(/総合計点数/);
     expect(() => readUke(enc(text.replace(/^(SI,60,1,\d+,,130,)1,/m, "$12,")))).toThrow(/回数/);
@@ -320,7 +327,8 @@ describe("形式（FR-06）", () => {
       const many = `${"SY,0000999,20260801,1,,x,,\r\n".repeat(UKE_LIMITS.maxLines + 1)}`;
       expect(reject(enc(many))).toEqual([null, "レコードの数が上限を超えている"]);
       expect(reject(Buffer.from([0x81, 0x0d, 0x0a, 0x1a]))).toEqual([null, "Shift_JIS として読めない"]);
-      expect(reject(Buffer.alloc(0))).toEqual([null, "末尾に EOF(0x1A) がない"]);
+      expect(reject(Buffer.alloc(0))).toEqual([null, "空のファイル"]);
+      expect(reject(Buffer.from([0x1a]))).toEqual([null, "空のファイル"]);
       expect(reject(enc("IR,1,13,1,9999999,,x,202611,00,0300000000\r\n"))).toEqual([1, "末尾が GO レコードでない"]);
     });
 
@@ -706,7 +714,8 @@ describe("保存済みのレセプトの読み直し（design.md §11-12 完了�
   });
 
   it("形式そのものが読めないファイルは、読み直しでも UkeError（ファイルごと読めない）", () => {
-    expect(() => readStoredUke(buf.subarray(0, -1))).toThrow(UkeError);
+    // 最後のレコードが CRLF で終わらない（EOF がないだけなら読める）
+    expect(() => readStoredUke(Buffer.concat([buf.subarray(0, -3), Buffer.from([0x1a])]))).toThrow(UkeError);
   });
 });
 

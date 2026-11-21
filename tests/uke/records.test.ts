@@ -40,6 +40,9 @@ const reasonOf = (buf: Buffer): [number | null, string] => {
   throw new Error("読めてしまった");
 };
 
+/** GO の総件数を 1 つ増やす */
+const bumpGo = (go: string) => go.replace(/^GO,(\d+),/, (_, n: string) => `GO,${Number(n) + 1},`);
+
 describe("レコードの種類（記録条件仕様 令和8年8月版 p1〜2 の表）", () => {
   /** 臓器提供者のレセプト情報（TI・TR・TS と、提供者の SY・SI・SJ。提供者の SI は算定日情報を省略できる。仕様 p17・p21〜23） */
   const donor = [
@@ -57,7 +60,8 @@ describe("レコードの種類（記録条件仕様 令和8年8月版 p1〜2 �
     rows = insertAfter(rows, /^SN,/, ["SN,2,01,,,,,,"]);
     rows = insertAfter(rows, /^JD,/, [rows.find((l) => l.startsWith("JD,"))!.replace(/^JD,1,/, "JD,2,")]);
     rows = insertAfter(rows, /^MF,/, ["GR,09,010010XX9909XX"]);
-    return [...rows.slice(0, -1), ...donor, rows[rows.length - 1]];
+    // KO を 1 つ足したので、GO の総件数（HO と KO の数の合計。記録条件仕様 GO の注）も 1 つ増やす
+    return [...rows.slice(0, -1), ...donor, bumpGo(rows[rows.length - 1])];
   };
   const KINDS = ["IR", "RE", "HO", "KO", "SN", "JD", "MF", "GR", "SY", "SI", "IY", "TO", "CO", "SJ", "TI", "TR", "TS", "GO"];
 
@@ -96,7 +100,9 @@ describe("レコードの種類（記録条件仕様 令和8年8月版 p1〜2 �
     };
     for (const [kind, row] of Object.entries(one)) {
       // KO は HO の直後、ほかは SY の手前（TI・TR・TS は、その後ろのレコードを読まないので場所によらない）
-      const rows = insertAfter(rowsOf(jitsurei), kind === "KO" ? /^HO,/ : /^MF,/, [row]);
+      const added = insertAfter(rowsOf(jitsurei), kind === "KO" ? /^HO,/ : /^MF,/, [row]);
+      // KO は GO の総件数に入る（HO と KO の数の合計）
+      const rows = kind === "KO" ? [...added.slice(0, -1), bumpGo(added[added.length - 1])] : added;
       expect(() => readUke(ukeOf(rows)), kind).not.toThrow();
       const line = rows.indexOf(row) + 1;
       expect(reasonOf(ukeOf(rows.map((l) => (l === row ? `${l},` : l)))), kind).toEqual([line, "列数が合わない"]);

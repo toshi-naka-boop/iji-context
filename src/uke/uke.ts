@@ -1,5 +1,5 @@
 // UKE の書き出しと読み込み（F4、spec FR-05・FR-06。design.md §11-14）
-// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)。レコード順は IR→(RE→HO/KO→SN→JD→MF→GR→SY→SI/IY/TO/CO→SJ)×n→GO
+// 形式：Shift_JIS・CSV（引用符なし）・CRLF・末尾 EOF(0x1A)（読むときは EOF のないファイルも受け取る。parseUke の注）。レコード順は IR→(RE→HO/KO→SN→JD→MF→GR→SY→SI/IY/TO/CO→SJ)×n→GO
 // 列は記録条件仕様（医科用）令和8年8月版の主要列だけを埋め、ほかは空にする（EM §2-10 表 4）
 // 読み込みは、同仕様の医科のレコード 18 種（COLUMNS）を受け取る。入院のレセプト・臓器提供者のレセプト情報・知らないレコードは、そのレセプトだけを「読めない」にして、ファイルは断らない
 //
@@ -265,7 +265,8 @@ export function formatUke(file: UkeFile, revOf: (yearMonth: string) => Revision 
       for (const c of u.comments.slice(3)) rows.push(co("", c));
     }
   });
-  rows.push(record(4, { 1: "GO", 2: file.receipts.length, 3: grand, 4: "99" }));
+  // 総件数は、保険者レコードと公費レコードの数の合計（記録条件仕様 GO の注）。書き出しは、どのレセプトにも HO を 1 つ書く
+  rows.push(record(4, { 1: "GO", 2: file.receipts.reduce((s, r) => s + 1 + r.patient.kohi.length, 0), 3: grand, 4: "99" }));
   return `${rows.join("\r\n")}\r\n`;
 }
 
@@ -295,10 +296,13 @@ export function parseUke(buf: Buffer): UkeParsed {
     throw new UkeError(line, reason);
   };
   if (buf.length > UKE_LIMITS.maxBytes) fail(null, "ファイルが大きすぎる");
-  if (buf.length === 0 || buf[buf.length - 1] !== EOF) fail(null, "末尾に EOF(0x1A) がない");
+  // EOF(0x1A) は仕様では必須（記録条件仕様 第2章 (ク)）。ただ、受け渡しの途中で落ちることがあり、中身の読み方には関わらないので、
+  // なければないまま読む（書き出しは今までどおり付ける）。最後のレコードが CRLF で終わることは下で確かめる
+  const body = buf.length > 0 && buf[buf.length - 1] === EOF ? buf.subarray(0, buf.length - 1) : buf;
+  if (body.length === 0) fail(null, "空のファイル");
   let text = "";
   try {
-    text = new TextDecoder("shift_jis", { fatal: true }).decode(buf.subarray(0, buf.length - 1));
+    text = new TextDecoder("shift_jis", { fatal: true }).decode(body);
   } catch {
     fail(null, "Shift_JIS として読めない");
   }
@@ -504,7 +508,10 @@ export function parseUke(buf: Buffer): UkeParsed {
     }
   });
   closed();
-  if (int(go[1], goLine, "総件数", 0, UKE_LIMITS.maxLines) !== claims.length) fail(goLine, "GO の総件数とレセプト数が合わない");
+  // 総件数は、レセプトごとの保険者レコード（HO）と公費レコード（KO）の数の合計（記録条件仕様 GO の注：医療保険と公費の併用は 2〜5 件と数える）。
+  // RE の数ではない（2026-11-21 に仕様の注を読み直して直した。RE の数と照合していたので、公費の併用のあるファイルを読めなかった）
+  const count = claims.reduce((s, c) => s + (c.total ? 1 : 0) + c.kohiTotals.length, 0);
+  if (int(go[1], goLine, "総件数", 0, UKE_LIMITS.maxLines) !== count) fail(goLine, "GO の総件数と、保険者・公費のレコードの数が合わない");
   return {
     payer,
     prefecture: pref,

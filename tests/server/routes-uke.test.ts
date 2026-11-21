@@ -102,8 +102,8 @@ describe("UKE のアップロード", () => {
       ["範囲外の数値", withCell(8, 6, "0"), "8 行目：回数が範囲の外"],
       ["版の点数表と合わない点数", withCell(8, 5, "131"), "8 行目：点数が診療年月の版の点数表と合わない"],
       ["上限を超える日別回数", withCell(8, 13, "999999999"), "8 行目：1 日の回数が上限を超えている"],
-      ["EOF なし", sample("shiharaikikin.UKE").subarray(0, -1), "末尾に EOF(0x1A) がない"],
-      ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "末尾に EOF(0x1A) がない"],
+      ["最後のレコードが CRLF で終わらない", Buffer.concat([sample("shiharaikikin.UKE").subarray(0, -3), Buffer.from([0x1a])]), "最後のレコードが CRLF で終わっていない"],
+      ["UKE でないバイト列", Buffer.from("%PDF-1.7\n".repeat(20)), "最後のレコードが CRLF で終わっていない"],
     ];
     const { resetLimits, limits } = await import("../../src/server/rate-limit");
     for (const [what, bytes, reason] of broken) {
