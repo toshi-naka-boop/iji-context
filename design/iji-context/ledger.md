@@ -259,3 +259,4 @@
 - 2026-11-21（Opus）UKE の GO の総件数を HO＋KO の数で照合し、EOF のないファイルも読むように直した（統合 28b8e07）。調べ直しの結果：sources/research/recheck-ux.md（改選日・ベースアップ評価料・死亡後の往診）、recheck-data.md（実在の形の材料・本部点検条件・記録例の扱い・partial）
 - 2026-11-21（Opus）K5 の往診日のターミナルケア加算：条件つきで認められる読み、2022 年以降の変更なし（sources/research/terminal-oushin-sameday.md）。G05 は条件つきのまま
 - 2026-11-21（Opus）背反の特例条件 1 の例外を 59 通り調べた（sources/research/tokurei-group1〜3.md）。残り 89 通りを調査中。判定への組み込みはまだ（設計ループを通す）
+- 2026-11-21（Opus）背反の特例条件 1 の例外を 140 通り全部調べた（sources/research/tokurei-summary.md）。食い違い 2 点はまとめに記録。判定への組み込みはまだ
