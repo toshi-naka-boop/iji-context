@@ -42,18 +42,29 @@ const UNKNOWN_FACTS: Facts = {
   comprehensiveCare: { known: false },
 };
 
+type Fixture = Omit<ClaimContext, "facility"> & { facility?: Partial<FacilityJson> };
+/** 症例の JSON。facility は、その症例だけの施設の設定の上書き（design.md §2-7）。請求 id はパスに使わず、表を引く（表にない請求 id は null） */
+const caseFixtureOf = (root: string, claimId: string): Fixture | null => {
+  const file = caseFileOf(root, claimId);
+  return file ? json<Fixture>(file) : null;
+};
+
+/**
+ * 請求の土台：同梱の症例の事実・出来事・記録の有無・過去の月と、症例ごとの上書きを重ねた施設の設定。症例のないレセプトは、事実をどれも「不明」、出来事の記録なし、施設は標準の設定。
+ * 取り込んだレセプトの点検（contextOf）と、scripts/measure-generic.ts が同じ作り方で使う（round-32 O-17）。患者マスタ・利用者が確かめた事実は、contextOf がこの上に重ねる
+ */
+export function caseBaseOf(root: string, facility: FacilityJson, claimId: string): Pick<ClaimContext, "facts" | "events" | "recordsKnown" | "facility" | "history"> {
+  const c = caseFixtureOf(root, claimId) ?? { facts: UNKNOWN_FACTS, events: [], recordsKnown: false, facility: undefined, history: undefined };
+  return { facts: c.facts, events: c.events, recordsKnown: c.recordsKnown, facility: facilityOf(facility, c.facility), history: c.history };
+}
+
 export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">) {
   const { paths, facility } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
   const { latestPatientFacts, ingest, masterFacts } = patients;
 
-  type Fixture = Omit<ClaimContext, "facility"> & { facility?: Partial<FacilityJson> };
-  /** 症例の JSON。facility は、その症例だけの施設の設定の上書き（design.md §2-7）。請求 id はパスに使わず、表を引く（表にない請求 id は null） */
-  const fixtureOf = (claimId: string): Fixture | null => {
-    const file = caseFileOf(paths.root, claimId);
-    return file ? json<Fixture>(file) : null;
-  };
+  const fixtureOf = (claimId: string): Fixture | null => caseFixtureOf(paths.root, claimId);
   /** 症例側が持つ負担割合（症例がない・値がないときは null）。患者マスタに負担割合が入っていないときに使う */
   function caseBurdenRatioOf(claimId: string): number | null {
     const f = fixtureOf(claimId)?.facts.burdenRatio;
@@ -64,7 +75,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   /** UKE のレセプト 1 件を、カルテ側の事実・患者マスタと合わせた請求にする */
   function contextOf(file: UkeFile, r: UkeReceipt): ClaimContext {
     // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる
-    const c = fixtureOf(r.claimId) ?? { facts: UNKNOWN_FACTS, events: [], recordsKnown: false, facility: undefined, history: undefined };
+    const c = caseBaseOf(paths.root, facility, r.claimId);
     // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
     // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
     const patientId = ingest(r.patient);
@@ -72,7 +83,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
     // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
     const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
-    const claim = toClaimContext(file, r.claimId, { facility: facilityOf(facility, c.facility), facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
+    const claim = toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
     // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
     // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）
     if (!r.others?.length) return claim;
