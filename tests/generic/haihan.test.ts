@@ -13,7 +13,7 @@ import type { TimedClaim } from "../../src/generic/tensuhyo";
 import type { GenericAboutMore, GenericFinding } from "../../src/generic/types";
 import { genericText } from "../../src/messages";
 import { YM } from "../helpers/period";
-import { GEN } from "./small-masters";
+import { GEN, put } from "./small-masters";
 import { C, putHaihan, tensuhyoMasters } from "./small-tensuhyo";
 
 type Unit = TimedClaim["units"][number];
@@ -148,10 +148,16 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     db.prepare("UPDATE shinryo SET bu = 1 WHERE code = ?").run(C.saishin);
     putHaihan(db, "20261001", 1, C.saishin, TERMINAL, "2", "1");
     const fs = g05Of([unit([C.saishin, C.oushin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
-    expect(fs.map((f) => [f.messageKey, f.params.hp, f.params.hx, f.params.checks])).toEqual([["G05.exception_needs_check", "HP-55", "HX-24", "死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]]);
+    expect(fs.map((f) => [f.messageKey, f.params.hp, f.params.hx, f.params.checks])).toEqual([["G05.exception_needs_check", "HP-55", "HX-24", "この再診料（加算）は、その日の往診に付くものか（外来の受診・電話などの再診ではない）、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]]);
     // 往診料のない日（外来の再診）は HX-24 に当たらず、再診料が往診に付くかの問い（HX-11）は pre で当たらない → exception_none
     const outpatient = g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
     expect(outpatient.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-55"]]);
+    // 電話等再診料（往診に付く再診料ではない）の行は組に入れない：HX-24 に当たらず、今までどおり条件つき（round-37 C-150）
+    const PHONE = "112007950";
+    put(db, "shinryo", "20261001", { code: PHONE, name: "手作りの電話等再診料", alpha: "A", sho: 1, bu: 1, kubun_no: 1 });
+    putHaihan(db, "20261001", 1, PHONE, TERMINAL, "2", "1");
+    const phone = g05Of([unit([PHONE, C.oushin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings.filter((f) => f.codes.includes(PHONE));
+    expect(phone.map((f) => [f.messageKey, f.params.hp ?? ""])).toEqual([["G05.day_cond", ""]]);
   });
 });
 
