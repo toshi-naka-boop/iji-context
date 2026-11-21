@@ -17,7 +17,7 @@ export function limits(): Limits {
 }
 
 /** 1 日の区切りは日本時間の日付（実時刻。デモの時計は本人が動かせるので使わない） */
-export const dayOf = (now: Date) => new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+export const jstDay = (now: Date) => new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 
 /** 1 日の回数（tenant の DB）。hit は数を 1 増やして、増やしたあとの数を返す */
 export function createDailyCounter(sqlite: Database.Database) {
@@ -25,11 +25,11 @@ export function createDailyCounter(sqlite: Database.Database) {
     return (
       sqlite
         .prepare("INSERT INTO rate_daily (day, bucket, user_id, count) VALUES (?, ?, ?, 1) ON CONFLICT(day, bucket, user_id) DO UPDATE SET count = count + 1 RETURNING count")
-        .get(dayOf(now), bucket, userId) as { count: number }
+        .get(jstDay(now), bucket, userId) as { count: number }
     ).count;
   }
   const count = (bucket: string, userId: string, now = new Date()) =>
-    (sqlite.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(dayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0;
+    (sqlite.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDay(now), bucket, userId) as { count: number } | undefined)?.count ?? 0;
   return { hit, count };
 }
 export type DailyCounter = ReturnType<typeof createDailyCounter>;

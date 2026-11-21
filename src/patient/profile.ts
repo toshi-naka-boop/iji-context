@@ -1,6 +1,7 @@
 // 患者マスタのプロフィール（患者と、その保険・公費の加入情報）の型と、そこからエンジンの Facts を出す関数（spec FR-121、design.md §6）
 // ここは純関数だけ。DB の読み書きは src/server/app/patients.ts
 import type { Facts } from "../engine/types";
+import { monthRange } from "../demo/period";
 import type { UkePatient } from "../uke/types";
 
 export const COVERAGE_KINDS = ["医保", "公費"] as const;
@@ -85,15 +86,6 @@ export type PatientProfile = {
   /** 症例側（合成カルテ・受給者証情報）が持つ負担割合。患者マスタに負担割合が入っていないときだけ使う */
   caseBurdenRatio?: number | null;
 };
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** 診療年月（YYYY-MM）の初日と末日 */
-export function monthRange(yearMonth: string): { start: string; end: string } {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return { start: `${yearMonth}-01`, end: `${yearMonth}-${pad(last)}` };
-}
 
 /** 生年月日（YYYYMMDD）を YYYY-MM-DD にする。8 桁の数字でない・暦にない日は null */
 export function birthDate(birth: string | null): string | null {

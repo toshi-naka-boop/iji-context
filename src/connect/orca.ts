@@ -4,6 +4,7 @@
 // 請求で受け取るのは、診療年月の版のコードの表にあるコードだけ（表にないコードが 1 つでもあれば、応答ごと受け取らない。UKE の取り込みと同じ）
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { z } from "zod";
+import { monthRange } from "../demo/period";
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import { bundleKubun, bundleOfCode, kubunOfCode } from "../engine/revisions/codes";
 import type { Bundle } from "../engine/revisions/types";
@@ -13,7 +14,7 @@ import { payerOfInsurer } from "../uke/cases";
 import { UKE_CLAIM_ID } from "../uke/limits";
 import type { UkeFile, UkeLine } from "../uke/types";
 import { connectJson, connectText, ConnectError, formatError } from "./fetch";
-import { assertQuery, monthRange, type Connector, type ConnectorPatient } from "./types";
+import { assertQuery, type Connector, type ConnectorPatient } from "./types";
 
 export const ORCA_ID = "orca";
 

@@ -2,6 +2,7 @@
 // 作るのは scripts/build-masters.ts（src/masters/build.ts）だけ。中身は公開元の値そのままで、患者の情報は入らない
 import path from "node:path";
 import Database from "better-sqlite3";
+import { YEAR_MONTH } from "../demo/period";
 import { dataDir } from "../server/auth-db";
 
 /** masters.db のあるフォルダ。既定は <データ置き場>/masters。RESEMEN_MASTER_DIR があればそこ（テストと、別の場所に置くとき） */
@@ -50,7 +51,7 @@ export type Snapshot = { snapshot: string; later: boolean };
  * なければ、後のいちばん古い 1 枚（later が真）。その世代の 1 枚が 1 つもなければ null（近い世代で代用しない）
  */
 export function pickSnapshot(db: MastersDb, dataset: string, yearMonth: string, generation: string): Snapshot | null {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) return null;
+  if (!YEAR_MONTH.test(yearMonth)) return null;
   const end = `${yearMonth.replace("-", "")}31`;
   const all = (db.prepare("SELECT DISTINCT snapshot FROM sources WHERE dataset = ? AND generation = ? ORDER BY snapshot").all(dataset, generation) as { snapshot: string }[]).map((r) => r.snapshot);
   if (all.length === 0) return null;
