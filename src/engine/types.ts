@@ -153,8 +153,6 @@ export type ClaimContext = {
   outside?: Outside;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
-  /** 連携で読んだ行のうち、版のコードの表に対応がなかったもの。判定の対象外（FR-111） */
-  excluded?: { code: string; count: number }[];
 };
 
 /**
@@ -185,7 +183,7 @@ export type EngineResult = {
   claimId: string;
   /** 判定に使った版 */
   revisionId: string;
-  /** 点数未収載の行、判定の対象外の行（excluded）、点検の対象外の単位（partial）があれば null */
+  /** 点数未収載の行、点検の対象外の単位（partial）があれば null */
   total: number | null;
   /** 点検の対象外の単位がある請求（partial）でだけ持つ：点検した行の小計（請求の合計ではない。点数未収載の行があれば null） */
   subtotal?: number | null;
@@ -193,8 +191,6 @@ export type EngineResult = {
   findings: Finding[];
   /** appliesTo が真だったルール ID（違反の有無によらない。X-3） */
   applied: string[];
-  /** 判定の対象外の行数（FR-111） */
-  excludedCount: number;
 };
 
 export type Rule = {
