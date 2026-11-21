@@ -945,12 +945,6 @@
       "id": "HX-11",
       "text": "訪問診療の後の、病状の急変等による往診に付く再診料",
       "kind": "fact",
-      "pre": {
-        "hasCode": {
-          "codes": ["114000110", "114001610"]
-        },
-        "sameDay": true
-      },
       "ask": {
         "factKey": "haihan:HX-11",
         "scope": "day",

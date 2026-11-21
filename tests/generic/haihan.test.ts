@@ -157,9 +157,12 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     putHaihan(db, "20261001", 1, C.saishin, TERMINAL, "2", "1");
     const fs = g05Of([unit([C.saishin, C.oushin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
     expect(fs.map((f) => [f.messageKey, f.params.hp, f.params.hx, f.params.checks])).toEqual([["G05.exception_needs_check", "HP-55", "HX-24", "この再診料（加算）は、その日の往診に付くものか（外来の受診・電話などの再診ではない）、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]]);
-    // 往診料のない日（外来の再診）は HX-24 に当たらず、再診料が往診に付くかの問い（HX-11）は pre で当たらない → exception_none
-    const outpatient = g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
-    expect(outpatient.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-55"]]);
+    // 往診料のない日（外来・電話の再診）は HX-24 に当たらない。HX-11 は往診料がないだけでは当たらないにせず、問いに進む（外来・電話の再診は決まらない。round-38 X-111）
+    const outpatient = (answers = answersOf()) => g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers, facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
+    expect(outpatient().map((f) => [f.messageKey, f.params.hp, f.params.hx])).toEqual([["G05.exception_ask", "HP-55", "HX-11"]]);
+    const k11 = `${haihanKey("HX-11", C.saishin, TERMINAL)}|${day(20)}`;
+    expect(outpatient(answersOf({ [k11]: "いいえ、外来の受診か電話などの再診について算定した" })).map((f) => f.messageKey)).not.toContain("G05.exception_none");
+    expect(outpatient(answersOf({ [k11]: "いいえ、訪問診療と同じ 1 回の診療について算定した" })).map((f) => f.messageKey)).toEqual(["G05.exception_none"]);
     // 電話等再診料（往診に付く再診料ではない）の行は組に入れない：HX-24 に当たらず、今までどおり条件つき（round-37 C-150）
     const PHONE = "112007950";
     put(db, "shinryo", "20261001", { code: PHONE, name: "手作りの電話等再診料", alpha: "A", sho: 1, bu: 1, kubun_no: 1 });
