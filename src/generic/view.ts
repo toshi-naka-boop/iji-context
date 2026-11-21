@@ -1,11 +1,18 @@
 // データで動く点検の結果を、画面に出す形にする（design.md §12-5）：指摘の文（定型文）、当たる行の名称、出どころ、点検の範囲（動いた点検・動かさなかった点検と理由）
-import { genericNotRunText, genericText } from "../messages";
+import { FACT_LABEL, genericNotRunText, genericText } from "../messages";
+import { exceptionOf } from "./haihan";
 import type { RowNames } from "./lookup";
 import type { GenericScope } from "./scope";
 import type { GenericResult } from "./types";
 
+/**
+ * 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）。取り込んだレセプトの点検の画面が、指摘の下に選択肢を出す。
+ * choice＝例外の問い（key は haihan:*。値は選択肢の文字列）／fact＝R10 と同じ「別々の診療か」の入力（sameDaySeparate。はい・いいえ）。dates は答えの日（請求ごとの問いは空）
+ */
+export type GenericAsk = { kind: "choice"; hx: string; key: string; dates: string[]; question: string; choices: string[] } | { kind: "fact"; hx: string; key: "sameDaySeparate"; dates: string[]; question: string };
+
 export type GenericView = {
-  findings: { check: string; kind: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string } }[];
+  findings: { check: string; kind: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string }; asks?: GenericAsk[] }[];
   /** 動いた点検。「指摘なし」は、ここにある点検についてだけ言える */
   ran: { check: string; kind: string }[];
   /** 動かさなかった点検と理由。reason は、データがない（noMasters・noSnapshot）／準備ができていない（notReady）／まだ入っていない（notBuilt） */
@@ -26,9 +33,19 @@ export function genericView(result: GenericResult, names: RowNames | null): Gene
       text: genericText(f),
       codes: f.codes.map((code) => ({ code, name: names?.items[code]?.name ?? f.params.name ?? null })),
       source: f.source,
+      ...(f.params.asks ? { asks: asksOf(f.params.asks) } : {}),
     })),
     ran: result.ran,
     notRun: result.notRun.map((n) => ({ check: n.check, kind: n.kind, reason: n.reason, text: genericNotRunText(n) })),
     omitted: result.omitted ?? [],
   };
+}
+
+/** 指摘の値（params.asks。G05 が JSON で入れる）を、問いの文と選択肢つきにする。問いのない例外の id は落とす */
+function asksOf(json: string): GenericAsk[] {
+  return (JSON.parse(json) as { hx: string; key: string; dates: string[] }[]).flatMap((a): GenericAsk[] => {
+    if (a.key === "sameDaySeparate") return [{ kind: "fact", hx: a.hx, key: "sameDaySeparate", dates: a.dates, question: FACT_LABEL.sameDaySeparate }];
+    const ask = exceptionOf(a.hx)?.ask;
+    return ask ? [{ kind: "choice", hx: a.hx, key: a.key, dates: a.dates, question: ask.question, choices: ask.choices.map((c) => c.label) }] : [];
+  });
 }
