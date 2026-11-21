@@ -149,8 +149,8 @@ export function openApp(paths: AppPaths) {
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);
       localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
-      // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）
-      return { ...r, localReturns: localPairOps.returnsOf(claimId, r) };
+      // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
+      return "rows" in r ? { ...r, localReturns: localPairOps.returnsOf(claimId, r) } : r;
     },
     /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
