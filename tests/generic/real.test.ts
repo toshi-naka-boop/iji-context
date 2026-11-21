@@ -172,7 +172,14 @@ describe("段 10b：実データの masters.db で", () => {
         expect(c.others.flatMap((o) => o.codes).filter((code) => !c.names.items[code]), id).toEqual([]);
         expect(c.comments.filter((x) => !c.names.comments[x.code]), id).toEqual([]);
         expect(c.diseases.filter((d) => d.name === null), id).toEqual([]);
-        expect([["G01", "G02", "G03"].every((id2) => c.generic.ran.some((x) => x.check === id2)), c.generic.findings], id).toEqual([true, []]);
+        expect([["G01", "G02", "G03"].every((id2) => c.generic.ran.some((x) => x.check === id2)), c.generic.findings.filter((f) => f.check !== "G09")], id).toEqual([true, []]);
+        // 段 14：適応・併用（G09）も動く。出るのは、3 件目（内服 11 種類）の抗アレルギー薬の 1 件だけ（条件つき。検証用のレセプトの傷病名〔高血圧症・心房細動・慢性心不全〕が、その薬の表の傷病名と対応していない）。
+        // 但し書きと、見たもの・見られないもの（未コード化の傷病名があるレセプトでは適応を見ていないこと、処方箋料のあるレセプトでは院外処方の薬を見られないこと）が、点検の範囲に付く
+        expect(c.generic.ran.some((x) => x.check === "G09"), id).toBe(true);
+        expect(c.generic.findings.filter((f) => f.check === "G09").map((f) => [f.certainty, f.codes.map((x) => x.code).join()]), id).toEqual(id === "U1-3" ? [["条件つき", "610421327"]] : []);
+        expect(c.generic.scope!.g09![0], id).toMatch(/^適応・併用：.*査定されると決まったわけではありません/);
+        expect(c.generic.scope!.g09!.some((t) => t.startsWith("未コード化の傷病名")), id).toBe(c.diseases.some((d) => d.code === "0000999"));
+        expect(c.generic.scope!.g09!.some((t) => t.startsWith("このレセプトには処方箋料があります。院外処方の薬の適応・量は、このレセプトからは見られません")), id).toBe(id === "U1-4");
         // 段 11：検算の数（対象外は、合っている側に数えない）と、していないことが、点検の範囲に付く
         expect(c.generic.scope!.recalc!.matched, id).toBe(c.generic.scope!.recalc!.checked);
         expect(c.generic.scope!.notDone.filter((t) => t.startsWith("行の属性")), id).toHaveLength(1);

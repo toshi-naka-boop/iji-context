@@ -13,11 +13,12 @@ import { evaluateGeneric } from "../../generic";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
 import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
 import { commentKanrenNotesOf } from "../../generic/g07";
+import { checkmasterNotesOf } from "../../generic/g09";
 import { genericScopeOf } from "../../generic/scope";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
 import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
-import { diseaseCodeOf } from "../../uke/diseases";
+import { diseaseCodeOf, SUSPECTED_MODIFIER } from "../../uke/diseases";
 import type { UkeClaim, UkeOther } from "../../uke/types";
 import { mapClaim } from "../../uke/uke";
 import { badRequest } from "../errors";
@@ -64,23 +65,24 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
  * stopped＝対象外の単位があるために partial として扱ったルールと、そうさせた行（all が真＝ルールごとには決められず、どのルールも partial。
  * dropped が真＝そのルールの指摘を実際に捨てた＝情報不足 unsupportedLines が出ている）。partial のルールは、指摘がなくても「問題なし」とは言えない
  */
-/** 基本マスターの断り書きに、電子点数表とコメント関連テーブルの分を足す */
-const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: { later: boolean; newer: boolean }, k: { later: boolean; newer: boolean }) => ({
-  later: [...notes.later, ...(t.later ? ["電子点数表"] : []), ...(k.later ? ["コメント関連テーブル"] : [])],
-  newer: [...notes.newer, ...(t.newer ? ["電子点数表"] : []), ...(k.newer ? ["コメント関連テーブル"] : [])],
+/** 基本マスターの断り書きに、電子点数表・コメント関連テーブル・チェックマスタの分を足す */
+type SheetNote = { later: boolean; newer: boolean };
+const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: SheetNote, k: SheetNote, c: SheetNote) => ({
+  later: [...notes.later, ...(t.later ? ["電子点数表"] : []), ...(k.later ? ["コメント関連テーブル"] : []), ...(c.later ? ["チェックマスタ"] : [])],
+  newer: [...notes.newer, ...(t.newer ? ["電子点数表"] : []), ...(k.newer ? ["コメント関連テーブル"] : []), ...(c.newer ? ["チェックマスタ"] : [])],
 });
 
 function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[]) {
   // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
   // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
-  // 傷病名の要件（G08）が読むもの：SY の傷病名コード（未コード化は 0000999）。必須コメント（G07）は、請求のコメント（claim.comments）を読む
-  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}), diseases: diseaseCodes.map((code) => ({ code })) };
+  // 傷病名の要件（G08）・適応（G09）が読むもの：SY の傷病名コード（未コード化は 0000999）と、疑い病名かどうか（修飾語「の疑い」）。必須コメント（G07）は、請求のコメント（claim.comments）を読む
+  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}), diseases: diseaseCodes.map((code, i) => ({ code, suspected: claim.patient.diseases[i].modifiers?.includes(SUSPECTED_MODIFIER) === true })) };
   return withMasters((db) => {
     const names = db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: claim.comments.map((c) => c.code), diseases: diseaseCodes }) : null;
     return {
       ...(names ? { names } : {}),
-      ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about)) } : {}),
+      ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about), checkmasterNotesOf(db, about)) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
       // カルテ側の記録がない請求として判定している（recordsKnown は偽）。検算（G02）の数と、G02・G03 がしていないことを、点検の範囲に足す
       generic: (() => {
