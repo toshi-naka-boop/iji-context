@@ -158,7 +158,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
           選んだ答え：{picked.join("、")}　<button onClick={() => { setChoices({}); setPicked([]); }}>選び直す</button>
         </div>
       )}
-      {claim.staleChoices.length > 0 && <div className="notice warn">前の答えは使っていません（日付が違うため）。</div>}
+      {claim.staleChoices.length > 0 && <div className="notice warn">前の答えは使っていません（日付が変わったか、ほかの答えや確かめた事実で、その問いがなくなったため）。</div>}
       {lacks.map((p) => p.kind === "事実不足" && (
         <div key={p.id} className="notice warn">
           <div><strong>確かめる事実：</strong>{p.text}</div>
