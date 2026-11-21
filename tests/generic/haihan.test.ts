@@ -56,9 +56,11 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     expect(brief(findings)).toEqual([["G05.exception_ask", "条件つき", C.oushin, C.houmon]]);
     expect(JSON.parse(findings[0].params.asks)).toEqual([{ hx: "HX-01", key: OU_HO, dates: [day(6)] }]);
     expect(genericText(findings[0])).toContain("訪問診療の後に、病状の急変等で往診した場合の往診料");
-    // 往診のあとかは分かっていて（偽）、別々の診療かが分からない日は、R10 と同じ「別々の診療か」を問う（C-117）
+    // 「いいえ」（往診のあとではない＝偽）と答えたあと、別々の診療かが分からない日は、sameDayOf が名指しする R10 と同じ「別々の診療か」を問う（§13-3 の C-117 の対応。round-36 C-125）。
+    // それに答えると、どちらの答えでも当たらない（exception_none）
     const sep = g05Of(sameDay, { answers: answersOf(), facts: factsOf({ after: { [day(6)]: false } }) }).findings;
     expect(JSON.parse(sep[0].params.asks)).toEqual([{ hx: "HX-01", key: "sameDaySeparate", dates: [day(6)] }]);
+    for (const separate of [true, false]) expect(g05Of(sameDay, { answers: answersOf(), facts: factsOf({ after: { [day(6)]: false }, separate: { [day(6)]: separate } }) }).findings.map((f) => [f.messageKey, f.params.answered])).toEqual([["G05.exception_none", "true"]]);
   });
 
   it("当たるの答え（急変の往診）→ 背反は出さない。摘要欄の理由（830100086）が足りなければ exception_needs_comment、あれば何も出さず、点検の範囲に数と id を出す", () => {
