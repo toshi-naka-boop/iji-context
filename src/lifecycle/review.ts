@@ -20,6 +20,8 @@ import {
 import { assertTime, canonicalTime, ms } from "./time";
 import { evaluateTriggers, triggersOf } from "./triggers";
 import type { Basis, KnowledgeMeta, LifecycleEvent, TriggerKind } from "./types";
+import { conflictDocs, conflictKeys, docKey } from "../official/match";
+import type { OfficialDoc, OfficialInput } from "../official/types";
 import { notFound } from "../server/errors";
 
 export type ReviewDeps = {
@@ -33,6 +35,11 @@ export type ReviewDeps = {
    * 版のない提出は、整理の最初に対象から外す（拾い直し・数え直し・議題のすべてで無いものとして扱う。§4-4 手順 1）
    */
   hasRevision?: (yearMonth: string) => boolean;
+  /**
+   * 公的情報レジストリ（任意。渡すのは本番の配線）。渡されたときだけ、トリガー④を判定し、
+   * 議題の snapshot と理由に、矛盾の恐れになる公的文書を載せる（§4-3・§4-4）
+   */
+  official?: OfficialInput;
 };
 
 /** 版のない提出の id（昇順）。hasRevision を渡されていなければ空 */
@@ -218,9 +225,11 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
   }
 
   // 手順 2：トリガー
-  for (const fired of evaluateTriggers(listKnowledge(deps.store), now, deps.calendar)) {
+  for (const fired of evaluateTriggers(listKnowledge(deps.store), now, deps.calendar, deps.official)) {
     hooks.onStep?.("trigger", fired.knowledgeId);
-    applyEvent(deps.store, fired.knowledgeId, fired.event, now, { trigger: triggerOf(fired.event) });
+    // ④ では、未確認だった文書の鍵を根拠に残す
+    const basis: Basis = { trigger: triggerOf(fired.event), ...(fired.officialIds ? { officialIds: fired.officialIds } : {}) };
+    applyEvent(deps.store, fired.knowledgeId, fired.event, now, basis);
   }
 
   // 手順 3：議題
@@ -261,10 +270,50 @@ function basisDate(deps: ReviewDeps, meta: KnowledgeMeta, now: string): string |
   return null;
 }
 
-/** 整理時点の snapshot。miss・recheck・disposal は状態・版・基準日、ignored は版だけ（round-11 C-51）。miss の外れは入れない */
+/**
+ * 整理時点の snapshot。miss・recheck・disposal は状態・版・基準日、ignored は版だけ（round-11 C-51）。miss の外れは入れない。
+ * 公的情報レジストリを渡されたときは、その時点で矛盾の恐れになる文書の鍵（officialKeys）も入れる。
+ * 回答のときに作り直して比べるので、議題を作った後に文書が増えても減っても、古い回答として照合に落ちる（v22。X-66）
+ */
 function snapshotOf(deps: ReviewDeps, meta: KnowledgeMeta, now: string, kind: ItemKind): string {
   if (kind === "ignored") return JSON.stringify({ rev: meta.rev });
-  return JSON.stringify({ status: meta.status, status_since: meta.status_since, rev: meta.rev, basisDate: basisDate(deps, meta, now) });
+  return JSON.stringify({
+    status: meta.status,
+    status_since: meta.status_since,
+    rev: meta.rev,
+    basisDate: basisDate(deps, meta, now),
+    ...(deps.official ? { officialKeys: conflictKeys(meta, deps.official, now) } : {}),
+  });
+}
+
+/** snapshot に載っていた公的文書の鍵（段 4 より前に作った項目にはない） */
+const officialKeysOf = (snapshot: string): string[] => (JSON.parse(snapshot) as { officialKeys?: string[] }).officialKeys ?? [];
+
+/** 議題に載せる公的文書（要旨とリンク。点数・金額の欄を持たない）。seen は、その知識について会議で確認済みか */
+export type OfficialRef = Pick<OfficialDoc, "id" | "kind" | "issuer" | "number" | "issuedOn" | "url" | "stance" | "summary"> & { seen: boolean };
+
+/**
+ * 理由の (b)：整理の時点で矛盾の恐れになる公的文書のすべて（確認済みの文書も、要再検証の間に入った文書も含む。C-64）。
+ * 近似の知識には、条件の注記（conditionNote）を添える。注記に照らして本当に矛盾かは、責任者が読んで決める（C-73）
+ */
+function officialReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): { official?: OfficialRef[]; conditionNote?: string } {
+  if (!deps.official) return {};
+  const docs = conflictDocs(meta, deps.official, now);
+  if (docs.length === 0) return {};
+  return {
+    official: docs.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      issuer: d.issuer,
+      number: d.number,
+      issuedOn: d.issuedOn,
+      url: d.url,
+      stance: d.stance,
+      summary: d.summary,
+      seen: meta.official_seen.includes(docKey(d)),
+    })),
+    ...(meta.matchApprox && meta.conditionNote ? { conditionNote: meta.conditionNote } : {}),
+  };
 }
 
 /** 議題に載せる外れ（v20） */
@@ -275,18 +324,18 @@ export type SameApplied = { submissionId: string; claimId: string; yearMonth: st
 
 export type ItemReason =
   | { kind: "miss"; misses: MissEntry[]; sameApplied: SameApplied[] }
-  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind }
+  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind; official?: OfficialRef[]; conditionNote?: string }
   | { kind: "ignored"; removedKubun: string[] }
-  | { kind: "disposal"; event: string; candidateId?: string | null };
+  | { kind: "disposal"; event: string; candidateId?: string | null; official?: OfficialRef[]; conditionNote?: string };
 
 function lastEntryInto(meta: KnowledgeMeta, status: string) {
   return [...meta.history].reverse().find((h) => h.to === status);
 }
 
-function recheckReason(deps: ReviewDeps, meta: KnowledgeMeta): ItemReason {
+function recheckReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): ItemReason {
   const e = lastEntryInto(meta, "要再検証");
   const b = e?.basis ?? {};
-  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger };
+  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger, ...officialReason(deps, meta, now) };
 }
 
 const missKey = (submissionId: string, resultId: string) => `${submissionId}\0${resultId}`;
@@ -333,13 +382,13 @@ function missReason(deps: ReviewDeps, meta: KnowledgeMeta): ItemReason | null {
   return { kind: "miss", misses, sameApplied };
 }
 
-function disposalReason(deps: ReviewDeps, meta: KnowledgeMeta): ItemReason {
+function disposalReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): ItemReason {
   const e = lastEntryInto(meta, "停止");
   const b = e?.basis ?? {};
   if (e?.event === "RECHECK_FAIL") {
-    return { kind: "disposal", event: e.event, candidateId: b.itemId ? findCandidate(deps, meta.id, b.itemId) : null };
+    return { kind: "disposal", event: e.event, candidateId: b.itemId ? findCandidate(deps, meta.id, b.itemId) : null, ...officialReason(deps, meta, now) };
   }
-  return { kind: "disposal", event: e?.event ?? "" };
+  return { kind: "disposal", event: e?.event ?? "", ...officialReason(deps, meta, now) };
 }
 
 /** 項目を作る。（種類・知識・提出・snapshot）が同じ未回答の項目は使い回す（round-10 C-49） */
@@ -413,8 +462,8 @@ function buildItems(deps: ReviewDeps, reviewId: string, now: string): void {
     }
     let item: { kind: ItemKind; reason: ItemReason } | null = null;
     // 外れの確認の答えを待っている recheck の答えがあれば、新しく載せない（v21）
-    if (meta.status === "要再検証" && heldRecheck(deps, meta.id).length === 0) item = { kind: "recheck", reason: recheckReason(deps, meta) };
-    else if (meta.status === "停止") item = { kind: "disposal", reason: disposalReason(deps, meta) };
+    if (meta.status === "要再検証" && heldRecheck(deps, meta.id).length === 0) item = { kind: "recheck", reason: recheckReason(deps, meta, now) };
+    else if (meta.status === "停止") item = { kind: "disposal", reason: disposalReason(deps, meta, now) };
     if (item) upsertItem(deps, reviewId, { ...item, knowledgeId: meta.id, submissionId: null, snapshot: snapshotOf(deps, meta, now, item.kind) });
   }
   const ignored = deps.db
@@ -448,7 +497,7 @@ export const CHOICES: Record<ItemKind, Choice[]> = {
     { no: 4, label: "判定不能", freeText: false },
   ],
   recheck: [
-    { no: 1, label: "今も正しい（改定・改選後も変わらない／直さなくてよい）", freeText: false },
+    { no: 1, label: "今も正しい（改定・改選・公的文書の後も変わらない／直さなくてよい）", freeText: false },
     { no: 2, label: "直す必要がある（足りない条件・変わった内容）", freeText: true },
     { no: 3, label: "その他", freeText: true },
     { no: 4, label: "判定不能", freeText: false },
@@ -647,6 +696,9 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
   }
 
   const basis: Basis = { itemId };
+  // 承認済みに戻す回答（recheck 1・disposal 2）では、項目に載っていた公的文書の鍵を確認済みに足し、根拠に残す（v22。§4-3）
+  const officialKeys = officialKeysOf(row.snapshot);
+  const seenBasis: Basis = officialKeys.length > 0 ? { ...basis, officialIds: officialKeys } : basis;
   const out: AnswerOutcome & { status: "applied" } = { status: "applied" };
   const a = row.answer;
   if (row.kind === "miss") {
@@ -662,7 +714,7 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
       out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now);
     }
   } else if (row.kind === "recheck") {
-    if (a === 1 && !transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_PASS", via: "veteran" }, now, basis);
+    if (a === 1 && !transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_PASS", via: "veteran", officialKeys }, now, seenBasis);
     if (a === 2) {
       if (!transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_FAIL" }, now, basis);
       out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now);
@@ -678,7 +730,7 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
       const reason = row.freeText?.trim() || "レセメン会議でベテランが廃棄を承認";
       applyEvent(deps.store, meta.id, { type: "DISPOSAL_APPROVE", reason }, now, basis);
     }
-    if (a === 2 && !transitioned) applyEvent(deps.store, meta.id, { type: "DISPOSAL_REJECT" }, now, basis);
+    if (a === 2 && !transitioned) applyEvent(deps.store, meta.id, { type: "DISPOSAL_REJECT", officialKeys }, now, seenBasis);
   }
   deps.db.update(digestItems).set({ applied: true }).where(eq(digestItems.itemId, itemId)).run();
   if (row.kind === "ignored" && a === 2) recount(deps, meta.id);

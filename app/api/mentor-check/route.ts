@@ -8,6 +8,7 @@ import { z } from "zod";
 import { evaluate } from "../../../src/engine";
 import { facilityOf } from "../../../src/engine/facility";
 import type { ClaimContext } from "../../../src/engine/types";
+import { claimForAi } from "../../../src/llm/outbound";
 import { askVeteranMentor } from "../../../src/mentor/peer";
 import { modelFor } from "../../../src/mentor/models";
 import { askMentor } from "../../../src/mentor/session";
@@ -29,7 +30,7 @@ const checkQuery = z.strictObject({
 });
 
 // 権限表の dev の行：本番では route() が 404 を返し、開発時もログインした人だけが呼べる。LLM を呼ぶので、回数制限を付ける
-export const GET = route({ roles: allow("GET /api/mentor-check"), query: checkQuery, limit: "llm" }, async ({ query }) => {
+export const GET = route({ roles: allow("GET /api/mentor-check"), query: checkQuery, limit: "llm" }, async ({ query, user }) => {
   const root = mkdtempSync(path.join(tmpdir(), "iji-mentor-check-"));
   const started = Date.now();
   // ?model=…&effort=… でモデルと考える深さを試せる（所要時間の比較用）
@@ -56,15 +57,16 @@ export const GET = route({ roles: allow("GET /api/mentor-check"), query: checkQu
     if (peer) {
       const vcwd = ensureWorkspace(path.join(root, "ws"), "vet", deps.store.skillsDir, "# 動作確認（ベテラン）\n", crosscheckSkills());
       const ws = { cwd: vcwd, skills: workspaceSkillNames(vcwd) };
-      const v = await askVeteranMentor(deps.store, peer, null, ws, modelFor("veteranMentor"));
+      const v = await askVeteranMentor(user, deps.store, peer, null, ws, modelFor("veteranMentor"));
       return Response.json({ ok: true, ...v, ms: Date.now() - started });
     }
     const r = await askMentor(deps, {
+      by: user,
       clerkId: "check",
       sessionId: null,
       character: { id: "a", name: "仮キャラ", firstPerson: "僕", tone: "ていねい" },
       level: 1,
-      ctx,
+      ctx: claimForAi(ctx),
       engine,
       situation: "新人の誤り",
       message: explain ? "（本人が確定した。判定の理由を短く解説してください）" : "この請求を確定する前に、ヒントをください。",

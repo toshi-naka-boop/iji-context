@@ -68,10 +68,10 @@ describe("仕組み", () => {
 
   it("evaluate(ctx, 作り物の版) の合計と指摘が版で変わり、使った版の id が返る", () => {
     const a = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 2, dates: ["2030-06-01", "2030-06-02"] }] }, FAKE_REVISIONS);
-    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"], excludedCount: 0 });
+    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"] });
     expect(a.findings.map((f) => f.messageKey)).toEqual(["F01.over"]);
     const b = evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X2", count: 2, dates: ["2031-06-01", "2031-06-02"] }] }, FAKE_REVISIONS);
-    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"], excludedCount: 0 });
+    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"] });
     expect(b.findings).toEqual([]);
   });
 
@@ -79,12 +79,6 @@ describe("仕組み", () => {
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2031-06-01"] }] }, FAKE_REVISIONS)).toThrow(/未知の区分/);
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2032-01" }), lines: [] }, FAKE_REVISIONS)).toThrow(/版がない/);
     expect(() => pointsOf(FAKE_A, "X2")).toThrow(/未知の区分/);
-  });
-
-  it("判定の対象外の行（excluded）があれば、合計は出さず、行数を返す", () => {
-    const r = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2030-06-01"] }], excluded: [{ code: "990009999", count: 1 }] }, FAKE_REVISIONS);
-    expect(r.total).toBeNull();
-    expect(r.excludedCount).toBe(1);
   });
 
   it("rulesOf・ruleKubun は診療年月の版から取る。その版にないルールは空配列、版のない年月は例外", () => {
@@ -120,6 +114,8 @@ describe("同梱の版", () => {
     expect(Object.keys(r2027_06.points).sort()).toEqual(Object.keys(r2026.points).sort());
     expect(r2027_06.consts).toBe(r2026.consts);
     expect(r2027_06.rules).toBe(r2026.rules);
+    // 診療行為コードも引き継ぐ（design.md §11-1）
+    expect([r2027_06.codes, r2027_06.bundles, r2027_06.uncoded, r2027_06.shikibetsu]).toEqual([r2026.codes, r2026.bundles, r2026.uncoded, r2026.shikibetsu]);
     const changed = Object.keys(r2026.points).filter((k) => r2026.points[k].points !== r2027_06.points[k].points);
     expect(changed.sort()).toEqual(["O001_1", "O001_2", "O001_3I", "O001_3RO", "O100_1HA", "O100_1I", "O100_1RO"]);
     const pair = (k: string) => [pointsOf(r2026, k), pointsOf(r2027_06, k)];
@@ -148,7 +144,7 @@ describe("同梱の版", () => {
   it("どの版でも、点数表の値は EM の採用値（source が EM）で、点数未収載の区分はない", () => {
     for (const rev of REVISIONS) for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual([k, "EM", "number"]);
   });
-  it("ルールは R01〜R16 の 16 本", () => {
-    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 16 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
+  it("ルールは R01〜R17 の 17 本", () => {
+    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 17 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
   });
 });

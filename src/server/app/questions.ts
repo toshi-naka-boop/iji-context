@@ -13,6 +13,7 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Doctor } from "./doctor";
+import { genericOfLines } from "./generic";
 import type { Notes } from "./notes";
 import type { QuestionCase } from "./question-case";
 import { badRequest, conflict, notFound } from "../errors";
@@ -21,7 +22,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
-  const { caseOf } = cases;
+  const { isUploaded } = cases;
   const { monthOf } = notes;
   const { crosscheckOf } = doctor;
   const { caseFor, drillQuery, judgeFor, withLines } = questionCase;
@@ -65,6 +66,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
     const c = monthOf(claimId, clerkId);
+    // 選択モードの正解は、カルテ側の記録を読むルールも使って 1 つに決める。記録のないレセプトでは決められないので、対象外にする
+    if (mode === "選択" && isUploaded(claimId)) throw badRequest("アップロードした UKE のレセプトは、選択モードの対象外です（カルテ側の記録がなく、正解を 1 つに決められないため）。通常モードで点検してください");
     if (asOf) {
       if (mode !== "通常") throw badRequest("訪問の時点の問題は通常モードだけ");
       if (!visitDays(c).some((d) => d.date === asOf)) throw notFound(`この日の訪問はない: ${claimId} ${asOf}`);
@@ -106,6 +109,11 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     saveQ(next);
     return next;
   }
+  /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛け、確定のときの手書きの結果との重なりの規則を通す。読むだけで、問題には保存しない */
+  function genericOf(q: Question) {
+    const { yearMonth, recordsKnown } = caseFor(q);
+    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth, q.confirmed?.result ?? { findings: [] }, recordsKnown);
+  }
   function explain(id: string) {
     const cur = loadQ(id);
     inPhase(cur, "判定", "解説に進めない段階");
@@ -127,13 +135,13 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     if (q.phase !== "ヒント") throw conflict(`選べない段階: ${q.phase}`);
     return q;
   }
-  const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
+  const choices = (id: string) => choiceItems(caseFor(choiceQ(id)), choiceGroups);
   function pick(id: string, lineIndex: number, option: string) {
     const q = choiceQ(id);
-    const item = choiceItems(caseOf(q.claimId), choiceGroups).find((x) => x.lineIndex === lineIndex);
+    const item = choiceItems(caseFor(q), choiceGroups).find((x) => x.lineIndex === lineIndex);
     if (!item) throw badRequest(`選択の問題がない行: ${lineIndex}`);
     if (!item.options.includes(option)) throw badRequest(`選択肢にない: ${option}`);
-    const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
+    const r = judgePick(caseFor(q), choiceGroups, lineIndex, option);
     saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
     return r;
   }
@@ -175,7 +183,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
   };
 
-  return { loadQ, checkLines, startDrill, start, draft, confirmQ, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
+  return { loadQ, checkLines, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
 }
 
 export type Questions = ReturnType<typeof createQuestions>;

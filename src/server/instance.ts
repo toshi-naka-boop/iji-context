@@ -3,10 +3,11 @@
 // tenant id は、そのクリニックを 1 人で始めた利用者の id（招待で入った利用者は、招待した側の tenant に属する）。
 // ログインしていない呼び出し（テスト・スクリプト・開発用の確認）は従来どおり data/resemen.db の 1 つを使う
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { nextSmalltalkStreak, nextVentStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
+import { claimForAi, forgetSessions } from "../llm/outbound";
 import type { Character } from "../mentor/prompt";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
@@ -18,21 +19,16 @@ import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
 import { defaultPaths, openApp, storeOptionsOf, type App, type AppPaths } from "./app";
-import { openAuth, type Auth, type User } from "./auth";
+import { VETERAN_CLERK } from "./app/clerks";
+import type { User } from "./auth";
+import { dataDir, getAuth } from "./auth-db";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
-import { notFound } from "./errors";
+import { UserError, notFound } from "./errors";
 
 let app: App | null = null;
 
-/** データの置き場所（本番はディスクを付けた場所を RESEMEN_DATA で渡す） */
-export const dataDir = () => path.resolve(process.env.RESEMEN_DATA ?? path.join(process.cwd(), "data"));
-
-let auth: Auth | null = null;
-export function getAuth(): Auth {
-  auth ??= openAuth(path.join(dataDir(), "auth.db"));
-  return auth;
-}
+export { dataDir, getAuth };
 
 /** いまの呼び出しが、どの利用者（tenant）のものか */
 const current = new AsyncLocalStorage<User>();
@@ -57,7 +53,7 @@ export function runAs<T>(user: User, fn: () => T): T {
   return out;
 }
 export const currentUser = (): User | null => current.getStore() ?? null;
-/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は vet1 */
+/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は VETERAN_CLERK（src/server/app/clerks.ts） */
 const OWNER_CLERK = "new1";
 /**
  * tenant の中での、その利用者の医療事務 id（clerks の行）。
@@ -125,7 +121,7 @@ function ensureClerk(a: App, user: User) {
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
 const DEMO_CLERKS = [
   { id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" as const },
-  { id: "vet1", name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
+  { id: VETERAN_CLERK, name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
 ];
 
 export function getApp(): App {
@@ -191,6 +187,22 @@ function prepare(a: App, clerkId: string): { workspace: { cwd: string; skills: s
   return { workspace: { cwd, skills: workspaceSkillNames(cwd) }, sessionId: same ? c.session_id : null, generation };
 }
 
+/**
+ * 取り込んだファイルを消す（design.md §11-11）。DB とファイルは app.deleteUpload が 1 つのトランザクションで消す。
+ * ここでは、その請求を相談した人のメンターのやり取り（セッションの記録。前に使って捨てたセッションの分も）と作業場所を消す（作業場所は、次に話しかけたときに作り直される）
+ */
+export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string; claims: number }> {
+  const r = getApp().deleteUpload(sha256);
+  const root = path.join(workspaceRoot(), currentUser()?.tenantId ?? "default");
+  for (const c of r.clerks) {
+    if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
+    const cwd = path.join(root, c.id);
+    await forgetSessions(cwd, c.sessionIds);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+  return { deleted: sha256, claims: r.claimIds.length };
+}
+
 /** 続きのセッションで失敗したら（作業場所が変わって履歴が見つからないなど）、新しいセッションで一度だけやり直す */
 async function withSession<T>(sessionId: string | null, run: (sid: string | null) => Promise<T>): Promise<T> {
   if (!sessionId) return run(null);
@@ -202,21 +214,46 @@ async function withSession<T>(sessionId: string | null, run: (sid: string | null
   }
 }
 
-/** ベテランのメンターに問う（ベテラン本人の作業場所・セッションで） */
-async function askVeteran(a: App, question: string) {
-  const vet = a.clerk("vet1");
+/** 問題がまだあるか。メンターの応答を待つ間に、その請求のファイルが消されると、問題も消えている */
+function questionExists(a: App, questionId: string): boolean {
+  try {
+    a.question(questionId);
+    return true;
+  } catch (e) {
+    if (e instanceof UserError && e.status === 404) return false;
+    throw e;
+  }
+}
+const ERASED = "この請求のファイルは消されました。やり取りは残していません";
+
+/**
+ * ベテランのメンターに問う（ベテラン本人の作業場所・セッションで）。
+ * alive は、問いの元の請求がまだあるか。応答を待つ間に消されていたら、何も書かず、この作業場所のセッションの記録を消して断る（消した請求の問いを残さない）
+ */
+async function askVeteran(a: App, by: User, question: string, alive: () => boolean) {
+  const vet = a.clerk(VETERAN_CLERK);
   const p = prepare(a, vet.id);
-  const r = await withSession(p.sessionId, (sid) => askVeteranMentor(a.store, question, sid, p.workspace, modelFor("veteranMentor")));
+  let r: Awaited<ReturnType<typeof askVeteranMentor>>;
+  try {
+    r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor")));
+  } catch (e) {
+    if (!alive()) await forgetSessions(p.workspace.cwd, []);
+    throw e;
+  }
+  if (!alive()) {
+    await forgetSessions(p.workspace.cwd, [r.sessionId]);
+    throw notFound(ERASED);
+  }
   a.setSession(vet.id, r.sessionId);
   a.setSetting(`session_gen:${vet.id}`, p.generation);
   return r;
 }
 
-/** メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す） */
 /**
+ * メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す）。user は操作した本人（外部へ送る前に、同意を確かめるために渡す）。
  * skipCrosscheck：本人が「照合の不一致とは別のことを医師に聞きたい」と選んだとき。この 1 回だけ照合の不一致を渡さない
  */
-export async function talkToMentor(input: { clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
+export async function talkToMentor(input: { user: User; clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
   const a = getApp();
   const clerk = a.clerk(input.clerkId);
   const q = a.question(input.questionId);
@@ -228,18 +265,31 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
   const engine = latest ?? a.judgeFor(q)({ ...ctx, lines });
   const p = prepare(a, clerk.id);
   const level = a.status(clerk.id).level;
-  const r = await withSession(p.sessionId, (sid) =>
+  // 応答を待つ間に、この請求のファイルが消されることがある（design.md §11-11「消す」）。待ったあとの書き込みは、どれも直前に問題がまだあるかを確かめる
+  const alive = () => questionExists(a, q.id);
+  /** 消されていたとき：待つ間にできた記録（この人のセッションの記録、メンターが作った医師確認）を消す。DB には何も書かない */
+  const cleanUp = async (sessionIds: string[]) => {
+    await forgetSessions(p.workspace.cwd, sessionIds);
+    a.forgetQueries([q.claimId]);
+  };
+  let r: Awaited<ReturnType<typeof askMentor>>;
+  try {
+    r = await withSession(p.sessionId, (sid) =>
     askMentor(
       {
         store: a.store,
         queryLog: a.queryLog,
         askPeerMentor: async (question) => {
-          const v = await askVeteran(a, question);
+          const v = await askVeteran(a, input.user, question, alive);
           if (!v.answer.answerable) return null;
-          a.peerResolvedByMentor(clerk.id, question, v.answer.body);
+          if (!alive()) throw notFound(ERASED);
+          a.peerResolvedByMentor(clerk.id, question, v.answer.body, q.claimId);
           return v.answer.body;
         },
-        askHuman: async (question) => a.peerToHuman(clerk.id, question),
+        askHuman: async (question) => {
+          if (!alive()) throw notFound(ERASED);
+          return a.peerToHuman(clerk.id, question, q.claimId);
+        },
         crosscheck: () =>
           input.skipCrosscheck ? [] : a.crosscheckOf(q.claimId, q.asOf, q.clerkId).mismatches.map((m) => ({
             ruleId: m.ruleId,
@@ -250,12 +300,14 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
           })),
       },
       {
+        by: input.user,
         clerkId: clerk.id,
         sessionId: sid,
         character: characterOf(clerk.character_id),
         style: a.styleOf(clerk.id),
         level,
-        ctx: { ...ctx, lines },
+        // メンターに渡す請求は、識別子を外した形だけ
+        ctx: claimForAi(ctx),
         engine,
         situation: input.situation,
         message: input.message,
@@ -269,7 +321,15 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
         ventStreak: Number(a.setting(`vent:${q.id}`) ?? "0"),
       },
     ),
-  );
+    );
+  } catch (e) {
+    if (!alive()) await cleanUp([]);
+    throw e;
+  }
+  if (!alive()) {
+    await cleanUp([r.sessionId]);
+    throw notFound(ERASED);
+  }
   a.setSession(clerk.id, r.sessionId);
   a.setSetting(`session_gen:${clerk.id}`, p.generation);
   // 数えるのは回数だけ。愚痴の中身はどこにも集計しない（事務長のレポートにも出さない）
@@ -279,13 +339,13 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
 }
 
 /** 訪問カルテを残し、AI が算定に要る事実を取り出す（FR-69）。取り出した事実は本人が確かめてから使う */
-export async function writeChart(input: { claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
+export async function writeChart(input: { user: User; claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
-  const r = await extractFacts(input.note, modelFor("chartExtract"));
+  const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
   return { ...saved, ...r };
 }
 
 /** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
-export const formatChart = (text: string) => formatSoap(text, modelFor("chartSoap"));
-export const readChartFromImage = (image: Buffer) => readChartImage(image, modelFor("chartImage"));
+export const formatChart = (user: User, text: string) => formatSoap(user, text, modelFor("chartSoap"));
+export const readChartFromImage = (user: User, image: Buffer) => readChartImage(user, image, modelFor("chartImage"));

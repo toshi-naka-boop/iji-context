@@ -1,10 +1,13 @@
 "use client";
 // 医師画面（F1・FR-30〜34）：質問・カルテ等の記載（臨床指標）・選択肢・確認ボタン。点数・金額は出さない。
-// 選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない（AHIMA/ACDIS の要件）
+// 選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない（AHIMA/ACDIS の要件）。
+// 上に「確かめてほしい項目」（点検で、医師に確かめる事実として出ている情報不足。app/doctor/fact-requests.tsx）、下に確認の依頼（質問）を並べる
 import { useEffect, useState } from "react";
 import type { DoctorQuery } from "../../src/query/types";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { getJson } from "../get-json";
+import { FactRequests } from "./fact-requests";
 
 const STATUS_BADGE: Record<string, string> = { 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
 
@@ -12,7 +15,7 @@ export default function Doctor() {
   const [qs, setQs] = useState<DoctorQuery[]>([]);
   const [pick, setPick] = useState<Record<string, { option: string; freeText: string }>>({});
   const [err, setErr] = useState("");
-  const load = () => fetch("/api/doctor").then((r) => r.json()).then(setQs);
+  const load = () => getJson<DoctorQuery[]>("/api/doctor").then(setQs).catch((e: Error) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
   async function post(url: string, body: unknown) {
@@ -28,9 +31,11 @@ export default function Doctor() {
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="医師確認">
-        カルテに書かれていないことを、ここで医師に確かめます。医師の役割で選択肢から答え、内容を確かめて承認してください（1 人で使っているときは、設定で役割を医師に切り替えます）。点数や金額はここには出しません。
+        カルテに書かれていないことを、ここで医師に確かめます。医師の役割で選択肢から答え、内容を確かめて承認してください（1 人で使っているときは、設定で役割を医師に切り替えます）。上の「確かめてほしい項目」は、レセプトの点検で医師に確かめることになった事実です。答えると点検に使われ、「その他」「判定不能」は不明のまま残ります。点数や金額はここには出しません。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
+      <FactRequests />
+      <h2 style={{ margin: "0 0 12px", fontSize: 18 }}>確認の依頼</h2>
       <div className="stats">
         <div className="stat" style={{ ["--stat-color" as string]: "var(--warn-mark)" }}><div className="label">確かめ待ち</div><span className="value">{open}</span><span className="unit">件</span></div>
         <div className="stat"><div className="label">承認済み</div><span className="value">{qs.length - open}</span><span className="unit">件</span></div>

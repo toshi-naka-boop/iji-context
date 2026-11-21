@@ -12,10 +12,10 @@ export const dynamic = "force-dynamic";
 const evalQuery = z.strictObject({ ids: z.string().max(400).regex(/^[A-Za-z0-9_,-]*$/).optional() });
 
 // 権限表の dev の行：本番では route() が 404 を返し、開発時もログインした人だけが呼べる。LLM を呼ぶので、回数制限を付ける
-export const GET = route({ roles: allow("GET /api/eval"), query: evalQuery, limit: "llm" }, async ({ query }) => {
+export const GET = route({ roles: allow("GET /api/eval"), query: evalQuery, limit: "llm" }, async ({ query, user }) => {
   const ids = query.ids?.split(",").filter(Boolean);
   try {
-    return Response.json(await runEval(process.cwd(), { ids }));
+    return Response.json(await runEval(process.cwd(), { ids }, user));
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

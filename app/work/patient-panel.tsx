@@ -4,22 +4,44 @@
 import { useEffect, useState } from "react";
 import type { Facts } from "../../src/engine/types";
 import type { PatientFinding } from "../../src/patient/checks";
-import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
+import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
 import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patient/profile";
 
 type Row = PatientFact & { expired: boolean };
 type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
 
-const LABEL: Record<PatientFactKey, string> = { careLevel: "要介護度", table7: "別表第七", table8_2: "別表第八の二", homeOxygen: "在宅酸素療法" };
+export const LABEL: Record<PatientFactKey, string> = {
+  careLevel: "要介護度",
+  disabilitySupportLevel: "障害支援区分",
+  table7: "別表第七",
+  table8_2: "別表第八の二",
+  table8_3Other: "別表第八の三（要介護度・障害支援区分以外）",
+  homeOxygen: "在宅酸素療法",
+  residence: "居住の場所",
+  contactDocProvided: "連絡担当者・往診担当医などの文書の提供",
+  emergencyEligible: "緊急往診の対象患者か",
+  comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
+};
 
 /** 確かめ方の言い方（「医師に確認で確かめた」とならないように） */
 const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : `${s}で確かめた`);
 
-function show(key: PatientFactKey, v: number | boolean): string {
+export function show(key: PatientFactKey, v: number | boolean | string): string {
   if (key === "careLevel") return v === 0 ? "要支援・非該当" : `要介護${v}`;
+  if (key === "disabilitySupportLevel") return v === 0 ? "認定なし" : `区分${v}`;
+  if (key === "residence") return String(v);
   if (key === "homeOxygen") return v ? "している" : "していない";
+  if (key === "contactDocProvided") return v ? "提供している" : "提供していない";
+  if (key === "emergencyEligible") return v ? "対象" : "対象でない";
+  if (key === "comprehensiveCare") return v ? "算定する患者" : "算定しない患者";
   return v ? "当たる" : "当たらない";
 }
+/** その項目で選べる値 */
+export const choicesOf = (key: PatientFactKey): (number | boolean | string)[] =>
+  key === "careLevel" ? [0, 1, 2, 3, 4, 5] : key === "disabilitySupportLevel" ? [0, 1, 2, 3, 4, 5, 6] : key === "residence" ? RESIDENCES : [true, false];
+/** 選択肢の文字（select の value）を、残す値に戻す */
+export const valueOf = (key: PatientFactKey, raw: string): number | boolean | string =>
+  key === "careLevel" || key === "disabilitySupportLevel" ? Number(raw) : key === "residence" ? raw : raw === "true";
 
 /** 加入情報の呼び名（医保／公費1…） */
 const coverageName = (c: Coverage) => (c.kind === "医保" ? "医保" : `公費${c.position}`);
@@ -80,7 +102,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
 
   async function save() {
     setErr("");
-    const fact = { key, value: key === "careLevel" ? Number(value) : value === "true", source, validUntil: key === "careLevel" ? validUntil || null : null };
+    const fact = { key, value: valueOf(key, value), source, validUntil: key === "careLevel" ? validUntil || null : null };
     const r = await fetch(`/api/patients/${props.claimId}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json();
     if (!r.ok) return setErr(d.error ?? "エラー");
@@ -113,7 +135,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
   }
 
   return (
-    <div>
+    <div id="patient-info">
       <h3>患者情報</h3>
       <table>
         <tbody>
@@ -123,7 +145,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
             return (
               <tr key={k}>
                 <td>{LABEL[k]}</td>
-                <td>{f.known ? show(k, f.value as number | boolean) : "分からない"}</td>
+                <td>{f.known ? show(k, f.value as number | boolean | string) : "分からない"}</td>
                 <td className="muted">
                   {rec
                     ? `${rec.checkedAt.slice(0, 10)} に${how(rec.source)}（${show(k, rec.value)}）${rec.validUntil ? `・${rec.validUntil} まで` : ""}`
@@ -142,9 +164,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
           </select>
           <select value={value} onChange={(e) => setValue(e.target.value)}>
             <option value="">選ぶ</option>
-            {key === "careLevel"
-              ? [0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{show(key, n)}</option>)
-              : [true, false].map((b) => <option key={String(b)} value={String(b)}>{show(key, b)}</option>)}
+            {choicesOf(key).map((v) => <option key={String(v)} value={String(v)}>{show(key, v)}</option>)}
           </select>
           <select value={source} onChange={(e) => setSource(e.target.value)}>
             {FACT_SOURCES.map((s) => <option key={s} value={s}>{how(s)}</option>)}

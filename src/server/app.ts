@@ -2,10 +2,14 @@
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
 import { createCases } from "./app/cases";
+import { createClaimFacts } from "./app/claim-facts";
 import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
+import { createDoctorFacts } from "./app/doctor-facts";
+import { createErase } from "./app/erase";
+import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
@@ -14,7 +18,9 @@ import { createPeer } from "./app/peer";
 import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
+import { createRevision } from "./app/revision";
 import { createUke } from "./app/uke";
+import { createUkeCheck } from "./app/uke-check";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
 
@@ -29,7 +35,8 @@ export function openApp(paths: AppPaths) {
   const clerks = createClerks(ctx);
   const uke = createUke(ctx, clerks);
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
-  const casesOf = createCases(ctx, clock, uke, patientFactsOf);
+  const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
+  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
   const notes = createNotes(ctx, clock, clerks, uke, casesOf);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
@@ -38,23 +45,29 @@ export function openApp(paths: AppPaths) {
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
+  const erase = createErase(ctx, uke, patientFactsOf);
+  const revision = createRevision(uke, casesOf, notes);
+  const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
+  const facility = createFacility(ctx);
 
-  const { now, advanceClock } = clock;
-  const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
-  const { ukeList, importUke, importedClaims } = uke;
-  const { patientFacts, savePatientFact } = patientFactsOf;
+  const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
+  const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
+  const { claimFacts, saveClaimFact } = claimFactsOf;
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
+  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, noteOf, confirmNote, patients, visits } = notes;
+  const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
+  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
+    const claim = notes.claimOfNote(noteId, choices, revId);
+    return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
+  };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
-  const { loadQ, startDrill, start, draft, confirmQ, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
-  const { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
-  const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf } = knowledge;
-  const { importClaimResult, agenda, answerAgenda, runMeeting } = meeting;
-  const { personal, manager } = prevented;
+  const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
 
   return {
     paths,
@@ -77,32 +90,30 @@ export function openApp(paths: AppPaths) {
     saveNote,
     noteOf,
     confirmNote,
+    deleteNote,
+    listNotes,
+    chartClaim,
+    saveNoteComment,
     patients,
     outlookOf,
     patientFacts,
     savePatientFact,
+    claimFacts,
+    saveClaimFact,
     patientProfile,
     confirmCoverage,
-    now,
-    advanceClock,
-    upsertClerk,
-    createClerk,
+    checkConnectorPatient,
     ukeList,
     importUke,
+    sampleUke,
+    uploadUke,
     importedClaims,
-    clerk,
-    setSession,
-    chooseCharacter,
-    characterChosen,
-    setClerkName,
-    welcomed,
-    setStyle,
-    styleOf,
     start,
     choices,
     pick,
     draft,
     confirm: confirmQ,
+    questionGeneric: genericOf,
     explain,
     done,
     question: loadQ,
@@ -110,33 +121,25 @@ export function openApp(paths: AppPaths) {
     questionsOf,
     setting,
     setSetting,
-    importClaimResult,
+    ...facility,
     doctorQueries,
     answerDoctor,
     approveDoctor,
-    agenda,
-    answerAgenda,
-    runMeeting,
     crosscheckOf,
-    peerList,
-    peerListFor,
     proxySubmit,
-    queue,
-    verify,
-    empathize,
-    propose,
-    knowledgeList,
-    resolveNoticeItems,
-    registerNotice,
-    seedLocalRules,
-    localRulesOf,
-    peerResolvedByMentor,
-    peerToHuman,
-    peerAnswerByHuman,
     sendCrosscheck,
     confirmedDiseases,
-    personal,
-    manager,
+    // 領域の関数をそのまま全部出すもの（領域の側に足した関数は、ここを直さずに出る）
+    ...clock,
+    ...clerks,
+    ...ukeCheck,
+    ...erase,
+    ...revision,
+    ...doctorFacts,
+    ...peer,
+    ...knowledge,
+    ...meeting,
+    ...prevented,
   };
 }
 

@@ -39,6 +39,12 @@ export function billedOushinDays(ctx: ClaimContext, c: RevisionConsts): string[]
   return billedDays(ctx, [c.oushin.kubun]);
 }
 
+/** 往診料だけを算定した日（訪問診療料を算定していない日） */
+export function oushinOnlyBilledDays(ctx: ClaimContext, c: RevisionConsts): string[] {
+  const v = new Set(billedVisitDays(ctx, c));
+  return billedOushinDays(ctx, c).filter((d) => !v.has(d));
+}
+
 /** 訪問診療料と往診料の両方を算定した日 */
 export function sameDayPairs(ctx: ClaimContext, c: RevisionConsts): string[] {
   const o = new Set(billedOushinDays(ctx, c));
@@ -67,19 +73,21 @@ export type KanriExpect = {
 
 /**
  * 管理料の期待される族と区分（§2-3-3）。R01・R02・R03・R16 が同じ答えを使う。
- * 区分を決める順は 回数 → 重症 → 注16。不明な事実を聞くのは、その答えで区分が変わるときだけ
+ * 区分を決める順は 回数 → 重症 → 注16。不明な事実を聞くのは、その答えで区分が変わるときだけ。
+ * 注16 のない版（note16.enabled が偽）では、施設の設定を読まず、月 2 回以上は 2ロ（design.md §11-2）
  */
 export function expectedKanri(ctx: ClaimContext, c: RevisionConsts): KanriExpect {
   const visits = visitCount(ctx, c);
   const res = ctx.facts.residence;
   const family: Fact<KanriFamily> = res.known ? { known: true, value: c.kanri.familyOf[res.value] } : { known: false };
-  const { from, to } = c.kanri.note16;
+  const { enabled, from, to } = c.kanri.note16;
   const tier = ((): KanriExpect["tier"] => {
     if (visits === 0) return { known: true, value: "none" };
     if (visits === 1) return { known: true, value: "ニ" };
     const severe = ctx.facts.table8_2;
     if (!severe.known) return { known: false, need: "table8_2", candidates: ["イ", "ロ", "ニ"] };
     if (severe.value) return { known: true, value: "イ" };
+    if (!enabled) return { known: true, value: "ロ" };
     const met = ctx.facility.note16Met;
     if (!met.known) return { known: false, need: "facility.note16Met", candidates: [from, to] };
     return { known: true, value: met.value ? from : to };
@@ -94,9 +102,24 @@ export function hokatsuInScope(ctx: ClaimContext, c: RevisionConsts): boolean {
   return t.known === true ? tiers.includes(t.value) : t.need === "facility.note16Met" && t.candidates.every((x) => tiers.includes(x));
 }
 
-/** 包括的支援加算の対象か（要介護度が下限以上）。期待される区分が加算の対象の区分で、careLevel が分かっている前提 */
-export function hokatsuEligible(ctx: ClaimContext, c: RevisionConsts): boolean {
-  return fact(ctx, "careLevel") >= c.hokatsu.careLevelMin;
+/**
+ * 包括的支援加算の対象か（別表第八の三。EM R8-15a）。R03 と導出の D04 が同じ答えを使う。
+ * 要介護度が下限以上か、障害支援区分が下限以上か、ほかの状態に当たれば対象。どれにも当たらないと分かっていれば対象外。
+ * 決まらないときは、次に確かめる事実を 1 つ返す（要介護度 → 障害支援区分 → ほかの状態 の順。答えで結果が変わらないことは聞かない。design.md §11-4 の表）
+ */
+export function hokatsuEligible(
+  ctx: ClaimContext,
+  c: RevisionConsts,
+): { known: true; value: boolean } | { known: false; need: "careLevel" | "disabilitySupportLevel" | "table8_3Other" } {
+  const care = ctx.facts.careLevel;
+  const disability = ctx.facts.disabilitySupportLevel;
+  const other = ctx.facts.table8_3Other;
+  if ((care.known && care.value >= c.hokatsu.careLevelMin) || (disability.known && disability.value >= c.hokatsu.disabilityLevelMin) || (other.known && other.value))
+    return { known: true, value: true };
+  if (!care.known) return { known: false, need: "careLevel" };
+  if (!disability.known) return { known: false, need: "disabilitySupportLevel" };
+  if (!other.known) return { known: false, need: "table8_3Other" };
+  return { known: true, value: false };
 }
 
 /**
@@ -109,33 +132,111 @@ export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
   return doc.known ? doc.value : "unknown";
 }
 
-/** 内服の種類数が閾値以上の処方があるか（処方箋料の区分を決める） */
-export function rxManyOral(ctx: ClaimContext, c: RevisionConsts): boolean {
-  return eventsOf(ctx, "prescription").some((e) => e.oralKinds >= c.rx.oralKindsThreshold);
+/** 日付ごとの事実の、その日の答え（載っていない日・事実が丸ごと不明なら undefined） */
+const answerOn = (f: Fact<Record<string, boolean>>, day: string): boolean | undefined => (f.known ? f.value[day] : undefined);
+
+/**
+ * 同じ日の訪問診療と往診の関係（design.md §11-5）。R10 と導出の D01・D02 が同じ答えを使う。
+ * same＝1 回の診療（sameDaySeparate が偽。訪問診療のあとの往診かは聞かずに偽として扱う）／
+ * after＝訪問診療のあとに、急変などで往診した（sameDayOushinAfterVisit が真。別々の診療かは聞かずに真として扱う）／
+ * not_after＝別々の診療だが、訪問診療のあとの往診ではない（往診が先、など。実施は 2 回だが、往診料は立てられない）。
+ * 決まらないときは、次に確かめる事実を 1 つ返す。2 つの答えが食い違う日（1 回の診療で、かつ、あとの往診）は 1 回の診療として扱う
+ */
+export function sameDayOf(ctx: ClaimContext, day: string): { known: true; value: "same" | "after" | "not_after" } | { known: false; need: "sameDayOushinAfterVisit" | "sameDaySeparate" } {
+  const separate = answerOn(ctx.facts.sameDaySeparate, day);
+  const after = answerOn(ctx.facts.sameDayOushinAfterVisit, day);
+  if (separate === false) return { known: true, value: "same" };
+  if (after === true) return { known: true, value: "after" };
+  if (after === undefined) return { known: false, need: "sameDayOushinAfterVisit" };
+  if (separate === undefined) return { known: false, need: "sameDaySeparate" };
+  return { known: true, value: "not_after" };
 }
 
-/** ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽 */
-export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): boolean {
+/** 同じ日の訪問診療と往診を、別々の診療（実施 2 回）と数えるか。sameDayOf と同じ関係で読み、決まらなければ undefined（確かめるのは sameDaySeparate） */
+function separateOn(ctx: ClaimContext, day: string): boolean | undefined {
+  const separate = answerOn(ctx.facts.sameDaySeparate, day);
+  return separate === false ? false : answerOn(ctx.facts.sameDayOushinAfterVisit, day) === true ? true : separate;
+}
+
+/**
+ * その日の処方箋料として期待される区分（design.md §11-5）。導出の D10 と R07 が同じ答えを使う。判定の単位は処方 1 回ごと（EM #7-13）。
+ * 内服の種類数が閾値以上 → 区分 2（why: many）／閾値未満で向精神薬の長期処方 → 区分 2（long）／閾値未満で長期処方でない → 区分 3（other）。
+ * 閾値未満で長期処方かが不明なら決まらない（rxLongPsychotropic を確かめる）。区分 3 のほうが点数が高いので、不明を区分 3 とみなさない（X-85）。
+ * 処方に対象の薬が含まれないと分かっていれば（psychotropic が偽）、聞かずに長期処方でないとして扱う。null は「含まれない」とみなさない。
+ * その日の処方の記録が 1 件に決まらないとき（ない＝行と対応がとれない／2 件以上＝日付ごとの事実では分けられない）も決まらない（rxRecord）。日付のない行は day を "" で渡す
+ */
+export function rxKubunOn(
+  ctx: ClaimContext,
+  c: RevisionConsts,
+  day: string,
+): { known: true; kubun: string; why: "many" | "long" | "other" } | { known: false; need: "rxRecord" | "rxLongPsychotropic" } {
+  const onDay = eventsOf(ctx, "prescription").filter((e) => e.date === day);
+  if (onDay.length !== 1) return { known: false, need: "rxRecord" };
+  const e = onDay[0];
+  if (e.oralKinds >= c.rx.oralKindsThreshold) return { known: true, kubun: c.rx.many, why: "many" };
+  const long = e.psychotropic === false ? false : answerOn(ctx.facts.rxLongPsychotropic, day);
+  if (long === undefined) return { known: false, need: "rxLongPsychotropic" };
+  return long ? { known: true, kubun: c.rx.many, why: "long" } : { known: true, kubun: c.rx.other, why: "other" };
+}
+
+/**
+ * ターミナルケア加算の訪問の回数の要件（死亡日前の所定の日数以内に、訪問診療・往診を所定の回数以上「実施」。出来事で数える）。死亡の出来事がなければ偽。
+ * 同じ日の訪問診療と往診の出来事は、別々の診療でないと確かめた日（sameDaySeparate が偽）なら 1 回、別々の診療の日（往診が先でも）は 2 回と数える（X-73・C-88）。
+ * 確かめていない日は 1 回とも出来事の数とも言えないので、どちらに数えても答えが同じときだけ決め、変わるときは "unknown" と、確かめる日（ask）を返す。
+ * 別の経路（EM #7-11）：回数が足りなくても、退院時共同指導料1 を算定し、訪問診療を実施していれば満たす。
+ * 退院時共同指導料1 を聞く（askGuidance）のは、回数が足りないと決まり、訪問診療が 1 回以上あるときだけ。
+ * 死亡日の出来事は、死亡の前後を問わず数える（死亡後だけの診療を入れるかは未確認。要件不足を出さない側に倒れる。design.md L-49）。
+ * 回数の要件（days・minVisits）を持たない版では呼ばない（例外。導出は呼ぶ前に確かめる）
+ */
+export function terminalVisitsOk(ctx: ClaimContext, c: RevisionConsts): { ok: boolean | "unknown"; ask: string[]; askGuidance: boolean } {
+  const { days, minVisits } = c.terminal;
+  if (days === undefined || minVisits === undefined) throw new Error("この版は、ターミナルケア加算の回数の要件を持たない");
   const death = eventsOf(ctx, "death")[0];
-  if (!death) return false;
-  const from = addDays(death.date, -c.terminal.days);
-  const n = ctx.events.filter((e) => (e.type === "visit" || e.type === "oushin") && e.date >= from && e.date <= death.date).length;
-  return n >= c.terminal.minVisits;
+  if (!death) return { ok: false, ask: [], askGuidance: false };
+  const from = addDays(death.date, -days);
+  const done = [...eventsOf(ctx, "visit"), ...eventsOf(ctx, "oushin")].filter((e) => e.date >= from && e.date <= death.date);
+  let min = 0;
+  let max = 0;
+  const ask: string[] = [];
+  for (const d of [...new Set(done.map((e) => e.date))].sort()) {
+    const types = done.filter((e) => e.date === d).map((e) => e.type);
+    const both = types.includes("visit") && types.includes("oushin");
+    const answer = both ? separateOn(ctx, d) : true;
+    min += answer === true ? types.length : 1;
+    max += answer === false ? 1 : types.length;
+    if (answer === undefined) ask.push(d);
+  }
+  const guidance = ctx.facts.dischargeJointGuidance;
+  const visited = done.some((e) => e.type === "visit");
+  if (min >= minVisits || (visited && guidance.known && guidance.value)) return { ok: true, ask: [], askGuidance: false };
+  if (max < minVisits) return visited && !guidance.known ? { ok: "unknown", ask: [], askGuidance: true } : { ok: false, ask: [], askGuidance: false };
+  return { ok: "unknown", ask, askGuidance: false };
 }
 
-/** 週ごとの、訪問診療料を算定した回数の最大値。算定しなかった訪問は数えない */
-export function maxVisitsPerWeek(ctx: ClaimContext, c: RevisionConsts): number {
-  const perWeek = new Map<string, number>();
+/** 週（始まりの日）ごとの、訪問診療料を算定した日（回数ぶん重ねる）。算定しなかった訪問は数えない */
+function visitDaysByWeek(ctx: ClaimContext, c: RevisionConsts): Map<string, string[]> {
+  const perWeek = new Map<string, string[]>();
   for (const l of ctx.lines) {
     if (l.count <= 0 || !c.visitKubun.includes(l.kubun)) continue;
     for (const date of l.dates) {
       const d = new Date(`${date}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() - c.weekStartsOn + 7) % 7));
       const key = d.toISOString().slice(0, 10);
-      perWeek.set(key, (perWeek.get(key) ?? 0) + 1);
+      perWeek.set(key, [...(perWeek.get(key) ?? []), date]);
     }
   }
-  return Math.max(0, ...perWeek.values());
+  return perWeek;
+}
+
+/** 週ごとの、訪問診療料を算定した回数の最大値 */
+export function maxVisitsPerWeek(ctx: ClaimContext, c: RevisionConsts): number {
+  return Math.max(0, ...[...visitDaysByWeek(ctx, c).values()].map((days) => days.length));
+}
+
+/** 週の上限を超えた週の、訪問診療料を算定した日（重複は除いて昇順）。R13 と同じ数え方で、R17 と導出の「摘要欄に書くこと」が使う */
+export function overLimitVisitDays(ctx: ClaimContext, c: RevisionConsts): string[] {
+  const days = [...visitDaysByWeek(ctx, c).values()].filter((d) => d.length > c.weeklyVisitLimit).flat();
+  return [...new Set(days)].sort();
 }
 
 /** "YYYY-MM" の差（月数） */

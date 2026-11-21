@@ -1,0 +1,762 @@
+{
+  "_note": "模擬サーバー（FHIR JP Core 形式）が返すリソース。合成データ（scripts/gen-connect.ts が作る。手で直さない）。患者・保険・公費・傷病名は fixtures/uke/patients.json、訪問日と処方は fixtures/charts/ の K1・K2・K3・K4 から。処方は分類名だけ（薬剤名は作らない）。医療保険の identifier・拡張・氏名の表記の拡張は JP Core V1.2.0 の定義どおり。公費負担者番号の identifier system と受給者番号の置き場所は未確認の仮の形（src/connect/fhir.ts の注）。氏名のカナ・訪問の時刻・公費の有効期間は架空の仮置き",
+  "resources": [
+    {
+      "resourceType": "Patient",
+      "id": "mock-K1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+        ]
+      },
+      "identifier": [
+        {
+          "system": "urn:oid:1.2.392.100495.20.3.51.19999999999",
+          "value": "K1"
+        }
+      ],
+      "name": [
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　イチロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
+          "text": "架空　一郎"
+        }
+      ],
+      "gender": "male",
+      "birthDate": "1941-04-01"
+    },
+    {
+      "resourceType": "Coverage",
+      "id": "mock-K1-cov-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+        ]
+      },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000001"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139993\",\"\",\"０００００００１\",\"\""
+        }
+      ],
+      "status": "active",
+      "beneficiary": {
+        "reference": "Patient/mock-K1"
+      },
+      "payor": [
+        {
+          "identifier": {
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
+            "value": "39139993"
+          }
+        }
+      ]
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K1-enc-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "period": {
+        "start": "2026-10-14T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K1-enc-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "period": {
+        "start": "2026-10-28T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K1-cond-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "code": {
+        "text": "慢性心不全"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K1-cond-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "code": {
+        "text": "高血圧症"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K1-cond-3",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "code": {
+        "text": "２型糖尿病"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K1-cond-4",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K1"
+      },
+      "code": {
+        "text": "脳梗塞後遺症"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Patient",
+      "id": "mock-K2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+        ]
+      },
+      "identifier": [
+        {
+          "system": "urn:oid:1.2.392.100495.20.3.51.19999999999",
+          "value": "K2"
+        }
+      ],
+      "name": [
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　ジロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
+          "text": "架空　二郎"
+        }
+      ],
+      "gender": "male",
+      "birthDate": "1946-04-01"
+    },
+    {
+      "resourceType": "Coverage",
+      "id": "mock-K2-cov-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+        ]
+      },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000002"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139993\",\"\",\"０００００００２\",\"\""
+        }
+      ],
+      "status": "active",
+      "beneficiary": {
+        "reference": "Patient/mock-K2"
+      },
+      "payor": [
+        {
+          "identifier": {
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
+            "value": "39139993"
+          }
+        }
+      ]
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K2-enc-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K2"
+      },
+      "period": {
+        "start": "2026-10-14T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K2-enc-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K2"
+      },
+      "period": {
+        "start": "2026-10-28T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K2-cond-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K2"
+      },
+      "code": {
+        "text": "２型糖尿病"
+      },
+      "onsetDateTime": "2026-08-01"
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K2-cond-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K2"
+      },
+      "code": {
+        "text": "高血圧症"
+      },
+      "onsetDateTime": "2026-08-01"
+    },
+    {
+      "resourceType": "Patient",
+      "id": "mock-K3",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+        ]
+      },
+      "identifier": [
+        {
+          "system": "urn:oid:1.2.392.100495.20.3.51.19999999999",
+          "value": "K3"
+        }
+      ],
+      "name": [
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　サブロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
+          "text": "架空　三郎"
+        }
+      ],
+      "gender": "male",
+      "birthDate": "1948-04-01"
+    },
+    {
+      "resourceType": "Coverage",
+      "id": "mock-K3-cov-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+        ]
+      },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000003"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139993\",\"\",\"０００００００３\",\"\""
+        }
+      ],
+      "status": "active",
+      "beneficiary": {
+        "reference": "Patient/mock-K3"
+      },
+      "payor": [
+        {
+          "identifier": {
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
+            "value": "39139993"
+          }
+        }
+      ]
+    },
+    {
+      "resourceType": "Coverage",
+      "id": "mock-K3-kohi-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+        ]
+      },
+      "status": "active",
+      "beneficiary": {
+        "reference": "Patient/mock-K3"
+      },
+      "payor": [
+        {
+          "identifier": {
+            "system": "urn:example:resemen:unconfirmed:kohi-payer-number",
+            "value": "54139993"
+          }
+        }
+      ],
+      "subscriberId": "9999996",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2027-03-31"
+      },
+      "order": 1
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-05T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-06T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-3",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-07T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-4",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-08T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-5",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-12T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-6",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-14T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-7",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-16T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-8",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-19T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-9",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-21T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-10",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-23T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-11",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-26T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K3-enc-12",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "period": {
+        "start": "2026-10-29T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K3-cond-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "code": {
+        "text": "パーキンソン病"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K3-cond-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K3"
+      },
+      "code": {
+        "text": "慢性心不全"
+      },
+      "onsetDateTime": "2024-04-01"
+    },
+    {
+      "resourceType": "Patient",
+      "id": "mock-K4",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+        ]
+      },
+      "identifier": [
+        {
+          "system": "urn:oid:1.2.392.100495.20.3.51.19999999999",
+          "value": "K4"
+        }
+      ],
+      "name": [
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "SYL"
+            }
+          ],
+          "text": "カクウ　シロウ"
+        },
+        {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+              "valueCode": "IDE"
+            }
+          ],
+          "text": "架空　四郎"
+        }
+      ],
+      "gender": "male",
+      "birthDate": "1950-04-01"
+    },
+    {
+      "resourceType": "Coverage",
+      "id": "mock-K4-cov-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+        ]
+      },
+      "extension": [
+        {
+          "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+          "valueString": "00000004"
+        }
+      ],
+      "identifier": [
+        {
+          "system": "http://jpfhir.jp/fhir/core/IdSystem/JP_Coverage_id",
+          "value": "\"39139993\",\"\",\"０００００００４\",\"\""
+        }
+      ],
+      "status": "active",
+      "beneficiary": {
+        "reference": "Patient/mock-K4"
+      },
+      "payor": [
+        {
+          "identifier": {
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
+            "value": "39139993"
+          }
+        }
+      ]
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K4-enc-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K4"
+      },
+      "period": {
+        "start": "2026-10-13T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "Encounter",
+      "id": "mock-K4-enc-2",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+        ]
+      },
+      "status": "finished",
+      "subject": {
+        "reference": "Patient/mock-K4"
+      },
+      "period": {
+        "start": "2026-10-27T10:00:00+09:00"
+      }
+    },
+    {
+      "resourceType": "MedicationRequest",
+      "id": "mock-K4-rx-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest"
+        ]
+      },
+      "status": "active",
+      "intent": "order",
+      "subject": {
+        "reference": "Patient/mock-K4"
+      },
+      "authoredOn": "2026-10-13",
+      "medicationCodeableConcept": {
+        "text": "DOAC"
+      }
+    },
+    {
+      "resourceType": "Condition",
+      "id": "mock-K4-cond-1",
+      "meta": {
+        "profile": [
+          "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition"
+        ]
+      },
+      "subject": {
+        "reference": "Patient/mock-K4"
+      },
+      "code": {
+        "text": "心房細動"
+      },
+      "onsetDateTime": "2024-04-01"
+    }
+  ]
+}

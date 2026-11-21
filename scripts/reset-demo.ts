@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isKnownKubun } from "../src/engine/codes-fictional";
+import { isKnownKubun } from "../src/engine/revisions";
 import { workspaceRoot } from "../src/mentor/workspace";
 import { retireDir, staleTenants } from "../src/server/dataset";
 import { syncSkills } from "./sync-skills";

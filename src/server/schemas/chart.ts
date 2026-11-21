@@ -1,6 +1,7 @@
 // 訪問カルテの入力。書いた人は受け取らない（セッションの本人から決める）
 import { z } from "zod";
 import { FACT_KINDS } from "../../chart/extract";
+import { SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { MAX_IMAGE_BYTES } from "../../chart/image";
 import { MAX_CHART_TEXT } from "../../chart/limits";
 import { claimId } from "./cases";
@@ -20,6 +21,24 @@ export const CHART_BODY_BYTES = 5 * MAX_CHART_TEXT * 3 + 4096;
 export const noteParams = z.strictObject({ id: z.string().regex(/^[1-9][0-9]{0,9}$/) });
 export const confirmBody = z.strictObject({
   facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
+});
+
+/** 選べる版の id（比較と試算。請求の判定に使う版と、比較用の版） */
+export const revisionId = z.enum(SELECTABLE_REVISIONS.map((r) => r.id));
+/** 算定プレビューの要選択への答え（pending の id → 選択肢の id）。クエリには JSON の文字列で載せる。rev を付けると、その版での試算 */
+export const claimQuery = z.strictObject({ choices: z.string().max(2000).optional(), rev: revisionId.optional() });
+/** 改定の比較。claimId を省くと、比べられる請求と選べる版だけを返す */
+export const compareQuery = z.strictObject({ claimId: claimId.optional(), from: revisionId.optional(), to: revisionId.optional() });
+export const claimChoices = z.record(z.string().max(80), z.string().max(40));
+
+/**
+ * 算定プレビューの「入力が要る」摘要欄の記載に入れる値（FR-176）。slot は導出の記載の場所（記載の表の行|導出が決めたコード|何件目）、code は 9 桁のコメントコード。
+ * 値の形（コードの先頭 3 桁で決まる）は処理の中で確かめる（src/server/app/notes.ts の saveNoteComment）
+ */
+export const noteCommentBody = z.strictObject({
+  slot: z.string().regex(/^[A-Za-z0-9-]{1,40}\|(\d{9})?\|\d{1,2}$/),
+  code: z.string().regex(/^\d{9}$/),
+  text: z.string().max(200),
 });
 
 export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT) });

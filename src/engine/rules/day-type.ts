@@ -31,6 +31,12 @@ export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
     id: spec.id,
     kubun: ALL,
     reference: spec.reference,
+    recordFindings: [],
+    soundWhenPartial: [],
+    // 「訪問診療の日」「往診だけの日」は、訪問診療料・往診料の行の日で決まる
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun, c.oushin.kubun])];
+    },
     appliesTo: (ctx) => ALL.some((k) => lineOf(ctx, k)),
     // 重ねた行があるときだけ、施設の設定を聞く
     needs: (ctx) => (overlapDays(ctx).length > 0 ? [`facility.${overlapKey}`] : []),

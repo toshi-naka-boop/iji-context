@@ -2,6 +2,9 @@
 import { describe, expect, it } from "vitest";
 import { checkDraft, confirm, startQuestion } from "../../src/practice/practice";
 import { managerReport, personalView, preventedOf, summarize } from "../../src/prevented/prevented";
+import { loadSources } from "../../scripts/gen-uke";
+import type { ClaimContext } from "../../src/engine/types";
+import { commentsOfCase } from "../../src/uke/cases";
 import { line, loadCase, withLines, without } from "../engine/helpers";
 import { at, day } from "../helpers/period";
 
@@ -15,7 +18,19 @@ describe("防いだ項目の数え方", () => {
     q = confirm(q, k2, T);
     const items = preventedOf(q);
     expect(items.map((i) => [i.ruleId, i.kind, i.points]).sort()).toEqual([["R03", "取りこぼし", 150], ["R14", "取りこぼし", 100]]);
-    expect(summarize(items)).toEqual({ label: "推定", 取りこぼし: { count: 2, yen: 2500 }, 差し戻し: { count: 0, yen: 0 }, 医師記載起因: { count: 0, yen: 0 } });
+    expect(summarize(items)).toEqual({ label: "推定", 取りこぼし: { count: 2, yen: 2500 }, 差し戻し: { count: 0, yen: 0 }, 医師記載起因: { count: 0, yen: 0 }, 記載もれ: { count: 0 } });
+  });
+
+  it("記載もれ：点数を付けず、金額の合計に入れず、件数だけを別に返す。同じ行のほかの指摘の点数も奪わない", () => {
+    // 包括的支援加算の取り忘れと、摘要欄の記載もれ（管理料の往診・訪問診療の年月日）を、下書きで指摘されて直した
+    const k2: ClaimContext = { ...loadCase("K2"), commentsKnown: true, comments: commentsOfCase(loadCase("K2"), loadSources().src.commentValues?.[loadCase("K2").claimId]) };
+    let q = startQuestion("q", "c1", k2.claimId, T);
+    const draft = checkDraft(q, { ...without(k2, "C002_N10_HOKATSU"), comments: k2.comments!.filter((c) => c.code !== "850100106" && c.code !== "820100626") }, T);
+    expect(draft.result.findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "取り忘れ"], ["R17", "記載もれ"]]);
+    q = confirm(draft.question, k2, T);
+    const items = preventedOf(q);
+    expect(items.map((i) => [i.ruleId, i.kind, i.points]).sort()).toEqual([["R03", "取りこぼし", 150], ["R17", "記載もれ", 0]]);
+    expect(summarize(items)).toEqual({ label: "推定", 取りこぼし: { count: 1, yen: 1500 }, 差し戻し: { count: 0, yen: 0 }, 医師記載起因: { count: 0, yen: 0 }, 記載もれ: { count: 1 } });
   });
 
   it("差し戻し：K1 で処方箋料を立てて背反と指摘され、外して確定 → 60 点", () => {

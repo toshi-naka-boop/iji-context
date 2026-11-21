@@ -57,6 +57,50 @@ ALTER TABLE patient_facts RENAME COLUMN patient_key TO patient_id;
 DROP TABLE patient_key_map;
 `,
   },
+  {
+    // ベテランへの問いが、どの請求の相談から出たか（design.md §11-11「消す」：取り込んだファイルを消すとき、その請求の問いも消す）。それまでの問いは空
+    version: 5,
+    sql: `
+ALTER TABLE peer_questions ADD COLUMN claim_id TEXT;
+`,
+  },
+  {
+    // 請求ごとに確かめた事実（その月・その日の出来事についての事実。患者ごとの patient_facts とは別。追記型で、項目と日付ごとに最新の 1 行を使う）。
+    // date は日付ごとの事実だけが持ち、ほかは空文字
+    version: 6,
+    sql: `
+CREATE TABLE claim_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, key TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_at TEXT NOT NULL);
+CREATE INDEX claim_facts_claim ON claim_facts (claim_id);
+`,
+  },
+  {
+    // その人がこれまでに使った、メンターのセッション id の全部（design.md §11-11「消す」：過去のセッションの記録も消すため）。
+    // clerks.session_id は「いま続けるセッション」1 つだけで、世代が変わる・作り直すと前の id を失う。いま入っている id は写す
+    version: 7,
+    sql: `
+CREATE TABLE clerk_sessions (clerk_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY (clerk_id, session_id));
+INSERT INTO clerk_sessions (clerk_id, session_id) SELECT id, session_id FROM clerks WHERE session_id IS NOT NULL AND session_id != '';
+`,
+  },
+  {
+    // 医師に確かめてほしい項目に、医師が「その他」「判定不能」と答えた記録（事実は不明のまま。その他の自由記述は free_text）。
+    // 追記型で、請求・項目・日付ごとに最新の 1 行を使う。date は日付ごとの事実だけが持ち、ほかは空文字
+    version: 8,
+    sql: `
+CREATE TABLE doctor_fact_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, key TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', option TEXT NOT NULL, free_text TEXT, answered_by TEXT NOT NULL, answered_at TEXT NOT NULL);
+CREATE INDEX doctor_fact_notes_claim ON doctor_fact_notes (claim_id);
+`,
+  },
+  {
+    // 算定プレビューで医療事務が入れた摘要欄の記載（design.md §11-13。導出が needsInput とした記載）。確定したカルテ（請求とその日）ごと。
+    // slot は導出の記載の場所（記載の表の行・導出が決めたコード・同じ行とコードの何件目）で、同じ slot は入れ直すと置き換える。
+    // text は自由記載で氏名が入り得るので、ログ・監査ログ・AI に送る文脈には出さない
+    version: 9,
+    sql: `
+CREATE TABLE chart_comments (note_id INTEGER NOT NULL, claim_id TEXT NOT NULL, date TEXT NOT NULL, slot TEXT NOT NULL, code TEXT NOT NULL, text TEXT NOT NULL, clerk_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (note_id, slot));
+CREATE INDEX chart_comments_claim ON chart_comments (claim_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */
@@ -81,6 +125,22 @@ UPDATE users SET tenant_id = id WHERE tenant_id IS NULL;
 CREATE INDEX users_tenant ON users (tenant_id);
 CREATE TABLE invites (code_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, role TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT);
 CREATE TABLE auth_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, event TEXT NOT NULL, result TEXT NOT NULL, user_id TEXT, tenant_id TEXT, ip TEXT);
+`,
+  },
+  {
+    // 注意書きへの同意（design.md §11-11）：利用者ごとに、同意した注意書きの版と時刻。それまでの利用者は空（次の操作で聞かれる）
+    version: 3,
+    sql: `
+ALTER TABLE users ADD COLUMN accepted_notice_version TEXT;
+ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
+`,
+  },
+  {
+    // サーバー全体の 1 日の回数（spec U-W。2026-11-21 利用者の判断）：LLM・音声の呼び出しを、全部のクリニック・全部の利用者で数える。
+    // 利用者ごとの数は tenant の app.db の rate_daily にあり、ここには全体の数だけを置く（user_id は '*'）
+    version: 4,
+    sql: `
+CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
 `,
   },
 ];

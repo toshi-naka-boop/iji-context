@@ -23,6 +23,7 @@ export function makeMeta(over: Partial<KnowledgeMeta> = {}): KnowledgeMeta {
     status_since: "2025-01-01T00:00:00+09:00",
     retired_reason: null,
     empathy: 0,
+    official_seen: [],
     match: { kubunAll: ["C001"], payer: "支払基金", prefecture: "東京都" },
     history: [],
     ...over,
@@ -39,6 +40,8 @@ export function makeFacts(over: Partial<Facts> = {}): Facts {
     careLevel: known(3),
     table7: known(false),
     table8_2: known(false),
+    disabilitySupportLevel: known(0),
+    table8_3Other: known(false),
     mainDisease: known("高血圧"),
     homeOxygen: known(false),
     deathPlace: known(null),
@@ -48,7 +51,11 @@ export function makeFacts(over: Partial<Facts> = {}): Facts {
     residence: known("居宅" as const),
     contactDocProvided: known(true),
     sameDaySeparate: known({}),
+    sameDayOushinAfterVisit: known({}),
+    dischargeJointGuidance: known(false),
+    rxLongPsychotropic: known({}),
     rapidSameDayDocumented: known(false),
+    comprehensiveCare: known(true),
     ...over,
   };
 }
@@ -76,6 +83,8 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
     prefecture: "東京都",
     facts: makeFacts(),
     events: [],
+    recordsKnown: true,
+    commentsKnown: false,
     lines,
     ...rest,
   };

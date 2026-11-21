@@ -1,7 +1,8 @@
 // 患者情報チェック P01〜P08（spec FR-116〜123）。ユスティ（src/engine/）とは別の系統で、宛先は常に医療事務。
 // 判定は決定的な純関数で、LLM を使わない。制度の数字・算法は EM §2-5 の採用値だけを使う（対応は CHECK_BASIS）。
 // 扱わないもの：月の途中で 75 歳になる月の特例、限度額適用認定証、地方単独の公費の個別の決まり、70 歳未満の負担割合
-import { ageOn, birthDate, coveragesIn, isLateElderly, monthRange, overlaps, type Coverage, type PatientProfile } from "./profile";
+import { monthRange } from "../demo/period";
+import { ageOn, birthDate, coveragesIn, isLateElderly, overlaps, type Coverage, type PatientProfile } from "./profile";
 
 export const PATIENT_CHECK_IDS = ["P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08"] as const;
 export type PatientCheckId = (typeof PATIENT_CHECK_IDS)[number];
@@ -121,6 +122,7 @@ const KOHI_ORDER = ["13", "14", "18", "29", "30", "10", "11", "20", "21", "15", 
 
 // ---------------------------------------------------------------------------
 
+/** "YYYY-MM-DD" に日数を足す（ミリ秒で足す。src/engine/rules/util.ts の addDays は setUTCDate で足す別の作り方で、寄せていない） */
 const addDays = (date: string, days: number): string => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 const covers = (c: Coverage, date: string) => overlaps(c, date, date);
 /** 入れ替わりを見るときの同じ枠：医保どうし、公費は法別番号が同じものどうし */

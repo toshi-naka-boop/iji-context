@@ -5,11 +5,15 @@ import type { ClaimContext, ClaimLine, EngineResult, Finding } from "../../src/e
 import type { MentorOutput, Situation } from "../../src/mentor/output";
 import { faceFor, faceImage, type Face } from "../../src/mentor/face";
 import type { Question } from "../../src/practice/practice";
-import { findingText, payerLabel } from "../../src/messages";
+import { COMMENT_CHECK_NOTE, findingText, payerLabel } from "../../src/messages";
 import { TopBar } from "../nav";
 import { MentorPicker, type MentorChoice } from "../mentor-picker";
 import { unlockAudio, Welcome } from "../welcome";
 import { SignIn, useClerk } from "../clerk";
+import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-check";
+import { CheckedFacts, FactInput } from "../fact-input";
+import { GenericFindings } from "../generic-findings";
+import type { GenericView } from "../../src/generic/view";
 import { PatientPanel } from "./patient-panel";
 import { Board } from "./board";
 
@@ -27,7 +31,7 @@ type Visit = { claimId: string; date: string; type: "visit" | "oushin"; mainDise
 /** 練習問題（よくある間違いを入れた明細。FR-75）。答えのルールは一覧に出ない */
 type Drill = { id: string; no: number; claimId: string; situation: string[]; cleared?: boolean };
 /** この請求に当てはまるローカルルール（地域・ベテランの判断・院内。FR-78） */
-type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean };
+type LocalRule = { id: string; layer: string; status: string; summary: string; source: string; since: string; hits: number; lastUsed: string | null; stale: boolean; unknown: boolean; usedByMentor: boolean; official: OfficialMatch };
 /** 医師確認の練習問題の今の状態（FR-76） */
 type DrillState = { kind: "明細" } | { kind: "医師確認"; ask: string | null; query: { id: string; status: string; answer: string | null } | null; crosscheckOpen: boolean } | null;
 /** 本人が選んだメンターと、選べるキャラ（FR-19） */
@@ -78,6 +82,13 @@ export default function Work() {
   const [drills, setDrills] = useState<{ fix: Drill[]; doctor: Drill[] }>({ fix: [], doctor: [] });
   const [drillState, setDrillState] = useState<DrillState>(null);
   const [localRules, setLocalRules] = useState<LocalRule[]>([]);
+  // 公的文書の条件を確かめた後に、ローカルルール欄を読み直す
+  const [rulesTick, setRulesTick] = useState(0);
+  const checkRights = useCheckRights();
+  /** 情報不足の項目に答えを残すたびに増やし、残した答えの一覧を読み直す */
+  const [factTick, setFactTick] = useState(0);
+  /** 確定した明細に掛けた、データで動く点検（G01〜）の結果。確定の応答にだけ付く（問題には保存しない） */
+  const [generic, setGeneric] = useState<(GenericView & { skippedLines: number }) | null>(null);
   // 明細が変わるたびに、当てはまるローカルルールを当てはめ直す（決まった規則。AI は使わない）
   useEffect(() => {
     if (!q) return setLocalRules([]);
@@ -85,7 +96,7 @@ export default function Work() {
       api<LocalRule[]>(`/api/questions/${q.id}/local-rules`, { lines }).then(setLocalRules).catch(() => setLocalRules([]));
     }, 300);
     return () => clearTimeout(t);
-  }, [q, lines]);
+  }, [q, lines, rulesTick]);
   const allDrills = [...drills.fix, ...drills.doctor];
   /** 問題の始まりの請求（訪問の時点・練習問題では、月末の UKE とちがう） */
   const [qCase, setQCase] = useState<ClaimContext | null>(null);
@@ -254,8 +265,9 @@ export default function Work() {
     if (!q) return;
     setErr("");
     try {
-      const cq = await api<Question>(`/api/questions/${q.id}/confirm`, { lines });
+      const { generic: g, ...cq } = await api<Question & { generic: GenericView & { skippedLines: number } }>(`/api/questions/${q.id}/confirm`, { lines });
       setQ(cq);
+      setGeneric(g);
       // 確定したら、聞かれる前に解説を始める
       await explanation(cq);
     } catch (e) {
@@ -274,6 +286,7 @@ export default function Work() {
     if (!q) return;
     await api<Question>(`/api/questions/${q.id}/done`, {});
     setQ(null);
+    setGeneric(null);
     setQCase(null);
     setDrillState(null);
     refreshStatus();
@@ -282,7 +295,15 @@ export default function Work() {
   }
 
   const findings: Finding[] = q?.confirmed?.result.findings ?? [];
-  const total = lines.reduce((s, l) => s + (pointsOf(l.kubun) ?? 0) * l.count, 0);
+  /**
+   * 合計の表示。確定後はユスティの判定の合計（決められなければ null で「—」）。
+   * 確定前は表の点数で足すが、点数未収載の区分が 1 つでもあれば決められないので「—」（未収載を 0 点として足さない）
+   */
+  const totalLabel = q?.confirmed
+    ? q.confirmed.result.total === null ? "—" : `${q.confirmed.result.total.toLocaleString()} 点`
+    : quiz.some((x) => x.state === "未回答") ? "？ 点"
+    : lines.some((l) => pointsOf(l.kubun) === null) ? "—"
+    : `${lines.reduce((s, l) => s + (pointsOf(l.kubun) as number) * l.count, 0).toLocaleString()} 点`;
   const lastMentorBubble = [...chat].reverse().find((b) => b.from === "mentor");
   const lastFace: Face = lastMentorBubble?.face ?? "通常";
   const lastMentor = lastMentorBubble?.text ?? null;
@@ -358,8 +379,9 @@ export default function Work() {
           )}
           <div className="chips">
             {cases.filter((c) => ukeClaims?.includes(c.claimId)).map((c) => (
-              <button key={c.claimId} onClick={() => begin(c.claimId)}>
-                {c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
+              <button key={c.claimId} onClick={() => begin(c.claimId).catch((e) => setErr(e.message))}>
+                {/* 取り込んだ請求の id（U12-3）は、ハイフンの後ろまでで 1 件を指す */}
+                {c.claimId.startsWith("U") ? c.claimId : c.claimId.split("-")[0]}（{c.facts.mainDisease.known ? c.facts.mainDisease.value : "主病不明"}）
               </button>
             ))}
           </div>
@@ -381,8 +403,11 @@ export default function Work() {
               {[...localRules].sort((a, b) => Number(b.stale) - Number(a.stale) || (a.since < b.since ? -1 : 1)).map((r) => (
                 <div key={r.id} style={{ marginTop: 4 }}>
                   {r.stale && <strong>【長く使われていない】</strong>}
+                  {(r.status === "要再検証" || r.status === "停止") && <span className="badge warn" style={{ marginRight: 4 }}>{r.status === "要再検証" ? "要再検証（確かめ直し待ち）" : "停止"}</span>}
                   {r.layer === "地域" ? "地域ルール" : r.layer === "ベテラン" ? "ベテランの判断" : "院内ルール"}：{r.summary}
-                  <span className="muted">　{r.status}・{r.source}から・{r.since} から・最後に使われた日 {r.lastUsed ?? "なし"}{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : "承認されるまでメンターは使わない"}</span>
+                  <span className="muted">　{r.status}・{r.source}から・{r.since} から・最後に使われた日 {r.lastUsed ?? "なし"}{r.unknown ? "・事実が分からず当てはまるか未確定" : ""}・{r.usedByMentor ? "メンターが助言に使う" : r.layer === "院内" ? "メンターの助言には使わない" : r.status === "要再検証" || r.status === "停止" ? "承認済みに戻るまでメンターは使わない" : "承認されるまでメンターは使わない"}</span>
+                  {/* 公的情報との突き合わせ（FR-128）。要旨とリンクだけを出し、原文は載せない */}
+                  <OfficialBlock knowledgeId={r.id} official={r.official} rights={checkRights} onChanged={() => setRulesTick((n) => n + 1)} />
                 </div>
               ))}
             </div>
@@ -439,7 +464,7 @@ export default function Work() {
             )}
             <table>
               <thead>
-                <tr><th>区分</th><th>回数</th><th>日（3 月）</th><th>点数</th><th /></tr>
+                <tr><th>区分</th><th>回数</th><th>日（{Number(ctx.claimId.slice(-2))} 月）</th><th>点数</th><th /></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
@@ -467,12 +492,10 @@ export default function Work() {
                 ))}
               </tbody>
             </table>
-            {q.phase === "ヒント" && (
-              <p>
-                <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: [`${ctx.yearMonth}-01`] }])}>行を足す</button>
-                <span className="muted">　合計 {quiz.some((x) => x.state === "未回答") ? "？" : total.toLocaleString()} 点（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
-              </p>
-            )}
+            <p>
+              {q.phase === "ヒント" && <button onClick={() => setLines([...lines, { kubun: master[0]?.kubun ?? "C001_1I", count: 1, dates: [`${ctx.yearMonth}-01`] }])}>行を足す</button>}
+              <span className="muted">　合計 {totalLabel}（{nameOf(lines[0]?.kubun ?? "")} ほか）</span>
+            </p>
             <PatientPanel
               claimId={q.claimId}
               facts={ctx.facts}
@@ -521,8 +544,13 @@ export default function Work() {
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>
                     {findingText(f)}<br />
                     <span className="muted">{f.ruleId}・{f.kind}・根拠：{f.reference}</span>
+                    {!q.drill && <FactInput claimId={q.claimId} finding={f} patientHref="#patient-info" onSaved={() => setFactTick((t) => t + 1)} />}
                   </div>
                 ))}
+                {generic && <GenericFindings generic={generic} scope="line" skippedLines={generic.skippedLines} />}
+                {!q.drill && <CheckedFacts claimId={q.claimId} tick={factTick} onSaved={() => setFactTick((t) => t + 1)} note="確定した判定は、そのまま残ります。残した答えは、次にこの請求を点検するときから使います。" />}
+                {/* 摘要欄の記載（R17）の範囲。問題の判定は、行を入れ直すので摘要欄を見ない（src/server/app/question-case.ts） */}
+                {!q.drill && !q.asOf && <p className="muted">{COMMENT_CHECK_NOTE}この画面の判定は、明細を入れ直すので摘要欄の記載を見ていません（カルテの算定の見込みで点検します）。</p>}
                 {q.phase === "判定" && <button className="primary" onClick={() => explanation()} disabled={busy}>解説を聞く</button>}
                 {q.phase === "解説" && <button className="primary" onClick={next}>次のレセプトへ</button>}
               </div>

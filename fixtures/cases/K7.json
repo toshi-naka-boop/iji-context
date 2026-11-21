@@ -31,6 +31,12 @@
       "known": true,
       "value": false
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "2型糖尿病"
@@ -67,9 +73,24 @@
       "known": true,
       "value": {}
     },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": true
     }
   },
   "events": [
@@ -104,9 +125,12 @@
       "type": "prescription",
       "date": "2026-10-28",
       "oralKinds": 5,
-      "days": 28
+      "days": 28,
+      "psychotropic": false
     }
   ],
+  "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
       "kubun": "C001_1I",

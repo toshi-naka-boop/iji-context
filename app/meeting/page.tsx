@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
 import { payerLabel } from "../../src/messages";
+import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
 /** 会議室の絵（public/characters/ にあればそれを使い、なければ全員の絵を並べる。2026-11-08） */
@@ -51,9 +52,27 @@ function reasonText(e: DigestEntry): string {
     const same = (r.sameApplied as { claimId: string; result: string }[]).map((s) => `${s.claimId}：${s.result}`).join("、");
     return `査定・返戻：${misses}\n同じ知識を適用したほかの請求：${same || "なし"}`;
   }
-  if (e.kind === "recheck") return `きっかけ：${String(r.event)}${r.trigger ? `（${String(r.trigger)}）` : ""}`;
+  if (e.kind === "recheck") return `きっかけ：${String(r.event)}${r.trigger ? `（${r.trigger === "official" ? "公的文書" : String(r.trigger)}）` : ""}`;
   if (e.kind === "ignored") return `外した区分：${(r.removedKubun as string[]).join("・")}`;
   return `きっかけ：${String(r.event)}`;
+}
+
+/** 議題の理由に載った公的文書（このルールと矛盾の恐れがあるもの。要旨とリンクだけ）。決めるのは責任者で、自動では停止しない */
+function OfficialDocs({ e }: { e: DigestEntry }) {
+  if (e.reason.kind !== "recheck" && e.reason.kind !== "disposal") return null;
+  const { official, conditionNote } = e.reason;
+  if (!official || official.length === 0) return null;
+  return (
+    <div className="notice warn">
+      <strong>公的情報：矛盾の恐れ</strong>　<span className="muted">次の文書と向きが逆です。読み比べて、今も正しいかを決めてください</span>
+      {conditionNote && <div className="muted">条件の注記あり（このルールの条件：{conditionNote}）</div>}
+      {official.map((d) => (
+        <div key={d.id}>
+          ・<a href={d.url} target="_blank" rel="noreferrer">{d.kind}　{d.issuer}　{d.number}</a>（{d.issuedOn}・{d.stance}{d.seen ? "・前の会議で確認済み" : ""}）{d.summary}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 type Read = { fileName: string; notice: Notice; items: ResolvedItem[] };
@@ -99,6 +118,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
     <div className="panel" style={{ marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>査定・返戻の通知を読む</h3>
       <p className="muted">通知に書かれていることを取り出し、確かめた項目だけを知識の候補にします。</p>
+      <NoticeText />
       <p>
         <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・前の月の査定）を読む</button>{" "}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
@@ -174,6 +194,7 @@ export default function Meeting() {
           <div className="chips" style={{ alignItems: "center" }}><span className="badge blue">{KIND[e.kind]}</span><span className="muted">{e.knowledgeId}{e.waitingRecheck ? "・確かめ直しの回答がこの回答を待っています" : ""}</span></div>
           <p><strong>{e.summary}</strong></p>
           <div className="bubble">{reasonText(e)}</div>
+          <OfficialDocs e={e} />
           <p>
             <input placeholder="自由記述（足りない条件など）" value={free[e.itemId] ?? ""} onChange={(ev) => setFree({ ...free, [e.itemId]: ev.target.value })} style={{ width: "100%" }} />
           </p>

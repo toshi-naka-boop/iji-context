@@ -13,14 +13,14 @@ import { NOTICE_BODY_BYTES, NOTICE_FILE_NAME_MAX, NOTICE_MAX_BYTES, noticeBody }
 
 const SAMPLE = `${SAMPLE_NOTICE_BASE}.pdf`;
 
-export const POST = route({ roles: allow("POST /api/notice"), body: noticeBody, limit: "llm", maxBytes: NOTICE_BODY_BYTES }, async ({ body: b }) => {
+export const POST = route({ roles: allow("POST /api/notice"), body: noticeBody, limit: "llm", maxBytes: NOTICE_BODY_BYTES }, async ({ body: b, user }) => {
   const pdf = b.sample ? readFileSync(path.join(process.cwd(), SAMPLE)) : Buffer.from(b.pdfBase64 ?? "", "base64");
   if (pdf.length === 0 || pdf.length > NOTICE_MAX_BYTES) throw badRequest("PDF が空か、5MB を超えている");
   if (pdf.subarray(0, 5).toString("latin1") !== "%PDF-") throw badRequest("PDF ではない");
   // ファイル名は知識の本文（出典）に入る。制御文字・改行・パスの区切りを除き、長さを切ってから返す（登録のスキーマと同じ形にする）
   const cleaned = path.basename(b.fileName ?? "").replace(/[\u0000-\u001f\u007f/\\]/g, "").slice(0, NOTICE_FILE_NAME_MAX);
   const fileName = b.sample ? path.basename(SAMPLE) : cleaned || "notice.pdf";
-  const r = await readNotice(pdf, modelFor("notice"));
+  const r = await readNotice(user, pdf, modelFor("notice"));
   return { fileName, notice: r.notice, items: getApp().resolveNoticeItems(r.notice), stats: r.stats };
 });
 

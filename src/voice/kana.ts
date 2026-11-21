@@ -2,7 +2,7 @@
 // 聞き取りは音しか分からないので、漢字は当て推量になりやすく、あいさつの読み上げでも読み違えやすい。
 // 返ってきた文字がひらがなだけでなければ、聞き取ったままを返す。入力欄で本人が直してから決めるのは今までどおり
 import { modelOptions, type ModelChoice } from "../mentor/models";
-import { runOnce } from "../mentor/run";
+import { runOnce, type Sender } from "../llm/outbound";
 
 const KANJI = /[㐀-鿿豈-﫿]/;
 const HIRAGANA_ONLY = /^[ぁ-ゖー\s]+$/;
@@ -26,10 +26,10 @@ export function acceptReading(raw: unknown, original: string): string {
 }
 
 /** 聞き取った名前をひらがなにする。漢字がなければそのまま、失敗したら聞き取ったまま */
-export async function toHiragana(text: string, model?: ModelChoice): Promise<string> {
+export async function toHiragana(by: Sender, text: string, model?: ModelChoice): Promise<string> {
   if (!needsKana(text)) return text;
   try {
-    const r = await runOnce("nameKana", text, {
+    const r = await runOnce(by, "nameKana", text, {
       systemPrompt: KANA_PROMPT,
       tools: [],
       settingSources: [],

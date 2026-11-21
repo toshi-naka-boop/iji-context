@@ -1,11 +1,19 @@
 # 新しい API ルートを足すときの手順
 
 API ルート（`app/api/**/route.ts`）は、共通ルートヘルパ `route()`（`src/server/http.ts`）で書く。
-`route()` が、ログイン → params の検証 → ロール → 回数制限 → query・本文の検証 → 処理 → 監査ログ、の順に面倒を見る。
+`route()` が、ログイン → params の検証 → ロール → 注意書きへの同意 → 回数制限 → query・本文の検証 → 処理 → 監査ログ、の順に面倒を見る。
 
 ## 1. 権限表に 1 行足す
 
-`src/server/policy.ts` の `POLICY` に「メソッド パス」の行を足す（例 `"POST /api/knowledge": ALL`）。
+`src/server/policy.ts` の `POLICY` に「メソッド パス」の行を足す（例 `"POST /api/knowledge": row(ALL, "none", false)`）。
+
+`row(許す相手, external, patientData)` の 3 つは省けない：
+- `external`：その処理が外部のサービスに送るか（`"ai"`・`"voice"`・`"none"`）
+- `patientData`：利用者が入れた患者の情報を受け取る・保存する・返すか
+- どちらかに当たる行は、今の版の注意書きに同意していない利用者には 403（`route()` が確かめる）。迷ったら掛ける側に倒す
+- 外部へ送る処理は `src/llm/outbound.ts`（AI）と `src/voice/`（音声）の関数だけを使い、ハンドラが受け取った `user` をそのまま渡す（`docs/security.md`）
+
+許す相手の書き方：
 
 - ロールの配列：そのロールだけ／`{ roles, solo: true }`：1 人で使っているクリニックの持ち主にも許す
 - `"public"`：ログインなし（ログイン・登録だけ）／`"dev"`：開発用（本番では 404。本番でなくてもログインが要る。ロールは問わない）
@@ -18,7 +26,7 @@ API ルート（`app/api/**/route.ts`）は、共通ルートヘルパ `route()`
 置き場所は `src/server/schemas/<領域>.ts`（knowledge・meeting・peer・clerk など）。名前は `<対象>Body`・`<対象>Params`・`<対象>Query`。
 
 - オブジェクトは `z.strictObject`（知らない項目は 400）。文字列は長さの上限、配列は件数の上限を必ず付ける
-- id は形を固定する（`common.ts` の `id`・`idParams`。ファイル名やディレクトリ名になる id は、作る側のコードの形に合わせた正規表現にする）
+- id は形を固定する（`common.ts` の `id`。ファイル名やディレクトリ名になる id は、作る側のコードの形に合わせた正規表現にする）
 - `action` で分かれる本文は `z.discriminatedUnion("action", […])` で、操作ごとに形を固定する
 - 本人の id、承認者・回答者の名前は受け取らない。`user`・`clerkId`（セッションの本人）から決める
 - 細かい業務の規則と文言（名前に使える文字など）は業務処理に置き、スキーマは型と上限だけにする
@@ -56,7 +64,7 @@ export const POST = route({ roles: allow("POST /api/meeting/answer"), body: meet
 
 ## 5. 回数制限
 
-LLM を呼ぶルートは `limit: "llm"`、音声は `limit: "voice"`。利用者ごとの 1 分あたりと 1 日の上限で、値は `config/limits.json`。
+LLM を呼ぶルートは `limit: "llm"`、音声は `limit: "voice"`。利用者ごとの 1 分あたりと 1 日の上限、それにサーバー全体の 1 日の上限（`perDayAll`、auth.db に数を持つ）で、値は `config/limits.json`。
 失敗した呼び出しも 1 回と数える。LLM を呼ばないルートには付けない。
 
 ## 6. 監査ログ

@@ -9,6 +9,12 @@ export function makeR16(c: RevisionConsts): Rule {
     id: "R16",
     kubun: kanriKubun(c),
     reference: "C002 注1・C002-2 注1・注2（留意事項 C002 (3)）",
+    recordFindings: [],
+    soundWhenPartial: [],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => ["residence"],
     check(ctx) {

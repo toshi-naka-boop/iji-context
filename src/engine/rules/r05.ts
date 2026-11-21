@@ -13,6 +13,15 @@ export function makeR05(c: RevisionConsts): Rule {
     id: "R05",
     kubun: [...kanriKubun(c), ...BUNDLED, NO_RX],
     reference: "C002 注2・注3、留意事項（所定点数に含まれる項目）。C002-2 注5 で準用",
+    // 処方の出来事を読む指摘（記録のない請求では出さない。包括項目の bundled は行だけで決まる）
+    recordFindings: ["no_rx_addition_with_rx"],
+    soundWhenPartial: ["bundled"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
+    // 管理料と、その月に含まれる項目の組（電子点数表では同一月内の包括）。処方箋を交付しない場合の加算（no_rx_addition_with_rx）は、表に載らないので申告しない
+    covers: () => ({ kind: "包括", finding: "bundled", kubun: kanriKubun(c).flatMap((k) => BUNDLED.map((b) => [k, b])) }),
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

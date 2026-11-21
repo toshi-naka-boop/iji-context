@@ -1,18 +1,32 @@
 // 患者ごとに確かめた情報の入力。確かめた人は受け取らない（セッションの本人から決める）
 import { z } from "zod";
-import { FACT_SOURCES, PATIENT_FACT_KEYS } from "../../patient/facts";
+import { CLAIM_FACT_KEYS, CLAIM_FACT_SOURCES, MAX_MAIN_DISEASE } from "../../claim/facts";
+import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES } from "../../patient/facts";
 import { COVERAGE_SOURCES } from "../../patient/profile";
 import { claimId, date } from "./cases";
 
 export const claimParams = z.strictObject({ claimId });
 
-/** 形だけをここで確かめる。項目ごとの決まり（要介護度は 0〜5 と有効期間の終わりの日、ほかは期限なし）は src/patient/facts.ts の validatePatientFact が確かめて文言を返す */
+/** 形だけをここで確かめる。項目ごとの決まり（要介護度は 0〜5 と有効期間の終わりの日、障害支援区分は 0〜6、居住の場所は 2 つから、ほかは期限なし）は src/patient/facts.ts の validatePatientFact が確かめて文言を返す */
 export const factBody = z.strictObject({
   fact: z.strictObject({
     key: z.enum(PATIENT_FACT_KEYS),
-    value: z.union([z.number().int().min(0).max(5), z.boolean()]),
+    value: z.union([z.number().int().min(0).max(6), z.boolean(), z.enum(RESIDENCES)]),
     source: z.enum(FACT_SOURCES),
     validUntil: date.nullable(),
+  }),
+});
+
+/**
+ * 請求ごとに確かめた事実の入力。形だけをここで確かめる。事実ごとの決まり（日付ごとの事実は診療年月の日付、値の型）は src/claim/facts.ts の validateClaimFact が確かめて文言を返す。
+ * 確かめた人は受け取らない（セッションの本人から決める）
+ */
+export const claimFactBody = z.strictObject({
+  fact: z.strictObject({
+    key: z.enum(CLAIM_FACT_KEYS),
+    date: date.nullable(),
+    value: z.union([z.boolean(), z.string().max(MAX_MAIN_DISEASE)]),
+    source: z.enum(CLAIM_FACT_SOURCES),
   }),
 });
 

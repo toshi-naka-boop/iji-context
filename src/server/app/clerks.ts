@@ -3,6 +3,9 @@ import { validateStyle, type Style } from "../../mentor/style";
 import type { AppContext } from "./context";
 import { badRequest, notFound } from "../errors";
 
+/** ベテランのメンターの作業場所とセッションを持つ医療事務（ベテラン役）の id。ベテランへの問い（src/server/instance.ts の askVeteran）と、消す操作（erase.ts）が同じものを指す */
+export const VETERAN_CLERK = "vet1";
+
 /** 本人が決めた名前を検査する（1〜20 文字。改行・制御文字と、指示の書式に使われる記号は受け付けない） */
 export function cleanName(raw: string): string {
   const n = raw.trim();
@@ -14,9 +17,10 @@ export function cleanName(raw: string): string {
 export function createClerks(ctx: AppContext) {
   const { sqlite, setting, setSetting } = ctx;
 
+  /** 行がなければ作る。すでにあれば役割だけを合わせる（名前・呼び方・キャラは本人が決めたものを残す。起動のたびに呼ばれるため） */
   function upsertClerk(c: { id: string; name: string; callName: string; characterId: string; role: "clerk" | "veteran" }) {
     sqlite
-      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, call_name = excluded.call_name, role = excluded.role")
+      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET role = excluded.role")
       .run(c.id, c.name, c.callName, c.characterId, c.role);
   }
   /** 審査員などが自分の利用者を作る（名前は呼び方に使う）。キャラは選ぶまで仮の a */
@@ -39,7 +43,11 @@ export function createClerks(ctx: AppContext) {
     if (!r) throw notFound(`医療事務が登録されていない: ${id}`);
     return r;
   }
-  const setSession = (id: string, sessionId: string) => sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
+  /** いま続けるセッションを覚える。使ったセッションの id は、捨てたあとも clerk_sessions に残す（取り込んだファイルを消すとき、過去のセッションの記録も消すため） */
+  function setSession(id: string, sessionId: string) {
+    sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
+    if (sessionId !== "") sqlite.prepare("INSERT OR IGNORE INTO clerk_sessions (clerk_id, session_id) VALUES (?, ?)").run(id, sessionId);
+  }
   /** 本人がメンターを選ぶ（FR-19）。指示はセッションの初めに渡すので、キャラを変えたらセッションを作り直す */
   function chooseCharacter(id: string, characterId: string) {
     clerk(id);

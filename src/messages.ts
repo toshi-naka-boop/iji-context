@@ -1,6 +1,7 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
-import type { FacilityFactKey, FactKey, Finding, Payer } from "./engine/types";
+import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
+import type { GenericFinding, GenericNotRun } from "./generic/types";
 import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
@@ -12,22 +13,24 @@ export const FINDING_TEXT: Record<string, string> = {
   "R02.not_severe": "別表第八の二に当たらないのに、重症区分になっています",
   "R02.severe_with_hokatsu": "重症区分で算定する月に、包括的支援加算が入っています。加算の行を外してください",
   "R03.missing": "包括的支援加算の要件を満たしていますが、入っていません",
-  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上）を満たしていません",
+  "R03.not_eligible": "包括的支援加算の要件（要介護3 以上、障害支援区分2 以上など、別表第八の三の状態）を満たしていません",
   "R04.only_main": "在宅療養指導管理料が 2 つ以上入っています（主たるもの 1 つだけ）",
   "R05.bundled": "管理料の月に、所定点数に含まれる項目が別に入っています",
   "R05.no_rx_addition_with_rx": "処方箋を出している月に、処方箋を交付しない場合の加算が入っています",
   "R06.excluded_disease": "主病が特定疾患処方管理加算の対象外です",
   "R06.under_28_days": "28 日以上の処方がないのに、特定疾患処方管理加算が入っています",
   "R07.use_seven_or_more": "内服 7 種類以上なので、処方箋料の区分が違います",
-  "R07.not_seven_or_more": "内服 7 種類未満なのに、7 種類以上の区分になっています",
+  "R07.use_long_psychotropic": "向精神薬の長期処方に当たるので、処方箋料の区分が違います",
+  "R07.not_seven_or_more": "内服 7 種類未満で、向精神薬の長期処方にも当たらないのに、区分 2 になっています",
   "R08.oushin_only_day": "訪問診療料のない日に、訪問診療時のベースアップ評価料が入っています",
   "R08.use_visit": "訪問診療料の日に、再診時等のベースアップ評価料が入っています",
   "R08.duplicate_on_visit_day": "訪問診療料の日に、訪問診療時のベースアップ評価料と再診時等のベースアップ評価料が重なっています。再診時等の行は算定できないので外してください",
   "R08.no_revisit_on_both_day": "訪問診療料と往診料の両方がある日に、再診時等のベースアップ評価料が重なっています。この行は算定できないので外してください",
   "R09.mitori_with_shibou": "看取り加算と死亡診断加算が両方入っています（併算定できません）",
-  "R09.terminal_visits": "在宅ターミナルケア加算の要件（死亡日前 14 日以内に 2 回以上の訪問）を満たしていません",
+  "R09.terminal_visits": "在宅ターミナルケア加算の要件（死亡日前 14 日以内に 2 回以上の訪問・往診、又は退院時共同指導料1 の算定と訪問診療）を満たしていません",
   "R10.kinkyu_not_eligible": "緊急往診加算の対象患者ではありません",
   "R10.same_encounter": "1 回の診療に、訪問診療料と往診料の両方が入っています。診療の中身に合うほうだけを残してください",
+  "R10.oushin_not_after_visit": "訪問診療料と同じ日の往診料は、訪問診療のあとに、病状の急変などで往診したときでなければ算定できません",
   "R10.same_day_as_visit": "往診料と同じ日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R10.visit_day_after_oushin": "往診料の翌日の訪問診療料は、連絡先などの文書を提供している患者でなければ算定できません",
   "R11.judgement_once_a_month": "検体検査判断料が月 2 回以上入っています",
@@ -45,7 +48,138 @@ export const FINDING_TEXT: Record<string, string> = {
   "R15.no_revisit_on_both_day": "訪問診療料と往診料の両方がある日に、再診時等の物価対応料が重なっています。この行は算定できないので外してください",
   "R16.use_shisetsu": "施設に入居している患者なので、在医総管ではなく施設入居時等医学総合管理料で算定します",
   "R16.use_zaii": "居宅の患者なので、施設入居時等医学総合管理料ではなく在医総管で算定します",
+  // R17 摘要欄の記載。{what} は何の記載か（版の表の要旨）。日付の食い違いは、findingText が足りない日・多い日を後ろに添える
+  "R17.comment_missing": "摘要欄に「{what}」の記載がないか、数が足りません",
+  "R17.comment_format": "摘要欄の「{what}」の記載が、決められた形（年月日・時刻・数値・文字）で読めません",
+  "R17.comment_mismatch_visitDates": "摘要欄の「{what}」が、訪問診療料・往診料を算定した日と合いません",
+  "R17.comment_mismatch_acuteVisitDates": "摘要欄の訪問診療を行った年月日に、週の回数の限度を超えた週の訪問診療料の日が足りません",
+  "R17.comment_mismatch_deathDate": "摘要欄の死亡年月日が、死亡の記録の日と合いません",
+  "R17.comment_mismatch_hokatsuState": "摘要欄の包括的支援加算の状態の記載が、確かめた要介護度・障害支援区分と合いません",
+  "R17.comment_mismatch_ikouStart": "摘要欄の初回の管理料を算定した年月日が、管理料の算定開始月と合いません",
 };
+
+/**
+ * データで動く点検（G01〜。design.md §12-2）の指摘の文。定型文と値だけ（{code} はコード、{what} は行の種類）。公開元の文章は写さない。
+ * G01 は言い切らない：持っているマスターの版のあいだの更新を、全部持っているとは確かめられない
+ */
+export const GENERIC_TEXT: Record<string, string> = {
+  "G01.not_in_any": "コード {code}（{what}）は、持っているどの版のマスターにもありません。打ち間違いか、マスターの更新もれを確かめてください",
+  "G01.only_before": "コード {code}（{what}）は、持っているマスターのうち、診療年月の前の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
+  "G01.only_after": "コード {code}（{what}）は、持っているマスターのうち、診療年月の後の版にだけあります。診療年月に使えるコードか、告示・通知を確かめてください",
+  // G02・G03（段 11）。{later} は、後の版のマスターで点検していて、その行が診療年月の後に変更されているときの断り書き（なければ空）。ここは言い切らない文（言い切りの文は GENERIC_TEXT_CERTAIN）
+  "G02.points": "この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は {uke} 点、再計算は {calc} 点。{formula}）。コード・数量・点数を確かめてください{later}",
+  "G03.inpatient_only": "コード {code}（{name}）は、マスターでは入院のレセプトに限るコードです。入院外のレセプトで算定できるか、告示・通知を確かめてください{later}",
+  "G03.hospital_only": "コード {code}（{name}）は、マスターでは病院に限るコードです。診療所で算定できるか、告示・通知を確かめてください{later}",
+  "G03.clinic_only": "コード {code}（{name}）は、マスターでは診療所に限るコードです。病院で算定できるか、告示・通知を確かめてください{later}",
+  "G03.age": "コード {code}（{name}）は、マスターの年齢の範囲（{range}）の外です（{when}の年齢は {ages} 歳）。生年月日とコードを確かめてください{later}",
+  // G07・G08（段 13）。{comment} は、コメントマスターの名称（定型文）とコメントコード。{sheet}{kouban} は、記載要領の表と項番。G08 は言い切りに上げない（言い切りの文を持たない）
+  "G07.missing": "摘要欄に{comment}の記載が見当たりません。コード {code} を算定するときに要る記載として、コメント関連テーブルに載っています（記載要領 {sheet} 項番 {kouban}）。記載要領を確かめてください",
+  "G07.missing_any": "摘要欄に、次のどれかの記載が要りますが、どれも見当たりません：{comment}。コード {code} を算定するときに要る記載として、コメント関連テーブルに載っています（記載要領 {sheet} 項番 {kouban}）。記載要領を確かめてください",
+  "G08.no_target": "コード {code}（{name}）は、対象の傷病名が要る項目ですが、傷病名マスターで{what}の対象とされている傷病名が、このレセプトの傷病名に見当たりません。傷病名と、告示（特掲診療料の施設基準等の別表）を確かめてください",
+  // G09（段 14）。言い切りの文を持たない（公開元が、コンピュータチェックは一律に適用するものではないと断っている）。医学的な助言の形にしない：「見当たりません。確かめてください」まで。
+  // {diseases} は、表の傷病名の先頭のいくつか（傷病名マスターの名称とコード）と残りの数。{found} は、疑い病名としてだけあった、表の傷病名
+  "G09.iy_no_disease": "コード {code}（{name}）：レセプトの傷病名に、審査支払機関のチェック用の表にある傷病名が見当たりません（表の傷病名は {count} 件：{diseases}）。傷病名のもれか、表にない使い方かを確かめてください",
+  "G09.si_no_disease": "コード {code}（{name}）：レセプトの傷病名に、審査支払機関のチェック用の表にある傷病名が見当たりません（表の傷病名は {count} 件：{diseases}）。傷病名のもれか、表にない場合の算定かを確かめてください",
+  "G09.si_suspected": "コード {code}（{name}）：審査支払機関のチェック用の表にある傷病名が、レセプトには疑い病名としてだけあります（{found}）。表は、この項目には確定病名を対象にしています（表の傷病名は {count} 件）。傷病名の記載を確かめてください",
+  "G09.heiyo_kinki": "コード {a}（{nameA}）と {b}（{nameB}）は、審査支払機関の併用のチェック用の表にある組で、同じ日（{days}日）に両方あります。併用禁忌・併用注意などのどれに当たる組かは、表からは分かりません。処方の内容を確かめてください",
+};
+/** 言い切り（確定）に上げた指摘は、言い切りの文（GENERIC_TEXT_CERTAIN）があればそれを使う。ほかは、言い切らない文 */
+export const genericText = (f: Pick<GenericFinding, "messageKey" | "params"> & { certainty?: GenericFinding["certainty"] }): string =>
+  ((f.certainty === "確定" ? GENERIC_TEXT_CERTAIN[f.messageKey] : undefined) ?? GENERIC_TEXT[f.messageKey] ?? TABLE_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params[k] ?? "");
+
+/**
+ * 段 12（G04 包括・G05 背反・G06 算定回数。design.md §12-3）の指摘の文。ここは言い切らない文（条件つきで出すときの文）。
+ * 値：{parent}{child}{a}{b}{code} はコード、{days}{dayA}{dayB} は日、{keep} は表で算定する側（コードか「いずれか一方」）、{limit}{count} は回数。
+ * _cond は、表の特例条件が「条件あり」の行（条件の中身はデータにない）
+ */
+const TABLE_TEXT: Record<string, string> = {
+  "G04.day": "コード {child} は、同じ日の {parent} に含まれる項目として電子点数表に載っていて、同じ日（{days}日）に両方あります。別に算定できるか、告示・通知を確かめてください",
+  "G04.day_cond": "コード {child} は、条件によっては、同じ日の {parent} に含まれます（条件の中身はデータにありません）。同じ日（{days}日）に両方あります。告示・通知を確かめてください",
+  "G04.month": "コード {child} は、同じ月の {parent} に含まれる項目として電子点数表に載っていて、同じレセプトに両方あります。別に算定できるか、告示・通知を確かめてください",
+  "G04.month_cond": "コード {child} は、条件によっては、同じ月の {parent} に含まれます（条件の中身はデータにありません）。同じレセプトに両方あります。告示・通知を確かめてください",
+  "G04.same": "コード {child} は、{parent} と同時に行うと {parent} に含まれる項目として電子点数表に載っています。同じ日（{days}日）に両方あります。同時に行ったものかを確かめてください",
+  "G04.same_cond": "コード {child} は、{parent} と同時に行うと、条件によっては {parent} に含まれます（条件の中身はデータにありません）。同じ日（{days}日）に両方あります。同時に行ったものかと、告示・通知を確かめてください",
+  "G04.surgery": "コード {child} は、{parent} と同じ手術で行うと {parent} に含まれる項目として電子点数表に載っています。同じ日（{days}日）に両方あります。同じ手術で行ったものかを確かめてください",
+  "G04.surgery_cond": "コード {child} は、{parent} と同じ手術で行うと、条件によっては {parent} に含まれます（条件の中身はデータにありません）。同じ日（{days}日）に両方あります。同じ手術で行ったものかと、告示・通知を確かめてください",
+  "G05.day": "コード {a} と {b} は、同じ日に併せて算定できない組として電子点数表に載っていて、同じ日（{days}日）に両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.day_cond": "コード {a} と {b} は、条件によっては、同じ日に併せて算定できません（条件の中身はデータにありません）。同じ日（{days}日）に両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.month": "コード {a} と {b} は、同じ月に併せて算定できない組として電子点数表に載っていて、同じレセプトに両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.month_cond": "コード {a} と {b} は、条件によっては、同じ月に併せて算定できません（条件の中身はデータにありません）。同じレセプトに両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.same_unit": "コード {a} と {b} は、同時に併せて算定できない組として電子点数表に載っていて、同じ算定単位に両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.same_unit_cond": "コード {a} と {b} は、条件によっては、同時に併せて算定できません（条件の中身はデータにありません）。同じ算定単位に両方あります（表で算定する側：{keep}）。告示・通知を確かめてください",
+  "G05.same_day": "コード {a} と {b} は、同時に行うと併せて算定できない組として電子点数表に載っています（表で算定する側：{keep}）。別の算定単位ですが、同じ日（{days}日）に両方あります。同時に行ったものかを確かめてください",
+  "G05.same_day_cond": "コード {a} と {b} は、同時に行うと、条件によっては併せて算定できません（条件の中身はデータにありません。表で算定する側：{keep}）。別の算定単位ですが、同じ日（{days}日）に両方あります。同時に行ったものかと、告示・通知を確かめてください",
+  "G05.week": "コード {a} と {b} は、1 週間のうちに併せて算定できない組として電子点数表に載っています（表で算定する側：{keep}）。7 日以内（{dayA}日と{dayB}日）に両方あります。1 週間の数え方（起算日から 7 日か、暦の週か）は項目ごとに違うので、告示・通知を確かめてください",
+  "G05.week_cond": "コード {a} と {b} は、条件によっては、1 週間のうちに併せて算定できません（条件の中身はデータにありません。表で算定する側：{keep}）。7 日以内（{dayA}日と{dayB}日）に両方あります。告示・通知を確かめてください",
+  "G06.day": "コード {code} は、1 日に {limit} 回までとして電子点数表に載っていますが、{days}日に、それを超える回数があります（多い日で {count} 回）。告示・通知を確かめてください",
+  "G06.day_cond": "コード {code} は、条件によっては、1 日に {limit} 回までです（条件の中身はデータにありません）。{days}日に、それを超える回数があります（多い日で {count} 回）。告示・通知を確かめてください",
+  "G06.month": "コード {code} は、1 月に {limit} 回までとして電子点数表に載っていますが、このレセプトに {count} 回あります。告示・通知を確かめてください",
+  "G06.month_cond": "コード {code} は、条件によっては、1 月に {limit} 回までです（条件の中身はデータにありません）。このレセプトに {count} 回あります。告示・通知を確かめてください",
+  "G06.week": "コード {code} は、1 週間に {limit} 回までとして電子点数表に載っていますが、日曜から土曜の 1 週間（{days}日）に {count} 回あります。1 週間の数え方（起算日から 7 日か、暦の週か）は項目ごとに違うので、告示・通知を確かめてください",
+  "G06.week_cond": "コード {code} は、条件によっては、1 週間に {limit} 回までです（条件の中身はデータにありません）。日曜から土曜の 1 週間（{days}日）に {count} 回あります。告示・通知を確かめてください",
+  "G06.master_limit": "コード {code} は、医科診療行為マスターの上限回数が {limit} 回ですが、このレセプトに {count} 回あります。上限回数の単位（月か、ほかの期間か）はマスターの仕様に書かれていないので、告示・通知を確かめてください",
+};
+
+/** 言い切りの文。言い切りの候補（特例条件がなく、単位が日・月・同じ算定単位）の種類だけ。出るのは、config/generic-checks.json の certain に載せた種類に限る（2026-11-21 に 4 種類：G03.inpatient_only・G03.clinic_only・G05.same_unit・G06.day） */
+export const GENERIC_TEXT_CERTAIN: Record<string, string> = {
+  "G04.day": "コード {child} は、同じ日の {parent} に含まれるので、別に算定できません。同じ日（{days}日）に両方あります",
+  "G04.month": "コード {child} は、同じ月の {parent} に含まれるので、別に算定できません。同じレセプトに両方あります",
+  "G05.day": "コード {a} と {b} は、同じ日に併せて算定できません。同じ日（{days}日）に両方あります（算定する側：{keep}）",
+  "G05.month": "コード {a} と {b} は、同じ月に併せて算定できません。同じレセプトに両方あります（算定する側：{keep}）",
+  "G05.same_unit": "コード {a} と {b} は、同時に併せて算定できません。同じ算定単位に両方あります（算定する側：{keep}）",
+  "G06.day": "コード {code} は、1 日に {limit} 回までです。{days}日に上限を超えています（多い日で {count} 回）",
+  "G06.month": "コード {code} は、1 月に {limit} 回までです。このレセプトに {count} 回あり、上限を超えています",
+  // 段 11（G02・G03）。後の版のマスターで点検していて、その行が診療年月の後に変更されているときは、点検が条件つきにするので、ここの文にはならない
+  "G02.points": "この単位の 1 回分の点数が、マスターからの再計算と合っていません（UKE は {uke} 点、再計算は {calc} 点。{formula}）",
+  "G03.inpatient_only": "コード {code}（{name}）は、入院のレセプトに限るコードです。入院外のレセプトでは算定できません",
+  "G03.hospital_only": "コード {code}（{name}）は、病院に限るコードです。診療所では算定できません",
+  "G03.clinic_only": "コード {code}（{name}）は、診療所に限るコードです。病院では算定できません",
+  "G03.age": "コード {code}（{name}）は、年齢の範囲（{range}）の外なので算定できません（{when}の年齢は {ages} 歳）",
+  // 段 13（G07）
+  "G07.missing": "摘要欄に{comment}の記載がありません。コード {code} を算定するときは、必ず要る記載です（記載要領 {sheet} 項番 {kouban}）",
+  "G07.missing_any": "摘要欄に、次のどれかの記載が要りますが、どれもありません：{comment}（コード {code}。記載要領 {sheet} 項番 {kouban}）",
+};
+
+/** G04〜G06 が点検していないこと（点検の範囲の説明に、その点検が動いたときに出す。design.md §12-3） */
+export const GENERIC_SCOPE_NOTE: Record<string, string> = {
+  G04: "包括の単位が「手術前 1 週間」の組と、補助マスターの 2 つ目・3 つ目のグループは、点検していません。「同時」「1 手術につき」の組は、同じ日にあるものだけを条件つきで出します",
+  G05: "「同時」の組は、同じ算定単位か同じ日にあるものだけを見ています。「1 週間につき」の組は、このレセプトの月の中だけで見ています（前後の月にまたがる分は点検していません）",
+  G06: "日・月・週の上限だけを点検しています。2 月以上の期間、一連・入院中・患者当りなど、レセプト 1 枚から数えられない単位の上限は、点検していません",
+};
+
+/** 動かさなかった点検の理由の文（「問題なし」と区別して出す。design.md §12-1） */
+export function genericNotRunText(n: Pick<GenericNotRun, "reason" | "detail">): string {
+  switch (n.reason) {
+    case "noMasters":
+      return "マスターが入っていないので、していません";
+    case "notReady":
+      return `準備ができていないので、していません${n.detail ? `（${n.detail}）` : ""}`;
+    case "noSnapshot":
+      return `${n.detail}。この点検はしていません`;
+    case "notBuilt":
+      return "この点検は、まだ入っていません";
+  }
+}
+
+/**
+ * 摘要欄の記載の点検（R17）の範囲（design.md §11-13）。checked は点検している項目（版の表＝EM §2-10 表 1 の行と同じ並び）、
+ * uncheckedCount は、別表Ⅰ に定めがあるが点検していない項目の数（EM §2-10 表 2 の行数）。どちらも tests/engine/comments.test.ts が表と突き合わせる
+ */
+export const COMMENT_CHECK_SCOPE = {
+  checked: [
+    "管理料の月の、往診・訪問診療の年月日",
+    "包括的支援加算の状態",
+    "在宅移行早期加算の、初回の管理料の算定日",
+    "在宅ターミナルケア加算の死亡年月日",
+    "在宅以外で亡くなったときの、死亡前 24 時間以内の訪問診療の日時",
+    "在宅酸素療法指導管理料の、動脈血酸素分圧又は飽和度",
+    "訪問診療と同じ日の往診の理由",
+    "急性増悪で週 4 回以上訪問したときの、必要性と日付",
+  ],
+  uncheckedCount: 19,
+};
+/** 画面の点検の説明に出す文 */
+export const COMMENT_CHECK_NOTE = `摘要欄の必須の記載のうち、点検しているのは次の ${COMMENT_CHECK_SCOPE.checked.length} 項目です：${COMMENT_CHECK_SCOPE.checked.join("／")}。記載要領の別表Ⅰ に定めがあっても、点検していない項目が ${COMMENT_CHECK_SCOPE.uncheckedCount} 件あります。`;
 
 /**
  * 審査支払機関の表示名（design.md §8 L-26、EM #8-5）。内部の名前（"支払基金"）は変えず、画面に出すときだけ今の名称にする
@@ -61,6 +195,8 @@ export const FACT_LABEL: Record<FactKey, string> = {
   careLevel: "要介護度",
   table7: "別表第七に当たるか",
   table8_2: "別表第八の二に当たるか",
+  disabilitySupportLevel: "障害支援区分",
+  table8_3Other: "要介護度と障害支援区分のほかに、別表第八の三の状態（認知症の日常生活自立度Ⅲ以上、週1回以上の訪問看護、処置、麻薬の投薬など）に当たるか",
   mainDisease: "主病",
   homeOxygen: "在宅酸素療法中か",
   deathPlace: "看取りの場所",
@@ -69,8 +205,12 @@ export const FACT_LABEL: Record<FactKey, string> = {
   emergencyEligible: "緊急往診の対象患者か",
   residence: "居住の場所（居宅か、施設に入居しているか）",
   contactDocProvided: "連絡担当者・往診担当医などの文書を患者に提供しているか",
-  sameDaySeparate: "同じ日の訪問診療料と往診料が、別々の診療のものか",
+  sameDaySeparate: "同じ日の訪問診療と往診が、別々の診療か（1 回の診療ではないか）",
+  sameDayOushinAfterVisit: "その日、訪問診療のあとに、病状の急変などで往診したか",
+  dischargeJointGuidance: "退院時共同指導料1 を算定したか",
+  rxLongPsychotropic: "その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
+  comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
@@ -83,6 +223,26 @@ export const FACILITY_LABEL: Record<FacilityFactKey, string> = {
   revisitPriceSameDay: "訪問診療料と往診料の両方がある日に、再診時等の物価対応料を重ねて算定できるか",
 };
 
+/** 足りない入力（患者の事実か、施設の設定）の名前 */
+export const needLabel = (key: NeedKey): string =>
+  key.startsWith("facility.") ? `施設の設定「${FACILITY_LABEL[key.slice("facility.".length) as FacilityFactKey] ?? key}」` : (FACT_LABEL[key as FactKey] ?? key);
+
+/** 算定行の導出規則（design.md §2-8 の D01〜D12）を、根拠として画面に出す文 */
+export const DERIVE_TEXT: Record<string, string> = {
+  D01: "訪問診療の記録 1 件につき 1 回",
+  D02: "往診の記録 1 件につき 1 回",
+  D03: "その月の訪問診療料の回数と、患者の状態・居住の場所・施設の基準で決まる区分",
+  D04: "管理料が月 2 回以上（重症以外）か月 1 回の区分で、要介護 3 以上・障害支援区分 2 以上など別表第八の三の状態",
+  D05: "退院後に在宅療養を始め、管理料の算定開始月から 3 か月目まで",
+  D06: "訪問診療料を算定した月に 1 回（届出の区分による）",
+  D07: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
+  D08: "訪問診療料の日は訪問診療時の区分、往診料だけの日は再診時等の区分",
+  D09: "検査の項目ごとに 1 回。血液採取は検査の日ごとに 1 回、判断料は区分ごとに月 1 回",
+  D10: "管理料を算定しない月の処方。内服の種類数と、向精神薬の長期処方かで区分が決まる",
+  D11: "本人が選んだ",
+  D12: "本人が選んだ（死亡日前 14 日以内に 2 回以上の訪問・往診の記録があるか、退院時共同指導料1 を算定して訪問診療の記録がある）",
+};
+
 /** 確認してほしい点の文。情報不足は「どこを確かめるか」を添える（医療事務あては本人、医師あては医師確認） */
 export function findingText(f: Finding): string {
   if (f.kind === "情報不足" && f.missing) {
@@ -90,13 +250,23 @@ export function findingText(f: Finding): string {
       const label = FACILITY_LABEL[f.missing.field.slice("facility.".length) as FacilityFactKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
-    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
+    // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
+    if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
+    // 点検の対象外の行がある請求：ほかの行の有無や回数で決まる点は決められない（design.md §11-11）
+    if (f.missing.field === "unsupportedLines") return "この請求には点検の対象外の行があるため、決められません";
+    // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
+    if (f.missing.field === "rxRecord") return `処方箋料の行${day}に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください`;
+    const label = FACT_LABEL[f.missing.field as FactKey] ?? f.missing.field;
     return f.missing.target === "doctor"
-      ? `${label}がカルテから分かりません。医師確認で確かめましょう`
-      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : ""}確かめて入力してください`;
+      ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
+      : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
-  return FINDING_TEXT[f.messageKey] ?? f.messageKey;
+  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
+  // 日付の食い違い（R17）：足りない日・多い日を添える
+  const days = (v: string | undefined) => (v ? v.split(",").map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、") : "");
+  const detail = [f.params?.lacking ? `記載のない日：${days(f.params.lacking)}` : "", f.params?.extra ? `算定のない日：${days(f.params.extra)}` : ""].filter(Boolean).join("。");
+  return detail ? `${text}（${detail}）` : text;
 }
 
 /**

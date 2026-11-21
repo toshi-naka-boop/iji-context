@@ -1,5 +1,5 @@
 // 令和8年度改定後の版（design.md §2-4・§2-5）。適用は 2026年6月〜2027年5月診療分
-// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-47）。採用値にない値は書かない。
+// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-47）。採用値にない値は書かない。診療行為コードは r2026-codes.ts（EM §2-8）、摘要欄の記載は r2026-comments.ts（EM §2-10）、令和6年度から変わった点は r2026-changes.ts（EM §2-9）。
 // このファイルは書き換えない。次の改定・値の変更は、新しいファイルを足す（docs/revision-howto.md）
 import { makeR01 } from "../rules/r01";
 import { makeR02 } from "../rules/r02";
@@ -17,6 +17,10 @@ import { makeR13 } from "../rules/r13";
 import { makeR14 } from "../rules/r14";
 import { makeR15 } from "../rules/r15";
 import { makeR16 } from "../rules/r16";
+import { makeR17 } from "../rules/r17";
+import { changes } from "./r2026-changes";
+import { bundles, codes, shikibetsu } from "./r2026-codes";
+import { commentCodes, comments } from "./r2026-comments";
 import type { KubunDef, Revision, RevisionConsts } from "./types";
 
 const em = (name: string, no: string, points: number): KubunDef => ({ name, no, points, source: "EM" });
@@ -63,6 +67,8 @@ const points: Record<string, KubunDef> = {
   D400_1: em("血液採取 静脈", "D400 1", 40),
   D005_5: em("末梢血液一般検査", "D005 5", 21),
   D005_9: em("HbA1c", "D005 9", 49),
+  D007_5: em("血液化学検査 5〜7項目", "D007 注 イ", 93),
+  D007_8: em("血液化学検査 8〜9項目", "D007 注 ロ", 99),
   D007_10: em("血液化学検査 10項目以上", "D007 注 ハ", 103),
   D008_19: em("BNP", "D008 19", 130),
   D026_3: em("血液学的検査判断料", "D026 3", 125),
@@ -92,9 +98,9 @@ const consts: RevisionConsts = {
     },
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16：基準を満たさない施設は 2ロ に代えて 2ニ を算定する（R8-17。重症区分の 2イ は対象外）
-    note16: { from: "ロ", to: "ニ" },
+    note16: { enabled: true, from: "ロ", to: "ニ" },
   },
-  hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, tiers: ["ロ", "ニ"] },
+  hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, disabilityLevelMin: 2, tiers: ["ロ", "ニ"] },
   shidoKanriKubun: ["C101_2I", "C103_2"],
   bundled: { kubun: ["B000", "F400_3", "F400_2", "F400_N4", "F400_N6_1"], noRxAddition: "C002_N2" },
   tokutei: { kubun: "F400_N4", excludedDiseases: ["糖尿病", "高血圧", "脂質異常症"], minDays: 28 },
@@ -102,8 +108,16 @@ const consts: RevisionConsts = {
   baseUp: { visit: ["O001_3I", "O001_3RO"], revisit: "O001_2", overlapKey: "revisitBaseUpSameDay" },
   price: { visit: ["O100_1HA"], revisit: "O100_1RO", overlapKey: "revisitPriceSameDay" },
   terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: "C001_N6_TERMINAL", days: 14, minVisits: 2 },
-  oushin: { kubun: "C000", kinkyu: "C000_N1_KINKYU" },
-  tests: { judgement: ["D026_3", "D026_4", "D026_5"], bnp: "D008_19", bnpJudgement: "D026_5", rapid: "D_GAIRAI_JINSOKU" },
+  oushin: { kubun: "C000", kinkyu: "C000_N1_KINKYU", revisit: "A001" },
+  tests: { judgement: ["D026_3", "D026_4", "D026_5"], bnp: "D008_19", bnpJudgement: "D026_5", rapid: "D_GAIRAI_JINSOKU", bloodDraw: "D400_1" },
+  testItems: {
+    末梢血液一般: { kubun: "D005_5", judgement: "D026_3" },
+    HbA1c: { kubun: "D005_9", judgement: "D026_3" },
+    "血液化学5〜7項目": { kubun: "D007_5", judgement: "D026_4" },
+    "血液化学8〜9項目": { kubun: "D007_8", judgement: "D026_4" },
+    血液化学10項目以上: { kubun: "D007_10", judgement: "D026_4" },
+    BNP: { kubun: "D008_19", judgement: "D026_5" },
+  },
   dx: { tiers: { "1": "C001_N13_DX", "2": "C001_N13_DX2" }, conflicts: ["A_DENSHI_RENKEI"] },
   weeklyVisitLimit: 3,
   weekStartsOn: 0,
@@ -118,6 +132,17 @@ export const r2026: Revision = {
   effectiveFrom: "2026-06",
   effectiveUntil: "2027-05",
   points,
+  codes,
+  bundles,
+  // EM §2-8 で、r2026 の点数表の区分はすべてコード（か包括の項目）が決まっている
+  uncoded: {},
+  shikibetsu,
   consts,
-  rules: [makeR01, makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
+  comments,
+  commentCodes,
+  rules: [
+    ...[makeR01, makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
+    makeR17({ consts, comments, commentCodes }),
+  ],
+  changes,
 };

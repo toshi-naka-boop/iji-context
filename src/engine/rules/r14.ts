@@ -10,6 +10,13 @@ export function makeR14(c: RevisionConsts): Rule {
     id: "R14",
     kubun: [...kanriKubun(c), IKOU],
     reference: "C002 注4 在宅移行早期加算（留意事項 (16)(17)。C002-2 注5 で準用）",
+    // 退院と管理料の算定開始月の出来事で決める
+    recordFindings: ["missing", "not_eligible"],
+    soundWhenPartial: [],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
     appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
     needs: () => [],
     check(ctx) {

@@ -1,0 +1,229 @@
+// 精度を数字で見る（design.md §12-6）：UKE のファイルを読み、データで動く点検と、ルールごとの partial の数を、レセプトごと・合計で出す。
+// 使い方：RESEMEN_MASTER_DIR=<masters.db のあるフォルダ> npx tsx scripts/measure-generic.ts <UKE のファイル…>
+// 出すのは数だけ（患者の氏名・番号は出さない。レセプトは、ファイルの中の通し番号と診療年月で示す）。何も保存しない。
+// 段 10b で数えるもの：識別できた行の割合（マスターで名前が付いた行／全部の行）、partial になったルールの割合、v23 の定義（対象外の単位が 1 つでもあれば、どのルールも partial）との比較、点検ごとの指摘の数。
+// 段 11 で数えるもの：検算（G02）できた単位の割合と、そのうち UKE の点数と合った割合、検算の対象外の単位の理由ごとの数、G02・G03 の指摘の数（点検ごとの指摘の数に出る）。
+// 行の属性（G03）には、入院外・生年月日・施設の種別（config/facility.json が在宅療養支援診療所なら診療所）を渡す
+// 段 12 で足したもの：G04〜G06 の指摘の数（言い切りの候補＝一覧に載せれば言い切りになるもの・条件つき）、手書きのルールとの重なりで出さなかった数、指摘の内訳（コードと出どころ）、点検にかかった時間。
+// 段 13 で足したもの：G07（必須コメント）・G08（傷病名の要件）の指摘の数（点検ごとの指摘の数に出る）、G07 が見た組の数・コメントが複数ある組の数・点検していない組（決められない形）の数。
+// G08 には、SY の傷病名コードを渡す。
+// 段 14 で足したもの：G09（適応・併用）の指摘の数（種類ごと）、適応の表にある薬・診療行為の割合、レセプト 1 件あたりの G09 の指摘の数（平均・最大）。G09 には、疑い病名かどうか（修飾語「の疑い」）も渡す。
+// 手書きのルールは、取り込んだレセプトの点検（API）と同じ作り方で掛ける（round-32 O-17）：同梱の症例の事実と、症例ごとの施設の上書き（src/server/app/cases.ts の caseBaseOf）、
+// 出来事なし・カルテ側の記録なし、審査支払機関と都道府県は UKE のもの。API が重ねる患者マスタ（年齢・保険種別・負担割合）と、利用者が確かめた事実は、アプリの DB にあるので重ねない。
+// 確定の数は、出荷の一覧（config/generic-checks.json の certain）で数える。言い切りの候補は、言い切りの文を持つ種類を全部一覧に載せたつもりで数える
+// あとの段が、ここに数を足す
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { evaluate, partialBy } from "../src/engine";
+import facilityJson from "../config/facility.json";
+import type { FacilityJson } from "../src/engine/facility";
+import { hasRevision, resolveRevision } from "../src/engine/revisions";
+import type { ClaimContext } from "../src/engine/types";
+import { CERTAIN, evaluateGeneric } from "../src/generic";
+import { recalcClaim, recalcSummary } from "../src/generic/g02";
+import { commentGroupsOf } from "../src/generic/g07";
+import { g09Look } from "../src/generic/g09";
+import { outsideOf, rowNamesOf } from "../src/generic/lookup";
+import { mappedLinesOf, overlap } from "../src/generic/overlap";
+import { GENERIC_CHECKS, type GenericAboutMore } from "../src/generic/types";
+import { mastersDbPath, openMasters } from "../src/masters/db";
+import { caseBaseOf } from "../src/server/app/cases";
+import { GENERIC_TEXT_CERTAIN } from "../src/messages";
+import { diseaseCodeOf, SUSPECTED_MODIFIER } from "../src/uke/diseases";
+import { mapClaim, parseUke, UkeError } from "../src/uke/uke";
+
+const files = process.argv.slice(2);
+if (files.length === 0) {
+  console.error("使い方：RESEMEN_MASTER_DIR=<masters.db のあるフォルダ> npx tsx scripts/measure-generic.ts <UKE のファイル…>");
+  process.exit(1);
+}
+const db = openMasters();
+if (!db) {
+  console.error(`masters.db がない（${mastersDbPath()}）。RESEMEN_MASTER_DIR に、masters.db のあるフォルダを渡してください（作り方は docs/masters.md）`);
+  process.exit(1);
+}
+
+const KINDS = ["SI", "IY", "TO"] as const;
+/** 言い切りの候補の種類（言い切りの文を持つ種類）。一覧（config/generic-checks.json）に全部載せたつもりで掛けて、候補を数える */
+const CANDIDATES: ReadonlySet<string> = new Set(Object.keys(GENERIC_TEXT_CERTAIN));
+/** 言い切りの候補と、出荷の一覧の両方を、1 回の点検で見分ける（確定は、点検が確定と言い、出荷の一覧に載っている種類だけ） */
+const JUDGE: ReadonlySet<string> = new Set([...CANDIDATES, ...CERTAIN]);
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** 点検を動かさなかった理由（GenericNotRun.reason）の呼び名 */
+const WHY: Record<string, string> = { noMasters: "マスターがない", notReady: "準備ができていない", noSnapshot: "診療年月の世代の 1 枚がない", notBuilt: "まだ入っていない" };
+const pct = (n: number, d: number) => (d === 0 ? "—" : `${((n / d) * 100).toFixed(1)}%`);
+const frac = (n: number, d: number) => `${n}/${d}（${pct(n, d)}）`;
+
+const total = {
+  claims: 0,
+  skipped: { 読めないレセプト: 0, 版のない診療年月: 0 },
+  unreadableFiles: 0,
+  rows: { SI: [0, 0], IY: [0, 0], TO: [0, 0] } as Record<(typeof KINDS)[number], [named: number, all: number]>,
+  /** ルール id → partial になったレセプトの数 */
+  partial: new Map<string, number>(),
+  /** ルール id → その版にそのルールがあるレセプトの数 */
+  ruleClaims: new Map<string, number>(),
+  /** v23 の定義で partial だったレセプトの数と、そのときに止まる（ルール × レセプト）の組の数 */
+  v23: 0,
+  v23Pairs: 0,
+  anyPartial: 0,
+  allPartial: 0,
+  findings: new Map<string, { 確定: number; 条件つき: number }>(),
+  /** 言い切りの候補（一覧に載せれば言い切りになる指摘）の数。点検ごと */
+  candidates: new Map<string, number>(),
+  /** 重なりの規則で出さなかった数 */
+  duplicate: 0,
+  judged: 0,
+  /** データで動く点検にかかった時間（ミリ秒。レセプトごとの最大と合計）と、行の数の最大 */
+  ms: { max: 0, sum: 0, rows: 0 },
+  ran: new Map<string, number>(),
+  notRun: new Map<string, number>(),
+  /** 検算（G02）：点数の書いてある単位・再計算できた単位・UKE の点数と合った単位・対象外の理由ごとの数 */
+  recalc: { units: 0, checked: 0, matched: 0, excluded: new Map<string, number>() },
+  /** 必須コメント（G07）：見た組（算定すれば必ず要る記載）・そのうちコメントが複数ある組（どれか 1 つがあれば言わない）・点検していない組（条件が文章にある、複数回算定など） */
+  comments: { groups: 0, multi: 0, notUsed: 0 },
+  /** 適応・併用（G09）：種類（messageKey）ごとの指摘の数、適応の表にある薬・診療行為の数（表にある／レセプトにある。レセプトごとに重複を除いて数える）、レセプトごとの指摘の数、傷病名の理由で適応を見なかったレセプトの数 */
+  g09: { keys: new Map<string, number>(), iy: [0, 0], si: [0, 0], conditioned: 0, perClaim: [] as number[], notLooked: 0, shohosen: 0 },
+};
+const add = <K>(m: Map<K, number>, k: K, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
+
+for (const f of files) {
+  const name = path.basename(f);
+  let claims;
+  let parsed;
+  try {
+    parsed = parseUke(readFileSync(f));
+    claims = parsed.claims;
+  } catch (e) {
+    if (!(e instanceof UkeError)) throw e;
+    total.unreadableFiles++;
+    console.log(`${name}：読めないファイル（${e.message}）`);
+    continue;
+  }
+  claims.forEach((claim, i) => {
+    const id = `${name} #${i + 1}（診療年月 ${claim.yearMonth}）`;
+    if (claim.unsupported !== undefined) {
+      total.skipped.読めないレセプト++;
+      console.log(`${id}：数えない（${claim.unsupported}）`);
+      return;
+    }
+    if (!hasRevision(claim.yearMonth)) {
+      total.skipped.版のない診療年月++;
+      console.log(`${id}：数えない（この診療年月の版がない）`);
+      return;
+    }
+    total.claims++;
+    const rev = resolveRevision(claim.yearMonth);
+    // 請求 id は、取り込みと同じ「カルテ番号等」の欄（同梱の見本は症例の請求 id）
+    const base = caseBaseOf(root, facilityJson as FacilityJson, claim.patientNo);
+    const facility = base.facility;
+    const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, outpatient: true, birth: claim.patient.birth, ...(facility.zaishishin === true ? { clinic: true } : {}), diseases: claim.patient.diseases.map((d) => ({ code: d.code ?? diseaseCodeOf(d.name), suspected: d.modifiers?.includes(SUSPECTED_MODIFIER) === true })) };
+    // 識別できた行
+    const items = claim.units.flatMap((u) => u.items);
+    const names = rowNamesOf(db, about, { items, comments: [], diseases: [] });
+    const rows = KINDS.map((k) => {
+      const mine = items.filter((it) => it.kind === k);
+      const named = mine.filter((it) => names.items[it.code] !== undefined).length;
+      total.rows[k][0] += named;
+      total.rows[k][1] += mine.length;
+      return `${k} ${named}/${mine.length}`;
+    });
+    // partial：v23 は、対象外の単位が 1 つでもあれば、どのルールも。v24 は、ルールごと
+    const mapped = mapClaim(claim, rev);
+    const others = mapped.others.length;
+    const ctx = { partial: others > 0, outside: others > 0 ? outsideOf(db, rev, claim.yearMonth, mapped.others.flatMap((o) => o.codes)) : undefined };
+    const stopped = rev.rules.filter((rule) => partialBy(rule, rev, ctx) !== null).map((rule) => rule.id);
+    for (const rule of rev.rules) add(total.ruleClaims, rule.id);
+    for (const ruleId of stopped) add(total.partial, ruleId);
+    if (others > 0) {
+      total.v23++;
+      total.v23Pairs += rev.rules.length;
+    }
+    if (stopped.length > 0) total.anyPartial++;
+    if (stopped.length === rev.rules.length) total.allPartial++;
+    // データで動く点検
+    const t0 = performance.now();
+    const g = evaluateGeneric(claim, db, about, undefined, JUDGE);
+    const ms = performance.now() - t0;
+    total.ms = { max: Math.max(total.ms.max, ms), sum: total.ms.sum + ms, rows: Math.max(total.ms.rows, items.length) };
+    for (const r of g.ran) add(total.ran, r.check);
+    for (const n of g.notRun) add(total.notRun, `${n.check}:${n.reason}`);
+    // 手書きのルールの結果と重ねる（取り込んだレセプトの点検と同じ作り方。出来事なし・カルテ側の記録なし）
+    const ctx2: ClaimContext = { claimId: claim.patientNo, yearMonth: claim.yearMonth, facility, payer: parsed.payer, prefecture: parsed.prefecture, facts: base.facts, events: [], recordsKnown: false, ...(base.history ? { history: base.history } : {}), lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })), comments: mapped.comments, commentsKnown: true, ...ctx };
+    const o = overlap(evaluate(ctx2), rev, false, mappedLinesOf(mapped.lines, mapped.origins), g.findings);
+    total.duplicate += o.duplicate;
+    total.judged += o.judged;
+    /** 画面に出る確かさ（出荷の一覧で決まる） */
+    const shown = (x: (typeof o.findings)[number]) => (x.certainty === "確定" && CERTAIN.has(x.messageKey) ? ("確定" as const) : ("条件つき" as const));
+    for (const x of o.findings) {
+      if (x.certainty === "確定") add(total.candidates, x.check);
+      console.log(`  ${x.check} ${x.certainty === "確定" ? "言い切りの候補" : "条件つき"} ${x.messageKey} ${x.codes.map((c) => `${c} ${names.items[c]?.name ?? ""}`).join(" × ")}［${x.source.data} ${x.source.ref}］`);
+    }
+    for (const x of o.findings) {
+      const c = total.findings.get(x.check) ?? { 確定: 0, 条件つき: 0 };
+      c[shown(x)]++;
+      total.findings.set(x.check, c);
+    }
+    const sure = o.findings.filter((x) => shown(x) === "確定").length;
+    // 検算（G02 が動いたときだけ）
+    const list = g.ran.some((r) => r.check === "G02") ? recalcClaim(claim, db, about) : [];
+    const sum = recalcSummary(Array.isArray(list) ? list : []);
+    total.recalc.units += sum.units;
+    total.recalc.checked += sum.checked;
+    total.recalc.matched += sum.matched;
+    for (const e of sum.excluded) add(total.recalc.excluded, e.text, e.count);
+    // 必須コメント（G07 が動いたときだけ）
+    const cg = g.ran.some((r) => r.check === "G07") ? commentGroupsOf(claim, db, about) : null;
+    if (cg !== null && !("skip" in cg)) {
+      total.comments.groups += cg.groups.length;
+      total.comments.multi += cg.groups.filter((x) => x.comments.length > 1).length;
+      total.comments.notUsed += cg.notUsed;
+    }
+    // 適応・併用（G09 が動いたときだけ）。指摘は、手書きとの重なりを通したあとのもの
+    const look = g.ran.some((r) => r.check === "G09") ? g09Look(claim, db, about) : null;
+    const mine = o.findings.filter((x) => x.check === "G09");
+    if (look !== null && !("skip" in look)) {
+      for (const x of mine) add(total.g09.keys, x.messageKey);
+      total.g09.iy = [total.g09.iy[0] + look.iy.inTable, total.g09.iy[1] + look.iy.all];
+      total.g09.si = [total.g09.si[0] + look.si.inTable, total.g09.si[1] + look.si.all];
+      total.g09.conditioned += look.iy.conditioned + look.si.conditioned;
+      total.g09.perClaim.push(mine.length);
+      if (look.why !== null) total.g09.notLooked++;
+      if (look.shohosen) total.g09.shohosen++;
+      const why = look.why !== null ? `／適応は見ていない（${{ none: "傷病名がない", uncoded: "未コード化の傷病名がある", unknown: "マスターにない傷病名コードがある" }[look.why]}）` : "";
+      const cond = look.iy.conditioned + look.si.conditioned > 0 ? `（うち性別・年齢の条件つきの行があって見ない 薬 ${look.iy.conditioned}・診療行為 ${look.si.conditioned}）` : "";
+      console.log(`  G09：適応の表にある薬 ${look.iy.inTable}/${look.iy.all}・診療行為 ${look.si.inTable}/${look.si.all}${cond}${why}${look.shohosen ? "／処方箋料あり（院外処方の薬は見られない）" : ""}／指摘 ${mine.length} 件`);
+    }
+    console.log(`${id}：名前が付いた行 ${rows.join("・")}／対象外の単位 ${others}／partial のルール ${stopped.length}/${rev.rules.length}（v23 の定義では ${others > 0 ? rev.rules.length : 0}/${rev.rules.length}）${stopped.length > 0 && stopped.length < rev.rules.length ? `［${stopped.join(" ")}］` : ""}／検算 ${sum.matched}/${sum.checked}/${sum.units}（合った／再計算できた／単位）／指摘 確定 ${sure}・条件つき ${o.findings.length - sure}（うち言い切りの候補 ${o.findings.filter((x) => x.certainty === "確定").length}）／重なりで出さなかった ${o.duplicate + o.judged}`);
+  });
+}
+db.close();
+
+console.log("");
+console.log(`== 合計：${total.claims} 件のレセプト（数えなかったもの：読めないレセプト ${total.skipped.読めないレセプト} 件、版のない診療年月 ${total.skipped.版のない診療年月} 件、読めないファイル ${total.unreadableFiles} 本）`);
+const named = KINDS.reduce((s, k) => s + total.rows[k][0], 0);
+const all = KINDS.reduce((s, k) => s + total.rows[k][1], 0);
+console.log(`識別できた行の割合（マスターで名前が付いた行／全部の行）：${frac(named, all)}　${KINDS.map((k) => `${k} ${frac(...total.rows[k])}`).join("　")}`);
+console.log(`partial になったレセプト：v23 の定義（対象外の単位が 1 つでもあれば、どのルールも止まる）${frac(total.v23, total.claims)}`);
+console.log(`　　　　　　　　　　　　 v24（ルールごと）：1 つ以上のルールが止まる ${frac(total.anyPartial, total.claims)}、どのルールも止まる ${frac(total.allPartial, total.claims)}`);
+const pairs = [...total.ruleClaims.values()].reduce((s, n) => s + n, 0);
+console.log(`partial になった（ルール × レセプト）の組：v24 ${frac([...total.partial.values()].reduce((s, n) => s + n, 0), pairs)}　v23 の定義 ${frac(total.v23Pairs, pairs)}`);
+console.log("partial になったルールの割合（ルールごと。partial になったレセプト／そのルールがある版のレセプト）：");
+for (const [ruleId, n] of total.ruleClaims) console.log(`  ${ruleId} ${frac(total.partial.get(ruleId) ?? 0, n)}`);
+console.log(`検算（G02）：再計算できた単位 ${frac(total.recalc.checked, total.recalc.units)}、そのうち UKE の点数と合った単位 ${frac(total.recalc.matched, total.recalc.checked)}`);
+console.log(`検算の対象外の単位 ${total.recalc.units - total.recalc.checked}（理由ごと。対象外は「合っている」に数えない）：${total.recalc.excluded.size === 0 ? "なし" : ""}`);
+for (const [text, n] of total.recalc.excluded) console.log(`  ${text}：${n}`);
+console.log(`必須コメント（G07）：見た組（算定すれば必ず要る記載）${total.comments.groups}、そのうちコメントが複数ある組（どれか 1 つがあれば言わない）${total.comments.multi}、点検していない組（条件が記載要領の文章にある・複数回算定など。決められない形）${total.comments.notUsed}`);
+const n9 = total.g09.perClaim;
+console.log(`適応・併用（G09）：適応の表にある薬 ${frac(total.g09.iy[0], total.g09.iy[1])}、表にある診療行為 ${frac(total.g09.si[0], total.g09.si[1])}（レセプトごとに、重複を除いたコードの数）。そのうち性別・年齢の条件つきの行があって適応を見なかったコード ${total.g09.conditioned}。傷病名の理由で適応を見なかったレセプト ${total.g09.notLooked} 件、処方箋料のあるレセプト（院外処方の薬は見られない）${total.g09.shohosen} 件`);
+console.log(`　指摘の数（種類ごと）：${["G09.iy_no_disease", "G09.si_no_disease", "G09.si_suspected", "G09.heiyo_kinki"].map((k) => `${k} ${total.g09.keys.get(k) ?? 0}`).join("、")}。量と日数（over_dose・over_days）は作っていない`);
+console.log(`　レセプト 1 件あたりの G09 の指摘：平均 ${n9.length === 0 ? "—" : (n9.reduce((s, n) => s + n, 0) / n9.length).toFixed(2)} 件、最大 ${n9.length === 0 ? "—" : Math.max(...n9)} 件（G09 が動いた ${n9.length} 件のレセプト）`);
+console.log("点検ごとの指摘の数（確定・条件つき）と、動いたレセプトの数：");
+for (const { id, kind } of GENERIC_CHECKS) {
+  const c = total.findings.get(id) ?? { 確定: 0, 条件つき: 0 };
+  const not = [...total.notRun].filter(([k]) => k.startsWith(`${id}:`)).map(([k, n]) => `${WHY[k.slice(id.length + 1)]} ${n} 件`);
+  console.log(`  ${id}（${kind}）：確定 ${c.確定}・条件つき ${c.条件つき}（うち言い切りの候補 ${total.candidates.get(id) ?? 0}）／動いた ${total.ran.get(id) ?? 0} 件${not.length > 0 ? `／動かさなかった（${not.join("、")}）` : ""}`);
+}
+console.log(`手書きのルールとの重なりで出さなかった指摘：手書きの指摘と同じ内容 ${total.duplicate} 件、手書きのルールが判定済み ${total.judged} 件`);
+console.log(`データで動く点検にかかった時間：レセプト 1 件あたり最大 ${total.ms.max.toFixed(1)} ミリ秒（合計 ${total.ms.sum.toFixed(1)} ミリ秒、行の数は最大 ${total.ms.rows}）`);

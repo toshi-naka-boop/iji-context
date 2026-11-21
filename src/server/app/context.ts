@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
-import { isKnownKubun } from "../../engine/codes-fictional";
+import { isKnownKubun } from "../../engine/revisions";
 import { hasRevision } from "../../engine/revisions";
 import type { FacilityJson } from "../../engine/facility";
 import type { Calendar } from "../../lifecycle/calendar";
@@ -13,6 +13,7 @@ import type { ReviewDeps } from "../../lifecycle/review";
 import type { StoreOptions } from "../../lifecycle/store";
 import type { BusinessDays, QueryLog } from "../../query/doctor-query";
 import type { ChoiceGroup } from "../../practice/choice";
+import { officialInputOf } from "../../official/registry";
 import { checkDataset } from "../dataset";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
@@ -28,11 +29,11 @@ export function defaultPaths(root = process.cwd()): AppPaths {
 }
 
 /** 本番の配線が作る ReviewDeps。版の有無（hasRevision）を必ず渡す（渡し忘れると、版のない提出で会議の整理が止まる） */
-export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar">): ReviewDeps {
+export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar" | "official">): ReviewDeps {
   return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
 }
 
-/** 本番の配線が作る StoreOptions。区分のキーの検査（架空コードの表にあるか）を必ず渡す（design.md §3） */
+/** 本番の配線が作る StoreOptions。区分のキーの検査（同梱の版の点数表にあるか）を必ず渡す（design.md §3） */
 export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir">): StoreOptions {
   return { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir, knownKubun: isKnownKubun };
 }
@@ -57,14 +58,16 @@ export function openContext(paths: AppPaths) {
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
   // 既定の施設の設定（JSON の形のまま持つ。症例ごとの上書きを重ねて三値に変えるのは src/server/app/cases.ts の 1 か所）
   const facility = json<FacilityJson>(cfg("facility.json"));
-  const deps = reviewDepsOf({ db, store, calendar });
+  // 公的情報レジストリ（official/）。形の違う文書があれば起動を止める。会議の整理（トリガー④）とローカルルール欄が同じものを使う
+  const official = officialInputOf(paths.root);
+  const deps = reviewDepsOf({ db, store, calendar, official });
 
   const setting = (key: string): string | null =>
     (sqlite.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
   const setSetting = (key: string, value: string) =>
     sqlite.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 
-  return { paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, deps, dataset, setting, setSetting };
+  return { paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;

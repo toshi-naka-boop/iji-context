@@ -2,7 +2,7 @@
 // 足りない項目は推定せず ask_missing で聞く。整えた文は必ず医師確認（承認）を挟んでから記録になる（医政発第1228001号）
 import type { QueryDraft } from "../query/doctor-query";
 import { modelOptions, type ModelChoice } from "./models";
-import { runOnce } from "./run";
+import { runOnce, type Sender } from "../llm/outbound";
 
 export const SCRIBE_OUTPUT_SCHEMA = {
   type: "object",
@@ -40,8 +40,8 @@ export function parseScribe(raw: unknown): ScribeResult {
 }
 
 /** 下書きを整える（LLM）。出力は検査してから使う */
-export async function tidy(draftText: string, model?: ModelChoice): Promise<ScribeResult> {
-  const r = await runOnce("scribe", draftText, {
+export async function tidy(by: Sender, draftText: string, model?: ModelChoice): Promise<ScribeResult> {
+  const r = await runOnce(by, "scribe", draftText, {
     systemPrompt: SCRIBE_PROMPT,
     tools: [],
     settingSources: [],

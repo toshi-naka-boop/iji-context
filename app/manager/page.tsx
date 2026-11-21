@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { NoteList } from "../chart/note-list";
 import { AuditLog } from "./audit-log";
 
 type Report = {
@@ -22,13 +23,20 @@ const ROWS: [keyof Omit<Report, "label">, string, string][] = [
 
 export default function Manager() {
   const [r, setR] = useState<Report | null>(null);
-  useEffect(() => { fetch("/api/manager").then((x) => x.json()).then(setR); }, []);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    // 事務長の役割でなければ 403 が返る。応答の本文をそのまま描かない
+    fetch("/api/manager")
+      .then(async (x) => (x.ok ? setR(await x.json()) : setErr(x.status === 403 ? "この画面は、事務長の役割の人が見られます。" : "読み込めませんでした。時間をおいて、もう一度試してください。")))
+      .catch(() => setErr("読み込めませんでした。時間をおいて、もう一度試してください。"));
+  }, []);
   return (
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="事務長レポート">
-        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。下には、操作の記録（監査ログ）を新しい順に並べています。
+        クリニック全体で、提出前に防げた件数をまとめています。正しく算定する・取りこぼさないための集計で、個人ごとには分けません。金額は点数×10 円の推定です。下には、カルテを書く画面から入れた訪問カルテの一覧（消す操作）と、操作の記録（監査ログ）を新しい順に並べています。
       </PageGuide>
+      {err && <p className="muted">{err}</p>}
       {r && (
         <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
           {ROWS.map(([k, label, color]) => (
@@ -40,7 +48,8 @@ export default function Manager() {
           ))}
         </div>
       )}
-      <AuditLog />
+      {r && <NoteList />}
+      {r && <AuditLog />}
     </main>
   );
 }

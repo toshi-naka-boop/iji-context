@@ -2,7 +2,7 @@
 // AI は並べ替えるだけで、書かれていないことを足さない。足していないかを決まった規則で検査し、原文にない言い回しは画面で知らせる。
 // 整えた結果は本人が欄ごとに直せる。そのあとの事実の取り出し（extract.ts）は今までどおり
 import { modelOptions, type ModelChoice } from "../mentor/models";
-import { runOnce } from "../mentor/run";
+import { runOnce, type Sender } from "../llm/outbound";
 import type { ChartNote } from "./extract";
 
 export const SOAP_SCHEMA = {
@@ -39,9 +39,9 @@ function toNote(raw: unknown): ChartNote {
 }
 
 /** 自由記述を SOAP に整える（LLM）。原文にない言い回しも一緒に返す */
-export async function formatSoap(text: string, model?: ModelChoice): Promise<{ note: ChartNote; unmatched: string[] }> {
+export async function formatSoap(by: Sender, text: string, model?: ModelChoice): Promise<{ note: ChartNote; unmatched: string[] }> {
   if (!text.trim()) throw new Error("カルテが空です");
-  const r = await runOnce("chartSoap", text, {
+  const r = await runOnce(by, "chartSoap", text, {
     systemPrompt: SOAP_PROMPT,
     tools: [],
     settingSources: [],

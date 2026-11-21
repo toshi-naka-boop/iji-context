@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_notes", "claim_results", "clerks", "digest_items", "patient_coverages", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
+const APP_TABLES = ["app_settings", "applications", "audit_log", "chart_comments", "chart_notes", "claim_facts", "claim_results", "clerk_sessions", "clerks", "digest_items", "doctor_fact_notes", "patient_coverages", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "reviews", "submissions"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -23,7 +23,7 @@ describe("migrate", () => {
     // auth.db は別の列を持つ
     const auth = new Database(":memory:");
     expect(migrate(auth, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
-    expect(tables(auth)).toEqual(["auth_events", "invites", "sessions", "users"]);
+    expect(tables(auth)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
   });
 
   it("2 回呼んでも変わらない", () => {
@@ -94,11 +94,11 @@ describe("migrate", () => {
     expect(version(db)).toBe(1);
     db.prepare("INSERT INTO users (id, login, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run("t0123456789ab", "old_user", "まえから", "scrypt$x$x$x", "2026-11-01T00:00:00.000Z");
     db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('h', 't0123456789ab', '2099-01-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')").run();
-    expect(migrate(db, AUTH_MIGRATIONS)).toBe(2);
+    expect(migrate(db, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
     expect(db.prepare("SELECT id, login, name, tenant_id, role FROM users").all()).toEqual([{ id: "t0123456789ab", login: "old_user", name: "まえから", tenant_id: "t0123456789ab", role: "clerk" }]);
     // セッションは残り、招待と監査の表ができる
     expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
-    expect(tables(db)).toEqual(["auth_events", "invites", "sessions", "users"]);
+    expect(tables(db)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
   });
 
   it("バージョン 1 の app.db を 2 へ上げると、監査ログと 1 日の回数の表ができ、中身は残る", () => {
@@ -106,8 +106,8 @@ describe("migrate", () => {
     migrate(db, APP_MIGRATIONS.slice(0, 1));
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
     expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
-    // 患者マスタの表は 4 番で足す
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages"));
+    // 患者マスタの表は 4 番、請求ごとに確かめた事実の表は 6 番、算定プレビューで入れた摘要欄の記載の表は 9 番で足す
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments"));
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
   });
@@ -120,7 +120,7 @@ describe("migrate", () => {
     ins.run("01139999-00000006", "table7", "true", "カルテ", null, "2025-03-11T09:00:00+09:00", "new1");
     ins.run("39139999-00000004", "homeOxygen", "false", "カルテ", null, "2025-03-12T09:00:00+09:00", "new1");
     expect(migrate(db, APP_MIGRATIONS.slice(0, 4))).toBe(4);
-    expect(tables(db)).toEqual(APP_TABLES);
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments"));
     // 同じ鍵の記録は同じ患者に寄り、ほかの列は変わらない
     expect(db.prepare("SELECT patient_id, fact_key, value, valid_until, checked_by FROM patient_facts ORDER BY id").all()).toEqual([
       { patient_id: "P0001", fact_key: "careLevel", value: "2", valid_until: "2025-05-31", checked_by: "new1" },

@@ -2,12 +2,11 @@
 // Claude は PDF から書かれていることを取り出すだけ。区分・請求・審査支払機関への対応づけは、ここで決まった規則で行う。
 // 知識の候補にするのは、本人が画面で確かめてボタンを押したときだけ。状態（未検証／contested）は F5 の規則が決める
 import { createHash } from "node:crypto";
-import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import type { ClaimContext } from "../engine/types";
 import type { CreateInput } from "../lifecycle/store";
 import { modelOptions, type ModelChoice } from "../mentor/models";
-import { runOnce, type RunStats } from "../mentor/run";
+import { runOnce, type RunStats, type SDKUserMessage, type Sender } from "../llm/outbound";
 import { badRequest } from "../server/errors";
 import { payerOfInsurer, type UkeSources } from "../uke/cases";
 
@@ -57,7 +56,7 @@ export function parseNotice(raw: unknown): Notice {
 }
 
 /** PDF を Claude に読ませる（ドキュメントとして渡す。ファイル操作のツールは渡さない） */
-export async function readNotice(pdf: Buffer, model?: ModelChoice): Promise<{ notice: Notice; stats: RunStats }> {
+export async function readNotice(by: Sender, pdf: Buffer, model?: ModelChoice): Promise<{ notice: Notice; stats: RunStats }> {
   async function* prompt(): AsyncIterable<SDKUserMessage> {
     yield {
       type: "user",
@@ -71,7 +70,7 @@ export async function readNotice(pdf: Buffer, model?: ModelChoice): Promise<{ no
       },
     } as SDKUserMessage;
   }
-  const r = await runOnce("notice", prompt(), {
+  const r = await runOnce(by, "notice", prompt(), {
     systemPrompt: NOTICE_PROMPT,
     tools: [],
     settingSources: [],

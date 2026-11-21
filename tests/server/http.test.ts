@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
-import type { User } from "../../src/server/auth";
+import { openAuth, type User } from "../../src/server/auth";
 import { UserError } from "../../src/server/errors";
 import type { Allowed } from "../../src/server/policy";
 import { createDailyCounter, enforceLimit, resetLimits } from "../../src/server/rate-limit";
@@ -35,7 +35,7 @@ afterAll(() => {
 beforeEach(() => resetLimits());
 
 // ヘルパだけを試すので、権限表の行は手で組む（キーは監査ログの操作名になる）
-const anyRole = (key: string): Allowed => ({ key: key as Allowed["key"], rule: ["clerk", "veteran", "manager", "doctor"] });
+const anyRole = (key: string): Allowed => ({ key: key as Allowed["key"], rule: ["clerk", "veteran", "manager", "doctor"], external: "none", patientData: false });
 const schema = z.strictObject({ name: z.string().max(5), items: z.array(z.string().max(10)).max(2).optional() });
 
 const post = (body: unknown, headers: Record<string, string> = {}) =>
@@ -129,7 +129,7 @@ describe("エラーの扱い", () => {
 
   it("許されていないロールは 403 で、処理に入らない", async () => {
     const handler = vi.fn(() => ({ ok: true }));
-    const POST = http.route({ roles: { key: "POST /api/test-403" as Allowed["key"], rule: ["doctor"] } }, handler);
+    const POST = http.route({ roles: { key: "POST /api/test-403" as Allowed["key"], rule: ["doctor"], external: "none", patientData: false } }, handler);
     const r = await POST(post({}));
     expect(r.status).toBe(403);
     expect((await r.json()).error).toContain("医師");
@@ -140,7 +140,7 @@ describe("エラーの扱い", () => {
 describe("開発用のルート（権限表の dev）", () => {
   it("本番では 404。本番でなくてもログインが要り、ログインしていればどのロールでも通る", async () => {
     const handler = vi.fn(() => ({ ok: true }));
-    const GET = http.route({ roles: { key: "GET /api/test-dev" as Allowed["key"], rule: "dev" } }, handler);
+    const GET = http.route({ roles: { key: "GET /api/test-dev" as Allowed["key"], rule: "dev", external: "none", patientData: false } }, handler);
     const req = (c: string | null) => new Request("http://localhost/api/test", { headers: c ? { cookie: c } : {} });
     expect((await GET(req(null))).status).toBe(401);
     expect(handler).not.toHaveBeenCalled();
@@ -226,6 +226,32 @@ describe("回数制限", () => {
     expect(() => enforceLimit("llm", "k2", "u2", daily, day1, cfg)).not.toThrow();
     expect(() => enforceLimit("llm", "k", "u1", daily, new Date("2026-11-17T15:00:00Z"), cfg)).not.toThrow();
     db.close();
+  });
+
+  it("サーバー全体の 1 日の上限（perDayAll）は、別のクリニック・別の利用者の呼び出しも合わせて数え、auth.db に残る（spec U-W）", () => {
+    resetLimits();
+    const day1 = new Date("2026-11-17T03:00:00Z");
+    const cfg = { perMinute: 100, perDay: 100, perDayAll: 3 };
+    const authFile = path.join(tmp, "auth-all.db");
+    let auth = openAuth(authFile);
+    const tenantA = new Database(":memory:");
+    const tenantB = new Database(":memory:");
+    migrate(tenantA, APP_MIGRATIONS);
+    migrate(tenantB, APP_MIGRATIONS);
+    enforceLimit("llm", "a:u1", "u1", createDailyCounter(tenantA), day1, cfg, auth.dailyAll);
+    enforceLimit("llm", "a:u2", "u2", createDailyCounter(tenantA), day1, cfg, auth.dailyAll);
+    auth.close();
+    auth = openAuth(authFile);
+    enforceLimit("llm", "b:u3", "u3", createDailyCounter(tenantB), day1, cfg, auth.dailyAll);
+    // 利用者ごとの数はまだ 1 回でも、全体で 3 回に達したので止まる
+    expect(() => enforceLimit("llm", "b:u4", "u4", createDailyCounter(tenantB), day1, cfg, auth.dailyAll)).toThrow(/サーバー全体の上限/);
+    // perDayAll のない種類は全体で数えない。日付が変わると戻る
+    expect(() => enforceLimit("upload", "b:u4", "u4", createDailyCounter(tenantB), day1, { perMinute: 100, perDay: 100 }, auth.dailyAll)).not.toThrow();
+    expect(auth.dailyAll.count("upload", "*", day1)).toBe(0);
+    expect(() => enforceLimit("llm", "b:u4", "u4", createDailyCounter(tenantB), new Date("2026-11-17T15:00:00Z"), cfg, auth.dailyAll)).not.toThrow();
+    auth.close();
+    tenantA.close();
+    tenantB.close();
   });
 });
 

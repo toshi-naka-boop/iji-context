@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import type { ZodType } from "zod";
 import type { AuditResult } from "./audit";
 import { SESSION_COOKIE, type User } from "./auth";
-import { UserError, badRequest, forbidden } from "./errors";
+import { ConsentRequired, UserError, badRequest, forbidden } from "./errors";
 import { clerkIdOf, getApp, getAuth, runAs } from "./instance";
 import { permits, rolesOf, type Allowed } from "./policy";
 import { clientIp, enforceLimit, limits, type LimitName } from "./rate-limit";
@@ -143,7 +143,9 @@ async function readForm(req: Request, max: number): Promise<FormData> {
 function failure(e: unknown, action: string): { res: Response; result: AuditResult } {
   if (e instanceof UserError) {
     const result: AuditResult = e.status === 403 ? "denied" : e.status === 429 ? "limited" : e.fields || e.status === 413 || e.status === 415 ? "invalid" : "rejected";
-    return { res: Response.json({ error: e.message, ...(e.fields ? { fields: e.fields } : {}) }, { status: e.status }), result };
+    // 同意がまだのときは、画面が同意を出すための印を添える
+    const consent = e instanceof ConsentRequired ? { consent: "required" } : {};
+    return { res: Response.json({ error: e.message, ...(e.fields ? { fields: e.fields } : {}), ...consent }, { status: e.status }), result };
   }
   // 詳細はサーバーログだけに出す（本文・cookie・キーは出さない。メッセージは長さを切る）。画面には照会用の番号だけ返す
   const errorId = randomBytes(4).toString("hex");
@@ -156,13 +158,15 @@ function failure(e: unknown, action: string): { res: Response; result: AuditResu
 /**
  * 共通ルートヘルパ。`export const POST = route({ roles: allow("POST /api/…"), body: schema }, async ({ body, user }) => …)` の形で使う。
  * handler が返した値は JSON にして返す（Response を返したらそのまま返す）。
- * 順番：ログイン → params の検証 → ロール → 回数制限 → query・本文の検証 → 処理 → 監査ログ
+ * 順番：ログイン → params の検証 → ロール → 注意書きへの同意 → 回数制限 → query・本文の検証 → 処理 → 監査ログ
  */
 export function route<B extends ZodType | undefined = undefined, P extends ZodType | undefined = undefined, Q extends ZodType | undefined = undefined>(
   opts: RouteOptions<B, P, Q>,
   handler: (c: RouteContext<B, P, Q>) => unknown | Promise<unknown>,
 ) {
-  const { key, rule } = opts.roles;
+  const { key, rule, external, patientData } = opts.roles;
+  /** 外部のサービスに送るか、患者の情報を扱うルートは、今の版の注意書きへの同意が要る（design.md §11-11。ハンドラごとには書かない） */
+  const needsConsent = external !== "none" || patientData;
   return async (req: Request, routeCtx?: { params?: Promise<Record<string, string | string[] | undefined>> }): Promise<Response> => {
     if (rule === "dev" && process.env.NODE_ENV === "production") return new Response("Not Found", { status: 404 });
     const viewer = userOf(req);
@@ -181,7 +185,8 @@ export function route<B extends ZodType | undefined = undefined, P extends ZodTy
           const need = rolesOf(rule).map((r) => `「${ROLE_LABELS[r]}」`).join("・");
           throw forbidden(need ? `この操作は${need}の役割で行います（いまの役割：${ROLE_LABELS[viewer.role]}）` : "この操作は、1 人で使っているクリニックでだけできます");
         }
-        if (opts.limit && viewer) enforceLimit(opts.limit, `${viewer.tenantId}:${viewer.id}`, viewer.id, getApp().dailyCounter);
+        if (needsConsent && !(viewer && getAuth().acceptedNotice(viewer.id))) throw new ConsentRequired();
+        if (opts.limit && viewer) enforceLimit(opts.limit, `${viewer.tenantId}:${viewer.id}`, viewer.id, getApp().dailyCounter, undefined, undefined, getAuth().dailyAll);
         const query = (opts.query ? parse(opts.query, Object.fromEntries(new URL(req.url).searchParams), "query") : undefined) as Infer<Q>;
         if (opts.body) parsedBody = parse(opts.body, await readJson(req, opts.maxBytes ?? limits().jsonBytes), "body") as Infer<B>;
         const form = opts.form ? await readForm(req, opts.form.maxBytes) : null;

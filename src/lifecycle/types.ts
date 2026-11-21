@@ -25,7 +25,10 @@ export type SourceType =
 
 export type Polarity = "avoid" | "allow";
 
-export type Actor = "veteran" | "clerk" | "system";
+export type Actor = "veteran" | "clerk" | "manager" | "doctor" | "system";
+
+/** 公的文書の条件に当たるかを、人が確かめた記録（design.md §11-3）。by は確かめた人の医療事務 id */
+export type OfficialCheck = { applies: boolean; by: string; at: string };
 
 export type Match = {
   /** 制度層：エンジンの applied に含まれれば適用 */
@@ -49,6 +52,8 @@ export type Basis = {
   kubun?: string[];
   /** トリガーによる遷移、または結果の遷移と同じ整理で同時に当たったトリガー */
   trigger?: TriggerKind;
+  /** トリガー④のとき、未確認だった矛盾の恐れの文書の鍵。回答で承認済みに戻したとき・種の直後は、確認済みに足した鍵（v22）。OFFICIAL_CHECK では確かめた文書の鍵 */
+  officialIds?: string[];
   /** ベテランの回答による遷移のとき、その項目 id */
   itemId?: string;
 };
@@ -87,11 +92,18 @@ export type KnowledgeMeta = {
   status_since: string;
   retired_reason: string | null;
   empathy: number;
+  /** 会議で確認済みの公的文書の鍵（昇順。既定は空。rev のハッシュに入れない。design.md §4-3） */
+  official_seen: string[];
+  /**
+   * 公的文書の条件に当たるかを人が確かめた記録（鍵は文書の鍵 <id>#<h>。なければ未確認。rev のハッシュに入れない。design.md §11-3）。
+   * applies＝この知識が当たる請求の中に、その文書の条件の請求がある。知識の conditionNote は判断に入れない
+   */
+  official_checks?: Record<string, OfficialCheck>;
   match: Match;
   history: HistoryEntry[];
 };
 
-export type TriggerKind = "revision" | "reappointment" | "idle";
+export type TriggerKind = "revision" | "reappointment" | "idle" | "official";
 
 export type LifecycleEvent =
   | { type: "VERIFY_APPROVE" }
@@ -102,11 +114,16 @@ export type LifecycleEvent =
   | { type: "TRIGGER"; trigger: TriggerKind }
   | { type: "COUNTER_EXAMPLE" }
   | { type: "USED" }
-  | { type: "RECHECK_PASS"; via: "claim" | "veteran" }
+  /** 種の時点で矛盾している公的文書を、確認済みとして記録する（状態は変えない。design.md §4-3） */
+  | { type: "OFFICIAL_BASELINE"; officialKeys: string[] }
+  /** 公的文書の条件に当たるかを人が確かめた（状態は変えない。design.md §11-3）。actor は確かめた人の役割 */
+  | { type: "OFFICIAL_CHECK"; key: string; applies: boolean; by: string; actor: Exclude<Actor, "system"> }
+  /** officialKeys：議題の項目に載っていた公的文書の鍵（確認済みに足す） */
+  | { type: "RECHECK_PASS"; via: "claim" | "veteran"; officialKeys?: string[] }
   | { type: "RECHECK_FAIL" }
   | { type: "IDLE_EXPIRED" }
   | { type: "DISPOSAL_APPROVE"; reason: string }
-  | { type: "DISPOSAL_REJECT" };
+  | { type: "DISPOSAL_REJECT"; officialKeys?: string[] };
 
 /** 遷移に付随する副作用。書き込みは store が行う */
 export type Effect =

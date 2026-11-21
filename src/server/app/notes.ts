@@ -1,16 +1,27 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/extract";
-import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
+import { claimPreviewOf } from "../../chart/claim";
+import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
+import { evaluate } from "../../engine";
+import { manualIn } from "../../engine/compare";
+import { deriveLines, manualLinesOf } from "../../engine/derive";
+import { resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
+import { monthRange } from "../../demo/period";
 import type { Chart } from "../../uke/crosscheck";
-import { badRequest, conflict, notFound } from "../errors";
-import { contextAsOf, outlook, visitDays } from "../../visit/as-of";
+import { commentCodesFor, commentFormatOk, type RequiredComment } from "../../engine/comments";
+import type { Revision } from "../../engine/revisions/types";
+import { commentOf, normalizeCommentText } from "../../uke/uke";
+import { badRequest, conflict, forbidden, notFound } from "../errors";
+import type { Role } from "../roles";
+import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
+import { chartFileOf } from "./case-files";
 import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
+import { genericOfLines } from "./generic";
 import type { Uke } from "./uke";
 
 export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases) {
@@ -18,11 +29,13 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { now } = clock;
   const { clerk } = clerks;
   const { patientOf } = uke;
-  const { cases, caseOf } = casesOf;
+  const { cases, caseOf, isUploaded } = casesOf;
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
     const c = caseOf(claimId);
+    // 訪問カルテは、その月の訪問の記録（出来事）に重ねて使う。記録のないレセプトは対象外
+    if (isUploaded(claimId)) throw badRequest("アップロードした UKE のレセプトは、訪問カルテの対象外です（カルテ側の記録がないため）");
     if (kind !== "訪問診療" && kind !== "往診") throw badRequest(`訪問の種類が不正: ${kind}`);
     const date = now().slice(0, 10);
     if (!date.startsWith(c.yearMonth)) throw conflict(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
@@ -31,7 +44,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
     return { id: Number(r.lastInsertRowid), date };
   }
-  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
+  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null; clerk_id: string };
   function noteRow(id: number): NoteRow {
     const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
     if (!r) throw notFound(`カルテがない: ${id}`);
@@ -47,6 +60,33 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
+  /**
+   * 訪問カルテを消す（design.md §11-11「消す」）。消せるのは、書いた本人と事務長だけ（ロールは権限表が先に絞る。ここでは本人かどうかを照合する）。
+   * 消えるのは、そのカルテの行（本文と、そこから確かめた事実）と、そのカルテの算定プレビューで入れた摘要欄の記載。訪問の出来事と算定行は保存しておらず、残りのカルテから毎回作り直すので、消したカルテの分は次の計算から外れる。
+   * 返すのは消したカルテの id だけ（本文・請求の中身は返さない）
+   */
+  function deleteNote(id: number, clerkId: string, role: Role): { deleted: number } {
+    const r = noteRow(id);
+    if (r.clerk_id !== clerkId && role !== "manager") throw forbidden("このカルテを消せるのは、書いた本人と事務長だけです");
+    // そのカルテの算定プレビューで入れた摘要欄の記載も一緒に消す
+    sqlite.transaction(() => {
+      sqlite.prepare("DELETE FROM chart_comments WHERE note_id = ?").run(id);
+      sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
+    })();
+    return { deleted: id };
+  }
+  /**
+   * 訪問カルテの一覧（消す相手を選ぶため）。見えるのは消せる分だけ：事務長には全部、ほかの人には自分が書いた分。
+   * 返すのは、id・請求・日付・種類・書いた人の名前・確定済みか。本文と、そこから確かめた事実は返さない
+   */
+  function listNotes(clerkId: string, role: Role) {
+    const rows = sqlite
+      .prepare("SELECT n.id, n.claim_id, n.date, n.kind, n.clerk_id, n.facts IS NOT NULL AS confirmed, c.name FROM chart_notes n LEFT JOIN clerks c ON c.id = n.clerk_id ORDER BY n.id")
+      .all() as { id: number; claim_id: string; date: string; kind: string; clerk_id: string; confirmed: number; name: string | null }[];
+    return rows
+      .filter((r) => role === "manager" || r.clerk_id === clerkId)
+      .map((r) => ({ id: r.id, claimId: r.claim_id, date: r.date, kind: r.kind, writer: r.name ?? "", mine: r.clerk_id === clerkId, confirmed: r.confirmed === 1 }));
+  }
   /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
   function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
     if (!clerkId) return [];
@@ -59,6 +99,86 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
+  type SavedComment = { slot: string; code: string; text: string };
+  const savedComments = (noteId: number) => sqlite.prepare("SELECT slot, code, text FROM chart_comments WHERE note_id = ?").all(noteId) as SavedComment[];
+  /**
+   * 導出の摘要欄の記載のうち、人が入れるもの（needsInput）に場所（slot）と当たるコードを添え、入れた値があれば ready にする。
+   * slot は「記載の表の行|導出が決めたコード（選ぶなら空）|同じ行とコードの何件目」。値を推し量って埋めることはしない（入れた値がなければ needsInput のまま）
+   */
+  function withInputs(comments: RequiredComment[], saved: SavedComment[], rev: Revision, ctx: ClaimContext) {
+    const seen = new Map<string, number>();
+    return comments.map((c) => {
+      if (c.status !== "needsInput") return c;
+      const base = `${c.rule}|${c.code ?? ""}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      const slot = `${base}|${n}`;
+      const rule = rev.comments.find((x) => x.id === c.rule);
+      const codes = c.code !== null ? [c.code] : rule ? commentCodesFor(rule, ctx, rev) : [];
+      const input = { slot, codes };
+      const s = saved.find((x) => x.slot === slot && codes.includes(x.code));
+      return s ? { ...c, code: s.code, text: s.text, status: "ready" as const, input } : { ...c, input };
+    });
+  }
+  /**
+   * 算定プレビューの「入力が要る」記載に、医療事務が値を入れる（FR-176。design.md §11-13）。確定したカルテ（請求とその日）ごとに残し、同じ場所は置き換える。
+   * コードは記載の表のその行のコード（導出がコードを決めていれば、そのコード）だけ。値は半角に寄せてから、コードの先頭 3 桁の形式（commentFormatOk）で確かめ、合わなければ残さない。
+   * 返すのは場所だけ（値は返さない。ログにも出さない）
+   */
+  function saveNoteComment(id: number, clerkId: string, input: { slot: string; code: string; text: string }): { saved: string } {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.facts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const [ruleId, slotCode] = input.slot.split("|");
+    const rule = resolveRevision(caseOf(r.claim_id).yearMonth).comments.find((x) => x.id === ruleId);
+    if (!rule || (slotCode !== "" && !rule.codes.includes(slotCode))) throw badRequest("摘要欄の記載の場所が正しくありません", ["slot"]);
+    if (!rule.codes.includes(input.code) || (slotCode !== "" && input.code !== slotCode)) throw badRequest("この記載に使えないコードです", ["code"]);
+    const text = normalizeCommentText(input.text);
+    if (!commentFormatOk(input.code, text)) throw badRequest("値の形が、コードの形式に合いません", ["text"]);
+    sqlite
+      .prepare("INSERT INTO chart_comments (note_id, claim_id, date, slot, code, text, clerk_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(note_id, slot) DO UPDATE SET code = excluded.code, text = excluded.text, clerk_id = excluded.clerk_id, created_at = excluded.created_at")
+      .run(id, r.claim_id, r.date, input.slot, input.code, text, clerkId, now());
+    return { saved: input.slot };
+  }
+  /**
+   * 確定したカルテの算定プレビュー（FR-94〜102）：その日までの出来事に、書いた人の確定済みのカルテを重ね、算定行をコードで導出して検証に通す。
+   * 月の途中は見込み（月末まで決まらないルールは指摘にしない）。読むだけで、適用記録・件数には数えない。choices は要選択への答え（保存しない）。
+   * 摘要欄の記載（R17）は、導出が値まで決めた記載（ready）だけを付けて点検する。UKE のコメントは使わない（行を作り直しているので、行と合わない）。
+   * 人が入れる記載（needsInput）は、医療事務がこのカルテのプレビューで入れた値（saveNoteComment）があれば ready として付け、なければ付けないので記載もれとして出る（design.md §11-13）。
+   * revId を渡すと試算（design.md §11-12）：同じ記録を、名指しした版の点数表とルールで導出・判定する。日付は動かさない。
+   * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない。
+   * revisions は、試算で選べる版（画面の選択肢。own は、この請求の診療年月の版）
+   */
+  function claimOfNote(id: number, choices: Record<string, string>, revId?: string) {
+    const r = noteRow(id);
+    if (r.facts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const base = caseOf(r.claim_id);
+    const own = resolveRevision(base.yearMonth);
+    const rev = revId === undefined ? own : revisionById(revId);
+    if (!rev) throw badRequest("選べる版ではありません", ["rev"]);
+    const midMonth = r.date < monthRange(base.yearMonth).end;
+    const upTo = midMonth ? contextAsOf(base, r.date) : base;
+    const { events, facts } = eventsFromNotes(upTo.events, upTo.facts, confirmedNotes(r.claim_id, r.clerk_id).filter((n) => n.date <= r.date));
+    const ownManual = manualLinesOf(upTo.lines, own);
+    const manual = revId === undefined ? ownManual : manualIn(ownManual, rev);
+    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    // 人が入れる記載（needsInput）に、このカルテで医療事務が入れた値があれば、ready の記載として付ける（FR-176）
+    const derived = { ...plain, comments: withInputs(plain.comments, savedComments(id), rev, { ...upTo, events, facts, lines: plain.lines, comments: [], commentsKnown: true }) };
+    const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
+    const ctx: ClaimContext = { ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true };
+    const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
+    // データで動く点検（G01〜。design.md §12-5）：導出した行の区分をコードに直して掛ける。試算では、選んだ版の世代のマスターで。
+    // 重なりの規則には、月の途中で外す前の手書きの結果を渡す（外した指摘と同じことを、データの側から出さない）
+    if (revId === undefined) {
+      const result = evaluate(ctx);
+      const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
+      return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic };
+    }
+    const result = trial(ctx, rev);
+    const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
+    const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
+    return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
+  }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
   function patients() {
     return cases()
@@ -102,11 +222,12 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** 照合用のカルテ：合成カルテに、本人が書いて確かめた訪問カルテを重ねる（FR-69） */
   function chartOf(claimId: string, clerkId?: string): Chart | null {
-    const f = path.join(paths.root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
-    return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
+    // 請求 id はパスに使わず、表を引く（合成カルテのない症例・表にない請求 id は null）
+    const f = chartFileOf(paths.root, claimId);
+    return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, confirmedNotes, monthOf, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

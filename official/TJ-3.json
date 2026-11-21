@@ -1,0 +1,22 @@
+{
+  "id": "TJ-3",
+  "kind": "審査情報提供事例",
+  "issuer": "DX審査支払機構サイト掲載",
+  "number": "3",
+  "issuedOn": "2005-04-25",
+  "url": "https://www.hpdx.or.jp/shinryohoshu/sinsa_jirei/teikyojirei/ika/index.files/jirei_all_koumoku.pdf#page=6",
+  "scope": {
+    "kubun": [
+      "D005_9"
+    ],
+    "payer": "支払基金",
+    "prefecture": null,
+    "conditionNote": "糖尿病・糖尿病疑いの明示がなく、膵臓疾患のみの場合"
+  },
+  "stance": "認めない",
+  "summary": "糖尿病・糖尿病疑いの明示がなく、膵臓疾患のみの場合の HbA1c",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}
