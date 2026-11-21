@@ -60,6 +60,11 @@ export type HaihanPattern = {
 export type HaihanConfig = { patterns: HaihanPattern[]; exceptions: HaihanException[] };
 
 export const HAIHAN: HaihanConfig = raw as HaihanConfig;
+/**
+ * 改定の世代ごとの EM §2-12 の行（design.md §14-4：改定のときに版ごとの行を残し、改定の棚卸で前後を比べる）。今あるのは令和 8 年度の告示から作った 1 つだけ。
+ * 改定で決まりを変えるときは、前の世代の行を残したまま、新しい世代の行を足す
+ */
+export const HAIHAN_BY_GENERATION: Record<string, HaihanConfig> = { R8: HAIHAN };
 
 /** 例外の id → 例外 */
 export const exceptionOf = (id: string, config: HaihanConfig = HAIHAN): HaihanException | undefined => config.exceptions.find((x) => x.id === id);

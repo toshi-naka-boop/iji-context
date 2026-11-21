@@ -37,6 +37,11 @@ export type ReviewDeps = {
    */
   hasRevision?: (yearMonth: string) => boolean;
   /**
+   * 背反の組の院内の知識（match.codePair）の、改定の前後でその組に差が出た項目（任意。渡すのは本番の配線。design.md §14-4）。
+   * revisionDate は直近の改定日。差がなければ空、比べる 1 枚・版の行がまだなければ "pending"（保留：要再検証にしない。C-181）。渡されなければ判定しない
+   */
+  localRevision?: (pair: CodePair, revisionDate: string) => string[] | "pending";
+  /**
    * 公的情報レジストリ（任意。渡すのは本番の配線）。渡されたときだけ、トリガー④を判定し、
    * 議題の snapshot と理由に、矛盾の恐れになる公的文書を載せる（§4-3・§4-4）
    */
@@ -231,6 +236,20 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
     // ④ では、未確認だった文書の鍵を根拠に残す
     const basis: Basis = { trigger: triggerOf(fired.event), ...(fired.officialIds ? { officialIds: fired.officialIds } : {}) };
     applyEvent(deps.store, fired.knowledgeId, fired.event, now, basis);
+  }
+
+  // 手順 2 の続き：背反の組の院内の知識の改定の棚卸（design.md §14-4）。改定日を過ぎた承認済みのうち、改定の前後でその組に差が出た知識だけを要再検証にする（TRIGGER{localRevision}）。
+  // 差がない・比べる 1 枚がまだない（保留）ときは何もしない（改定日が status_since より後のあいだは、会議のたびに見直す）
+  if (deps.localRevision) {
+    const d = latestRevision(deps.calendar, now);
+    for (const meta of listKnowledge(deps.store)) {
+      const pair = meta.match.codePair;
+      if (!pair || meta.status !== "承認済み" || d === null || ms(d) <= ms(meta.status_since)) continue;
+      hooks.onStep?.("trigger", meta.id);
+      const changes = deps.localRevision(pair, d);
+      if (changes === "pending" || changes.length === 0) continue;
+      applyEvent(deps.store, meta.id, { type: "TRIGGER", trigger: "localRevision" }, now, { trigger: "localRevision", codePair: pair, changes });
+    }
   }
 
   // 手順 3：議題
