@@ -18,6 +18,9 @@ import type { Notes } from "./notes";
 import type { QuestionCase } from "./question-case";
 import { badRequest, conflict, notFound } from "../errors";
 
+/** 実在のデータで使うクリニックで、練習問題を出さない理由（画面に出す） */
+const REAL_NO_DRILLS = "練習問題は、デモのクリニックだけで使えます（同梱の作り物の症例で始めるため）";
+
 export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, cases: Cases, notes: Notes, doctor: Doctor, questionCase: QuestionCase) {
   const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
   const { now } = clock;
@@ -59,6 +62,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
   function startDrill(clerkId: string, drillId: string): Question {
     clerk(clerkId);
+    // 練習問題は同梱の症例（作り物）で始める。実在のデータで使うクリニックには症例がないので、使えない
+    if (ctx.kind === "real") throw badRequest(REAL_NO_DRILLS);
     if (!isDoctorDrill(drillId) && !drillList().some((x) => x.id === drillId)) throw notFound(`練習問題がない: ${drillId}`);
     const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
     return createQ.immediate((id) => startQuestion(id, clerkId, d.claimId, now(), "通常", undefined, d.id));
@@ -178,9 +183,10 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   }
   /** 練習問題の一覧。cleared は本人がその練習を正解で終えたか（画面のカードの状態に使う。2026-11-08） */
   const drills = (clerkId?: string) => {
+    if (ctx.kind === "real") return { fix: [], doctor: [], unavailable: REAL_NO_DRILLS };
     const done = new Set(clerkId ? questionsOf(clerkId).filter((q) => q.drill && q.correct === true).map((q) => q.drill) : []);
     const mark = <T extends { id: string }>(xs: T[]) => xs.map((d) => ({ ...d, cleared: done.has(d.id) }));
-    return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
+    return { fix: mark(drillList()), doctor: mark(doctorDrillList()), unavailable: null };
   };
 
   return { loadQ, checkLines, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };

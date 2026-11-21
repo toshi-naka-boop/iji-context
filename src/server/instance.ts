@@ -96,7 +96,7 @@ export function tenantPaths(id: string): AppPaths {
 }
 /**
  * クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く。
- * 種類（demo／real）は auth.db のクリニックの行で決まる
+ * 種類（demo／real）は auth.db のクリニックの行で決まる。real のクリニックには、作り物の種（院内ルール・K6 の地域ルール）を入れない
  */
 function openTenant(tenantId: string): App {
   const paths = tenantPaths(tenantId);
@@ -109,8 +109,8 @@ function openTenant(tenantId: string): App {
     syncSkills(store);
   }
   const a = openApp(paths, { kind });
-  // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
-  a.seedLocalRules();
+  // デモのクリニックだけ：院内ルールの種と、根拠のある地域ルール（K6 の合成の査定通知から）を入れておく（FR-79・FR-80）。すでにあれば（保管済みでも）入れ直さない
+  if (kind === "demo") a.seedLocalRules();
   a.upsertClerk(DEMO_CLERKS[1]);
   return a;
 }

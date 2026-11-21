@@ -1,6 +1,7 @@
 "use client";
 // UKE の取り込み（月末。レセコンが書き出した提出用のファイルを読み込み、提出前の点検にかける）
-// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）
+// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）。
+// 実在のデータで使うクリニックでは、見本は一覧に出さず、ダウンロードだけ。取り込むと、アップロードした UKE と同じ扱いになる（2026-11-22 利用者の判断）
 import { useEffect, useState } from "react";
 import { payerLabel } from "../../src/messages";
 import { UKE_LIMITS } from "../../src/uke/limits";
@@ -9,6 +10,9 @@ import { SignIn, useClerk } from "../clerk";
 import { Notice } from "../consent";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
+
+/** 見本の UKE のファイル名（src/server/app/uke.ts の UKE_FILES と同じ。ダウンロードの名前に使う） */
+const SAMPLE_NAMES = ["kokuhoren.UKE", "shiharaikikin.UKE"];
 
 type Uke = {
   name: string;
@@ -32,8 +36,11 @@ export default function UkeImport() {
   const [done, setDone] = useState("");
   /** 消せるのは事務長とベテラン（サーバーでも確かめる） */
   const [canDelete, setCanDelete] = useState(false);
+  /** 実在のデータで使うクリニックか */
+  const [real, setReal] = useState(false);
   useEffect(() => {
     if (!user) return;
+    getJson<{ kind: string }>("/api/clock").then((c) => setReal(c.kind === "real")).catch(() => {});
     getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
     getJson<{ role: string }>("/api/auth/me").then((me) => setCanDelete(me.role === "veteran" || me.role === "manager")).catch(() => {});
   }, [user]);
@@ -82,8 +89,14 @@ export default function UkeImport() {
     <main className="shell">
       <TopBar />
       <PageGuide who="yusti" title="UKE 取り込み" tag="RULE ENGINE">
-        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。
+        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。{real ? "ファイルを選んでアップロードします。" : "見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。"}
       </PageGuide>
+      {real && (
+        <div className="notice">
+          このクリニックは実在のデータで使う設定です。見本の UKE（合成データ）は、ダウンロードして試せます：{SAMPLE_NAMES.map((n) => <a key={n} href={`/api/uke/sample?name=${encodeURIComponent(n)}`} download={n} style={{ marginLeft: 8 }}>{n}</a>)}
+          <br />ただし、見本を取り込むと、実在の請求と同じ扱いになります（見本として区別せず、月末の点検・患者マスタ・医師確認に並びます。要らなくなったら、事務長かベテランが消してください）。
+        </div>
+      )}
       {err && <div className="notice warn">{err}</div>}
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {list.map((u) => u.unreadable || u.payer === null ? (

@@ -61,7 +61,13 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
     );
   }
   // 査定・返戻の通知（FR-42・FR-43）：対応づけは決まった規則。知識の候補にするのは本人が確かめた項目だけ
-  const resolveNoticeItems = (notice: Notice) => resolveNotice(notice, json<UkeSources>(path.join(paths.root, "fixtures", "uke", "patients.json")), cases());
+  // 患者は同梱の見本の患者（fixtures/uke/patients.json）から照らす。実在のデータで使うクリニック（real）は見本の請求を持たないので、請求にある患者だけに絞る（作り物の患者に当てない）
+  const resolveNoticeItems = (notice: Notice) => {
+    const known = cases();
+    const src = json<UkeSources>(path.join(paths.root, "fixtures", "uke", "patients.json"));
+    const patients = ctx.kind === "real" ? Object.fromEntries(Object.entries(src.patients).filter(([id]) => known.some((c) => c.claimId === id))) : src.patients;
+    return resolveNotice(notice, { ...src, patients }, known);
+  };
   function registerNotice(notice: Notice, index: number, opts: { reexamFiled: boolean; fileName: string }) {
     const item = resolveNoticeItems(notice)[index];
     if (!item) throw badRequest(`通知に ${index + 1} 件目の項目がない`);
@@ -73,6 +79,8 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   }
   /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
   function seedLocalRules() {
+    // 作り物の種なので、実在のデータで使うクリニックには入れない
+    if (ctx.kind === "real") return [];
     // 院内ルールの種（中身は伏せ、何の区分に関するものかだけ出す。何年も積み上がった様子を見せる。FR-80）
     // 承認済みで入れた種には、いまのレジストリとの矛盾を「確認済み」として記録する（最初の会議で種がまとめて要再検証にならないように）
     const inHouse = seedInHouse(store, { official, now: now() });

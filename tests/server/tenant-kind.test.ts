@@ -88,7 +88,6 @@ describe("クリニックの種類", () => {
   });
 });
 
-
 describe("今日の日付と、日付を進める操作", () => {
   it("real の今日は実際の時刻（日本時間・タイムゾーン付き）で、デモの時計の設定を読まない", () => {
     const u = auth().register("now_real", "いま", "password123", "real");
@@ -133,6 +132,51 @@ describe("今日の日付と、日付を進める操作", () => {
   });
 });
 
+describe("real に作り物のデータを入れない・見せない", () => {
+  it("院内ルールの種・K6 の地域ルール・見本の UKE・作り物の患者・練習問題が、real にはなく demo にはある", async () => {
+    const real = auth().register("data_real", "じつ", "password123", "real");
+    const demo = auth().register("data_demo", "でも", "password123", "demo");
+    const layers = (u: User) => [...new Set(listKnowledge(appOf(u).store).map((m) => m.layer))].sort();
+    expect(layers(demo)).toEqual(expect.arrayContaining(["院内", "地域", "制度"]));
+    expect(layers(real)).toEqual(["制度"]);
+
+    const cookie = cookieOf(real);
+    const json = async (r: Response) => {
+      expect(r.status).toBe(200);
+      return r.json();
+    };
+    expect(await json(await (await import("../../app/api/cases/route")).GET(get("/api/cases", cookie)))).toEqual([]);
+    expect(await json(await (await import("../../app/api/uke/route")).GET(get("/api/uke", cookie)))).toEqual([]);
+    expect(await json(await (await import("../../app/api/patients/route")).GET(get("/api/patients", cookie)))).toEqual([]);
+    expect(await json(await (await import("../../app/api/drills/route")).GET(get("/api/drills", cookie)))).toMatchObject({ fix: [], doctor: [], unavailable: expect.stringContaining("デモ") });
+    // 見本の名前では取り込めない。練習問題は始められない
+    expect((await (await import("../../app/api/uke/route")).POST(post("/api/uke", cookie, { name: "kokuhoren.UKE" }))).status).toBe(400);
+    expect(() => appOf(real).startDrill("new1", "drill-1")).toThrow(/デモのクリニックだけ/);
+    await switchTo(cookie, "doctor");
+    expect(await json(await (await import("../../app/api/doctor/facts/route")).GET(get("/api/doctor/facts", cookie)))).toEqual([]);
+    await switchTo(cookie, "clerk");
+    // 患者マスタにも作り物の患者が入らない
+    const db = new Database(instance.tenantPaths(real.tenantId).dbFile, { readonly: true });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM patients").get()).toEqual({ n: 0 });
+    db.close();
+
+    // demo には見本の請求が並ぶ
+    expect(appOf(demo).cases().map((c) => c.claimId)).toContain(claimId("K1"));
+    expect(appOf(demo).drills().fix.length).toBeGreaterThan(0);
+  });
+
+  it("real で見本の UKE をアップロードすると、見本としてではなく、取り込んだ UKE と同じ扱いになる（請求の番号はアプリが振る）", async () => {
+    const real = auth().register("sample_real", "じつ", "password123", "real");
+    const cookie = cookieOf(real);
+    const r = await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, SAMPLE));
+    expect(r.status).toBe(200);
+    const list = (await r.json()) as { name: string; uploaded: boolean; receipts: { claimId: string }[] }[];
+    expect(list.map((u) => u.uploaded)).toEqual([true]);
+    expect(list[0].receipts.every((x) => /^U1-\d+$/.test(x.claimId))).toBe(true);
+    expect(appOf(real).cases().every((c) => c.claimId.startsWith("U1-"))).toBe(true);
+    expect(appOf(real).importedClaims("new1").length).toBeGreaterThan(0);
+  });
+});
 
 describe("real で、日付が変わったときに回る処理と、実際の日付での期限切れ", () => {
   const draft = (claim: string): QueryDraft => ({
@@ -186,4 +230,26 @@ describe("real で、日付が変わったときに回る処理と、実際の�
     expect(a.setting("caught_up_at")).toBeNull();
   });
 
+  it("real では、要介護認定の期限切れ（P07）が実際の日付で出る。demo の時計では出ない", async () => {
+    const real = auth().register("exp_real", "じつ", "password123", "real");
+    const cookie = cookieOf(real);
+    setNow("2026-12-01T10:00:00+09:00");
+    expect((await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, SAMPLE))).status).toBe(200);
+    const a = appOf(real);
+    const claim = a.cases()[0].claimId;
+    a.savePatientFact(claim, "new1", { key: "careLevel", value: 2, source: "介護保険証", validUntil: "2026-12-05" });
+    const p07 = () => appOf(real).patientProfile(claim).findings.filter((f) => f.checkId === "P07").map((f) => f.messageKey);
+    expect(p07()).toEqual(["P07.expiring_soon"]);
+    setNow("2026-12-10T10:00:00+09:00");
+    expect(p07()).toEqual(["P07.expired"]);
+
+    // demo は今までどおりデモの時計で見る（実際の日付が進んでも、期限切れにならない）
+    const demo = auth().register("exp_demo", "でも", "password123", "demo");
+    const d = appOf(demo);
+    d.savePatientFact(claimId("K4"), "new1", { key: "careLevel", value: 2, source: "介護保険証", validUntil: "2026-10-20" });
+    const demoP07 = () => appOf(demo).patientProfile(claimId("K4")).findings.filter((f) => f.checkId === "P07").map((f) => f.messageKey);
+    expect(demoP07()).toEqual(["P07.expiring_soon"]);
+    setNow("2027-01-10T10:00:00+09:00");
+    expect(demoP07()).toEqual(["P07.expiring_soon"]);
+  });
 });

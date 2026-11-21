@@ -1,4 +1,5 @@
-// UKE：見本の 2 本と、アップロードで受け取った UKE の読み込み（spec FR-106〜109）、利用者ごとの取り込みの記録
+// UKE：見本の 2 本と、アップロードで受け取った UKE の読み込み（spec FR-106〜109）、利用者ごとの取り込みの記録。
+// 見本の 2 本を請求に並べるのはデモのクリニックだけ。実在のデータで使うクリニック（real）では、見本はダウンロードだけで、取り込むとアップロードした UKE と同じ扱いになる
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -11,7 +12,9 @@ import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
 
 export function createUke(ctx: AppContext, clerks: Clerks) {
-  const { paths, sqlite, setting, setSetting } = ctx;
+  const { kind, paths, sqlite, setting, setSetting } = ctx;
+  /** 見本の 2 本を請求に並べるか（デモのクリニックだけ） */
+  const withSamples = kind === "demo";
   const { clerk } = clerks;
 
   const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
@@ -60,9 +63,9 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     }
     return stored;
   }
-  /** 見本の 2 本と、クリニックが受け取った UKE。名前は見本のファイル名か、内容のハッシュ名。file が null のものは、いまの形式では読めない */
+  /** 見本の 2 本（デモのクリニックだけ）と、クリニックが受け取った UKE。名前は見本のファイル名か、内容のハッシュ名。file が null のものは、いまの形式では読めない */
   const named = (): { name: string; uploaded: boolean; file: UkeFile | null }[] => [
-    ...sampleBytes().map((b, i) => ({ name: path.basename(UKE_FILES[i]), uploaded: false, file: readUke(b) })),
+    ...(withSamples ? sampleBytes() : []).map((b, i) => ({ name: path.basename(UKE_FILES[i]), uploaded: false, file: readUke(b) })),
     ...uploads().map((u) => ({ name: nameOf(u), uploaded: true, file: storedUke(u) })),
   ];
   /**
@@ -82,7 +85,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
       const n = u.file?.receipts.findIndex((x) => x.claimId === claimId) ?? -1;
       if (!u.file || n < 0) continue;
       const receipt = u.file.receipts[n];
-      // 見本は named() の先頭に、UKE_FILES と同じ並びで入っている。レセプトの並びは、ファイルの中の並びのまま
+      // 見本は named() の先頭に、UKE_FILES と同じ並びで入っている（デモのクリニックだけ）。レセプトの並びは、ファイルの中の並びのまま
       const bytes = () => (u.uploaded ? readFileSync(path.join(uploadDir(), u.name)) : sampleBytes()[i]);
       return { receipt, uploaded: u.uploaded, file: { ...u.file, receipts: [receipt] }, claim: () => parseUke(bytes()).claims[n] };
     }
@@ -127,7 +130,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   function importUke(clerkId: string, name: string) {
     clerk(clerkId);
     const upload = uploadOf(name);
-    if (!UKE_FILES.some((f) => path.basename(f) === name) && !upload) throw badRequest(`取り込める UKE ではない: ${name}`);
+    if (!(withSamples && UKE_FILES.some((f) => path.basename(f) === name)) && !upload) throw badRequest(`取り込める UKE ではない: ${name}`);
     if (upload && storedUke(upload) === null) throw badRequest(FILE_UNREADABLE);
     const done = importedUke(clerkId);
     if (!done.includes(name)) setSetting(`uke:${clerkId}`, JSON.stringify([...done, name]));
@@ -155,7 +158,8 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     const reject = (reason: string): never => {
       throw badRequest(`この UKE は取り込めません（${reason}）`);
     };
-    const hit = sampleBytes().findIndex((b) => b.equals(buf));
+    // 見本と同じ内容のファイルは、デモのクリニックでは見本として取り込む。real では、ほかのアップロードと同じに扱う（請求 id はアプリが振る）
+    const hit = withSamples ? sampleBytes().findIndex((b) => b.equals(buf)) : -1;
     const sha256 = createHash("sha256").update(buf).digest("hex");
     const state = uploadState();
     if (hit < 0 && state.files.some((u) => u.sha256 === sha256)) return reject("同じファイルをすでに取り込んでいます。取り込み直すときは、取り込み済みのファイルを消してからにしてください");
