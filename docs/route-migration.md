@@ -26,7 +26,7 @@ API ルート（`app/api/**/route.ts`）は、共通ルートヘルパ `route()`
 置き場所は `src/server/schemas/<領域>.ts`（knowledge・meeting・peer・clerk など）。名前は `<対象>Body`・`<対象>Params`・`<対象>Query`。
 
 - オブジェクトは `z.strictObject`（知らない項目は 400）。文字列は長さの上限、配列は件数の上限を必ず付ける
-- id は形を固定する（`common.ts` の `id`・`idParams`。ファイル名やディレクトリ名になる id は、作る側のコードの形に合わせた正規表現にする）
+- id は形を固定する（`common.ts` の `id`。ファイル名やディレクトリ名になる id は、作る側のコードの形に合わせた正規表現にする）
 - `action` で分かれる本文は `z.discriminatedUnion("action", […])` で、操作ごとに形を固定する
 - 本人の id、承認者・回答者の名前は受け取らない。`user`・`clerkId`（セッションの本人）から決める
 - 細かい業務の規則と文言（名前に使える文字など）は業務処理に置き、スキーマは型と上限だけにする
