@@ -2,9 +2,9 @@ import type { NextConfig } from "next";
 
 const dev = process.env.NODE_ENV !== "production";
 
-// CSP（spec FR-143）は報告だけのモード（Report-Only）で入れる。違反がなくなってから、後の工程で強制に切り替える。
+// CSP（spec FR-143）は強制（Content-Security-Policy）。報告だけのモードで、全画面（開発時と本番のビルド）に違反がないことを確かめてから切り替えた。
 // - script：Next.js は画面の初期データをインラインの script で流す。nonce 方式は全ページを動的レンダリングにする必要があるので、
-//   いまは 'unsafe-inline' を許す（強制に切り替えるときに nonce へ移す）。開発時だけ 'unsafe-eval'（React の開発用の機能）
+//   'unsafe-inline' を許す（静的に出している画面を動的にしないため。残余リスクは docs/security.md）。開発時だけ 'unsafe-eval'（React の開発用の機能）
 // - style：画面が style 属性（インライン）を使っている。Google Fonts の CSS を読む
 // - img：画面の画像は public/characters/ のものだけ（カルテの画像は読み取って API に送るだけで、画面には出さない）
 // - connect：画面からの通信は自分の API だけ（LLM・音声の API はサーバーから呼ぶ。ElevenLabs へ画面から直接はつながない）
@@ -31,7 +31,7 @@ const securityHeaders = [
   // マイクは初回のあいさつの音声入力で使う（自分の画面だけ）
   { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-  { key: "Content-Security-Policy-Report-Only", value: csp },
+  { key: "Content-Security-Policy", value: csp },
 ];
 
 const nextConfig: NextConfig = {
