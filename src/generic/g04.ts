@@ -10,7 +10,7 @@
 // 包括・被包括テーブルは、親の注加算も子として持つ（同時の単位に多い）。親と子が同じ算定単位にあっても、同じ見方で出す。
 // 読むのは包括単位①・グループ番号①だけ（②③は錨がないので読まない。EM §2-11）。指摘は親子の組ごとに 1 件（同じ子の指摘を 1 つにまとめるのは画面）
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated } from "./tensuhyo";
-import type { GenericCheck, GenericFinding } from "./types";
+import { FINDING_LIMIT, type GenericCheck, type GenericFound } from "./types";
 
 type Parent = Dated & { code: string; unit1: string; group1: string };
 type Child = Dated & { group_no: string; tokurei: string };
@@ -39,17 +39,25 @@ export const g04: GenericCheck = {
       if (!p || !t.live(p) || !Object.hasOwn(UNITS, p.unit1)) continue;
       parents.set(p.group1, [...(parents.get(p.group1) ?? []), p]);
     }
-    const out: GenericFinding[] = [];
+    const out: GenericFound = [];
     if (parents.size === 0) return out;
+    // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（親 × 子で増える。round-32 S-9）
+    let more = 0;
+    // 算定日の印（1〜31 日をビットで。算定日を持たないコードは 0＝同じ日はない）。数えるだけの組でも、日の配列を作らずに同じ日の有無を見る
+    const masks = new Map([...occ].map(([c, o]) => [c, o.timed ? o.days.reduce((m, n, d) => (n > 0 ? m | (1 << d) : m), 0) : 0]));
     for (const [code, child] of occ) {
       for (const row of groupsOf.all(t.snapshot, code) as Child[]) {
         if (!t.live(row)) continue;
         for (const p of parents.get(row.group_no) ?? []) {
           if (p.code === code) continue;
-          const parent = occ.get(p.code)!;
           const unit = UNITS[p.unit1];
+          if (unit.by === "day" && (masks.get(p.code)! & masks.get(code)!) === 0) continue;
+          if (out.length >= FINDING_LIMIT) {
+            more++;
+            continue;
+          }
+          const parent = occ.get(p.code)!;
           const days = unit.by === "day" ? commonDays(parent, child) : [];
-          if (unit.by === "day" && days.length === 0) continue;
           const cond = row.tokurei !== "0";
           out.push({
             check: "G04",
@@ -65,6 +73,6 @@ export const g04: GenericCheck = {
         }
       }
     }
-    return out;
+    return Object.assign(out, { more });
   },
 };

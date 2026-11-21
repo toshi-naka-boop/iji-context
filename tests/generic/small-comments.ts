@@ -96,7 +96,7 @@ export function commentMasters(snapshot = "20261001"): Database.Database {
   put(db, "tokutei", snapshot, { code: K.inatsu, name: "手作りの特定器材（別表Ⅳ）" });
   // 傷病名マスター（DISEASE＝4289018 は small-masters が入れている。区分は付けていない＝空）
   for (const [code, name, flag] of [[D.zensoku, "気管支喘息", "05"], [D.tounyou, "糖尿病", "00"], [D.tenpousou, "天疱瘡", "03"], [D.taijou, "帯状疱疹", "04"], [D.nousotchuTenkan, "脳卒中後てんかん", "08"], [D.tenkan, "てんかん", "07"]]) put(db, "shobyo", snapshot, { code, name, tokutei_shikkan: flag });
-  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason, missing) VALUES ('G07', 1, '', '[]'), ('G08', 1, '', '[]')").run();
+  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G07', 1, ''), ('G08', 1, '')").run();
   return db;
 }
 

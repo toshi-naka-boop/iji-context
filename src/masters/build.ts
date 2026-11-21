@@ -10,7 +10,7 @@ import { LAYOUTS, type TableLayout } from "./layout";
 
 const sqlType = { text: "TEXT", int: "INTEGER", real: "REAL" } as const;
 
-/** 表を作る（取り込みの前に 1 回）。データの表は layout から、管理の表（sources・rejected・checks_ready・meta）は固定 */
+/** 表を作る（取り込みの前に 1 回）。データの表は layout から、管理の表（sources・rejected・checks_ready）は固定 */
 export function createSchema(db: Database.Database): void {
   const made = new Set<string>();
   for (const l of LAYOUTS) {
@@ -23,8 +23,7 @@ export function createSchema(db: Database.Database): void {
   db.exec(`
 CREATE TABLE sources (dataset TEXT NOT NULL, snapshot TEXT NOT NULL, generation TEXT NOT NULL, tbl TEXT NOT NULL, file TEXT NOT NULL, sha256 TEXT NOT NULL, rows INTEGER NOT NULL, imported_at TEXT NOT NULL, verified TEXT, PRIMARY KEY (tbl, snapshot, file));
 CREATE TABLE rejected (dataset TEXT NOT NULL, snapshot TEXT NOT NULL, file TEXT NOT NULL, reason TEXT NOT NULL);
-CREATE TABLE checks_ready (check_id TEXT PRIMARY KEY, ready INTEGER NOT NULL, reason TEXT NOT NULL, missing TEXT NOT NULL);
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE checks_ready (check_id TEXT PRIMARY KEY, ready INTEGER NOT NULL, reason TEXT NOT NULL);
 `);
 }
 
@@ -39,6 +38,7 @@ export function ingestFile(db: Database.Database, layout: TableLayout, file: str
   const names = ["snapshot", ...fixed.map(([k]) => k), ...layout.columns.map((x) => x.col)];
   const insert = db.prepare(`INSERT INTO ${layout.table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`);
   const head = [snapshot, ...fixed.map(([, v]) => v)];
+  const loose = new Set(layout.loose ?? []);
   let rows = 0;
   const { sha256 } = readCsv(file, (cells, line) => {
     if (cells.length !== fields) throw new MasterFormatError(`項目数が合わない（仕様は ${fields} 項目）`, line);
@@ -48,6 +48,11 @@ export function ingestFile(db: Database.Database, layout: TableLayout, file: str
     }
     const values: (string | number)[] = [...head];
     for (const col of layout.columns) {
+      // 判定に使わない列は形を見ず、形に合わない値は文字のまま持つ（layout の loose）
+      if (loose.has(col.col) && !Array.isArray(col.item) && !col.type.check.test(cells[col.item - 1])) {
+        values.push(cells[col.item - 1]);
+        continue;
+      }
       const read = (item: number): string => {
         const v = cells[item - 1];
         if (!col.type.check.test(v)) throw new MasterFormatError(`項番 ${item}（${col.name}）の値が仕様の形と違う`, line);

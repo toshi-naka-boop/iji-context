@@ -3,7 +3,8 @@
 import { describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
 import { r2026 } from "../../src/engine/revisions/r2026";
-import { CERTAIN, evaluateGeneric, unitsOfLines } from "../../src/generic";
+import { CERTAIN, evaluateGeneric } from "../../src/generic";
+import { claimOfLines } from "../../src/generic/overlap";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../src/generic/lookup";
 import type { GenericCheck, GenericClaim, GenericFinding } from "../../src/generic/types";
 import { genericView } from "../../src/generic/view";
@@ -64,7 +65,8 @@ describe("evaluateGeneric の骨組み", () => {
   });
 
   it("区分キーの行は、codes[kubun].primary でコードに直して掛ける。コードに直せない区分（包括の検査）は掛けない", () => {
-    const u = unitsOfLines([{ kubun: "C001_1I" }, { kubun: "D007_5" }, { kubun: "C000" }], r2026);
+    // 本番の道（月末の点検・算定プレビュー）と同じ変換（src/generic/overlap.ts の claimOfLines）を縛る（round-32 O-20）
+    const { claim: u } = claimOfLines([{ kubun: "C001_1I", count: 1, dates: [] }, { kubun: "D007_5", count: 1, dates: [] }, { kubun: "C000", count: 1, dates: [] }], r2026);
     expect(u.units.map((x) => x.items)).toEqual([[{ kind: "SI", code: HOUMON }], [{ kind: "SI", code: OUSHIN }]]);
     expect(evaluateGeneric(u, smallMasters(), about).findings).toEqual([]);
   });

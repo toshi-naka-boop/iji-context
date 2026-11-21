@@ -72,6 +72,6 @@ export function tensuhyoMasters(snapshot = "20261001"): Database.Database {
     put(db, "kaisu", snapshot, { ...LIVE, code, unit_code, limit_count, tokurei });
   // 医科診療行為マスターの上限回数（A17：特定疾患療養管理料は 2。算定回数テーブルの行は入れない）
   db.prepare("UPDATE shinryo SET limit_count = 2 WHERE code = ?").run(C.tokutei);
-  db.prepare("INSERT INTO checks_ready (check_id, ready, reason, missing) VALUES ('G04', 1, '', '[]'), ('G05', 1, '', '[]'), ('G06', 1, '', '[]')").run();
+  db.prepare("INSERT INTO checks_ready (check_id, ready, reason) VALUES ('G04', 1, ''), ('G05', 1, ''), ('G06', 1, '')").run();
   return db;
 }

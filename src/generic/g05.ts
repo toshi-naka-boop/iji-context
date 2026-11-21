@@ -7,7 +7,7 @@
 // 背反区分（[点] p28 項番6）：1＝コード①を算定する／2＝コード②を算定する／3＝いずれか一方。残す側が決まる組（1・2）は、指摘の値（keep）に入れる。
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence } from "./tensuhyo";
-import type { GenericCheck, GenericFinding } from "./types";
+import { FINDING_LIMIT, type GenericCheck, type GenericFinding } from "./types";
 
 type Row = Dated & { tani: number; code1: string; code2: string; kubun: string; tokurei: string };
 
@@ -39,6 +39,8 @@ export const g05: GenericCheck = {
           if (!pairs.has(key) || row.code1 < row.code2) pairs.set(key, row);
         }
     const out: GenericFinding[] = [];
+    // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
+    let more = 0;
     for (const row of pairs.values()) {
       const [a, b] = [occ.get(row.code1)!, occ.get(row.code2)!];
       const cond = row.tokurei !== "0";
@@ -55,6 +57,10 @@ export const g05: GenericCheck = {
         else if (days.length > 0) hit = { key: row.tani === 1 ? "day" : "same_day", sure: row.tani === 1, units: unitsOf(a, b), params: { days: daysText(days) } };
       }
       if (hit === null) continue;
+      if (out.length >= FINDING_LIMIT) {
+        more++;
+        continue;
+      }
       out.push({
         check: "G05",
         kind: "背反",
@@ -66,6 +72,6 @@ export const g05: GenericCheck = {
         source: { data: TABLE.haihan[row.tani], ref: `診療行為コード①=${row.code1}, 診療行為コード②=${row.code2}` },
       });
     }
-    return out;
+    return Object.assign(out, { more });
   },
 };

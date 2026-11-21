@@ -10,6 +10,7 @@ import { agesIn, g03, g03NotDone } from "../../src/generic/g03";
 import { rowNamesOf } from "../../src/generic/lookup";
 import { drugPoints, EXCLUDE_TEXT, kizamiCenti, recalcUnit, type RecalcItem } from "../../src/generic/points";
 import { genericScopeOf } from "../../src/generic/scope";
+import type { TimedClaim } from "../../src/generic/tensuhyo";
 import type { GenericAboutMore, GenericClaim, GenericUnitDetail } from "../../src/generic/types";
 import { parseEm, verifyMasters } from "../../src/masters/verify";
 import { GENERIC_TEXT, GENERIC_TEXT_CERTAIN, genericText } from "../../src/messages";
@@ -67,7 +68,7 @@ function masters(snapshot = SNAP): Database.Database {
   device(OXYGEN, { price_kind: "1", price: 0.42, sanso: "4" });
   device(OXYGEN_RATE, { price_kind: "5", price: 30, sanso: "1" });
   device(IRIDIUM, { price_kind: "2", price: 0 });
-  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason, missing) VALUES ('G02', 1, '', '[]'), ('G03', 1, '', '[]')").run();
+  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G02', 1, ''), ('G03', 1, '')").run();
   return db;
 }
 
@@ -89,11 +90,23 @@ function claimOf(...units: { items: RecalcItem[]; points: number; shikibetsu?: s
 
 describe("検算の式（src/generic/points.ts）", () => {
   it("薬剤料：15 円以下は 1 点（投薬・注射）か算定しない（ほかの区分）。15 円を超えたら、（薬価 − 15 円）÷ 10 円を切り上げて 1 点を足す", () => {
-    expect([15, 15.01, 25, 25.01, 189, 3.8].map((y) => drugPoints(y, "one"))).toEqual([1, 2, 2, 3, 19, 1]);
-    expect([15, 15.01, 25, 25.01, 0.92 * 40].map((y) => drugPoints(y, "none"))).toEqual([0, 2, 2, 3, 4]);
-    // 小数の誤差で境目をまたがない（0.1 円 × 150 ＝ 15 円ちょうど）
-    expect(drugPoints(0.1 * 150, "one")).toBe(1);
-    expect(drugPoints(0.1 * 250, "one")).toBe(2);
+    // 金額は 1,000 万分の 1 円の整数（薬価〔小数第 2 位〕× 使用量〔小数第 5 位〕が割り切れる単位）
+    const yen = (y: string) => BigInt(Math.round(Number(y) * 100)) * BigInt(100_000);
+    expect(["15", "15.01", "25", "25.01", "189", "3.8"].map((y) => drugPoints(yen(y), "one"))).toEqual([1, 2, 2, 3, 19, 1]);
+    expect(["15", "15.01", "25", "25.01", "36.8"].map((y) => drugPoints(yen(y), "none"))).toEqual([0, 2, 2, 3, 4]);
+    // 途中で丸めない（round-32 codex-4）：15 円を 0.0000003 円だけ超えれば 2 点、25 円を 1 だけ超えれば 3 点
+    expect(drugPoints(BigInt(150_000_003), "one")).toBe(2);
+    expect(drugPoints(BigInt(250_000_001), "one")).toBe(3);
+  });
+
+  it("薬剤料：薬価 × 使用量を途中で丸めない（round-32 codex-4。1.71 円 × 8.77193 ＝ 15.0000003 円 → 2 点）", () => {
+    const db = masters();
+    put(db, "iyakuhin", SNAP, { code: "610408044", name: "手作りの薬", price_kind: "1", price: 1.71, changed_on: "20260401" });
+    const unit = (quantity: string) => recalcUnit(db, { SI: null, IY: SNAP, TO: null }, [{ kind: "IY", code: "610408044", quantity }], { shikibetsu: "21", shikibetsuSure: true, bundles: [] });
+    expect(unit("8.77193")).toMatchObject({ ok: true, points: 2 });
+    expect(unit("8.77192")).toMatchObject({ ok: true, points: 1 });
+    // 使用量が小数第 5 位より細かいものは、読めない（検算しない）
+    expect(unit("8.771931")).toEqual({ ok: false, reason: "quantity" });
   });
 
   it("きざみ：数量が下限値以下なら基本点数、超えたら きざみ値ごとに切り上げて足す。上限を超えた数量は、上下限エラー処理が 1・3 なら上限値で止める", () => {
@@ -300,12 +313,33 @@ describe("G03 行の属性", () => {
     expect(keys(db, claim(ASTHMA_65), { ...about, birth: born(64, "0101") })).toEqual([["G03.age", ASTHMA_65]]);
     const forty: GenericAboutMore = { ...about, birth: born(40, "0101") };
     const f = (g03.run(claim(ASTHMA_65), db, forty) as { messageKey: string; params: Record<string, string> }[])[0];
-    expect(f.params).toMatchObject({ range: "65 歳以上", ageFrom: "40", ageTo: "40" });
-    expect(genericText({ ...f, certainty: "条件つき" })).toMatch(/年齢の範囲（65 歳以上）の外です（診療年月の初日は 40 歳、末日は 40 歳）/);
+    expect(f.params).toMatchObject({ range: "65 歳以上", when: "算定日の分からない単位では診療年月のあいだ", ages: "40" });
+    expect(genericText({ ...f, certainty: "条件つき" })).toMatch(/年齢の範囲（65 歳以上）の外です（算定日の分からない単位では診療年月のあいだの年齢は 40 歳）/);
     // 数字でない年齢の区分（生後の日数など）は、点検しない
     db.prepare("UPDATE shinryo SET age_upper = 'AA' WHERE code = ?").run(INFANT);
     expect(keys(db, claim(INFANT), about)).toEqual([]);
     expect(agesIn(YM, "x")).toBeNull();
+  });
+
+  it("年齢は、その行の算定日の年齢で見る（round-32 codex-3）：当月生まれの患者でも、算定日の年齢が範囲の外なら言う。算定日より後に生まれた行だけ除く", () => {
+    const db = masters();
+    const ym = YM.replace("-", "");
+    const days = (...d: number[]) => Array.from({ length: 31 }, (_, i) => (d.includes(i + 1) ? 1 : 0));
+    const dated = (c: string, ...d: number[]): TimedClaim => ({ units: [{ items: [{ kind: "SI", code: c }], count: d.length, days: days(...d) }] });
+    const born15: GenericAboutMore = { ...about, birth: `${ym}15` };
+    // 6 歳以上の行（ASTHMA_65 の下限を 06 にする）。15 日生まれで、20 日に算定（0 歳）
+    db.prepare("UPDATE shinryo SET age_lower = '06', age_upper = '00' WHERE code = ?").run(ASTHMA_65);
+    const f = g03.run(dated(ASTHMA_65, 20), db, born15) as { messageKey: string; params: Record<string, string> }[];
+    expect(f.map((x) => x.messageKey)).toEqual(["G03.age"]);
+    expect(f[0].params).toMatchObject({ range: "6 歳以上", when: "算定日（20日）", ages: "0" });
+    // 算定日（10 日）より後に生まれた：データの誤りなので、その行は年齢で言わない。同じ請求の 20 日の行は言う
+    expect(keys(db, dated(ASTHMA_65, 10), born15)).toEqual([]);
+    expect((g03.run(dated(ASTHMA_65, 10, 20), db, born15) as { params: Record<string, string> }[])[0].params.when).toBe("算定日（20日）");
+    // 6 歳未満の行（INFANT）：14 日に 6 歳になる患者。13 日の算定は範囲の中（前日に年齢が増える数え方で 13 日に 6 歳に届く行は言わない）、20 日の算定は外
+    const y6 = `${Number(YM.slice(0, 4)) - 6}${YM.slice(5, 7)}`;
+    expect(keys(db, dated(INFANT, 12), { ...about, birth: `${y6}14` })).toEqual([]);
+    expect(keys(db, dated(INFANT, 13), { ...about, birth: `${y6}14` })).toEqual([]);
+    expect(keys(db, dated(INFANT, 20), { ...about, birth: `${y6}14` })).toEqual([["G03.age", INFANT]]);
   });
 
   it("分からない項目に依る点検はしない。していないことを、点検の範囲に出す", () => {

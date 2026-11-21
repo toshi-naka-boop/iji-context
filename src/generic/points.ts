@@ -49,10 +49,24 @@ export type Recalc =
   | { ok: false; reason: ExcludeReason };
 
 const no = (reason: ExcludeReason): Recalc => ({ ok: false, reason });
-/** 小数の誤差を持ち込まないよう、円は 100 万分の 1、点は 100 分の 1 の整数で計算する */
-const MICRO = 1_000_000;
+/** 小数の誤差を持ち込まないよう、点は 100 分の 1 の整数で計算する */
 const halfUp = (n: number, unit: number): number => Math.floor((n + unit / 2) / unit);
-const amount = (text: string | undefined): number | null => (text !== undefined && /^\d+(\.\d+)?$/.test(text) ? Number(text) : null);
+/**
+ * 金額は、途中で丸めずに整数（BigInt）で持つ（round-32 codex-4）：価格（薬価・材料価格・単価）は小数第 2 位まで、使用量は小数第 5 位まで（UKE の欄の形）なので、
+ * 価格 × 使用量は 1,000 万分の 1 円（YEN7）で割り切れる。％加算・乗算割合を掛けた器材は、桁（10 の何乗分の 1 円か）を足していく
+ */
+const YEN7 = BigInt(10_000_000);
+/** 小数の文字を、10 の places 乗分の 1 の整数にする。形に合わない・桁が多いときは null */
+const fixed = (text: string | undefined, places: number): bigint | null => {
+  const m = text === undefined ? null : /^(\d+)(?:\.(\d+))?$/.exec(text);
+  if (m === null || (m[2] ?? "").length > places) return null;
+  return BigInt(m[1] + (m[2] ?? "").padEnd(places, "0"));
+};
+/** マスターの価格（小数第 2 位まで）を 100 分の 1 円の整数に。それより細かい値は null（その形の丸めを確かめていない） */
+const cents = (price: number): bigint | null => (Math.abs(price * 100 - Math.round(price * 100)) < 1e-6 ? BigInt(Math.round(price * 100)) : null);
+const pow10 = (n: number): bigint => BigInt(10) ** BigInt(n);
+/** v ÷ 10^s 円を、unit 円単位で四捨五入した数（unit 円が何個か） */
+const halfUpYen = (v: bigint, s: number, unit: bigint): bigint => (v + (unit * pow10(s)) / BigInt(2)) / (unit * pow10(s));
 
 /** 薬剤料の式の種類。one＝15 円以下は 1 点（投薬 F200・注射 G100）／none＝15 円以下は算定しない（C200・D500・E300・H100・I100・J300・K940・L200） */
 export type DrugRule = "one" | "none";
@@ -62,11 +76,10 @@ export type DrugRule = "one" | "none";
  */
 export const DRUG_RULE: Record<string, DrugRule> = { "21": "one", "22": "one", "23": "one", "31": "one", "32": "one", "33": "one", "14": "none", "40": "none", "50": "none", "54": "none", "60": "none", "70": "none", "80": "none" };
 
-/** 薬価の合計（円）から点数 */
-export function drugPoints(yen: number, rule: DrugRule): number {
-  const y = Math.round(yen * MICRO);
-  if (y <= 15 * MICRO) return rule === "one" ? 1 : 0;
-  return Math.ceil((y - 15 * MICRO) / (10 * MICRO)) + 1;
+/** 薬価の合計（1,000 万分の 1 円の整数）から点数。15 円との比較と「10 円又はその端数ごとに 1 点」を整数で行う */
+export function drugPoints(yen7: bigint, rule: DrugRule): number {
+  if (yen7 <= BigInt(15) * YEN7) return rule === "one" ? 1 : 0;
+  return Number((yen7 - BigInt(15) * YEN7 + BigInt(10) * YEN7 - BigInt(1)) / (BigInt(10) * YEN7)) + 1;
 }
 
 /**
@@ -128,28 +141,31 @@ function recalcShinryo(db: MastersDb, snapshot: string, items: RecalcItem[], bun
 function recalcIyakuhin(db: MastersDb, snapshot: string, items: RecalcItem[], shikibetsu: string, shikibetsuSure: boolean, commented: boolean, count: number): Recalc {
   if (commented) return no("commented");
   if (shikibetsu === "60" && count > 1) return no("perCount");
-  let yen = 0;
+  // 1,000 万分の 1 円（薬価の 100 分の 1 円 × 使用量の 10 万分の 1）
+  let yen = BigInt(0);
   const used: { code: string; changedOn: string }[] = [];
   for (const it of items) {
     const r = iyakuhinOf(db, snapshot, it.code);
     if (!r) return no("notInMaster");
     if (r.price_kind !== "1") return no("amount");
     if (r.price <= 0) return no("noPrice");
-    const q = amount(it.quantity);
-    if (q === null || q <= 0) return no("quantity");
-    yen += r.price * q;
+    const price = cents(r.price);
+    if (price === null) return no("fraction");
+    const q = fixed(it.quantity, 5);
+    if (q === null || q <= BigInt(0)) return no("quantity");
+    yen += price * q;
     used.push({ code: r.code, changedOn: r.changed_on });
   }
   const rule = DRUG_RULE[shikibetsu];
   if (rule === undefined) return no("shikibetsu");
   // 15 円以下は、区分によって 1 点か算定しないかが分かれる。診療識別を前の行から引き継いでいて、あいだにコメントレコードがあるとき（そこに診療識別が書いてあり得る）は、決めない
-  if (!shikibetsuSure && Math.round(yen * MICRO) <= 15 * MICRO) return no("shikibetsu");
+  if (!shikibetsuSure && yen <= BigInt(15) * YEN7) return no("shikibetsu");
   return { ok: true, points: drugPoints(yen, rule), formula: rule === "one" ? "薬剤料（15 円以下は 1 点）" : "薬剤料（15 円以下は算定しない）", table: "iyakuhin", rows: used };
 }
 
 function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Recalc {
-  /** 器材 1 つと、それに掛ける％加算・乗算割合。yen は 100 万分の 1 円 */
-  const groups: { yen: number; oxygen: boolean; rated: boolean }[] = [];
+  /** 器材 1 つと、それに掛ける％加算・乗算割合。金額は yen ÷ 10^scale 円（途中で丸めない） */
+  const groups: { yen: bigint; scale: number; oxygen: boolean; rated: boolean }[] = [];
   const used: { code: string; changedOn: string }[] = [];
   for (const it of items) {
     const r = tokuteiOf(db, snapshot, it.code);
@@ -159,35 +175,45 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
     if (r.price_kind === "5" || r.price_kind === "9") {
       // ％加算は、マスターの割合を直前の器材に掛ける。乗算割合は、書いてある数量（気圧数）を掛ける（作成手引き p40〜41）
       if (!last) return no("deviceRate");
-      let by = 1 + r.price / 100;
       if (r.price_kind === "9") {
-        const q = amount(it.quantity);
-        if (q === null || q <= 0) return no("quantity");
-        by = q;
+        const q = fixed(it.quantity, 5);
+        if (q === null || q <= BigInt(0)) return no("quantity");
+        [last.yen, last.scale] = [last.yen * q, last.scale + 5];
+      } else {
+        // 1 ＋ 割合 ÷ 100（割合は小数第 2 位まで）＝（10000 ＋ 割合の 100 倍）÷ 10000
+        const pct = cents(r.price);
+        if (pct === null) return no("fraction");
+        [last.yen, last.scale] = [last.yen * (BigInt(10_000) + pct), last.scale + 4];
       }
-      last.yen *= by;
       last.rated = true;
       continue;
     }
     if (r.price_kind !== "1") return no("purchase");
-    const q = amount(it.quantity);
-    if (q === null || q <= 0) return no("quantity");
-    const written = it.unitPrice === undefined || it.unitPrice === "" ? null : amount(it.unitPrice);
+    const q = fixed(it.quantity, 5);
+    if (q === null || q <= BigInt(0)) return no("quantity");
+    const master = cents(r.price);
+    if (master === null) return no("fraction");
+    const given = it.unitPrice !== undefined && it.unitPrice !== "";
+    const written = given ? fixed(it.unitPrice, 2) : null;
     const oxygen = ["2", "3", "4", "5"].includes(r.sanso);
-    let price = r.price;
+    let price = master;
     if (oxygen) {
       // 酸素のマスターの金額は上限。書いてある購入単価で計算する
-      if (written === null || written > r.price) return no("purchase");
+      if (written === null || written > master) return no("purchase");
       price = written;
-    } else if (it.unitPrice !== undefined && it.unitPrice !== "" && written !== r.price) return no("purchase");
-    groups.push({ yen: price * q * MICRO, oxygen, rated: false });
+    } else if (given && written !== master) return no("purchase");
+    // 100 分の 1 円 × 10 万分の 1 ＝ 1,000 万分の 1 円
+    groups.push({ yen: price * q, scale: 7, oxygen, rated: false });
   }
   if (groups.length === 0) return no("deviceRate");
-  const yenRound = (y: number) => halfUp(Math.round(y), MICRO) * MICRO;
+  // 金額を、同じ桁（いちばん細かい桁）にそろえる
+  const scale = Math.max(...groups.map((g) => g.scale));
+  const exact = (g: (typeof groups)[number]) => g.yen * pow10(scale - g.scale);
+  const yenRound = (g: (typeof groups)[number]) => halfUpYen(g.yen, g.scale, BigInt(1)) * pow10(scale);
   // 酸素の価格は 1 円未満を四捨五入する。フィルムの乳幼児の加算（材料価格 × 1.1）は、円で丸めるかどうかを確かめていないので、どちらでも同じ点数になるときだけ検算する
-  const asIs = groups.map((g) => (g.oxygen ? yenRound(g.yen) : Math.round(g.yen)));
-  const rounded = groups.map((g) => (g.oxygen || g.rated ? yenRound(g.yen) : Math.round(g.yen)));
-  const total = (list: number[]) => halfUp(list.reduce((s, y) => s + y, 0), 10 * MICRO);
+  const asIs = groups.map((g) => (g.oxygen ? yenRound(g) : exact(g)));
+  const rounded = groups.map((g) => (g.oxygen || g.rated ? yenRound(g) : exact(g)));
+  const total = (list: bigint[]) => Number(halfUpYen(list.reduce((s, y) => s + y, BigInt(0)), scale, BigInt(10)));
   const points = total(asIs);
   // 点数の四捨五入は、単位の価格を合算してから（作成手引き 第15章 (10) キの例：器材ごとに丸めると 36 点、合算してからだと原文どおり 37 点。EM §2-11 F28）
   if (points !== total(rounded)) return no("fraction");

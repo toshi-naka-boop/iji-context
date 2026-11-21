@@ -14,7 +14,8 @@ import { g06 } from "../../src/generic/g06";
 import { outsideOf } from "../../src/generic/lookup";
 import { claimOfLines, mappedLinesOf, overlap } from "../../src/generic/overlap";
 import type { TimedClaim } from "../../src/generic/tensuhyo";
-import type { GenericFinding } from "../../src/generic/types";
+import { FINDING_LIMIT, type GenericFinding } from "../../src/generic/types";
+import { genericView } from "../../src/generic/view";
 import { openMasters, type MastersDb } from "../../src/masters/db";
 import { GENERIC_TEXT_CERTAIN } from "../../src/messages";
 import { DOCTOR_DRILLS } from "../../src/practice/doctor-drills";
@@ -243,8 +244,9 @@ describe("段 12：実データの masters.db で", () => {
     // 回数：日（訪問診療料は 1 日 1 回。A60）／月（血液学的検査判断料は月 1 回〔K1 に 1 回ある〕。A62）
     expect(added(unit(["114001110"], [visit]))).toEqual([["G06.day", "確定", "114001110"]]);
     expect(added(unit(["160061810"], [3]))).toEqual([["G06.month", "確定", "160061810"]]);
-    // 回数：週（訪問診療料は週 3 回。特例条件あり。A61）
-    expect(brief(run(db, [unit(["114001110"], [5, 6, 7, 8])]))).toEqual([["G06.week_cond", "条件つき", "114001110"]]);
+    // 回数：週（訪問診療料は週 3 回。特例条件あり。A61）。同じ週に 4 回（2 倍以下）は出ず、7 回（2 倍を超える）なら出る（round-32 codex-2）
+    expect(run(db, [unit(["114001110"], [5, 6, 7, 8])]).filter((f) => f.check === "G06")).toEqual([]);
+    expect(brief(run(db, [unit(["114001110"], [4, 5, 6, 7, 8, 9, 10])]).filter((f) => f.check === "G06"))).toEqual([["G06.week_cond", "条件つき", "114001110"]]);
     db.close();
   });
 
@@ -339,10 +341,10 @@ describe("段 12：実データの masters.db で", () => {
     }
     expect(claims).toBeGreaterThanOrEqual(13);
     // 1 件ずつ原文で確かめたもの（段 12 の報告）：
-    //  ・週 4 回以上の訪問診療（K3。別表第七の疾病等の患者は週 3 回の限度の外＝告示 C001 注1。表は特例条件あり）
     //  ・往診料と、訪問診療料の在宅ターミナルケア加算（注6）が同じ日（K5。往診料と訪問診療料の同じ日の背反の、加算の側の行。表は特例条件あり）
+    // 週 4 回の訪問診療（K3。上限 3）は、round-32 codex-2 で出なくなった（連続する 7 日に上限の 2 倍を超えないので、起算日の数え方では正しい請求であり得る）。
+    // 週 3 回を超える訪問診療は、手書きの R13 が見ている
     expect(cond).toEqual([
-      ["kokuhoren.UKE #3", "G06.week_cond", "114001110"],
       ["kokuhoren.UKE #5", "G05.day_cond", "114000110", "114018370"],
     ]);
     // 同梱の症例（区分キーの行をコードに直して掛ける道）でも、言い切りの候補は 0 件
@@ -435,8 +437,36 @@ describe("段 12：実データの masters.db で", () => {
     db.close();
   });
 
+  withData("(h) 指摘の数の上限（round-32 S-9）：グループ A308031（1 日につき）の親と子を同じ日に 4,990 単位並べた細工でも、2 秒以内・点検ごと 200 件まで・JSON は小さい", () => {
+    const db = openMasters(file)!;
+    const live = `change <> '1' AND created_on <= '${END}' AND abolished_on >= '${START}'`;
+    const snapshot = (db.prepare("SELECT snapshot FROM sources WHERE dataset = 'tensuhyo' AND generation = ? ORDER BY snapshot").get(rev.generation) as { snapshot: string }).snapshot;
+    const parents = (db.prepare(`SELECT code FROM hojo WHERE snapshot = ? AND group1 = 'A308031' AND unit1 IN ('1','2','3','6') AND ${live}`).all(snapshot) as { code: string }[]).map((r) => r.code);
+    const kids = (db.prepare(`SELECT DISTINCT code FROM houkatsu WHERE snapshot = ? AND group_no = 'A308031' AND ${live}`).all(snapshot) as { code: string }[]).map((r) => r.code).filter((c) => !parents.includes(c));
+    const units = [...parents, ...kids].slice(0, 4990).map((code) => unit([code], [1]));
+    expect(parents.length).toBeGreaterThan(100);
+    const heap = process.memoryUsage().heapUsed;
+    const once = () => {
+      const [t0, c0] = [performance.now(), process.cpuUsage()];
+      const r = evaluateGeneric({ units }, db, { yearMonth: YM, generation: rev.generation });
+      return { r, ms: performance.now() - t0, cpu: (({ user, system }) => (user + system) / 1000)(process.cpuUsage(c0)) };
+    };
+    // 2 回掛けて、速いほうで縛る（並列のテストの中の揺れを除く。2 回目もマスターの引き当てから計算し直す）
+    const [a, b] = [once(), once()];
+    const { r, ms, cpu } = a.cpu <= b.cpu ? a : b;
+    const json = JSON.stringify(genericView(r, null));
+    note(`上限　細工した ${units.length} 単位：${ms.toFixed(0)} ミリ秒（CPU ${cpu.toFixed(0)} ミリ秒）、返した指摘 ${r.findings.length} 件、数だけ ${JSON.stringify(r.omitted)}、JSON ${json.length} 文字、ヒープの増加 ${((process.memoryUsage().heapUsed - heap) / 1e6).toFixed(0)}MB`);
+    expect(r.findings.filter((f) => f.check === "G04").length).toBe(FINDING_LIMIT);
+    expect(r.omitted?.find((o) => o.check === "G04")?.count).toBeGreaterThan(1_000_000);
+    // 並列のテストの中では壁時計が延びるので、この点検が使った CPU の時間で縛る
+    expect(cpu).toBeLessThan(2000);
+    expect((process.memoryUsage().heapUsed - heap) / 1e6).toBeLessThan(300);
+    expect(json.length).toBeLessThan(1_000_000);
+    db.close();
+  });
+
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     if (!has) process.stderr.write(`段 12 の実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 10);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 11);
   });
 });

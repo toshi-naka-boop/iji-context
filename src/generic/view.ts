@@ -10,6 +10,8 @@ export type GenericView = {
   ran: { check: string; kind: string }[];
   /** 動かさなかった点検と理由。reason は、データがない（noMasters・noSnapshot）／準備ができていない（notReady）／まだ入っていない（notBuilt） */
   notRun: { check: string; kind: string; reason: string; text: string }[];
+  /** 上限（FINDING_LIMIT）を超えたので返さなかった指摘の数（点検ごと）。画面は「ほか N 件」と出す */
+  omitted: { check: string; kind: string; count: number }[];
   /** 検算（G02）の数と対象外の理由、G02・G03 が点検していないこと（src/generic/scope.ts。呼び出し側が足す） */
   scope?: GenericScope;
 };
@@ -27,5 +29,6 @@ export function genericView(result: GenericResult, names: RowNames | null): Gene
     })),
     ran: result.ran,
     notRun: result.notRun.map((n) => ({ check: n.check, kind: n.kind, reason: n.reason, text: genericNotRunText(n) })),
+    omitted: result.omitted ?? [],
   };
 }

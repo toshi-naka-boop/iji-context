@@ -20,14 +20,15 @@ export const mappedLinesOf = (lines: Pick<ClaimLine, "kubun">[], origins: { unit
 
 /**
  * 区分キーの算定行（月末の点検で入力した行・カルテから導いた行）を、算定日つきの請求と、行とコードの対応にする（design.md §12-2）：
- * 区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。コードに直せない区分（uncoded）と、包括の検査の区分は掛けない（src/generic/index.ts の unitsOfLines と同じ）。
+ * 区分を codes[kubun].primary でコードに直し、1 行を 1 単位にする。コードに直せない区分（uncoded）と、包括の検査の区分は掛けない。
  * きざみで数える区分（行の回数が 項目数 × 回数 になっている）は、算定のある日ごとに 1 回として渡す（少なく数える側）
  */
 export function claimOfLines(lines: ClaimLine[], rev: Revision): { claim: TimedClaim; mapped: MappedLine[] } {
   const claim: TimedClaim = { units: [] };
   const mapped: MappedLine[] = [];
   for (const l of lines) {
-    if (!Object.hasOwn(rev.codes, l.kubun)) continue;
+    // 回数 0 の行（算定日なし。入力の途中で 0 に直した行）は、算定していない行なので渡さない（round-32 codex-1）
+    if (l.count <= 0 || !Object.hasOwn(rev.codes, l.kubun)) continue;
     const { primary, quantity } = rev.codes[l.kubun];
     const dates = quantity ? [...new Set(l.dates)] : l.dates;
     const days = Array.from({ length: 31 }, () => 0);
@@ -92,5 +93,9 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
     if (judged) out.judged++;
     else out.findings.push(g);
   }
+  // 同じ診療行為に、傷病名の要件（G08）と診療行為の適応（G09）の両方が残ったときは、G08 だけを出す（同じ「対象の傷病名が見当たらない」を 2 回言わない）。
+  // 重なりの規則の後で消す：G08 が手書きのルール（R06）の判定済み・重複で消えたときは、G09 を残す（round-32 O-16）
+  const g08Codes = new Set(out.findings.filter((f) => f.check === "G08").flatMap((f) => f.codes));
+  out.findings = out.findings.filter((f) => !(f.check === "G09" && f.messageKey.startsWith("G09.si_") && f.codes.some((c) => g08Codes.has(c))));
   return out;
 }

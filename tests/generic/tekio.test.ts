@@ -2,7 +2,9 @@
 // データは同梱しないので、手で作った数行の表（tests/generic/small-checkmaster.ts。EM §2-11 の錨の事実と、仮の行）で確かめる。実データでの確認は tests/generic/tekio-real.test.ts
 import { describe, expect, it } from "vitest";
 import { CERTAIN, evaluateGeneric } from "../../src/generic";
+import { r2026 } from "../../src/engine/revisions/r2026";
 import { g09Look } from "../../src/generic/g09";
+import { overlap } from "../../src/generic/overlap";
 import { genericScopeOf } from "../../src/generic/scope";
 import type { TimedClaim } from "../../src/generic/tensuhyo";
 import type { GenericAboutMore } from "../../src/generic/types";
@@ -124,11 +126,27 @@ describe("G09 適応（診療行為）", () => {
   it("傷病名の要件（G08）と同じ診療行為に重なるときは、G08 だけを出す（2 回言わない）。G08 が言わないときは、G09 が出る", () => {
     const c = claimOf([[["SI", K.tokutei]], [8]]);
     const db = checkMasters();
+    // 重なりの規則（overlap）を通したあとに消す。手書きのルールがこのコードを見ていない（行とコードの対応がない）請求
+    const shown = (a: GenericAboutMore) => overlap({ findings: [] }, r2026, false, [], evaluateGeneric(c, db, a).findings).findings.map((f) => f.messageKey);
     // 対象の傷病名がない：G08 も G09 も当たるが、出るのは G08 だけ
-    expect(evaluateGeneric(c, db, withDiseases(D.tounyou)).findings.map((f) => f.messageKey)).toEqual(["G08.no_target"]);
+    expect(shown(withDiseases(D.tounyou))).toEqual(["G08.no_target"]);
     // 対象の傷病名が疑い病名：G08 は数えるので言わない。G09 は、表が確定病名だけを対象にしていることを言う
-    expect(evaluateGeneric(c, db, withDiseases(`${D.zensoku}?`)).findings.map((f) => f.messageKey)).toEqual(["G09.si_suspected"]);
-    expect(evaluateGeneric(c, db, withDiseases(D.zensoku)).findings).toEqual([]);
+    expect(shown(withDiseases(`${D.zensoku}?`))).toEqual(["G09.si_suspected"]);
+    expect(shown(withDiseases(D.zensoku))).toEqual([]);
+  });
+
+  it("G08 が手書きのルール（R06）の判定済みとして消えたときは、G09 が残る（round-32 O-16）", () => {
+    // 特定疾患処方管理加算（F400_N4。R06 が covers で申告）に、チェックマスタの行も足す（仮の行）
+    const db = checkMasters();
+    put(db, "cm_si_shobyo", "20261001", { code: K.shohoKasan, shobyo: D.zensoku, sex: "0", age_upper: 999.99, nyugai: "0", utagai: "0", change: "0" });
+    const c = claimOf([[["SI", K.shohoKasan]], [8]]);
+    const found = evaluateGeneric(c, db, withDiseases(D.tounyou)).findings;
+    expect(found.map((f) => f.messageKey).sort()).toEqual(["G08.no_target", "G09.si_no_disease"]);
+    // R06 が動いて、指摘も情報不足も出さなかった（判定して黙った）
+    const o = overlap({ findings: [], applied: ["R06"] }, r2026, false, [{ kubun: "F400_N4", unit: 0, codes: [K.shohoKasan] }], found);
+    expect([o.findings.map((f) => f.messageKey), o.judged]).toEqual([["G09.si_no_disease"], 1]);
+    // R06 がこの請求を見ていない（試算の結果など。applied がない）なら、G08 が残り、G09 は消える
+    expect(overlap({ findings: [] }, r2026, false, [{ kubun: "F400_N4", unit: 0, codes: [K.shohoKasan] }], found).findings.map((f) => f.messageKey)).toEqual(["G08.no_target"]);
   });
 });
 
@@ -183,7 +201,7 @@ describe("G09 は言い切らない。点検の範囲に、但し書きと、見
     const notes = scope(claimOf([[["IY", M.pentasa]], [5]])).g09!;
     expect(notes[0]).toMatch(/^適応・併用：審査支払機関のコンピュータチェックは、診療内容の適否を一律に決めるものではなく.*査定されると決まったわけではありません/);
     expect(notes).toContain("院外処方の薬の適応・量は、このレセプトからは見られません（医科のレセプトに薬が載らないため）");
-    expect(notes.some((t) => t.startsWith("量と日数（最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件") && t.includes("点検していません"))).toBe(true);
+    expect(notes.some((t) => t.startsWith("投与量・投与日数（表の最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件") && t.includes("点検していません"))).toBe(true);
     expect(notes.some((t) => t.startsWith("チェックマスタは 2026年10月1日 公開の版です"))).toBe(true);
     // G09 の説明は、ほかの点検の「していないこと」とは別に持つ
     expect(scope(claimOf([[["IY", M.pentasa]], [5]])).notDone.some((t) => t.includes("適応"))).toBe(false);

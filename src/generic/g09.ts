@@ -37,7 +37,7 @@ const BEFORE_R8_CASES: ReadonlySet<string> = new Set(["20261030"]);
 type Why = "none" | "uncoded" | "unknown";
 /** 見た数：all＝レセプトにあるコードの数（重複を除く）、inTable＝そのうち表にあるコード、conditioned＝そのうち性別・年齢の条件つきの行があるので適応を見なかったコード */
 type Seen = { all: number; inTable: number; conditioned: number };
-export type G09Look = { findings: GenericFinding[]; iy: Seen; si: Seen; why: Why | null; snapshot: string; later: boolean; shohosen: boolean };
+export type G09Look = { findings: GenericFinding[]; iy: Seen; si: Seen; why: Why | null; snapshot: string; shohosen: boolean };
 
 /** コード → そのコードのある単位（請求の units の添字） */
 function unitsOf(claim: GenericClaim, kind: "SI" | "IY"): Map<string, number[]> {
@@ -65,7 +65,7 @@ export function g09Look(claim: GenericClaim, masters: MastersDb, about: GenericA
   const s = pick.snapshot;
   const drugs = unitsOf(claim, "IY");
   const acts = unitsOf(claim, "SI");
-  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0, conditioned: 0 }, si: { all: acts.size, inTable: 0, conditioned: 0 }, why: null, snapshot: s, later: pick.later, shohosen: false };
+  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0, conditioned: 0 }, si: { all: acts.size, inTable: 0, conditioned: 0 }, why: null, snapshot: s, shohosen: false };
 
   // レセプトの傷病名。confirmed＝疑い病名でない記載が 1 つでもあるコード
   const diseases = (about as GenericAboutMore).diseases;
@@ -221,7 +221,7 @@ export function g09NotDone(claim: GenericClaim, masters: MastersDb, about: Gener
     ...(r.iy.conditioned + r.si.conditioned > 0 ? [`表にある薬のうち ${r.iy.conditioned}、診療行為のうち ${r.si.conditioned} は、表に性別・年齢の条件つきの行があるので、適応を見ていません（条件の読み方を、公開元の仕様書で確かめられていないため）`] : []),
     `${r.shohosen ? "このレセプトには処方箋料があります。" : ""}院外処方の薬の適応・量は、このレセプトからは見られません（医科のレセプトに薬が載らないため）`,
     ...(r.why !== null ? [WHY_TEXT[r.why]] : []),
-    "量と日数（最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件の読み分け、同じ成分の薬をまとめた量、過去の月にまたがる日数は、点検していません（表の値の単位と数え方が、公開元の仕様書に書かれていないため。要る表の一部は取り込んでいません）",
+    "投与量・投与日数（表の最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件の読み分け、同じ成分の薬をまとめた量、過去の月にまたがる日数は、点検していません（表の値の単位と数え方が、公開元の仕様書に書かれていないため。要る表の一部は取り込んでいません）",
     "疑い病名は、薬では当たりに数えています。診療行為では、表が確定病名だけを対象にしている行に限って、数えていません。転帰（治ゆ・中止など）のある傷病名も、当たりに数えています。併用の組は、同じ日に両方あるものだけを見ています",
     `チェックマスタは ${r.snapshot.slice(0, 4)}年${Number(r.snapshot.slice(4, 6))}月${Number(r.snapshot.slice(6, 8))}日 公開の版です${BEFORE_R8_CASES.has(r.snapshot) ? "（公開元は、令和8年度診療報酬改定に伴う新しい事例の公開は次回以降としています。改定で変わった取扱いは、まだ反映されていないことがあります）" : ""}`,
   ];

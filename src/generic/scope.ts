@@ -1,6 +1,7 @@
-// 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02・G03・G07・G08・G09 が点検していないこと。
+// 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02〜G09 が点検していないこと（G04〜G06 は src/messages.ts の GENERIC_SCOPE_NOTE）。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
 import type { MastersDb } from "../masters/db";
+import { GENERIC_SCOPE_NOTE } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
 import { g07NotDone } from "./g07";
@@ -20,6 +21,8 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
     else out.notDone.push("点数の検算は、点数の書いてある単位（取り込んだレセプトの単位）にだけ掛けます。ここの行には点数が書いていないので、検算していません");
   }
   if (ran("G03")) out.notDone.push(...g03NotDone(about));
+  // G04〜G06 の断り（作っていない単位・数え方）。画面の部品が別に足していたのをここに寄せ、月末の点検・算定プレビューの 1 行の表示でも出す（round-32 O-19）
+  for (const r of result.ran) if (GENERIC_SCOPE_NOTE[r.check]) out.notDone.push(`${r.check}（${r.kind}）が点検していないこと：${GENERIC_SCOPE_NOTE[r.check]}`);
   if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);

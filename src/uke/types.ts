@@ -79,6 +79,7 @@ export type UkeFile = {
  * 診療行為・医薬品・特定器材の 1 行。line は 1 起算の行番号。quantity は数量データ（SI）・使用量（IY・TO）の欄のまま。
  * shikibetsu は、その行に書いてある診療識別（別表20。省略された行は空）。
  * 特定器材（TO）の行だけが持つ：unitCode＝単位コード、unitPrice＝単価（どちらも欄のまま。書いていなければ空）。商品名及び規格又はサイズは持たない。
+ * unitCode は、いまの点検のどれも読まない。残す理由：UKE の欄を書いてあるまま持つ（tests/uke/keep-fields.test.ts が縛る）ことと、マスターの単位と食い違う器材の検算（作っていない）に要る欄であること（round-32 O-20）
  * 行のコメント欄は UkeClaim.comments に入り、line が同じものがその行のコメント（design.md §12-2）
  */
 export type UkeItem = { line: number; kind: "SI" | "IY" | "TO"; code: string; quantity: string; shikibetsu: string; unitCode?: string; unitPrice?: string };
@@ -86,7 +87,8 @@ export type UkeItem = { line: number; kind: "SI" | "IY" | "TO"; code: string; qu
 /**
  * 点数・回数の算定単位。単位の終わりは点数が書いてある行で、line はその行。
  * points は 1 回分の点数、count は回数（単位の各行に同じ値）、days は 1〜31 日の回数（単位の各行に同じ値）、futan は負担区分（別表21。点数の行のもの）、
- * shikibetsu は診療識別（単位の先頭の行に書いてあるもの。省略されていれば空のままで、前の単位から引き継がない。引き継ぎ方は使う側が決める）
+ * shikibetsu は診療識別（単位の先頭の行に書いてあるもの。省略されていれば空のままで、前の単位から引き継がない。引き継ぎ方は使う側が決める）。
+ * いまの点検は読まない（検算 G02 は、行の診療識別から引き継ぎを決める。src/generic/g02.ts）。残す理由：UKE の欄を書いてあるまま持つ（tests/uke/keep-fields.test.ts が縛る。round-32 O-20）
  */
 export type UkeUnit = { line: number; items: UkeItem[]; points: number; count: number; days: number[]; futan: string; shikibetsu: string };
 

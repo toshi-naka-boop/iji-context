@@ -53,6 +53,6 @@ export function checkMasters(snapshot = "20261001"): Database.Database {
   for (const [code, name] of [[M.pentasa, "手作りの薬（適応の例）"], [M.riva, "リバーロキサバン錠１５ｍｇ（手作り）"], [M.buscopan, "手作りの薬（併用Ｌ）"], [M.primperan, "手作りの薬（併用Ｒ）"]]) put(db, "iyakuhin", snapshot, { code, name });
   put(db, "shinryo", snapshot, { code: M.marker, name: "悪性腫瘍特異物質治療管理料（その他・１項目）", alpha: "B", sho: 2, bu: 1, kubun_no: 1 });
   for (const [code, name] of [[S.crohn, "手作りの傷病名Ａ"], [S.uc, "手作りの傷病名Ｂ"], [S.nvaf, "非弁膜症性心房細動"], [S.shinfuzen, "心不全"], [S.dcm, "特発性拡張型心筋症"], [S.igan, "胃癌"]]) put(db, "shobyo", snapshot, { code, name });
-  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason, missing) VALUES ('G09', 1, '', '[]')").run();
+  db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G09', 1, '')").run();
   return db;
 }

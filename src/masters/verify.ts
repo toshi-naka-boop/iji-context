@@ -160,7 +160,7 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
     needs: [...each("shinryo", "shobyo_kanren", ["3", "4", "5", "7"]), ...each("shobyo", "tokutei_shikkan", ["00", "03", "04", "05", "07", "08"])],
   },
   G09: {
-    label: "適応・禁忌・量と日数",
+    label: "適応・併用",
     // 作ったのは、適応（医薬品・診療行為）と併用の組。判定に使う列：医薬品×傷病名の組、診療行為×傷病名の組と「疑い病名」の 0（確定・疑いとも）・1（確定のみ）、併用の組（両向き）。
     // 最大投与量・最長投与日数・入外区分は、点検を作っていないので挙げない（単位・数え方が仕様書に書かれていない。EM §2-11）。性別・年齢は読み分けず、条件つきの行があるコードの適応を見ない
     // ことにだけ使う（言わない側。変更区分 9 と同じ扱いで、値ごとの件数〔EM §2-11 表 3〕で読み方を縛る）。
@@ -186,12 +186,12 @@ export type VerifyResult = {
   warnings: number;
   /** 取り込んだファイルの数 */
   sources: number;
-  /** missing は、足りないものの一覧（「データ:データ名」か「表:列=値」）。次の段が、列ごとに点検の一部を止めるのに使える */
+  /** missing は、足りないものの一覧（「データ:データ名」か「表:列=値」）。masters.db には書かない（アプリは読まない）。テストが、どの錨が足りないかを縛るのに使う */
   ready: { check: CheckId; label: string; ready: boolean; reason: string; missing: string[] }[];
 };
 
 /**
- * 錨・件数・版の表との食い違いを確かめ、点検の準備を決める。write が真のとき（作っている途中の masters.db）、結果を sources.verified・checks_ready・meta に書く
+ * 錨・件数・版の表との食い違いを確かめ、点検の準備を決める。write が真のとき（作っている途中の masters.db）、結果を sources.verified・checks_ready に書く
  */
 export function verifyMasters(db: Database.Database, em: Em, opt: { write: boolean; config?: MastersConfig; revisions?: Revision[] }): VerifyResult {
   const config = opt.config ?? MASTERS_CONFIG;
@@ -312,8 +312,8 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
 
   if (opt.write) {
     for (const [dataset, verified] of Object.entries(em.verified)) db.prepare("UPDATE sources SET verified = ? WHERE dataset = ?").run(verified, dataset);
-    const put = db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason, missing) VALUES (?, ?, ?, ?)");
-    for (const r of ready) put.run(r.check, r.ready ? 1 : 0, r.reason, JSON.stringify(r.missing));
+    const put = db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES (?, ?, ?)");
+    for (const r of ready) put.run(r.check, r.ready ? 1 : 0, r.reason);
   }
   return { lines, failures, warnings, sources: (db.prepare("SELECT count(*) AS n FROM sources").get() as { n: number }).n, ready };
 }

@@ -1,10 +1,11 @@
 // 請求 id → 合成データのファイルの表引き（spec FR-108）。請求 id は UKE の中身から来るので、パスの組み立てに使わない
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { caseFileOf, chartFileOf } from "../../src/server/app/case-files";
-import { createCases } from "../../src/server/app/cases";
+import { facilityOf } from "../../src/engine/facility";
+import { caseBaseOf, createCases } from "../../src/server/app/cases";
 import { createClaimFacts } from "../../src/server/app/claim-facts";
 import { createClerks } from "../../src/server/app/clerks";
 import { createClock } from "../../src/server/app/clock";
@@ -72,5 +73,14 @@ describe("請求 id にパスを仕込んだ UKE が読み込まれても、外�
       expect([id, notes.chartOf(id)]).toEqual([id, null]);
       ctx.sqlite.close();
     }
+  });
+
+  it("請求の土台（caseBaseOf。API と scripts/measure-generic.ts が同じ作り方で使う。round-32 O-17）：同梱の症例は事実と施設の上書きを、症例のないレセプトは不明と標準の設定を返す", () => {
+    const facilityJson = JSON.parse(readFileSync(path.join(repo, "config", "facility.json"), "utf8"));
+    const k7 = caseBaseOf(repo, facilityJson, "K7-2026-10");
+    expect(k7.facts.age).toEqual({ known: true, value: 80 });
+    expect(k7.facility).toEqual(facilityOf(facilityJson, { note16Met: false }));
+    const none = caseBaseOf(repo, facilityJson, "X-1");
+    expect([none.facts.age, none.events, none.recordsKnown, none.facility]).toEqual([{ known: false }, [], false, facilityOf(facilityJson)]);
   });
 });
