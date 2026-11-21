@@ -9,6 +9,9 @@ const EVENT_LABEL: Record<ClaimEvent["type"], string> = { visit: "訪問診療",
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 const eventText = (e: { type: ClaimEvent["type"]; date: string }) => `${EVENT_LABEL[e.type]} ${md(e.date)}`;
 
+/** 人が入れる摘要欄の記載の場所（slot）と、選べるコード（src/server/app/notes.ts の withInputs が付ける） */
+export type CommentInput = { slot: string; codes: string[] };
+
 /** 導出の未対応を画面に出す文 */
 export const unsupportedText = (u: Unsupported): string => (u.code === "unmapped_test_item" ? `検査の項目「${u.detail}」は、区分の表にないので行にしていません` : u.detail);
 
@@ -24,9 +27,10 @@ export type ClaimPreviewLine = {
   basis: { rule: string; events: string[]; needs: string[]; byChoice: boolean; tentative: boolean } | null;
   /**
    * この行について摘要欄に書くこと（design.md §11-13）。what は何の記載か。entries は 1 件ずつ：
-   * ready はコードと値まで決まったもの、needsInput は医療事務が入れるもの（code が null なら、当たるコードも選ぶ）
+   * ready はコードと値まで決まったもの、needsInput は医療事務が入れるもの（code が null なら、当たるコードも選ぶ）。
+   * input は、人が入れる記載（入れた値で ready になったものも）の場所と、選べるコード（POST /api/chart/[id]/comments に渡す）
    */
-  comments: { what: string; entries: { code: string | null; text: string | null; status: "ready" | "needsInput" }[] }[];
+  comments: { what: string; entries: { code: string | null; text: string | null; status: "ready" | "needsInput"; input?: CommentInput }[] }[];
 };
 
 export type ClaimPreview = {
@@ -61,7 +65,11 @@ export function claimPreviewOf(derived: DeriveResult, engine: Pick<EngineResult,
     const mine = derived.comments.filter((c) => c.kubun === kubun);
     return [...new Set(mine.map((c) => c.rule))].map((rule) => ({
       what: rev.comments.find((r) => r.id === rule)?.summary ?? rule,
-      entries: mine.filter((c) => c.rule === rule).map(({ code, text, status }) => ({ code, text, status })),
+      entries: mine.filter((c) => c.rule === rule).map((c) => {
+        const { code, text, status } = c;
+        const input = (c as { input?: CommentInput }).input;
+        return input ? { code, text, status, input } : { code, text, status };
+      }),
     }));
   };
   return {

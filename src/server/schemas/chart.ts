@@ -31,6 +31,16 @@ export const claimQuery = z.strictObject({ choices: z.string().max(2000).optiona
 export const compareQuery = z.strictObject({ claimId: claimId.optional(), from: revisionId.optional(), to: revisionId.optional() });
 export const claimChoices = z.record(z.string().max(80), z.string().max(40));
 
+/**
+ * 算定プレビューの「入力が要る」摘要欄の記載に入れる値（FR-176）。slot は導出の記載の場所（記載の表の行|導出が決めたコード|何件目）、code は 9 桁のコメントコード。
+ * 値の形（コードの先頭 3 桁で決まる）は処理の中で確かめる（src/server/app/notes.ts の saveNoteComment）
+ */
+export const noteCommentBody = z.strictObject({
+  slot: z.string().regex(/^[A-Za-z0-9-]{1,40}\|(\d{9})?\|\d{1,2}$/),
+  code: z.string().regex(/^\d{9}$/),
+  text: z.string().max(200),
+});
+
 export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT) });
 
 /** base64 にした画像の長さの上限（5MB の画像は 4/3 倍に膨らむ） */

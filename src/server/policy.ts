@@ -86,6 +86,8 @@ export const POLICY = {
   "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
   "GET /api/chart/[id]/claim": row(WORK, "none", true),
+  // 算定プレビューの「入力が要る」摘要欄の記載に値を入れる（FR-176）。プレビューと同じ役割。値は自由記載で患者の情報になり得る
+  "POST /api/chart/[id]/comments": row(WORK, "none", true),
   // 改定の比較（design.md §11-2）：同じ記録を 2 つの版で導出して並べる。読むだけ。全ロール
   "GET /api/revision/compare": row(ALL, "none", true),
   "POST /api/chart/image": row(WORK, "ai", true),

@@ -2,7 +2,8 @@
 // カルテを確定したあと、同じ画面に出す算定プレビュー（FR-101）：算定行・点数・根拠・合計・ユスティの指摘・患者情報の指摘・ローカルルール欄。
 // 算定行はコードで導出したもの（GET /api/chart/[id]/claim）。試算で選べる版の一覧も、同じ応答に入っている。看取り加算などは本人が選ぶまで行にしない。宛先は医療事務（医師向けの画面には出さない）
 import { useEffect, useState, type ReactNode } from "react";
-import type { ClaimPreview as Preview } from "../../src/chart/claim";
+import type { ClaimPreview as Preview, CommentInput } from "../../src/chart/claim";
+import { postJson } from "../get-json";
 import type { GenericView } from "../../src/generic/view";
 import { COMMENT_CHECK_NOTE } from "../../src/messages";
 import { GenericFindings } from "../generic-findings";
@@ -27,6 +28,42 @@ const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8,
 const num = (n: number) => n.toLocaleString("ja-JP");
 const ym = (yearMonth: string) => `${Number(yearMonth.slice(0, 4))}年${Number(yearMonth.slice(5, 7))}月`;
 
+/** 値の形の案内（コードの先頭 3 桁で決まる。EM §2-10 表 3）。820 は文字データを持たない */
+const FORMAT_HINT: Record<string, string> = { "830": "文で書く", "842": "数値", "850": "和暦の年月日 7 桁（令和は 5。例 5081015）", "851": "時刻 4 桁（例 1430）" };
+
+/** 「入力が要る」摘要欄の記載に、値を入れる欄（POST /api/chart/[id]/comments）。形が合わなければ残らず、文言が出る。edit は、入れた値を直すとき */
+function CommentForm(props: { noteId: number; input: CommentInput; code: string | null; edit?: boolean; onSaved: () => void }) {
+  const [open, setOpen] = useState(!props.edit);
+  const [code, setCode] = useState(props.code ?? (props.input.codes.length === 1 ? props.input.codes[0] : ""));
+  const [text, setText] = useState("");
+  const [err, setErr] = useState("");
+  if (!open) return <> <button onClick={() => setOpen(true)}>直す</button></>;
+  const prefix = code.slice(0, 3);
+  async function save() {
+    setErr("");
+    try {
+      await postJson(`/api/chart/${props.noteId}/comments`, { slot: props.input.slot, code, text: prefix === "820" ? "" : text });
+      setText("");
+      props.onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginLeft: 6 }}>
+      {props.input.codes.length > 1 && (
+        <select aria-label="コメントコード" value={code} onChange={(e) => setCode(e.target.value)}>
+          <option value="">コードを選ぶ</option>
+          {props.input.codes.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+      {code !== "" && prefix !== "820" && <input aria-label={`コード ${code} の値`} placeholder={FORMAT_HINT[prefix] ?? ""} value={text} maxLength={200} onChange={(e) => setText(e.target.value)} style={{ width: 220, maxWidth: "100%" }} />}
+      <button disabled={code === "" || (prefix !== "820" && text.trim() === "")} onClick={() => void save()}>残す</button>
+      {err && <span className="notice warn">{err}</span>}
+    </span>
+  );
+}
+
 /** localRules は、ローカルルール欄を差し込む場所（中身は呼び出し側が渡す） */
 export function ClaimPreview({ noteId, localRules }: { noteId: number; localRules?: ReactNode }) {
   const [claim, setClaim] = useState<Claim | null>(null);
@@ -36,6 +73,8 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
   const [err, setErr] = useState("");
   /** 試算に使う版（"" は選ばない＝診療年月の版での、今までどおりの判定） */
   const [rev, setRev] = useState("");
+  /** 摘要欄の記載を入れたあとに読み直す */
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -51,7 +90,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
     return () => {
       alive = false;
     };
-  }, [noteId, choices, rev]);
+  }, [noteId, choices, rev, tick]);
 
   if (err) return <div className="notice warn">{err}</div>;
   if (!claim) return <div className="muted">算定行を組み立てています…</div>;
@@ -96,15 +135,15 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
               <td>
                 {l.name}
                 {l.basis?.tentative && <span className="badge sky" style={{ marginLeft: 6 }}>見込み</span>}
-                {/* 摘要欄に書くこと（コメントコードと値）。値を入れる欄はまだない：決まっていない記載は「入力が要ります」と出すだけ */}
+                {/* 摘要欄に書くこと（コメントコードと値）。決まっていない記載は、医療事務がその場で値を入れる（FR-176） */}
                 {l.comments.map((c, n) => (
                   <div key={n} className="muted" style={{ marginTop: 4 }}>
                     摘要欄に書くこと：{c.what}
                     {c.entries.map((e, m) => (
                       <div key={m} style={{ marginLeft: 12 }}>
                         {e.status === "ready"
-                          ? <>コード {e.code}{e.text ? `「${e.text}」` : ""}</>
-                          : <><span className="badge warn">入力が要ります</span> {e.code ? `コード ${e.code}` : "当たるコードを選びます"}</>}
+                          ? <>コード {e.code}{e.text ? `「${e.text}」` : ""}{e.input && <>（入れた値）<CommentForm noteId={noteId} input={e.input} code={e.code} edit onSaved={() => setTick((t) => t + 1)} /></>}</>
+                          : <><span className="badge warn">入力が要ります</span> {e.code ? `コード ${e.code}` : "当たるコードを選びます"}{e.input && <CommentForm noteId={noteId} input={e.input} code={null} onSaved={() => setTick((t) => t + 1)} />}</>}
                       </div>
                     ))}
                   </div>
