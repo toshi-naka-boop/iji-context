@@ -1,20 +1,20 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v26",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v26",
+  "approvedDesignSha256": "a77f85492f72eb0d6d93e0907e3a3073e084e9a3566312393154ad3cc06646c0",
+  "approvedAt": "2026-11-22T00:00:00+09:00",
+  "approvalEvidence": "v26:a77f85492f72 を承認",
   "requiredApprovalFingerprint": "v26:a77f85492f72",
-  "baseline": "feat/integration（83d1442）",
+  "baseline": "feat/integration（064ef4a）",
   "criticRound": 41,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§14・§13・§3）",
     "ledger.md"
   ],
-  "nextAction": "v26 の承認を待つ",
+  "nextAction": "段 16（§14）を実装（Opus のサブエージェント、worktree）。そのあと通知の登録を実在の請求に対応",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
