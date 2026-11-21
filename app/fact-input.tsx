@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey, type HaihanFactKey } from "../src/claim/facts";
 import type { Finding } from "../src/engine/types";
-import { exceptionOf, parseHaihanKey } from "../src/generic/haihan";
+import { exceptionOf, parseHaihanKey, sharedExceptionOf, sharedFactOf } from "../src/generic/haihan";
 import type { GenericAsk } from "../src/generic/view";
 import { FACT_LABEL } from "../src/messages";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
@@ -40,16 +40,18 @@ function FactForm(props: { claimId: string; factKey: ClaimFactKey; date: string 
   const [source, setSource] = useState<string>(CLAIM_FACT_SOURCES[0]);
   const [err, setErr] = useState("");
   const kind = inputKindOf(props.factKey);
+  const shared = sharedExceptionOf(props.factKey)?.ask?.choices.map((c) => c.label);
   async function save() {
     setErr("");
-    const fact = { key: props.factKey, date: props.date, value: kind === "boolean" ? value === "true" : value, source };
+    const fact = { key: props.factKey, date: props.date, value: kind === "boolean" && !shared ? value === "true" : value, source };
     const r = await fetch(`/api/claims/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json().catch(() => null);
     if (!r.ok) return setErr(d?.error ?? "エラー");
     setValue("");
     props.onSaved();
   }
-  const options = kind === "boolean" ? [["true", "はい"], ["false", "いいえ"]] : DEATH_PLACES.map((x) => [x, x]);
+  // 例外の問いと共有する事実（sameDayOushinAfterVisit）は、その例外の問いと同じ選択肢（「その他」「判定不能」を含む）で答える（利用者の判断 2026-11-22）
+  const options = shared ? shared.map((c) => [c, c]) : kind === "boolean" ? [["true", "はい"], ["false", "いいえ"]] : DEATH_PLACES.map((x) => [x, x]);
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
       {kind === "text" ? (
@@ -102,11 +104,17 @@ function ChoiceForm(props: { claimId: string; factKey: HaihanFactKey; date: stri
  * 背反の特例条件の例外の問い（データで動く点検の G05.exception_ask の下に出す）。残せるのは算定の仕事をする人（医療事務あて）。
  * 例外の問いは選択肢から、R10 と同じ「別々の診療か」は、はい・いいえで残す。日ごとの問いは、聞かれている日ごとに 1 つ
  */
-export function AskInput(props: { claimId: string; ask: GenericAsk; onSaved: () => void }) {
+export function AskInput(props: { claimId: string; ask: GenericAsk; onSaved: () => void; handAsked?: { field: string; date: string | null }[] }) {
   const role = useRole();
   const { ask } = props;
   if (!canSave(role, "clerk")) return role === null ? null : <div className="muted">医療事務が答えを残します。</div>;
-  const dates: (string | null)[] = ask.dates.length > 0 ? ask.dates : [null];
+  // 同じ日の同じ事実を、手書きのルール（R10）の情報不足が聞いているときは、ここでは選択肢を出さず、そちらへ案内する（同じ問いを 2 つ出さない。利用者の判断 2026-11-22）
+  const x = exceptionOf(ask.hx);
+  const field = ask.kind === "fact" ? ask.key : x ? sharedFactOf(x) : null;
+  const byHand = (d: string | null) => field !== null && (props.handAsked ?? []).some((m) => m.field === field && m.date === d);
+  const dates: (string | null)[] = (ask.dates.length > 0 ? ask.dates : [null]).filter((d) => !byHand(d));
+  const handed = ask.dates.filter((d) => byHand(d));
+  if (dates.length === 0) return <div className="muted" style={{ marginTop: 6 }}>下の「情報不足」にある R10 の問い{handed.map(dayText).join("")}に答えると、この指摘も決まります。</div>;
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
       <div>{ask.question}</div>
@@ -118,6 +126,7 @@ export function AskInput(props: { claimId: string; ask: GenericAsk; onSaved: () 
             : <ChoiceForm claimId={props.claimId} factKey={ask.key as HaihanFactKey} date={d} question={ask.question} choices={ask.choices} onSaved={props.onSaved} />}
         </div>
       ))}
+      {handed.length > 0 && <div className="muted">{handed.map(dayText).join("")}は、下の「情報不足」にある R10 の問いに答えると、この指摘も決まります。</div>}
     </div>
   );
 }

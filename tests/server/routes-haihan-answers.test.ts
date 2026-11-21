@@ -131,6 +131,16 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
     expect((await list()).filter((f) => f[1] === day(15))).toEqual([["sameDayOushinAfterVisit", day(15), true, "clerk"]]);
   });
 
+  it("R10 の入力（sameDayOushinAfterVisit）も、HX-01 と同じ選択肢で答えられ、同じ書く関数を通る：その他 → 共有の事実を取り消し、その日の組の haihan:* に記録（利用者の判断 2026-11-22）", async () => {
+    setRole("clerk");
+    expect((await save("sameDayOushinAfterVisit", "たぶん", day(15))).status).toBe(400);
+    expect((await save("sameDayOushinAfterVisit", "その他", day(15))).status).toBe(200);
+    expect((await list()).filter((f) => f[1] === day(15))).toEqual([[KEY, day(15), "その他", "clerk"]]);
+    expect(r10()).toContain(`sameDayOushinAfterVisit@${day(15)}`);
+    expect((await save("sameDayOushinAfterVisit", YES, day(15))).status).toBe(200);
+    expect((await list()).filter((f) => f[1] === day(15))).toEqual([["sameDayOushinAfterVisit", day(15), true, "clerk"]]);
+  });
+
   it("答えは組ごと：同じ日の 2 つの組（haihan:<HX>:<コード①>:<コード②>）に別の答えを残せ、互いに効かない", async () => {
     setRole("clerk");
     const [a, b] = [haihanKey("HX-11", SAISHIN, VISIT_CODE), haihanKey("HX-11", SAISHIN, HOUMON_RO)];

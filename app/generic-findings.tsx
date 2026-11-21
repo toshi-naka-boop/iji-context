@@ -22,7 +22,7 @@ const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.cod
  * skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば）。
  * full のときだけ：notes は、呼び出し側の断り（折りたたみの中に足す）、laterSheets は、診療年月より後の版で代えているデータの名前（要約に一言添える）
  */
-export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void } }) {
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[] } }) {
   const rowLink = (c: { code: string; name: string | null }) => {
     const href = rowHref?.(c.code);
     return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
@@ -68,7 +68,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
           {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
           <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
-          {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} />)}
+          {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
           {more.length > 0 && (
             <div className="muted">
               同じ行は、ほかに {more.length} 個の行為にも含まれる項目として載っています：

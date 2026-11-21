@@ -5,7 +5,7 @@ import { applyClaimFacts, CLEARED, isClaimFactKey, isDatedFact, isHaihanFactKey,
 import { targetOfNeed } from "../../engine";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { selectorOf } from "../../generic/g05";
-import { codesFit, exceptionOf, parseHaihanKey, sharedFactOf } from "../../generic/haihan";
+import { codesFit, exceptionOf, haihanKey, parseHaihanKey, sharedExceptionOf, sharedFactOf } from "../../generic/haihan";
 import { withMasters } from "../../masters/db";
 import type { Facts } from "../../engine/types";
 import { badRequest, forbidden, notFound } from "../errors";
@@ -94,12 +94,26 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     const fits = withMasters((db) => codesFit(k.hx, k.codes, db && hasRevision(yearMonth) ? selectorOf(db, { yearMonth, generation: resolveRevision(yearMonth).generation }) : null));
     if (!fits) throw badRequest("この例外が掛かる組のコードではありません");
   }
+  /** その日に、その例外の組（HP の a・b）に当たる、請求の行のコードの組の key（haihan:<HX>:<コード①>:<コード②>） */
+  function pairKeysOn(claimId: string, yearMonth: string, hx: string, date: string): string[] {
+    const d = Number(date.slice(8, 10));
+    const codes = [...new Set(uke.receiptOf(claimId).claim().units.filter((u) => (u.days?.[d - 1] ?? 0) > 0).flatMap((u) => u.items.map((it) => it.code)))].sort();
+    return withMasters((db) => {
+      const sel = db && hasRevision(yearMonth) ? selectorOf(db, { yearMonth, generation: resolveRevision(yearMonth).generation }) : null;
+      return codes.flatMap((c1, i) => codes.slice(i + 1).flatMap((c2) => (codesFit(hx, [c1, c2], sel) ? [haihanKey(hx, c1, c2)] : [])));
+    });
+  }
   function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput, written?: (keys: string[]) => void) {
     clerks.clerk(clerkId);
     const yearMonth = yearMonthOf(claimId);
     admit(f, yearMonth, role);
     if (isHaihanFactKey(f.key)) fitsClaim(claimId, yearMonth, parseHaihanKey(f.key)!);
-    const value = typeof f.value === "string" ? f.value.trim() : f.value;
+    let value = typeof f.value === "string" ? f.value.trim() : f.value;
+    // 共有の事実を、例外の問いの選択肢で答えたとき（R10 の入力。利用者の判断 2026-11-22）：当たる・当たらない → 真偽で書く。
+    // 「その他」「判定不能」→ その日の共有の事実を取り消し、その日のその例外の組の全部に、答えを haihan:* として残す（G05 の問いと同じ書き方。X-105）
+    const sharedX = typeof value === "string" ? sharedExceptionOf(f.key) : undefined;
+    const sharedMeans = sharedX ? sharedX.ask!.choices.find((c) => c.label === value)!.means : null;
+    if (sharedMeans !== null && sharedMeans !== "決まらない") value = sharedMeans === "当たる";
     const at = now();
     const others = new Set<string>();
     const insert = (key: string, date: string | null, v: unknown) => {
@@ -126,7 +140,10 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
           insert(shared, f.date, means === "当たる");
         }
       } else if (isHaihanFactKey(f.key)) insert(f.key, f.date, value);
-      else {
+      else if (sharedMeans === "決まらない") {
+        clear(f.key, f.date);
+        for (const k of pairKeysOn(claimId, yearMonth, sharedX!.id, f.date!)) insert(k, f.date, value);
+      } else {
         insert(f.key, isDatedFact(f.key) ? f.date : null, value);
         // 共有の事実を直接書いたとき（R10 の入力）も、その日の、その事実を使う問いの「もう問わない記録」を取り消す。答えを変えれば問い直す（§13-2 の 4）ため：
         // 偽を書くと sameDayOf は別々の診療かを名指しするので、記録が残っていると G05 は「決まらない」のまま問わない（round-36 C-142）
