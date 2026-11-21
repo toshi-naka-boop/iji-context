@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { User } from "../../src/server/auth";
 import { at } from "../helpers/period";
 
@@ -66,5 +66,21 @@ describe("クリニックの DB ハンドル", () => {
     appOf(b);
     appOf(c);
     expect(instance.openTenantCount()).toBe(2);
+  });
+});
+
+describe("本人が決めた名前（FR-27）は、起動し直しても残る", () => {
+  it("持ち主・招待で入った人とも、登録時の名前で上書きされない", async () => {
+    const owner = instance.getAuth().register("name_owner", "とうろくめい", "password123");
+    const code = instance.getAuth().createInvite(owner, "veteran").code;
+    const vet = instance.getAuth().registerWithInvite("name_vet", "ベテ登録", "password123", code);
+    instance.runAs(owner, () => instance.setClerkName(instance.clerkIdOf(owner), "トシ"));
+    instance.runAs(vet, () => instance.setClerkName(instance.clerkIdOf(vet), "ハナ"));
+    // 起動し直す（利用者ごとの「行を用意した」印と、開いたクリニックの DB を持たない、新しいプロセスと同じ状態）
+    vi.resetModules();
+    const fresh = await import("../../src/server/instance");
+    const clerkOf = (u: User) => fresh.runAs(u, () => fresh.getApp().clerk(fresh.clerkIdOf(u)));
+    expect(clerkOf(owner)).toMatchObject({ name: "トシ", role: "clerk" });
+    expect(clerkOf(vet)).toMatchObject({ name: "ハナ", role: "veteran" });
   });
 });

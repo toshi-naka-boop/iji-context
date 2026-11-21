@@ -17,9 +17,10 @@ export function cleanName(raw: string): string {
 export function createClerks(ctx: AppContext) {
   const { sqlite, setting, setSetting } = ctx;
 
+  /** 行がなければ作る。すでにあれば役割だけを合わせる（名前・呼び方・キャラは本人が決めたものを残す。起動のたびに呼ばれるため） */
   function upsertClerk(c: { id: string; name: string; callName: string; characterId: string; role: "clerk" | "veteran" }) {
     sqlite
-      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, call_name = excluded.call_name, role = excluded.role")
+      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET role = excluded.role")
       .run(c.id, c.name, c.callName, c.characterId, c.role);
   }
   /** 審査員などが自分の利用者を作る（名前は呼び方に使う）。キャラは選ぶまで仮の a */
