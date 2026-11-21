@@ -255,3 +255,4 @@
 - 2026-11-21（Opus）strict を src/engine・src/uke・src/server に掛けた（tsconfig.strict.json。統合 76eb9ee）。g02.ts の型の食い違いは、未収載の段を持つ群を検算の対象外に回す形で直した（Opus。今の版では結果は変わらない）。全体に掛けると残り 22 件。詳細は handoff-opus.md
 - 2026-11-21（Opus）strict を tests 以外のすべてに広げた（統合 1e110f7）。ORCA 形式で性別が null の患者は形式の誤りとして止める（62595ac）。tests/ は残り 20 件。詳細は handoff-opus.md
 - 2026-11-21（Opus）言い切りの標本確認：12 種類 × 30 行。G04.day に外れ 4 行（急性増悪のただし書）。certain は空のまま。結果は sources/research/certain-sample.md
+- 2026-11-21 ユーザー判断：U-P 4 種類だけ言い切り（a50c598）／U-O 人に見てもらう（メールで調査の一覧）／CSP は今のまま／2 人目の招待はそのまま／U-Y ORCA は対象外の単位として残す（6e99e9e）／U-W 全体の 1 日の上限（c18e110）／U-V 全員のまま／U-Q〜U-S・U-U・U-X は調べ直す。詳細は handoff-opus.md
