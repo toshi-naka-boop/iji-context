@@ -49,7 +49,8 @@ type Check = {
   /** UKE の全部の算定単位（単位の並びのまま）と、その単位を見た点検 */
   rows?: Row[];
 };
-type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
+/** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
+type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
 type Stopped = { ruleId: string; all: boolean; codes: { code: string; known: boolean; name: string | null; no: string | null }[] };
 /** 試算の結果。点検と同じ項目に、選んだ版と、点数の違いが付く */
 type Trial = Check & {
@@ -282,7 +283,7 @@ export default function UkeClaimCheck() {
               <CheckedFacts claimId={c.claimId} tick={tick} onSaved={() => setTick((t) => t + 1)} />
 
               <h3 style={{ margin: 0 }}>レセプトの行（{rows.length} 単位）</h3>
-              <p className="muted" style={{ margin: 0 }}>UKE に書いてある全部の行を、単位の並びのまま出しています。コード・点数・回数・日は UKE のままです（名称と区分番号は{c.names ? "マスターのもの。マスターにないコードは版の表の名称、どちらにもなければコードだけ" : "版の表のもの。マスターが入っていないので、版の表にないコードはコードだけ"}）。「点検」の列は、その単位を見た点検です。</p>
+              <p className="muted" style={{ margin: 0 }}>UKE に書いてある全部の行を、単位の並びのまま出しています。コード・点数・回数・日は UKE のままです（名称と区分番号は{c.names ? "マスターのもの。マスターにないコードは版の表の名称、どちらにもなければコードだけ" : "版の表のもの。マスターが入っていないので、版の表にないコードはコードだけ"}）。「点検」の列は、その単位を見た点検です。「減点」の印の行は、点数を請求の合計から引く行です。</p>
               <table className="emr-table">
                 <thead>
                   <tr><th>区分番号</th><th>名称</th><th>回数</th><th>日</th><th>点数（1 回分）</th><th>点検</th></tr>
@@ -293,10 +294,10 @@ export default function UkeClaimCheck() {
                     return (
                       <tr key={r.unit} id={`uke-unit-${r.unit}`}>
                         <td>{r.items.map((it, n) => <div key={n}>{it.no ?? "—"}</div>)}</td>
-                        <td>{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{c.names?.items[it.code]?.todokede ? "　届出が要ります" : ""}</div>)}</td>
+                        <td>{r.deduction && <span className="badge warn">減点</span>}{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{c.names?.items[it.code]?.todokede ? "　届出が要ります" : ""}</div>)}</td>
                         <td>{r.count}</td>
                         <td>{days(r.dates)}</td>
-                        <td>{num(r.points)}</td>
+                        <td>{r.deduction ? `−${num(r.points)}` : num(r.points)}</td>
                         <td>
                           <span className="muted">{CHECKED_BY[r.checkedBy]}</span>
                           {m.hand !== "" && <div><a href="#yusti-findings" className="badge warn">ユスティ：{m.hand}</a></div>}

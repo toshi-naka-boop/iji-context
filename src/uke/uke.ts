@@ -39,8 +39,10 @@ const INSURED_FUTAN = new Set("123EG4MNOPQVWXY9");
  * UKE には正の数で書かれ、請求の合計からは引く（手引き 令和8年10月版 p35・p63・p69）。このコードだけで 1 つの単位になる
  */
 const DEDUCTION_CODES = new Set(["630010001", "630010002", "630010004", "630010005", "630010006", "630010007"]);
+/** 減じるコードだけでできた単位か（点数を請求の合計から引く単位） */
+export const isDeductionUnit = (u: UkeUnit): boolean => u.items.every((it) => DEDUCTION_CODES.has(it.code));
 /** 単位の請求点数（1 回分 × 回数。減じるコードの単位は負） */
-const unitTotal = (u: UkeUnit): number => (u.items.every((it) => DEDUCTION_CODES.has(it.code)) ? -1 : 1) * u.points * u.count;
+const unitTotal = (u: UkeUnit): number => (isDeductionUnit(u) ? -1 : 1) * u.points * u.count;
 /** UKE に書いてある点数どうしの合計：HO の合計点数と突き合わせる、医保に請求する単位の合計 */
 const insuredTotal = (c: UkeClaim): number => c.units.reduce((s, u) => (INSURED_FUTAN.has(u.futan) ? s + unitTotal(u) : s), 0);
 /**

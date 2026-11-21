@@ -455,6 +455,9 @@ describe("取り込んだレセプトの点検（GET /api/uke/claims/[claimId]/c
       [null, true, 744, ["A001"], 8, 76],
       [null, true, 8350, ["C001_1I", "C103_2", "F400_3"], 2, 1780 + 2400 + 120],
     ]);
+    // 減点の単位（U1-3 の薬剤料逓減 630010002）だけが deduction を持つ。点数は UKE のまま正の数
+    const rowsOf = (c: Check) => (c as Check & { rows: { items: { code: string }[]; points: number; deduction: boolean }[] }).rows;
+    expect(checks.map((c) => rowsOf(c).filter((x) => x.deduction).map((x) => [x.items.map((it) => it.code), x.points]))).toEqual([[], [], [[["630010002"], 67]], []]);
     // 14 日分を 2 回処方した内服薬の単位：回数は 28、日は処方した 2 日だけ（回数ぶんに重ねない）
     expect(checks[0].others[1]).toEqual({ codes: ["620491801", "610463223"], points: 1, count: 28, dates: [`${YM}-15`, `${YM}-29`] });
     // 対象外の単位があるので、合計は出さない（月末の点検でも同じ）。4 件とも月末の点検に並ぶ
