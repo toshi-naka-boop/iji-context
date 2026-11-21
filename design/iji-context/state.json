@@ -13,12 +13,13 @@
   "requiredReads": [
     "design.md（§12）",
     "ledger.md",
-    "sources/research/full-coverage-research.md"
+    "handoff-opus.md"
   ],
-  "nextAction": "段 10b（G01・行の名称・ルールごとの partial）を委譲して実装",
+  "nextAction": "Opus が段 14 を仕上げて束ね、v24 全体の反証へ。Fable が戻ったら handoff-opus.md のチェックリストで見直す",
   "lastUpdated": "2026-11-21",
   "delegation": {
-    "実装": "claude サブエージェント",
-    "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol"
+    "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
+    "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol",
+    "引き継ぎ": "design/iji-context/handoff-opus.md"
   }
 }
