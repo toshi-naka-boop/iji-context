@@ -72,6 +72,19 @@ describe("段 11：実データの masters.db で", () => {
     db.close();
   });
 
+  withData("薬剤料を途中で丸めない（round-32 codex-4）：610408044 の使用量 8.77193（15.0000003 円）は 2 点で合い、1 点なら合わない", () => {
+    const db = openMasters(file)!;
+    const about: GenericAboutMore = { yearMonth: "2026-11", generation: GEN };
+    const status = (points: number) => {
+      const units: GenericUnitDetail[] = [{ points, count: 1, days: [1], items: [{ kind: "IY", code: "610408044", quantity: "8.77193", shikibetsu: "21", line: 1 }] }];
+      const r = recalcClaim({ units } as GenericClaim, db, about);
+      return Array.isArray(r) ? r.map((x) => [x.status, "calc" in x ? x.calc : null]) : r;
+    };
+    expect(status(2)).toEqual([["match", 2]]);
+    expect(status(1)).toEqual([["mismatch", 2]]);
+    db.close();
+  });
+
   withData("当たる側：点数を 1 つ変えた版・数量を変えた版・年齢を範囲の外にした版・入院専用のコードを足した版で、変えた行だけが出る", () => {
     const db = openMasters(file)!;
     // 点数を 1 つ変える（1 件めの再診料）

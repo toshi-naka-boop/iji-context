@@ -90,11 +90,23 @@ function claimOf(...units: { items: RecalcItem[]; points: number; shikibetsu?: s
 
 describe("検算の式（src/generic/points.ts）", () => {
   it("薬剤料：15 円以下は 1 点（投薬・注射）か算定しない（ほかの区分）。15 円を超えたら、（薬価 − 15 円）÷ 10 円を切り上げて 1 点を足す", () => {
-    expect([15, 15.01, 25, 25.01, 189, 3.8].map((y) => drugPoints(y, "one"))).toEqual([1, 2, 2, 3, 19, 1]);
-    expect([15, 15.01, 25, 25.01, 0.92 * 40].map((y) => drugPoints(y, "none"))).toEqual([0, 2, 2, 3, 4]);
-    // 小数の誤差で境目をまたがない（0.1 円 × 150 ＝ 15 円ちょうど）
-    expect(drugPoints(0.1 * 150, "one")).toBe(1);
-    expect(drugPoints(0.1 * 250, "one")).toBe(2);
+    // 金額は 1,000 万分の 1 円の整数（薬価〔小数第 2 位〕× 使用量〔小数第 5 位〕が割り切れる単位）
+    const yen = (y: string) => BigInt(Math.round(Number(y) * 100)) * BigInt(100_000);
+    expect(["15", "15.01", "25", "25.01", "189", "3.8"].map((y) => drugPoints(yen(y), "one"))).toEqual([1, 2, 2, 3, 19, 1]);
+    expect(["15", "15.01", "25", "25.01", "36.8"].map((y) => drugPoints(yen(y), "none"))).toEqual([0, 2, 2, 3, 4]);
+    // 途中で丸めない（round-32 codex-4）：15 円を 0.0000003 円だけ超えれば 2 点、25 円を 1 だけ超えれば 3 点
+    expect(drugPoints(BigInt(150_000_003), "one")).toBe(2);
+    expect(drugPoints(BigInt(250_000_001), "one")).toBe(3);
+  });
+
+  it("薬剤料：薬価 × 使用量を途中で丸めない（round-32 codex-4。1.71 円 × 8.77193 ＝ 15.0000003 円 → 2 点）", () => {
+    const db = masters();
+    put(db, "iyakuhin", SNAP, { code: "610408044", name: "手作りの薬", price_kind: "1", price: 1.71, changed_on: "20260401" });
+    const unit = (quantity: string) => recalcUnit(db, { SI: null, IY: SNAP, TO: null }, [{ kind: "IY", code: "610408044", quantity }], { shikibetsu: "21", shikibetsuSure: true, bundles: [] });
+    expect(unit("8.77193")).toMatchObject({ ok: true, points: 2 });
+    expect(unit("8.77192")).toMatchObject({ ok: true, points: 1 });
+    // 使用量が小数第 5 位より細かいものは、読めない（検算しない）
+    expect(unit("8.771931")).toEqual({ ok: false, reason: "quantity" });
   });
 
   it("きざみ：数量が下限値以下なら基本点数、超えたら きざみ値ごとに切り上げて足す。上限を超えた数量は、上下限エラー処理が 1・3 なら上限値で止める", () => {
