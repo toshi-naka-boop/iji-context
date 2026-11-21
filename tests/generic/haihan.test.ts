@@ -101,6 +101,14 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     expect(fs[0].params.days).toBe("9");
   });
 
+  it("訪問診療料の本体のほかの加算（患家診療時間加算など）も、HP-02 と同じく HP-01 の組で、急変の往診の答えで出なくなる（round-37 C-151）", () => {
+    const db = tensuhyoMasters();
+    const KANKA = "114001470"; // 患家診療時間加算（訪問診療料）
+    putHaihan(db, "20261001", 1, C.oushin, KANKA, "3", "1");
+    const r = g05Of([unit([C.oushin], [6]), unit([C.houmon, KANKA], [6])], { answers: answersOf(), facts: factsOf({ after: { [day(6)]: true } }) }, { db, comments: [REASON] });
+    expect([r.findings, r.result.silenced]).toEqual([[], [{ hx: "HX-01", count: 2 }]]);
+  });
+
   it("表と裏のどちらの向きの行にも、同じ組・同じ例外が掛かる", () => {
     const db = tensuhyoMasters();
     db.prepare("DELETE FROM haihan WHERE code1 = ? AND code2 = ?").run(C.oushin, C.houmon);
