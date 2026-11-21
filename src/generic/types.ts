@@ -53,13 +53,23 @@ export type GenericAbout = { yearMonth: string; generation: string };
  */
 export type GenericNotRun = { check: GenericCheckId; kind: GenericKind; reason: "noMasters" | "notReady" | "noSnapshot" | "notBuilt"; detail: string };
 
-export type GenericResult = { findings: GenericFinding[]; ran: { check: GenericCheckId; kind: GenericKind }[]; notRun: GenericNotRun[] };
+/**
+ * 1 回の点検で、点検 1 つあたりに返す指摘の数の上限（round-32 S-9）。超えた分は、数だけを omitted に返す（画面は「ほか N 件」）。
+ * 正しいレセプトでは、点検 1 つの指摘は数十件まで。親子の組で増える包括（G04）・背反（G05）を細工したレセプトで、メモリと応答の大きさが際限なく増えないようにする
+ */
+export const FINDING_LIMIT = 200;
+
+/** omitted＝上限を超えたので返さなかった指摘の数（点検ごと。超えなかった点検は載せない） */
+export type GenericResult = { findings: GenericFinding[]; ran: { check: GenericCheckId; kind: GenericKind }[]; notRun: GenericNotRun[]; omitted?: { check: GenericCheckId; kind: GenericKind; count: number }[] };
+
+/** 点検の指摘。more は、上限（FINDING_LIMIT）に達したあと、指摘を作らずに数えただけの数（組を数え上げる G04・G05 が使う） */
+export type GenericFound = GenericFinding[] & { more?: number };
 
 /** 点検 1 つ。run は、動かせなければ skip（理由）を返す。certainty は点検が決めた値で、言い切りに上げるかは evaluateGeneric が一覧で決める */
 export type GenericCheck = {
   id: GenericCheckId;
   kind: GenericKind;
-  run(claim: GenericClaim, masters: MastersDb, about: GenericAbout): GenericFinding[] | { skip: string };
+  run(claim: GenericClaim, masters: MastersDb, about: GenericAbout): GenericFound | { skip: string };
 };
 
 // ───────────────────────────────────────────────────────────────────────────

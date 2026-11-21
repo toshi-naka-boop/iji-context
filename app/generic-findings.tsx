@@ -5,6 +5,7 @@
 // 適応・併用（G09）は、ほかの点検よりさらに控えめに出す：別の見出しの下にまとめ、既定で折りたたむ。見出しの下に、公開元の但し書きの趣旨と、見られないもの（院外処方の薬、表にない薬・診療行為の数）
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
+import { FINDING_LIMIT } from "../src/generic/types";
 import { GENERIC_SCOPE_NOTE } from "../src/messages";
 
 /** その理由で動かさなかった点検を「G01（コード）」の形で並べる */
@@ -40,6 +41,11 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
               {more.map((m, n) => <div key={n}>{rowText(m.codes[0])}（出どころ：{m.source.ref}）</div>)}
             </div>
           )}
+        </div>
+      ))}
+      {(generic.omitted ?? []).map((o) => (
+        <div key={`omitted-${o.check}`} className="muted">
+          {o.check}（{o.kind}）：ほか {o.count} 件（1 回の点検で出す指摘は、点検ごとに {FINDING_LIMIT} 件までです）
         </div>
       ))}
       {g09Open && (

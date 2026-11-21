@@ -14,7 +14,8 @@ import { g06 } from "../../src/generic/g06";
 import { outsideOf } from "../../src/generic/lookup";
 import { claimOfLines, mappedLinesOf, overlap } from "../../src/generic/overlap";
 import type { TimedClaim } from "../../src/generic/tensuhyo";
-import type { GenericFinding } from "../../src/generic/types";
+import { FINDING_LIMIT, type GenericFinding } from "../../src/generic/types";
+import { genericView } from "../../src/generic/view";
 import { openMasters, type MastersDb } from "../../src/masters/db";
 import { GENERIC_TEXT_CERTAIN } from "../../src/messages";
 import { DOCTOR_DRILLS } from "../../src/practice/doctor-drills";
@@ -436,8 +437,30 @@ describe("段 12：実データの masters.db で", () => {
     db.close();
   });
 
+  withData("(h) 指摘の数の上限（round-32 S-9）：グループ A308031（1 日につき）の親と子を同じ日に 4,990 単位並べた細工でも、2 秒以内・点検ごと 200 件まで・JSON は小さい", () => {
+    const db = openMasters(file)!;
+    const live = `change <> '1' AND created_on <= '${END}' AND abolished_on >= '${START}'`;
+    const snapshot = (db.prepare("SELECT snapshot FROM sources WHERE dataset = 'tensuhyo' AND generation = ? ORDER BY snapshot").get(rev.generation) as { snapshot: string }).snapshot;
+    const parents = (db.prepare(`SELECT code FROM hojo WHERE snapshot = ? AND group1 = 'A308031' AND unit1 IN ('1','2','3','6') AND ${live}`).all(snapshot) as { code: string }[]).map((r) => r.code);
+    const kids = (db.prepare(`SELECT DISTINCT code FROM houkatsu WHERE snapshot = ? AND group_no = 'A308031' AND ${live}`).all(snapshot) as { code: string }[]).map((r) => r.code).filter((c) => !parents.includes(c));
+    const units = [...parents, ...kids].slice(0, 4990).map((code) => unit([code], [1]));
+    expect(parents.length).toBeGreaterThan(100);
+    const heap = process.memoryUsage().heapUsed;
+    const t0 = performance.now();
+    const r = evaluateGeneric({ units }, db, { yearMonth: YM, generation: rev.generation });
+    const ms = performance.now() - t0;
+    const json = JSON.stringify(genericView(r, null));
+    note(`上限　細工した ${units.length} 単位：${ms.toFixed(0)} ミリ秒、返した指摘 ${r.findings.length} 件、数だけ ${JSON.stringify(r.omitted)}、JSON ${json.length} 文字、ヒープの増加 ${((process.memoryUsage().heapUsed - heap) / 1e6).toFixed(0)}MB`);
+    expect(r.findings.filter((f) => f.check === "G04").length).toBe(FINDING_LIMIT);
+    expect(r.omitted?.find((o) => o.check === "G04")?.count).toBeGreaterThan(1_000_000);
+    expect(ms).toBeLessThan(2000);
+    expect((process.memoryUsage().heapUsed - heap) / 1e6).toBeLessThan(300);
+    expect(json.length).toBeLessThan(1_000_000);
+    db.close();
+  });
+
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     if (!has) process.stderr.write(`段 12 の実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 10);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 11);
   });
 });

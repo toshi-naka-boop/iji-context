@@ -14,7 +14,7 @@ import { g06 } from "./g06";
 import { g07 } from "./g07";
 import { g08 } from "./g08";
 import { g09 } from "./g09";
-import { GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
+import { FINDING_LIMIT, GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
 
 const CHECKS: GenericCheck[] = [g01];
 CHECKS.push(g02);
@@ -55,7 +55,10 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
         continue;
       }
       result.ran.push({ check: id, kind });
-      result.findings.push(...found.map((f) => ({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? ("確定" as const) : ("条件つき" as const) })));
+      // 点検ごとに FINDING_LIMIT 件まで。超えた分は数だけ返す（配列の展開で足さない：展開は数十万件で RangeError になる。round-32 S-9）
+      const more = Math.max(0, found.length - FINDING_LIMIT) + (found.more ?? 0);
+      if (more > 0) (result.omitted ??= []).push({ check: id, kind, count: more });
+      for (const f of found.slice(0, FINDING_LIMIT)) result.findings.push({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? "確定" : "条件つき" });
     }
   }
   // 同じ診療行為に、傷病名の要件（G08）と診療行為の適応（G09）の両方が出るときは、G08 だけを出す（同じ「対象の傷病名が見当たらない」を 2 回言わない）
