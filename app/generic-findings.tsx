@@ -44,7 +44,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
       ))}
       {g09Open && (
         <details className="muted">
-          <summary>審査支払機関のコンピュータチェックの対象（適応・併用）：{g09.length} 件</summary>
+          <summary>審査支払機関のコンピュータチェックの対象（適応・禁忌・量と日数）：{g09.length} 件</summary>
           <ul style={{ margin: "4px 0", paddingLeft: 20 }}>
             {g09Notes.map((t, i) => <li key={i}>{t}</li>)}
           </ul>
