@@ -10,7 +10,9 @@ import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../demo/period";
 import type { Chart } from "../../uke/crosscheck";
-import { commentOf } from "../../uke/uke";
+import { commentCodesFor, commentFormatOk, type RequiredComment } from "../../engine/comments";
+import type { Revision } from "../../engine/revisions/types";
+import { commentOf, normalizeCommentText } from "../../uke/uke";
 import { badRequest, conflict, forbidden, notFound } from "../errors";
 import type { Role } from "../roles";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
@@ -60,13 +62,17 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /**
    * 訪問カルテを消す（design.md §11-11「消す」）。消せるのは、書いた本人と事務長だけ（ロールは権限表が先に絞る。ここでは本人かどうかを照合する）。
-   * 消えるのは、そのカルテの行（本文と、そこから確かめた事実）。訪問の出来事と算定行は保存しておらず、残りのカルテから毎回作り直すので、消したカルテの分は次の計算から外れる。
+   * 消えるのは、そのカルテの行（本文と、そこから確かめた事実）と、そのカルテの算定プレビューで入れた摘要欄の記載。訪問の出来事と算定行は保存しておらず、残りのカルテから毎回作り直すので、消したカルテの分は次の計算から外れる。
    * 返すのは消したカルテの id だけ（本文・請求の中身は返さない）
    */
   function deleteNote(id: number, clerkId: string, role: Role): { deleted: number } {
     const r = noteRow(id);
     if (r.clerk_id !== clerkId && role !== "manager") throw forbidden("このカルテを消せるのは、書いた本人と事務長だけです");
-    sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
+    // そのカルテの算定プレビューで入れた摘要欄の記載も一緒に消す
+    sqlite.transaction(() => {
+      sqlite.prepare("DELETE FROM chart_comments WHERE note_id = ?").run(id);
+      sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
+    })();
     return { deleted: id };
   }
   /**
@@ -93,11 +99,52 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
+  type SavedComment = { slot: string; code: string; text: string };
+  const savedComments = (noteId: number) => sqlite.prepare("SELECT slot, code, text FROM chart_comments WHERE note_id = ?").all(noteId) as SavedComment[];
+  /**
+   * 導出の摘要欄の記載のうち、人が入れるもの（needsInput）に場所（slot）と当たるコードを添え、入れた値があれば ready にする。
+   * slot は「記載の表の行|導出が決めたコード（選ぶなら空）|同じ行とコードの何件目」。値を推し量って埋めることはしない（入れた値がなければ needsInput のまま）
+   */
+  function withInputs(comments: RequiredComment[], saved: SavedComment[], rev: Revision, ctx: ClaimContext) {
+    const seen = new Map<string, number>();
+    return comments.map((c) => {
+      if (c.status !== "needsInput") return c;
+      const base = `${c.rule}|${c.code ?? ""}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      const slot = `${base}|${n}`;
+      const rule = rev.comments.find((x) => x.id === c.rule);
+      const codes = c.code !== null ? [c.code] : rule ? commentCodesFor(rule, ctx, rev) : [];
+      const input = { slot, codes };
+      const s = saved.find((x) => x.slot === slot && codes.includes(x.code));
+      return s ? { ...c, code: s.code, text: s.text, status: "ready" as const, input } : { ...c, input };
+    });
+  }
+  /**
+   * 算定プレビューの「入力が要る」記載に、医療事務が値を入れる（FR-176。design.md §11-13）。確定したカルテ（請求とその日）ごとに残し、同じ場所は置き換える。
+   * コードは記載の表のその行のコード（導出がコードを決めていれば、そのコード）だけ。値は半角に寄せてから、コードの先頭 3 桁の形式（commentFormatOk）で確かめ、合わなければ残さない。
+   * 返すのは場所だけ（値は返さない。ログにも出さない）
+   */
+  function saveNoteComment(id: number, clerkId: string, input: { slot: string; code: string; text: string }): { saved: string } {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.facts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const [ruleId, slotCode] = input.slot.split("|");
+    const rule = resolveRevision(caseOf(r.claim_id).yearMonth).comments.find((x) => x.id === ruleId);
+    if (!rule || (slotCode !== "" && !rule.codes.includes(slotCode))) throw badRequest("摘要欄の記載の場所が正しくありません", ["slot"]);
+    if (!rule.codes.includes(input.code) || (slotCode !== "" && input.code !== slotCode)) throw badRequest("この記載に使えないコードです", ["code"]);
+    const text = normalizeCommentText(input.text);
+    if (!commentFormatOk(input.code, text)) throw badRequest("値の形が、コードの形式に合いません", ["text"]);
+    sqlite
+      .prepare("INSERT INTO chart_comments (note_id, claim_id, date, slot, code, text, clerk_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(note_id, slot) DO UPDATE SET code = excluded.code, text = excluded.text, clerk_id = excluded.clerk_id, created_at = excluded.created_at")
+      .run(id, r.claim_id, r.date, input.slot, input.code, text, clerkId, now());
+    return { saved: input.slot };
+  }
   /**
    * 確定したカルテの算定プレビュー（FR-94〜102）：その日までの出来事に、書いた人の確定済みのカルテを重ね、算定行をコードで導出して検証に通す。
    * 月の途中は見込み（月末まで決まらないルールは指摘にしない）。読むだけで、適用記録・件数には数えない。choices は要選択への答え（保存しない）。
    * 摘要欄の記載（R17）は、導出が値まで決めた記載（ready）だけを付けて点検する。UKE のコメントは使わない（行を作り直しているので、行と合わない）。
-   * 人が入れる記載（needsInput）は、付いていないので記載もれとして出る（design.md §11-13）。
+   * 人が入れる記載（needsInput）は、医療事務がこのカルテのプレビューで入れた値（saveNoteComment）があれば ready として付け、なければ付けないので記載もれとして出る（design.md §11-13）。
    * revId を渡すと試算（design.md §11-12）：同じ記録を、名指しした版の点数表とルールで導出・判定する。日付は動かさない。
    * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない。
    * revisions は、試算で選べる版（画面の選択肢。own は、この請求の診療年月の版）
@@ -114,7 +161,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const { events, facts } = eventsFromNotes(upTo.events, upTo.facts, confirmedNotes(r.claim_id, r.clerk_id).filter((n) => n.date <= r.date));
     const ownManual = manualLinesOf(upTo.lines, own);
     const manual = revId === undefined ? ownManual : manualIn(ownManual, rev);
-    const derived = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    // 人が入れる記載（needsInput）に、このカルテで医療事務が入れた値があれば、ready の記載として付ける（FR-176）
+    const derived = { ...plain, comments: withInputs(plain.comments, savedComments(id), rev, { ...upTo, events, facts, lines: plain.lines, comments: [], commentsKnown: true }) };
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));
     const ctx: ClaimContext = { ...upTo, events, facts, lines: derived.lines, comments, commentsKnown: true };
     const revisions = revisionChoices(SELECTABLE_REVISIONS, base.yearMonth);
@@ -178,7 +227,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

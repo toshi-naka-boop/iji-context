@@ -2,7 +2,8 @@
 // 「情報不足」の項目に、その場で答えを残す入力（請求ごとに確かめた事実。POST /api/claims/[claimId]/facts）と、残した答えの一覧。
 // 入るのは、人が確かめて残した値だけ。医師あての項目は医師の役割だけが残せる（医療事務には「医師に確認が要ります」と出す）。
 // 患者ごとに残す項目（PATIENT_FACT_KEYS。要介護度・居住の場所など。月をまたいで残る）は、患者情報の欄へ誘導する。patientInline の画面（取り込んだレセプトの点検）では、同じ入力をその場にも出す（POST /api/patients/[claimId]/facts）。
-// 入力では消えない情報不足（カルテの記録がない・対象外の行・施設の設定）には何も出さない
+// 施設の設定の情報不足は、事務長なら設定の画面の該当の項目へ、ほかの役割なら「事務長が設定の画面で残します」と案内する（FR-148）。
+// 入力では消えない情報不足（カルテの記録がない・対象外の行）には何も出さない
 import { useEffect, useState } from "react";
 import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey } from "../src/claim/facts";
 import type { Finding } from "../src/engine/types";
@@ -111,6 +112,13 @@ export function FactInput(props: { claimId: string; finding: Finding; patientHre
         {props.patientInline && (role === "clerk" || role === "veteran") && <div style={{ marginTop: 6 }}><PatientFactForm claimId={props.claimId} factKey={m.field as PatientFactKey} onSaved={props.onSaved} /></div>}
       </div>
     );
+  }
+  // 施設の設定（field が facility. で始まる。design.md §6-1・spec FR-148）：残すのは事務長と責任者（ベテラン）。設定の画面の、その項目へ案内する
+  if (m.field.startsWith("facility.")) {
+    if (role === null) return null;
+    return role === "manager" || role === "veteran"
+      ? <div className="muted">この項目は施設の設定です。<a href={`/settings#facility-${m.field.slice("facility.".length)}`}>設定の画面で残す</a></div>
+      : <div className="muted">この項目は施設の設定です。事務長か責任者（ベテラン）が設定の画面で残します。</div>;
   }
   if (!isClaimFactKey(m.field) || role === null) return null;
   if (!canSave(role, m.target)) return m.target === "doctor" ? <div className="muted">医師に確認が要ります。医師確認の画面の「確かめてほしい項目」に出ています。医師の役割の利用者が、確かめた答えを残します。</div> : null;

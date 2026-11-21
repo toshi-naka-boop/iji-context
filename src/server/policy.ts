@@ -43,6 +43,9 @@ export const POLICY = {
   "GET /api/audit": row(["manager"], "none", false),
   // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
   "GET /api/masters": row(["manager"], "none", false),
+  // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
+  "GET /api/facility": row(["manager", "veteran"], "none", false),
+  "POST /api/facility": row(["manager", "veteran"], "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),
@@ -83,6 +86,8 @@ export const POLICY = {
   "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
   "GET /api/chart/[id]/claim": row(WORK, "none", true),
+  // 算定プレビューの「入力が要る」摘要欄の記載に値を入れる（FR-176）。プレビューと同じ役割。値は自由記載で患者の情報になり得る
+  "POST /api/chart/[id]/comments": row(WORK, "none", true),
   // 改定の比較（design.md §11-2）：同じ記録を 2 つの版で導出して並べる。読むだけ。全ロール
   "GET /api/revision/compare": row(ALL, "none", true),
   "POST /api/chart/image": row(WORK, "ai", true),

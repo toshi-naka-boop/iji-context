@@ -9,6 +9,7 @@ import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
 import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
+import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
@@ -47,6 +48,7 @@ export function openApp(paths: AppPaths) {
   const erase = createErase(ctx, uke, patientFactsOf);
   const revision = createRevision(uke, casesOf, notes);
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
+  const facility = createFacility(ctx);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
@@ -57,7 +59,7 @@ export function openApp(paths: AppPaths) {
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
   const ukeCheck = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, noteOf, confirmNote, deleteNote, listNotes, patients, visits } = notes;
+  const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
     const claim = notes.claimOfNote(noteId, choices, revId);
@@ -91,6 +93,7 @@ export function openApp(paths: AppPaths) {
     deleteNote,
     listNotes,
     chartClaim,
+    saveNoteComment,
     patients,
     outlookOf,
     patientFacts,
@@ -118,6 +121,7 @@ export function openApp(paths: AppPaths) {
     questionsOf,
     setting,
     setSetting,
+    ...facility,
     doctorQueries,
     answerDoctor,
     approveDoctor,

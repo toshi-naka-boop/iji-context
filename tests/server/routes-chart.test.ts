@@ -347,6 +347,78 @@ describe("訪問カルテ", () => {
     ]);
   });
 
+  it("摘要欄の「入力が要る」記載（FR-176）：入れると R17 の記載もれが消える。形の合わない値・表にないコードは 400 で残らない。値は監査ログに入らず、カルテを消すと消える", async () => {
+    const chart = (await import("../../app/api/chart/route")).POST;
+    const { POST: confirm, DELETE: remove } = await import("../../app/api/chart/[id]/route");
+    const claim = (await import("../../app/api/chart/[id]/claim/route")).GET;
+    const fill = (await import("../../app/api/chart/[id]/comments/route")).POST;
+    // 別のクリニックで、時計を K1 の訪問の日（在宅酸素療法指導管理料の行がある日）にする
+    const a = instance.getAuth();
+    const owner = a.register("chart_comment_owner", "かるて", "password123");
+    const doctor = a.registerWithInvite("chart_comment_doc", "いし", "password123", a.createInvite(owner, "doctor").code);
+    const [mine, doc] = [owner, doctor].map((u) => `resemen_session=${a.createSession(u.id).token}`);
+    instance.runAs(owner, () => instance.getApp().setSetting("now", `${day(14)}T09:00:00+09:00`));
+    llm.runOnce.mockResolvedValue({ structured: { facts: [] }, sessionId: "", stats: {} });
+    const w = (await (await chart(post("/api/chart", { claimId: claimId("K1"), kind: "訪問診療", note: NOTE }, mine))).json()) as { id: number };
+    const at = params({ id: String(w.id) });
+    const send = (body: unknown, c = mine) => fill(post(`/api/chart/${w.id}/comments`, body, c), at);
+    const SLOT = "T216-spo2||0";
+    const ok = { slot: SLOT, code: "842100044", text: "９５" };
+    // 確かめる前のカルテには入れられない
+    expect((await send(ok)).status).toBe(409);
+    expect((await confirm(post(`/api/chart/${w.id}`, { facts: [] }, mine), at)).status).toBe(200);
+    type Entry = { code: string | null; text: string | null; status: string; input?: { slot: string; codes: string[] } };
+    const preview = async () => {
+      const c = (await (await claim(get(`/api/chart/${w.id}/claim`, mine), at)).json()) as { lines: { kubun: string; comments: { entries: Entry[] }[] }[]; findings: { ruleId: string; text: string }[] };
+      return { entries: c.lines.find((l) => l.kubun === "C103_2")!.comments.flatMap((x) => x.entries), r17: c.findings.filter((f) => f.ruleId === "R17").length };
+    };
+    // 入れる前：酸素分圧か飽和度の記載は人が入れる（コードも選ぶ）。付いていないので記載もれが出る
+    expect(await preview()).toEqual({ entries: [{ code: null, text: null, status: "needsInput", input: { slot: SLOT, codes: ["842100072", "842100044"] } }], r17: 1 });
+    const db = () => new Database(instance.tenantPaths(owner.tenantId).dbFile, { readonly: true });
+    const rows = () => {
+      const d = db();
+      try {
+        return d.prepare("SELECT note_id, slot, code, text FROM chart_comments").all();
+      } finally {
+        d.close();
+      }
+    };
+
+    // 形の合わない値（数値のコードに文字）・その記載にないコード・知らない記載・余計な欄・医師の役割は断る。何も残らない
+    for (const [body, status] of [
+      [{ ...ok, text: "九十五" }, 400],
+      [{ ...ok, text: "" }, 400],
+      [{ ...ok, code: "850100106" }, 400],
+      [{ ...ok, slot: "T999-x||0" }, 400],
+      [{ ...ok, slot: "T216-spo2|842100072|0" }, 400],
+      [{ ...ok, slot: "../x" }, 400],
+      [{ ...ok, clerkId: "someone" }, 400],
+    ] as const) expect([JSON.stringify(body), (await send(body)).status]).toEqual([JSON.stringify(body), status]);
+    expect((await send(ok, doc)).status).toBe(403);
+    expect(rows()).toEqual([]);
+    expect((await preview()).r17).toBe(1);
+
+    // 入れる：全角の数字は半角に寄せて残す。次のプレビューから ready の記載として付き、記載もれが消える
+    const res = await send(ok);
+    expect([res.status, await res.json()]).toEqual([200, { saved: SLOT }]);
+    expect(await preview()).toEqual({ entries: [{ code: "842100044", text: "95", status: "ready", input: { slot: SLOT, codes: ["842100072", "842100044"] } }], r17: 0 });
+    // 入れ直すと置き換わる（行は増えない）
+    expect((await send({ ...ok, code: "842100072", text: "70" })).status).toBe(200);
+    expect(rows()).toEqual([{ note_id: w.id, slot: SLOT, code: "842100072", text: "70" }]);
+    expect((await preview()).entries[0]).toMatchObject({ code: "842100072", text: "70", status: "ready" });
+    // 監査ログ：カルテの id と結果だけ。値は入らない
+    const log = instance.runAs(owner, () => instance.getApp().audit.list(500)).reverse().filter((r) => r.action === "POST /api/chart/[id]/comments");
+    expect(log.every((r) => r.target === String(w.id))).toBe(true);
+    expect(log.filter((r) => r.result === "ok")).toHaveLength(2);
+    expect(log.filter((r) => r.result === "denied")).toMatchObject([{ role: "doctor" }]);
+    expect(log.map((r) => Object.keys(r).sort())).toEqual(log.map(() => ["action", "at", "demoNow", "id", "result", "role", "status", "target", "userId"]));
+    expect(JSON.stringify(log)).not.toMatch(/九十五|９５/);
+
+    // カルテを消すと、入れた記載も消える
+    expect((await remove(new Request(`http://localhost/api/chart/${w.id}`, { method: "DELETE", headers: { cookie: mine } }), at)).status).toBe(200);
+    expect(rows()).toEqual([]);
+  });
+
   it("SOAP に整える：空・4000 字超は 400。整えた欄を返す", async () => {
     const soap = (await import("../../app/api/chart/soap/route")).POST;
     const empty = await soap(post("/api/chart/soap", { text: "  " }));

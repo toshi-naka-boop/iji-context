@@ -115,7 +115,11 @@ describe("取り込んだファイルを消す", () => {
     });
     // 訪問カルテは、取り込んだ請求には画面から書けない。表に行があっても消えることを確かめるため、行を直接入れる
     const raw = new Database(dbFile);
-    for (const id of ["U1-1", "U2-1"]) raw.prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, '訪問診療', '{}', NULL, ?, ?)").run(id, day(5), me, new Date().toISOString());
+    for (const id of ["U1-1", "U2-1"]) {
+      const note = raw.prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, '訪問診療', '{}', NULL, ?, ?)").run(id, day(5), me, new Date().toISOString()).lastInsertRowid;
+      // 算定プレビューで入れた摘要欄の記載（FR-176）も、同じく直接入れる
+      raw.prepare("INSERT INTO chart_comments (note_id, claim_id, date, slot, code, text, clerk_id, created_at) VALUES (?, ?, ?, 'T162-reason|830100086|0', '830100086', '急変', ?, ?)").run(note, id, day(5), me, new Date().toISOString());
+    }
     raw.close();
     expect(made["patient:U1-1"]).toBe(made["patient:U2-1"]);
     expect(made["patient:U1-2"]).not.toBe(made["patient:U1-1"]);
@@ -123,7 +127,7 @@ describe("取り込んだファイルを消す", () => {
 
     // 走査が効いていること：消す前は、請求 id・患者 id がいくつもの表にある
     const before = dump(dbFile);
-    expect(tablesWith(before, "U1-1")).toEqual(expect.arrayContaining(["chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
+    expect(tablesWith(before, "U1-1")).toEqual(expect.arrayContaining(["chart_comments", "chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(before, made["question:U1-1"])).toEqual(expect.arrayContaining(["applications", "claim_results", "questions", "submissions"]));
     expect(tablesWith(before, goes)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));
     const queryFiles = () => readdirSync(instance.tenantPaths(owner.tenantId).queryLogDir);
@@ -157,7 +161,7 @@ describe("取り込んだファイルを消す", () => {
     const after = dump(dbFile);
     for (const id of ["U1-1", "U1-2", made["question:U1-1"], made["question:U1-2"], goes, sha(bytesA)]) expect([id, tablesWith(after, id)]).toEqual([id, []]);
     // 別のファイルの請求と、そこに残る患者（消したファイルにもいた人）は残る
-    expect(tablesWith(after, "U2-1")).toEqual(expect.arrayContaining(["chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
+    expect(tablesWith(after, "U2-1")).toEqual(expect.arrayContaining(["chart_comments", "chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(after, stays)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));
     // ファイル：原本、医師確認の記録、メンターの作業場所とやり取り
     expect(readdirSync(ukeDir)).toEqual([`${sha(bytesB)}.UKE`]);

@@ -91,6 +91,16 @@ CREATE TABLE doctor_fact_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id T
 CREATE INDEX doctor_fact_notes_claim ON doctor_fact_notes (claim_id);
 `,
   },
+  {
+    // 算定プレビューで医療事務が入れた摘要欄の記載（design.md §11-13。導出が needsInput とした記載）。確定したカルテ（請求とその日）ごと。
+    // slot は導出の記載の場所（記載の表の行・導出が決めたコード・同じ行とコードの何件目）で、同じ slot は入れ直すと置き換える。
+    // text は自由記載で氏名が入り得るので、ログ・監査ログ・AI に送る文脈には出さない
+    version: 9,
+    sql: `
+CREATE TABLE chart_comments (note_id INTEGER NOT NULL, claim_id TEXT NOT NULL, date TEXT NOT NULL, slot TEXT NOT NULL, code TEXT NOT NULL, text TEXT NOT NULL, clerk_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (note_id, slot));
+CREATE INDEX chart_comments_claim ON chart_comments (claim_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */
