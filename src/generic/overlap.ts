@@ -93,5 +93,9 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
     if (judged) out.judged++;
     else out.findings.push(g);
   }
+  // 同じ診療行為に、傷病名の要件（G08）と診療行為の適応（G09）の両方が残ったときは、G08 だけを出す（同じ「対象の傷病名が見当たらない」を 2 回言わない）。
+  // 重なりの規則の後で消す：G08 が手書きのルール（R06）の判定済み・重複で消えたときは、G09 を残す（round-32 O-16）
+  const g08Codes = new Set(out.findings.filter((f) => f.check === "G08").flatMap((f) => f.codes));
+  out.findings = out.findings.filter((f) => !(f.check === "G09" && f.messageKey.startsWith("G09.si_") && f.codes.some((c) => g08Codes.has(c))));
   return out;
 }

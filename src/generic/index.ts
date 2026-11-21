@@ -61,9 +61,7 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
       for (const f of found.slice(0, FINDING_LIMIT)) result.findings.push({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? "確定" : "条件つき" });
     }
   }
-  // 同じ診療行為に、傷病名の要件（G08）と診療行為の適応（G09）の両方が出るときは、G08 だけを出す（同じ「対象の傷病名が見当たらない」を 2 回言わない）
-  const g08Codes = new Set(result.findings.filter((f) => f.check === "G08").flatMap((f) => f.codes));
-  result.findings = result.findings.filter((f) => !(f.check === "G09" && f.messageKey.startsWith("G09.si_") && f.codes.some((c) => g08Codes.has(c))));
+  // G08 と G09 の重複は、ここでは消さない：手書きのルールとの重なり（src/generic/overlap.ts）で G08 が消えることがあるので、その後で消す（round-32 O-16）
   return result;
 }
 
