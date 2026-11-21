@@ -9,7 +9,7 @@ import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { isRole, type Role } from "./roles";
-import { isTenantKind, type TenantKind } from "./tenant-kind";
+import { isTenantKind, type TenantKind, type TenantStatus } from "./tenant-kind";
 
 export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
@@ -98,13 +98,30 @@ export function openAuth(dbFile: string) {
    * kind はクリニックの種類（作るときに決め、変えない）。API は利用者が選んだ値を必ず渡す。省くのはテスト・スクリプトだけ（demo）
    */
   const register = (login: string, name: string, password: string, kind: TenantKind = "demo"): User => insertUser(login, name, password, null, kind);
-  /** クリニックの種類。行のないクリニック（種類を持つ前に作られ、マイグレーションで拾えなかったもの）は demo */
-  const tenantKind = (tenantId: string): TenantKind => {
+  /** クリニックの種類。行のないクリニック・読めない値は未定（安全側。demo とはみなさない） */
+  const tenantKind = (tenantId: string): TenantStatus => {
     const k = (db.prepare("SELECT kind FROM tenants WHERE id = ?").get(tenantId) as { kind: string } | undefined)?.kind;
-    return k === "real" ? "real" : "demo";
+    return isTenantKind(k) ? k : "undecided";
   };
-  /** 種類ごとのクリニックの id（scripts/reset-demo.ts が、demo のクリニックだけを消すのに使う） */
-  const tenantsOfKind = (kind: TenantKind): string[] => (db.prepare("SELECT id FROM tenants WHERE kind = ? ORDER BY id").all(kind) as { id: string }[]).map((r) => r.id);
+  /** 未定のクリニックの種類を選べるか：事務長と、1 人で使っているクリニックの持ち主 */
+  const canChooseKind = (user: User): boolean => tenantKind(user.tenantId) === "undecided" && (user.role === "manager" || isSolo(user));
+  /**
+   * 未定のクリニックの種類を、一度だけ選ぶ（2026-11-22 利用者の判断）。選んだあとは変えられない（DB のトリガーでも止める）。
+   * 行がない未定のクリニックには、行を作る
+   */
+  function chooseKind(user: User, kind: TenantKind, now = new Date()): TenantKind {
+    if (!isTenantKind(kind)) throw badRequest("「デモで試す」か「実在のデータで使う」かを選んでください", ["kind"]);
+    return db
+      .transaction(() => {
+        if (tenantKind(user.tenantId) !== "undecided") throw conflict("このクリニックの使い方は、すでに決まっています（変えられません）");
+        if (!(user.role === "manager" || isSolo(user))) throw forbidden("クリニックの使い方を選べるのは事務長だけです");
+        const at = now.toISOString();
+        const r = db.prepare("UPDATE tenants SET kind = ?, decided_at = ? WHERE id = ? AND kind = 'undecided'").run(kind, at, user.tenantId);
+        if (r.changes === 0) db.prepare("INSERT INTO tenants (id, kind, created_at, decided_at) VALUES (?, ?, ?, ?)").run(user.tenantId, kind, at, at);
+        return kind;
+      })
+      .immediate();
+  }
 
   /** クリニックの利用者の人数 */
   const tenantSize = (tenantId: string) => (db.prepare("SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?").get(tenantId) as { n: number }).n;
@@ -241,6 +258,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantsOfKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

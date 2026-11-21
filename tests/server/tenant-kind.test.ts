@@ -88,6 +88,73 @@ describe("クリニックの種類", () => {
   });
 });
 
+describe("使い方が未定のクリニック（種類を持つ前に作られたもの）", () => {
+  /** 種類を持つ前のクリニックにする（行がないクリニックは未定。マイグレーションのあとの「未定」の行と同じ扱い） */
+  const forget = (tenantId: string) => {
+    const db = new Database(path.join(tmp, "auth.db"));
+    db.prepare("DELETE FROM tenants WHERE id = ?").run(tenantId);
+    db.close();
+  };
+  const json = async (r: Response) => [r.status, await r.json()] as const;
+
+  it("選ぶまでは、作り物を入れず、今日は実際の日付で、点検などの操作は断る。事務長以外には「お待ちください」", async () => {
+    const owner = auth().register("und_owner", "もちぬし", "password123", "demo");
+    const invite = auth().createInvite(owner, "clerk");
+    const member = auth().registerWithInvite("und_member", "なかま", "password123", invite.code);
+    forget(owner.tenantId);
+    expect(auth().tenantKind(owner.tenantId)).toBe("undecided");
+    setNow("2026-12-01T10:00:00+09:00");
+    // 未定で初めて開いても、作り物の種は入らない。今日は実際の日付
+    const a = appOf(owner);
+    expect(a.kind).toBe("undecided");
+    expect([...new Set(listKnowledge(a.store).map((m) => m.layer))]).toEqual(["制度"]);
+    expect(a.now()).toBe("2026-12-01T10:00:00+09:00");
+    expect(a.cases()).toEqual([]);
+    expect(() => a.advanceClock(at(20))).toThrow(/日付を進められません/);
+
+    const memberCookie = cookieOf(member);
+    const [status, body] = await json(await (await import("../../app/api/cases/route")).GET(get("/api/cases", memberCookie)));
+    expect([status, body]).toEqual([409, { error: "事務長がこのクリニックの使い方を選ぶまでお待ちください", tenant: "undecided" }]);
+    expect((await json(await (await import("../../app/api/auth/me/route")).GET(get("/api/auth/me", memberCookie))))[1]).toMatchObject({ tenantKind: "undecided", canChooseKind: false });
+    expect((await json(await (await import("../../app/api/clock/route")).GET(get("/api/clock", memberCookie))))).toEqual([200, { now: "2026-12-01T10:00:00+09:00", kind: "undecided", canAdvance: false }]);
+    // 事務以外の人は選べない
+    expect((await (await import("../../app/api/tenant/kind/route")).POST(post("/api/tenant/kind", memberCookie, { kind: "real" }))).status).toBe(403);
+  });
+
+  it("事務長が一度だけ選べる。選んだあとは変えられず、選んだ種類で開き直る", async () => {
+    const owner = auth().register("und_choose", "もちぬし", "password123", "real");
+    const invite = auth().createInvite(owner, "manager");
+    const manager = auth().registerWithInvite("und_manager", "じむちょう", "password123", invite.code);
+    forget(owner.tenantId);
+    appOf(owner); // 未定のまま開いておく
+    const cookie = cookieOf(manager);
+    expect((await json(await (await import("../../app/api/auth/me/route")).GET(get("/api/auth/me", cookie))))[1]).toMatchObject({ tenantKind: "undecided", canChooseKind: true });
+    const choose = (await import("../../app/api/tenant/kind/route")).POST;
+    expect((await choose(post("/api/tenant/kind", cookie, {}))).status).toBe(400);
+    expect(await json(await choose(post("/api/tenant/kind", cookie, { kind: "demo" })))).toEqual([200, { kind: "demo" }]);
+    expect(auth().tenantKind(owner.tenantId)).toBe("demo");
+    // 開き直して demo になり、作り物の種が入る
+    expect(appOf(owner).kind).toBe("demo");
+    expect([...new Set(listKnowledge(appOf(owner).store).map((m) => m.layer))].sort()).toEqual(["制度", "地域", "院内"].sort());
+    expect((await (await import("../../app/api/cases/route")).GET(get("/api/cases", cookieOf(owner)))).status).toBe(200);
+    // 2 回目は断る
+    const again = await json(await choose(post("/api/tenant/kind", cookie, { kind: "real" })));
+    expect(again[0]).toBe(409);
+    expect(auth().tenantKind(owner.tenantId)).toBe("demo");
+  });
+
+  it("1 人で使っているクリニックは、持ち主が（事務の役割のままでも）選べる", async () => {
+    const solo = auth().register("und_solo", "ひとり", "password123", "demo");
+    forget(solo.tenantId);
+    const cookie = cookieOf(solo);
+    const me = (await json(await (await import("../../app/api/auth/me/route")).GET(get("/api/auth/me", cookie))))[1];
+    expect(me).toMatchObject({ role: "clerk", tenantKind: "undecided", canChooseKind: true });
+    expect((await json(await (await import("../../app/api/cases/route")).GET(get("/api/cases", cookie))))[1]).toMatchObject({ tenant: "undecided", error: expect.stringContaining("先に") });
+    expect((await (await import("../../app/api/tenant/kind/route")).POST(post("/api/tenant/kind", cookie, { kind: "real" }))).status).toBe(200);
+    expect(appOf(solo).kind).toBe("real");
+  });
+});
+
 describe("今日の日付と、日付を進める操作", () => {
   it("real の今日は実際の時刻（日本時間・タイムゾーン付き）で、デモの時計の設定を読まない", () => {
     const u = auth().register("now_real", "いま", "password123", "real");

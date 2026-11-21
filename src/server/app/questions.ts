@@ -63,7 +63,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function startDrill(clerkId: string, drillId: string): Question {
     clerk(clerkId);
     // 練習問題は同梱の症例（作り物）で始める。実在のデータで使うクリニックには症例がないので、使えない
-    if (ctx.kind === "real") throw badRequest(REAL_NO_DRILLS);
+    if (ctx.kind !== "demo") throw badRequest(REAL_NO_DRILLS);
     if (!isDoctorDrill(drillId) && !drillList().some((x) => x.id === drillId)) throw notFound(`練習問題がない: ${drillId}`);
     const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
     return createQ.immediate((id) => startQuestion(id, clerkId, d.claimId, now(), "通常", undefined, d.id));
@@ -183,7 +183,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   }
   /** 練習問題の一覧。cleared は本人がその練習を正解で終えたか（画面のカードの状態に使う。2026-11-08） */
   const drills = (clerkId?: string) => {
-    if (ctx.kind === "real") return { fix: [], doctor: [], unavailable: REAL_NO_DRILLS };
+    if (ctx.kind !== "demo") return { fix: [], doctor: [], unavailable: REAL_NO_DRILLS };
     const done = new Set(clerkId ? questionsOf(clerkId).filter((q) => q.drill && q.correct === true).map((q) => q.drill) : []);
     const mark = <T extends { id: string }>(xs: T[]) => xs.map((d) => ({ ...d, cleared: done.has(d.id) }));
     return { fix: mark(drillList()), doctor: mark(doctorDrillList()), unavailable: null };

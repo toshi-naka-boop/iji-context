@@ -6,7 +6,7 @@ import { createClaimFacts } from "./app/claim-facts";
 import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
-import type { TenantKind } from "./tenant-kind";
+import type { TenantStatus } from "./tenant-kind";
 import { createDoctor } from "./app/doctor";
 import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
@@ -29,7 +29,7 @@ export { cleanName } from "./app/clerks";
 export { DEFAULT_NOW } from "./app/clock";
 export { defaultPaths, reviewDepsOf, storeOptionsOf, type AppPaths } from "./app/context";
 
-export function openApp(paths: AppPaths, opts: { kind?: TenantKind } = {}) {
+export function openApp(paths: AppPaths, opts: { kind?: TenantStatus } = {}) {
   const ctx = openContext(paths, opts);
   const { sqlite, deps, store, queryLog, dataset, setting, setSetting } = ctx;
   const clock = createClock(ctx);
@@ -71,7 +71,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantKind } = {}) {
   const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
 
   return {
-    /** クリニックの種類（demo／real）。作るときに決まり、変わらない */
+    /** クリニックの種類（demo／real／未定）。開いている間は変わらない（未定から選んだときは、開き直す。src/server/instance.ts） */
     kind: ctx.kind,
     paths,
     deps,

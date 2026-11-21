@@ -144,13 +144,14 @@ CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT N
 `,
   },
   {
-    // クリニックの種類（2026-11-22 利用者の判断）：demo＝作り物のデータ入り・デモの時計／real＝実在のデータ・実際の日付。
-    // 作るときに決め、変えない（種類の書き換えは止める）。それまでのクリニック（利用者の tenant_id）は、どれも demo にする
+    // クリニックの種類（2026-11-22 利用者の判断）：demo＝作り物のデータ入り・デモの時計／real＝実在のデータ・実際の日付／undecided＝未定。
+    // 新しいクリニックは作るときに決める。それまでのクリニック（利用者の tenant_id）は未定にし、事務長が次に入ったときに一度だけ選ぶ（decided_at）。
+    // 書き換えは「未定 → demo／real」の 1 回だけを許し、ほかはトリガーで止める
     version: 5,
     sql: `
-CREATE TABLE tenants (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('demo', 'real')), created_at TEXT NOT NULL);
-INSERT INTO tenants (id, kind, created_at) SELECT tenant_id, 'demo', MIN(created_at) FROM users WHERE tenant_id IS NOT NULL GROUP BY tenant_id;
-CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;
+CREATE TABLE tenants (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('demo', 'real', 'undecided')), created_at TEXT NOT NULL, decided_at TEXT);
+INSERT INTO tenants (id, kind, created_at) SELECT tenant_id, 'undecided', MIN(created_at) FROM users WHERE tenant_id IS NOT NULL GROUP BY tenant_id;
+CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants WHEN NOT (OLD.kind = 'undecided' AND NEW.kind IN ('demo', 'real')) BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;
 `,
   },
 ];

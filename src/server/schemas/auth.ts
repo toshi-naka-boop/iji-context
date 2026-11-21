@@ -6,6 +6,8 @@ import { TENANT_KINDS } from "../tenant-kind";
 // ログイン ID・名前・パスワードの細かい規則と文言は validateRegistration（src/server/auth.ts）が持つ。ここは型と長さの上限だけ
 export const loginBody = z.strictObject({ login: z.string().max(64), password: z.string().max(256) });
 export const registerBody = z.strictObject({ login: z.string().max(64), name: z.string().max(64), password: z.string().max(256), inviteCode: z.string().max(64).optional(), kind: z.enum(TENANT_KINDS).optional() });
+/** 未定のクリニックの使い方を選ぶ（POST /api/tenant/kind） */
+export const tenantKindBody = z.strictObject({ kind: z.enum(TENANT_KINDS) });
 export const roleBody = z.strictObject({ role: z.enum(ROLES) });
 export const inviteBody = z.strictObject({ role: z.enum(ROLES) });
 /** 招待の id（src/server/auth.ts の inviteId が作る形。招待コードでもそのハッシュでもない） */

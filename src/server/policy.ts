@@ -34,6 +34,8 @@ export const POLICY = {
   // 注意書きへの同意（design.md §11-11）。本人だけ（誰の同意かはセッションで決める）
   "POST /api/consent": row(ALL, "none", false),
   "GET /api/auth/me": row(ALL, "none", false),
+  // 未定のクリニックの使い方（demo／real）を一度だけ選ぶ（2026-11-22 利用者の判断）：事務長と、1 人で使っているクリニックの持ち主
+  "POST /api/tenant/kind": row({ roles: ["manager"], solo: true }, "none", false),
   // 役割の切替（FR-144）：1 人で使っているクリニックの持ち主だけ。ロールでは許さない
   "POST /api/auth/role": row({ roles: [], solo: true }, "none", false),
   // 招待の発行・一覧・取り消し（FR-137）：事務長と、1 人で使っているクリニックの持ち主
@@ -154,6 +156,12 @@ export const POLICY = {
 } as const satisfies Record<string, Row>;
 
 export type PolicyKey = keyof typeof POLICY;
+
+/**
+ * 使い方が未定のクリニックでも通す操作（ログインしている人の、選ぶ・待つための操作だけ）。ほかは src/server/http.ts の route が 409 で断る。
+ * 点検などの操作は、使い方が決まるまでさせない（2026-11-22 利用者の判断）
+ */
+export const UNDECIDED_ALLOWED: ReadonlySet<PolicyKey> = new Set<PolicyKey>(["GET /api/auth/me", "POST /api/auth/role", "POST /api/consent", "GET /api/clock", "POST /api/tenant/kind"]);
 /** ルートヘルパに渡す形（表のキーと、その行） */
 export type Allowed = { key: PolicyKey } & Row;
 

@@ -87,6 +87,16 @@ function touchTenant(id: string, a: App) {
     t.close();
   }
 }
+/**
+ * クリニックを開き直す（未定のクリニックの使い方を選んだあと。種類で作り物・時計の振る舞いが変わるので、今の種類で開き直す）。
+ * 次に getApp() を呼んだときに開く。ほかに実行中の呼び出しがあれば、そのハンドルは閉じずに手放す（使い終わったら捨てられる）
+ */
+export function reopenTenant(id: string) {
+  const t = tenants.get(id);
+  if (!t) return;
+  tenants.delete(id);
+  if ((active.get(id) ?? 0) <= 1) t.close();
+}
 /** 開いているクリニックの数（テスト用） */
 export const openTenantCount = () => tenants.size;
 export function tenantPaths(id: string): AppPaths {
@@ -96,7 +106,7 @@ export function tenantPaths(id: string): AppPaths {
 }
 /**
  * クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く。
- * 種類（demo／real）は auth.db のクリニックの行で決まる。real のクリニックには、作り物の種（院内ルール・K6 の地域ルール）を入れない
+ * 種類（demo／real／未定）は auth.db のクリニックの行で決まる。demo のクリニックにだけ、作り物の種（院内ルール・K6 の地域ルール）を入れる
  */
 function openTenant(tenantId: string): App {
   const paths = tenantPaths(tenantId);

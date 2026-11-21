@@ -10,6 +10,9 @@ export const GET = route({ roles: allow("GET /api/auth/me") }, ({ user, clerkId 
   clerkId,
   canSwitchRole: getAuth().isSolo(user),
   canInvite: getAuth().canInvite(user),
+  // クリニックの使い方（demo／real／undecided）と、未定のときにこの人が選べるか
+  tenantKind: getAuth().tenantKind(user.tenantId),
+  canChooseKind: getAuth().canChooseKind(user),
 }));
 
 export const runtime = "nodejs";

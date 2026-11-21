@@ -15,7 +15,7 @@ import type { BusinessDays, QueryLog } from "../../query/doctor-query";
 import type { ChoiceGroup } from "../../practice/choice";
 import { officialInputOf } from "../../official/registry";
 import { checkDataset } from "../dataset";
-import type { TenantKind } from "../tenant-kind";
+import type { TenantStatus } from "../tenant-kind";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -41,9 +41,12 @@ export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir
 
 export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
 
-/** kind はクリニックの種類（src/server/tenant-kind.ts）。ログインなしの既定のアプリと、種類を渡さない呼び出し（テスト）は demo */
-export function openContext(paths: AppPaths, opts: { kind?: TenantKind } = {}) {
-  const kind: TenantKind = opts.kind ?? "demo";
+/**
+ * kind はクリニックの種類（src/server/tenant-kind.ts）。ログインなしの既定のアプリと、種類を渡さない呼び出し（テスト）は demo。
+ * 未定（undecided）は、作り物と時計について real と同じ側に倒す（demo のときだけ作り物とデモの時計を使う）
+ */
+export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {}) {
+  const kind: TenantStatus = opts.kind ?? "demo";
   const fresh = !existsSync(paths.dbFile);
   const sqlite = new Database(paths.dbFile);
   migrate(sqlite, APP_MIGRATIONS);

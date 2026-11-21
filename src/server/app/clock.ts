@@ -1,4 +1,4 @@
-// 時計。デモのクリニックは「時計を進める」で動く。実在のデータで使うクリニック（real）は実際の日付（日本時間）で動き、進められない
+// 時計。デモのクリニックは「時計を進める」で動く。実在のデータで使うクリニック（real）と未定のクリニックは実際の日付（日本時間）で動き、進められない
 import { period } from "../../demo/period";
 import { dueMeeting, meetingReview } from "../../lifecycle/review";
 import { assertTime } from "../../lifecycle/time";
@@ -21,9 +21,9 @@ const CAUGHT_UP_KEY = "caught_up_at";
 export function createClock(ctx: AppContext) {
   const { kind, sqlite, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
 
-  /** 今日。real は実際の時刻（デモの時計の設定を読まない）。demo はデモの時計（設定がなければ基準月の初期値） */
+  /** 今日。demo はデモの時計（設定がなければ基準月の初期値）。real と未定は実際の時刻（デモの時計の設定を読まない） */
   function now(): string {
-    if (kind === "real") return jstIsoOf(new Date());
+    if (kind !== "demo") return jstIsoOf(new Date());
     return setting("now") ?? DEFAULT_NOW;
   }
 
@@ -44,7 +44,7 @@ export function createClock(ctx: AppContext) {
    * （途中で失敗したら時計は進まない。リマインド・保留と会議の整理は、同じ日時でやり直しても同じ結果になる）
    */
   function advanceClock(to: string) {
-    if (kind === "real") throw forbidden("実在のデータで使うクリニックでは、日付を進められません（今日は実際の日付です）");
+    if (kind !== "demo") throw forbidden("このクリニックでは日付を進められません（今日は実際の日付です。日付を進められるのは、デモで試すクリニックだけです）");
     assertTime(to, "now");
     const r = tick(to);
     setSetting("now", to);
@@ -56,7 +56,7 @@ export function createClock(ctx: AppContext) {
   /**
    * real のクリニックで、前に回した日から日付（日本時間）が変わっていれば、今の時刻で tick を回す（リクエストのたびに呼ぶ。src/server/instance.ts）。
    * 回した日時は DB（app_settings）に残す。同じ日のうちは何もしない（重い処理を毎リクエストで回さない）。回したら結果を、回さなければ null を返す。
-   * demo のクリニックでは何もしない（時計を進めたときに advanceClock が回す）
+   * demo のクリニックでは何もしない（時計を進めたときに advanceClock が回す）。未定のクリニックでも何もしない（使い方を選ぶまで、記録に触らない）
    */
   function catchUp(): ReturnType<typeof tick> | null {
     if (kind !== "real") return null;

@@ -2,14 +2,8 @@
 // ログイン・登録（spec FR-72）。登録は招待制（FR-137）。招待コードで、招待されたクリニックに入る。
 // 招待なしで新しいクリニックを作るときは、「デモで試す」か「実在のデータで使う」かを選ぶ（選ばないと登録できない。後から変えない。2026-11-22 利用者の判断）
 import { useState } from "react";
-import { TENANT_KINDS, TENANT_KIND_LABELS, type TenantKind } from "../../src/server/tenant-kind";
+import { TENANT_KINDS, TENANT_KIND_LABELS, TENANT_KIND_NOTES as KIND_NOTES, type TenantKind } from "../../src/server/tenant-kind";
 import { Notice } from "../consent";
-
-/** 種類ごとの説明（登録の画面に出す） */
-const KIND_NOTES: Record<TenantKind, string> = {
-  demo: "作り物のデータ（症例・院内ルール・見本の UKE）入りで始まります。今日はデモの日付で、事務長が日付を進められます。",
-  real: "作り物のデータは入れず、見せません。今日は実際の日付（日本時間）で、日付は進められません。",
-};
 
 export default function Login() {
   const [mode, setMode] = useState<"login" | "register">("login");

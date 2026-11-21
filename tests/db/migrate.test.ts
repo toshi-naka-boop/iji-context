@@ -99,11 +99,11 @@ describe("migrate", () => {
     // セッションは残り、招待と監査の表ができる
     expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
     expect(tables(db)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "tenants", "users"]);
-    // それまでのクリニックは demo になる（2026-11-22 利用者の判断）
-    expect(db.prepare("SELECT id, kind FROM tenants").all()).toEqual([{ id: "t0123456789ab", kind: "demo" }]);
+    // それまでのクリニックは未定になる（2026-11-22 利用者の判断）
+    expect(db.prepare("SELECT id, kind FROM tenants").all()).toEqual([{ id: "t0123456789ab", kind: "undecided" }]);
   });
 
-  it("auth.db を 5 へ上げると、それまでのクリニック（招待で入った人を含む）は 1 つずつ demo になり、種類は書き換えられない", () => {
+  it("auth.db を 5 へ上げると、それまでのクリニック（招待で入った人を含む）は 1 つずつ未定になる。書き換えは未定から demo／real への 1 回だけ", () => {
     const db = new Database(":memory:");
     migrate(db, AUTH_MIGRATIONS.slice(0, 4));
     const add = db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -111,11 +111,19 @@ describe("migrate", () => {
     add.run("t000000000002", "joined", "しょうたい", "scrypt$x$x$x", "2026-11-02T00:00:00.000Z", "t000000000001", "doctor");
     add.run("t000000000003", "solo", "ひとり", "scrypt$x$x$x", "2026-11-03T00:00:00.000Z", "t000000000003", "clerk");
     expect(migrate(db, AUTH_MIGRATIONS)).toBe(5);
-    expect(db.prepare("SELECT id, kind, created_at FROM tenants ORDER BY id").all()).toEqual([
-      { id: "t000000000001", kind: "demo", created_at: "2026-11-01T00:00:00.000Z" },
-      { id: "t000000000003", kind: "demo", created_at: "2026-11-03T00:00:00.000Z" },
+    expect(db.prepare("SELECT id, kind, created_at, decided_at FROM tenants ORDER BY id").all()).toEqual([
+      { id: "t000000000001", kind: "undecided", created_at: "2026-11-01T00:00:00.000Z", decided_at: null },
+      { id: "t000000000003", kind: "undecided", created_at: "2026-11-03T00:00:00.000Z", decided_at: null },
     ]);
-    expect(() => db.prepare("UPDATE tenants SET kind = 'real' WHERE id = 't000000000001'").run()).toThrow(/fixed/);
+    const set = (kind: string, id: string) => db.prepare("UPDATE tenants SET kind = ? WHERE id = ?").run(kind, id);
+    // 未定から demo／real へは 1 回だけ書き換えられる
+    set("real", "t000000000001");
+    set("demo", "t000000000003");
+    // 決まったものは、どちらへも書き換えられない（未定に戻すことも）
+    expect(() => set("demo", "t000000000001")).toThrow(/fixed/);
+    expect(() => set("undecided", "t000000000001")).toThrow(/fixed/);
+    expect(() => set("real", "t000000000003")).toThrow(/fixed/);
+    expect(() => set("undecided", "t000000000003")).toThrow(/fixed/);
     expect(() => db.prepare("INSERT INTO tenants (id, kind, created_at) VALUES ('t000000000009', 'other', 'x')").run()).toThrow(/CHECK/);
   });
 

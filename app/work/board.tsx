@@ -36,7 +36,7 @@ export function Board(props: {
   const [today, setToday] = useState("");
   const [kind, setKind] = useState<"demo" | "real" | null>(null);
   useEffect(() => {
-    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setToday(String(d.now).slice(0, 10)); setKind(d.kind === "real" ? "real" : "demo"); } }).catch(() => {});
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setToday(String(d.now).slice(0, 10)); setKind(d.kind === "demo" ? "demo" : "real"); } }).catch(() => {});
   }, []);
   const disease = (claimId: string) => {
     const c = cases.find((x) => x.claimId === claimId);

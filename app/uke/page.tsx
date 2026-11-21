@@ -40,7 +40,7 @@ export default function UkeImport() {
   const [real, setReal] = useState(false);
   useEffect(() => {
     if (!user) return;
-    getJson<{ kind: string }>("/api/clock").then((c) => setReal(c.kind === "real")).catch(() => {});
+    getJson<{ kind: string }>("/api/clock").then((c) => setReal(c.kind !== "demo")).catch(() => {});
     getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
     getJson<{ role: string }>("/api/auth/me").then((me) => setCanDelete(me.role === "veteran" || me.role === "manager")).catch(() => {});
   }, [user]);

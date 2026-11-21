@@ -34,7 +34,7 @@ function progress(s: Status): number {
  * 画面を移るたびにメニューが空から描き直されて崩れないよう、最後に取れた値をこのページの間だけ覚えておく
  * （ブラウザの中だけ。サーバーには何も残さない。2026-11-08）
  */
-const memo: { now: string; kind: "demo" | "real" | null; canAdvance: boolean; who: string; status: Status | null } = { now: "", kind: null, canAdvance: false, who: "", status: null };
+const memo: { now: string; kind: "demo" | "real" | null; /* 未定は real と同じ表示（今日は実際の日付） */ canAdvance: boolean; who: string; status: Status | null } = { now: "", kind: null, canAdvance: false, who: "", status: null };
 
 /** status を渡す画面（算定）はその値を、渡さない画面は自分で取りにいく */
 export function TopBar({ status }: { status?: Status | null }) {
@@ -47,7 +47,7 @@ export function TopBar({ status }: { status?: Status | null }) {
   const [who, setWho] = useState(memo.who);
   const [own, setOwn] = useState<Status | null>(memo.status);
   useEffect(() => {
-    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { memo.now = d.now; memo.kind = d.kind === "real" ? "real" : "demo"; memo.canAdvance = d.canAdvance === true; setNow(d.now); setKind(memo.kind); setCanAdvance(memo.canAdvance); setInput(d.now.slice(0, 10)); } });
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { memo.now = d.now; memo.kind = d.kind === "demo" ? "demo" : "real"; memo.canAdvance = d.canAdvance === true; setNow(d.now); setKind(memo.kind); setCanAdvance(memo.canAdvance); setInput(d.now.slice(0, 10)); } });
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u) => { memo.who = u?.name ?? ""; setWho(memo.who); }).catch(() => {});
     fetch("/api/me").then((r) => (r.ok ? r.json() : null)).then((s) => { if (s) { memo.status = { level: s.level, count: s.count, streak: s.streak }; setOwn(memo.status); } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
