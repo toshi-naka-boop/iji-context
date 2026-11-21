@@ -113,13 +113,43 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     const units = [unit([C.oushin, TERMINAL], [28])];
     const fs = g05Of(units, {}, { db }).findings;
     expect(brief(fs)).toEqual([["G05.exception_needs_check", "条件つき", C.oushin, TERMINAL]]);
-    expect(fs[0].params.checks).toBe("在宅での死亡、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）");
-    // すでにある事実で確かめられる要件（看取りの場所）：在宅なら挙げない、在宅以外なら例外に当たらない（C-121）
+    expect([fs[0].params.hp, fs[0].params.checks]).toEqual(["HP-54", "在宅での死亡（在宅以外なら、往診又は訪問診療の後 24 時間以内の死亡）、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]);
+    // すでにある事実で確かめられる要件（看取りの場所）：在宅なら挙げない。在宅以外でも当たらないとせず（告示 C001 注6 は往診後 24 時間以内の在宅以外での死亡を含む）、24 時間以内の死亡かを挙げる（round-36 C-123）
     expect(g05Of(units, { facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings[0].params.checks).toBe("死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）");
-    expect(brief(g05Of(units, { facts: factsOf({ deathPlace: "在宅以外" }) }, { db }).findings)).toEqual([["G05.exception_none", "条件つき", C.oushin, TERMINAL]]);
+    const elsewhere = g05Of(units, { facts: factsOf({ deathPlace: "在宅以外" }) }, { db }).findings;
+    expect([brief(elsewhere), elsewhere[0].params.checks]).toEqual([[["G05.exception_needs_check", "条件つき", C.oushin, TERMINAL]], "往診又は訪問診療の後 24 時間以内の死亡か（在宅以外での死亡）、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]);
     // 同じ日に訪問診療料もあれば、往診だけの日ではないので HX-02 には当たらない（HX-01 の問いになる）
     const withVisit = g05Of([unit([C.oushin, TERMINAL], [28]), unit([C.houmon], [28])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(TERMINAL));
     expect(withVisit.map((f) => [f.messageKey, f.params.hx])).toEqual([["G05.exception_ask", "HX-01"]]);
+  });
+
+  it("例外は、掛かる行だけに掛かる（round-36 C-122）：二重の死亡診断加算は例外なしで黙らず、ターミナルケア加算が同じ日にあっても needs_check にならない", () => {
+    const db = tensuhyoMasters();
+    const [OU_DD, HO_DD] = ["114007270", C.shibou];
+    putHaihan(db, "20261001", 1, OU_DD, HO_DD, "3", "1");
+    putHaihan(db, "20261001", 1, C.oushin, HO_DD, "3", "1");
+    putHaihan(db, "20261001", 1, C.oushin, TERMINAL, "3", "1");
+    const pick = (fs: GenericFinding[]) => fs.filter((f) => f.codes.includes(HO_DD)).map((f) => [f.messageKey, f.params.hp ?? "", ...f.codes]);
+    // 死亡日に往診だけ＋二重の死亡診断加算＋ターミナルケア加算：死亡診断加算の 2 行は、どちらも例外の要件を挙げない
+    const withTerminal = g05Of([unit([C.oushin, OU_DD], [20]), unit([TERMINAL, HO_DD], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings;
+    expect(pick(withTerminal)).toEqual([["G05.day_cond", "", C.oushin, HO_DD], ["G05.exception_none", "HP-56", OU_DD, HO_DD]]);
+    // ターミナルケア加算を外しても、結論は変わらない（関係のないコードで逆にならない）
+    expect(pick(g05Of([unit([C.oushin, OU_DD], [20]), unit([HO_DD], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings)).toEqual(pick(withTerminal));
+    // 訪問診療のあとの急変の往診で、摘要欄の理由もある日でも、二重の死亡診断加算は黙らない
+    const afterVisit = g05Of([unit([C.oushin, OU_DD], [20]), unit([C.houmon, HO_DD], [20])], { answers: answersOf(), facts: factsOf({ after: { [day(20)]: true } }) }, { db, comments: [REASON] }).findings;
+    expect(pick(afterVisit)).toEqual([["G05.day_cond", "", C.oushin, HO_DD], ["G05.exception_none", "HP-56", OU_DD, HO_DD]]);
+  });
+
+  it("往診だけの死亡日の、往診に付く再診料 × ターミナルケア加算（HP-55・HX-24。round-36 C-124）：答えようのない問いを出さず、HX-02 と同じ要件を挙げる", () => {
+    const db = tensuhyoMasters();
+    // 小さな表の区分番号の部は版の表示から作るので、A001 の部を基本マスターと同じ 1 にする
+    db.prepare("UPDATE shinryo SET bu = 1 WHERE code = ?").run(C.saishin);
+    putHaihan(db, "20261001", 1, C.saishin, TERMINAL, "2", "1");
+    const fs = g05Of([unit([C.saishin, C.oushin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
+    expect(fs.map((f) => [f.messageKey, f.params.hp, f.params.hx, f.params.checks])).toEqual([["G05.exception_needs_check", "HP-55", "HX-24", "死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]]);
+    // 往診料のない日（外来の再診）は HX-24 に当たらず、再診料が往診に付くかの問い（HX-11）は pre で当たらない → exception_none
+    const outpatient = g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
+    expect(outpatient.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-55"]]);
   });
 });
 
@@ -200,9 +230,8 @@ describe("例外の形（テスト用の決まり）", () => {
 });
 
 describe("出荷の決まりの形", () => {
-  it("往診料×訪問診療料の組（HP-01）は HX-01・HX-02 の 2 つ。HX-01 は sameDayOushinAfterVisit を共有し、摘要欄の理由を要る", () => {
-    const p = HAIHAN.patterns.find((x) => x.id === "HP-01")!;
-    expect(p.exceptions).toEqual(["HX-01", "HX-02"]);
+  it("往診料×訪問診療料は、本体の行（HP-01：HX-01）とターミナルケア加算の行（HP-54：HX-01・HX-02）に分け、二重の死亡診断加算（HP-56）は例外なし。HX-01 は sameDayOushinAfterVisit を共有し、摘要欄の理由を要る", () => {
+    expect(["HP-01", "HP-54", "HP-56"].map((id) => HAIHAN.patterns.find((x) => x.id === id)!.exceptions)).toEqual([["HX-01"], ["HX-01", "HX-02"], []]);
     const x = HAIHAN.exceptions.find((e) => e.id === "HX-01")!;
     expect([x.ask?.factKey, x.thenRequires?.comments]).toEqual(["sameDayOushinAfterVisit", [REASON]]);
   });

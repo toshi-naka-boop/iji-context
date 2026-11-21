@@ -10,7 +10,7 @@
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
 import { sameDayOf } from "../engine/predicates";
 import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
-import { HAIHAN, haihanKey, sharedFactOf, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
+import { HAIHAN, haihanKey, sharedFactOf, type Check, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence } from "./tensuhyo";
 import { FINDING_LIMIT, type GenericAbout, type GenericAboutMore, type GenericCheck, type GenericClaim, type GenericFinding } from "./types";
 
@@ -126,12 +126,16 @@ function judge(x: HaihanException, row: Row, aCode: string, day: number | undefi
       out = merge(days.map((d) => ({ date: dateOf(c.yearMonth, d), r: answerOn(x, codes, dateOf(c.yearMonth, d), c) })));
     }
   }
-  if (out.r === "hit")
-    for (const k of x.thenRequires?.checks ?? []) {
-      const f = k.fact ? (c.facts as Record<string, { known: boolean; value?: unknown }> | undefined)?.[k.fact.key] : undefined;
-      if (k.fact && f?.known && f.value !== null && !k.fact.ok.includes(String(f.value))) return { r: "miss", answered: true };
-    }
+  if (out.r === "hit") for (const k of x.thenRequires?.checks ?? []) if (checkOf(k, c) === "miss") return { r: "miss", answered: true };
   return out;
+}
+
+/** すでにある事実で確かめられる要件：満たす（ok）／当たらない（miss）／要件として挙げる一言（不明なら要件の一言、maybe の値ならその一言） */
+function checkOf(k: Check, c: Ctx): "ok" | "miss" | string {
+  const f = k.fact ? (c.facts as Record<string, { known: boolean; value?: unknown }> | undefined)?.[k.fact.key] : undefined;
+  if (!k.fact || !f?.known || f.value === null || f.value === undefined) return k.text;
+  const v = String(f.value);
+  return k.fact.ok.includes(v) ? "ok" : (k.fact.maybe?.[v] ?? "miss");
 }
 
 /** 1 つの単位の、組の例外を全部見た結果 */
@@ -147,10 +151,7 @@ function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: stri
   if (hits.length > 0) {
     // thenRequires のない例外に当たった組だけ、何も出さない
     if (hits.some((x) => !x.thenRequires)) return { kind: "silent", hx: hits.filter((x) => !x.thenRequires).map((x) => x.id) };
-    const checks = hits.flatMap((x) => (x.thenRequires?.checks ?? []).filter((k) => {
-      const f = k.fact ? (c.facts as Record<string, { known: boolean; value?: unknown }> | undefined)?.[k.fact.key] : undefined;
-      return !(k.fact && f?.known && k.fact.ok.includes(String(f.value)));
-    }).map((k) => k.text));
+    const checks = hits.flatMap((x) => (x.thenRequires?.checks ?? []).map((k) => checkOf(k, c)).filter((t) => t !== "ok" && t !== "miss"));
     const comments = [...new Set(hits.flatMap((x) => x.thenRequires?.comments ?? []))];
     return checks.length === 0 && comments.length === 0 ? { kind: "silent", hx: hits.map((x) => x.id) } : { kind: "require", hx: hits, checks, comments };
   }
@@ -186,7 +187,8 @@ function patternOf(config: HaihanConfig, row: Row, selects: Ctx["selects"]): { p
 
 /** 例外の決まりを差し替えられる G05（テスト用。出荷は config/haihan-exceptions.json） */
 export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
-  const textOf = (ids: string[]) => ids.map((id) => config.exceptions.find((x) => x.id === id)?.text ?? id).join("／");
+  // 例外が 1 つも見つかっていない組（round-36 C-122：二重の死亡診断加算）は、そのことを一言にする
+  const textOf = (ids: string[]) => (ids.length === 0 ? "この組の例外は、調べでは見つかっていません" : ids.map((id) => config.exceptions.find((x) => x.id === id)?.text ?? id).join("／"));
   return {
     id: "G05",
     kind: "背反",

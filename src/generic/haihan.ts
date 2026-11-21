@@ -27,8 +27,11 @@ export type Ask = {
 export type Check = {
   /** 要件の一言 */
   text: string;
-  /** すでにある事実で確かめられる要件。事実が分かっていて ok にない → 例外に当たらない／ok にある → この要件は満たす／不明 → 要件として挙げる（C-121） */
-  fact?: { key: string; ok: string[] };
+  /**
+   * すでにある事実で確かめられる要件。事実が分かっていて ok にない → 例外に当たらない／ok にある → この要件は満たす／不明 → 要件として挙げる（C-121）。
+   * maybe は、ok にない値でも告示がその場合を含みうるもの（値 → 挙げる要件の一言）。当たらないにせず、その一言を要件として挙げる（round-36 C-123。例：在宅以外での死亡は、往診後 24 時間以内なら含む）
+   */
+  fact?: { key: string; ok: string[]; maybe?: Record<string, string> };
 };
 export type HaihanException = {
   id: string;

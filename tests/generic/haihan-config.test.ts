@@ -31,7 +31,7 @@ describe("config/haihan-exceptions.json と EM §2-12", () => {
     expect(HAIHAN.patterns.map((p) => p.id)).toEqual(hpEm.map((c) => c[0]));
     for (const c of hpEm) {
       const p = HAIHAN.patterns.find((y) => y.id === c[0])!;
-      expect([p.id, p.tani, p.exceptions]).toEqual([c[0], [TANI[c[2]]], c[3].split("・")]);
+      expect([p.id, p.tani, p.exceptions]).toEqual([c[0], [TANI[c[2]]], c[3] === "—" ? [] : c[3].split("・")]);
       for (const id of p.exceptions) expect(HAIHAN.exceptions.some((x) => x.id === id)).toBe(true);
     }
     // どの例外も、どこかの組で使う
