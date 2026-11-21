@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
 import { applyEvent, listKnowledge, readKnowledge } from "../../src/lifecycle/store";
+import { evaluateTriggers } from "../../src/lifecycle/triggers";
 import type { CodePair } from "../../src/lifecycle/types";
 import { createLocalPairOps, type PairInput } from "../../src/server/app/local-pairs";
 import type { AppContext } from "../../src/server/app/context";
@@ -19,7 +22,9 @@ const clock = { now: () => T } as unknown as Clock;
 const check = () => ({ generic: { findings: targets.map((p) => ({ check: "G05", localPair: p })) } });
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), "iji-local-pairs-"));
-  ctx = { store: { knowledgeDir: path.join(root, "knowledge"), skillsDir: path.join(root, "skills") } } as unknown as AppContext;
+  const sqlite = new Database(":memory:");
+  migrate(sqlite, APP_MIGRATIONS);
+  ctx = { sqlite, store: { knowledgeDir: path.join(root, "knowledge"), skillsDir: path.join(root, "skills") } } as unknown as AppContext;
   targets = [{ a: A, b: B, tani: 1 }];
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -61,5 +66,24 @@ describe("作る入口（design.md §14-2）", () => {
     applyEvent(ctx.store, first.id, { type: "VERIFY_REJECT", reason: "テスト" }, T);
     const again = ops.createPair(input());
     expect([again.id, readKnowledge(ctx.store, first.id)?.status]).toEqual([`${first.id}-2`, "保管"]);
+  });
+});
+
+describe("USED（design.md §14-3。C-172・X-121）", () => {
+  it("同じ請求・同じ知識は 1 日 1 回。使っている avoid の知識は idle で要再検証にならない（使っていない知識はなる）", () => {
+    let at = T;
+    const clockAt = { now: () => at } as unknown as Clock;
+    const ops = createLocalPairOps(ctx, clockAt, check);
+    const used = ops.createPair(input({ polarity: "avoid" }));
+    const idle = ops.createPair(input({ polarity: "allow" }));
+    for (const id of [used.id, idle.id]) applyEvent(ctx.store, id, { type: "VERIFY_APPROVE" }, T);
+    at = "2027-03-01T09:00:00+09:00";
+    ops.markUsed("U1-1", [used.id]);
+    ops.markUsed("U1-1", [used.id]);
+    expect((ctx.sqlite.prepare("SELECT count(*) AS n FROM local_used").get() as { n: number }).n).toBe(1);
+    expect(readKnowledge(ctx.store, used.id)?.last_used_at).toBe(at);
+    // 承認から 180 日を過ぎた会議：使った知識は idle にならず、使っていない知識はなる
+    const fired = evaluateTriggers(listKnowledge(ctx.store), "2027-05-01T09:00:00+09:00", { revision: { parity: "even", monthDay: "06-01" }, shiharaiKikin: { parity: "odd", monthDay: "06-01" }, kokuhoren: {} });
+    expect(fired.map((f) => [f.knowledgeId, f.event])).toEqual([[idle.id, { type: "TRIGGER", trigger: "idle" }]]);
   });
 });

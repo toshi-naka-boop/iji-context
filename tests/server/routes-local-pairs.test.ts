@@ -142,4 +142,17 @@ describe.skipIf(!hasMasters)("（マスターがあるとき）design.md §14-5 
     const pressed = (await facts()).filter((x) => x.key === key);
     expect(pressed.map((x) => [x.date, x.checkedByRole, x.checkedByName, x.checkedBy])).toEqual([[day(5), "clerk", "", ""]]);
   });
+
+  it("添えた知識に USED が出る（同じ請求・同じ知識は 1 日 1 回）。算定プレビューでは出さない", () => {
+    check();
+    const now = instance.runAs(owner, () => instance.getApp().now());
+    expect([meta(K).last_used_at, meta(K).last_hit_at]).toEqual([now, now]);
+    const db = new Database(instance.tenantPaths(owner.tenantId).dbFile, { readonly: true });
+    try {
+      check();
+      expect(db.prepare("SELECT count(*) AS n FROM local_used WHERE claim_id = ? AND knowledge_id = ?").get(ID, K)).toEqual({ n: 1 });
+    } finally {
+      db.close();
+    }
+  });
 });

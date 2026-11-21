@@ -1,6 +1,7 @@
 // 背反の組の院内の知識（design.md §14）：G05 に渡す知識と本人のレベル（知識は院内層・ベテラン層の match.codePair を持つもの。保管は除く）と、作る入口
 import { LAYER_SLUG } from "../../lifecycle/layers";
-import { createKnowledge, listKnowledge, PAIR_NOTE_MAX, readKnowledge } from "../../lifecycle/store";
+import { applyEvent, createKnowledge, listKnowledge, PAIR_NOTE_MAX, readKnowledge } from "../../lifecycle/store";
+import { ms } from "../../lifecycle/time";
 import type { CodePair, Polarity } from "../../lifecycle/types";
 import { LOCAL_PAIR_MIN_LEVEL, parseLocalKey, type LocalPairKnowledge } from "../../generic/local-pair";
 import { TABLE } from "../../generic/tensuhyo";
@@ -110,5 +111,19 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
     if (!isTarget(claimId, pair)) throw badRequest("この請求の点検に、院内の知識を使う背反の指摘がない組です");
     return m.status_since;
   }
-  return { isTarget, createPair, admitPress };
+  /**
+   * 指摘に添えた承認済みの知識に USED を出す（design.md §14-3。C-172・X-121）。取り込んだレセプトの点検・月末の点検だけが呼ぶ（算定プレビューでは出さない）。
+   * 同じ請求・同じ知識は 1 日（日本時間）1 回まで。出したときの状態が承認済み・要再検証でなければ出さない
+   */
+  function markUsed(claimId: string, ids: string[]) {
+    const at = now();
+    const dayOf = new Date(ms(at) + 9 * 3_600_000).toISOString().slice(0, 10);
+    for (const id of ids) {
+      const m = readKnowledge(store, id);
+      if (!m || (m.status !== "承認済み" && m.status !== "要再検証")) continue;
+      if (ctx.sqlite.prepare("INSERT OR IGNORE INTO local_used (claim_id, knowledge_id, day) VALUES (?, ?, ?)").run(claimId, id, dayOf).changes === 0) continue;
+      applyEvent(store, id, { type: "USED" }, at);
+    }
+  }
+  return { isTarget, createPair, admitPress, markUsed };
 }

@@ -120,7 +120,12 @@ export function openApp(paths: AppPaths) {
     draft,
     confirm: confirmQ,
     /** 月末の点検のデータで動く点検。背反の組の院内の知識は、問題の本人（自分の問題だけを開ける）のレベルで出し方を分ける（design.md §14-3） */
-    questionGeneric: (q: Parameters<typeof genericOf>[0]) => genericOf(q, localPairs.aboutFor(q.clerkId)),
+    questionGeneric: (q: Parameters<typeof genericOf>[0]) => {
+      const { localUsed, ...generic } = genericOf(q, localPairs.aboutFor(q.clerkId));
+      // 指摘に添えた承認済みの院内の知識に USED を出す（月末の点検。1 日 1 回）
+      localPairOps.markUsed(q.claimId, localUsed);
+      return generic;
+    },
     explain,
     done,
     question: loadQ,
@@ -140,6 +145,12 @@ export function openApp(paths: AppPaths) {
     ...clock,
     ...clerks,
     ...ukeCheck,
+    /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
+    ukeCheck: (claimId: string, clerkId?: string) => {
+      const r = ukeCheck.ukeCheck(claimId, clerkId);
+      localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
+      return r;
+    },
     createPair: localPairOps.createPair,
     ...erase,
     ...revision,
