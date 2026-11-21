@@ -64,3 +64,6 @@ const notice = z.strictObject({
     .max(200),
 });
 export const noticeRegisterBody = z.strictObject({ notice, index: z.number().int().min(0).max(199), reexamFiled: z.boolean().optional(), fileName });
+
+/** 「この請求のこの組が返戻・査定された」（design.md §14-4）の組。コードは小さい順 */
+export const localReturnBody = z.strictObject({ a: z.string().regex(/^\d{9}$/), b: z.string().regex(/^\d{9}$/), tani: z.literal([1, 2, 3]) });

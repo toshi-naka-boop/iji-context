@@ -125,5 +125,47 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
       applyEvent(store, id, { type: "USED" }, at);
     }
   }
-  return { isTarget, createPair, admitPress, markUsed };
+  /** その請求にその組の行があるか（1 日・同時の表は、同じ日に両方。同一月の表は請求に両方） */
+  function hasPair(codes: ReturnType<typeof codesOf>, pair: CodePair, dates: string[]): boolean {
+    if (pair.tani === 2) return codes.all.has(pair.a) && codes.all.has(pair.b);
+    return dates.some((d) => codes.on(d).has(pair.a) && codes.on(d).has(pair.b));
+  }
+  /** 承認済みの allow の、背反の組の知識（院内層・ベテラン層） */
+  const approvedAllow = () => listKnowledge(store).filter((m) => (m.layer === "院内" || m.layer === "ベテラン") && m.status === "承認済み" && m.polarity === "allow" && m.match.codePair !== undefined);
+  /**
+   * 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4。C-182）：その請求にその組があり、その codePair の承認済みの allow の知識があるもの。押した事実がなくても出す。
+   * result は、その請求の点検の結果（行の rows を読む）
+   */
+  function returnsOf(claimId: string, result: unknown): { a: string; b: string; tani: 1 | 2 | 3; ids: string[] }[] {
+    const rows = (result as { rows?: { items: { code: string }[]; dates: string[] }[] }).rows ?? [];
+    if (rows.length === 0) return [];
+    const codes = { all: new Set(rows.flatMap((r) => r.items.map((it) => it.code))), on: (date: string) => new Set(rows.filter((r) => r.dates.includes(date)).flatMap((r) => r.items.map((it) => it.code))) };
+    const dates = [...new Set(rows.flatMap((r) => r.dates))];
+    const out: { a: string; b: string; tani: 1 | 2 | 3; ids: string[] }[] = [];
+    for (const m of approvedAllow()) {
+      const p = m.match.codePair!;
+      if (!hasPair(codes, p, dates)) continue;
+      const same = out.find((x) => x.a === p.a && x.b === p.b && x.tani === p.tani);
+      if (same) same.ids.push(m.id);
+      else out.push({ ...p, ids: [m.id] });
+    }
+    return out;
+  }
+  /**
+   * 「この請求のこの組が返戻・査定された」（design.md §14-4。C-170・X-119）：その組の承認済みの allow の知識を要再検証にし（TRIGGER{localReturn}。根拠に請求 id と組）、
+   * その請求で押した事実を取り消す。ほかの組の知識は変えない。clearPressed は、その請求の押した事実を取り消す関数（取り消した key を返す）
+   */
+  function localReturn(claimId: string, clerkId: string, pair: CodePair, clearPressed: (claimId: string, clerkId: string, knowledgeId: string, codes: [string, string]) => string[]): { ids: string[]; cleared: string[] } {
+    const r = check(claimId);
+    const target = returnsOf(claimId, r).find((x) => x.a === pair.a && x.b === pair.b && x.tani === pair.tani);
+    if (!target) throw badRequest("この請求に、この組の行と、承認済みの「条件に当たれば併せて算定できる」院内の知識がありません");
+    const at = now();
+    const cleared: string[] = [];
+    for (const id of target.ids) {
+      applyEvent(store, id, { type: "TRIGGER", trigger: "localReturn" }, at, { trigger: "localReturn", claimId, codePair: pair });
+      cleared.push(...clearPressed(claimId, clerkId, id, [pair.a, pair.b]));
+    }
+    return { ids: target.ids, cleared };
+  }
+  return { isTarget, createPair, admitPress, markUsed, returnsOf, localReturn };
 }

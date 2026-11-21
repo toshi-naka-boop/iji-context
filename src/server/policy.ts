@@ -99,6 +99,8 @@ export const POLICY = {
   // 請求ごとに確かめた事実（情報不足の項目への答え）。医師あての事実は医師の役割だけが残せるので、医師にも開ける（事実ごとの宛先はハンドラの中で分ける）
   "GET /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
   "POST /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
+  // 「この請求のこの組が返戻・査定された」（design.md §14-4）。権限は事実の入力と同じ（医療事務あての入力なので、医師の役割はハンドラが 403）
+  "POST /api/claims/[claimId]/local-return": row([...WORK, "doctor"], "none", true),
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),

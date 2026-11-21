@@ -17,6 +17,11 @@ export function parseLocalKey(key: string): { id: string; rev: string; codes: [s
   return m && m[3] < m[4] ? { id: m[1], rev: m[2], codes: [m[3], m[4]] } : null;
 }
 export const isLocalKey = (key: string): boolean => parseLocalKey(key) !== null;
+/** 監査ログの対象に書く形：押した事実の key は、コードを除いた local:<知識の id>@<rev>（知識の id に組が入っている。対象の長さの上限で切れないように） */
+export const auditKeyOf = (key: string): string => {
+  const k = parseLocalKey(key);
+  return k ? `local:${k.id}@${k.rev}` : key;
+};
 
 /** 組の向きをそろえる（小さい順） */
 export const pairOf = (c1: string, c2: string, tani: 1 | 2 | 3): CodePair => (c1 < c2 ? { a: c1, b: c2, tani } : { a: c2, b: c1, tani });

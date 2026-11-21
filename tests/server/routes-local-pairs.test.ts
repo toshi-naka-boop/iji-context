@@ -10,7 +10,7 @@ import { resolveRevision } from "../../src/engine/revisions";
 import { haihanKey } from "../../src/generic/haihan";
 import { localKey } from "../../src/generic/local-pair";
 import type { GenericView } from "../../src/generic/view";
-import { readKnowledge } from "../../src/lifecycle/store";
+import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import type { KnowledgeMeta } from "../../src/lifecycle/types";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
@@ -154,5 +154,29 @@ describe.skipIf(!hasMasters)("（マスターがあるとき）design.md §14-5 
     } finally {
       db.close();
     }
+  });
+
+  it("返戻：「この請求のこの組が返戻・査定された」で、その組の知識だけ要再検証になり、その請求の押した事実は取り消す。ほかの組の知識は変わらない。押した事実がなくても出す（C-182）", async () => {
+    const store = instance.runAs(owner, () => instance.getApp().store);
+    // ほかの組の承認済みの allow（この請求にない組）
+    const other = createKnowledge(store, { layer: "院内", slug: "pair-other", summary: "ほかの組", body: "ほかの組", source: { type: "手動", ref: "test" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：その他。ほかの組", match: { codePair: { a: A, b: "160000310", tani: 1 } } }, instance.runAs(owner, () => instance.getApp().now()));
+    applyEvent(store, other.id, { type: "VERIFY_APPROVE" }, instance.runAs(owner, () => instance.getApp().now()));
+    const returns = (check() as { localReturns?: { a: string; b: string; tani: number; ids: string[] }[] }).localReturns;
+    expect(returns).toEqual([{ a: A, b: B, tani: 1, ids: [K] }]);
+    const route = (await import("../../app/api/claims/[claimId]/local-return/route")).POST;
+    setRole("doctor");
+    expect((await route(post(`/api/claims/${ID}/local-return`, { a: A, b: B, tani: 1 }), params(ID))).status).toBe(403);
+    setRole("clerk");
+    expect((await route(post(`/api/claims/${ID}/local-return`, { a: A, b: "160000310", tani: 1 }), params(ID))).status).toBe(400);
+    expect((await route(post(`/api/claims/${ID}/local-return`, { a: A, b: B, tani: 1 }), params(ID))).status).toBe(200);
+    expect([meta(K).status, meta(K).history.at(-1)?.event, meta(K).history.at(-1)?.basis]).toEqual(["要再検証", "TRIGGER{localReturn}", { trigger: "localReturn", claimId: ID, codePair: { a: A, b: B, tani: 1 } }]);
+    expect(meta(other.id).status).toBe("承認済み");
+    expect((await facts()).filter((x) => String(x.key).startsWith("local:"))).toEqual([]);
+    // 要再検証のあいだは判断の軸にしない（Lv.5 でもボタンは出ず、両方の日が出る）
+    expect(g05().map((f) => [f.local, f.text.includes("5")])).toEqual([[undefined, true]]);
+    const audit = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((r) => r.action === "POST /api/claims/[claimId]/local-return" && r.result === "ok");
+    expect(audit.map((r) => r.target).sort()).toEqual([`${ID} ${A}:${B}:1`, `${ID} local:${K}@${meta(K).rev}`].sort());
+    for (const r of audit) expect((r.target ?? "").length).toBeLessThanOrEqual(80);
+    expect(JSON.stringify(audit)).not.toMatch(/急変の往診|架空|やまだ/);
   });
 });

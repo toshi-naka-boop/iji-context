@@ -13,6 +13,7 @@ import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
 import { GenericFindings } from "../../generic-findings";
+import { LocalReturn } from "../../local-pair";
 import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
@@ -48,6 +49,8 @@ type Check = {
   stopped?: Stopped[];
   /** UKE の全部の算定単位（単位の並びのまま）と、その単位を見た点検 */
   rows?: Row[];
+  /** 「この請求のこの組が返戻・査定された」を出す組（承認済みの allow の院内の知識がある組。design.md §14-4） */
+  localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
 };
 /** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
 type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
@@ -255,6 +258,7 @@ export default function UkeClaimCheck() {
                       ...((c.sheetNotes?.newer ?? []).length > 0 ? [`読み方を確かめた版より新しいデータです：${c.sheetNotes!.newer.join("、")}。`] : []),
                     ]}
                   />
+                  {!trial && (check?.localReturns ?? []).map((p) => <LocalReturn key={`${p.a}:${p.b}:${p.tani}`} claimId={c.claimId} pair={p} onSaved={() => setTick((t) => t + 1)} />)}
                 </>
               )}
 

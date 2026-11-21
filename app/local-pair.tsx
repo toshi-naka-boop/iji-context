@@ -79,3 +79,23 @@ export function LocalPress(props: { claimId: string; press: { key: string; date:
     </div>
   );
 }
+
+/** 「この請求のこの組が返戻・査定された」（design.md §14-4）：その組の承認済みの allow の院内の知識を要再検証にし、この請求で押した事実を取り消す */
+export function LocalReturn(props: { claimId: string; pair: { a: string; b: string; tani: number; ids: string[] }; onSaved: () => void }) {
+  const [msg, setMsg] = useState("");
+  async function send() {
+    setMsg("");
+    const { ids: _ids, ...pair } = props.pair;
+    const r = await fetch(`/api/claims/${encodeURIComponent(props.claimId)}/local-return`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pair) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) return setMsg(d?.error ?? "エラー");
+    props.onSaved();
+  }
+  return (
+    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div>院内の知識 {props.pair.ids.join("・")}（コード {props.pair.a} と {props.pair.b}）</div>
+      <div className="muted">{LOCAL_PAIR_TEXT.returnedNote}</div>
+      <span><button onClick={() => void send()}>{LOCAL_PAIR_TEXT.returned}</button> {msg && <span className="notice warn">{msg}</span>}</span>
+    </div>
+  );
+}
