@@ -3,9 +3,9 @@
 // 守り：接続先は config/masters.json の URL のホストだけ／https だけ／リダイレクトには従わない／時間と大きさの上限／名前解決は 1 回で、内部のアドレスには出ない（src/connect/fetch.ts の部品）。
 // zip は unzip コマンドで、中の名前と大きさを確かめてから、config の files の名前の形に合うファイルの中身だけを取り出し（unzip -p）、こちらで決めた名前で置き場に置く。
 // 落としたファイルは実行しない。すでに置き場にあるファイルは上書きしない
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, renameSync, rmSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import https from "node:https";
 import { isIP } from "node:net";
 import path from "node:path";
@@ -95,7 +95,7 @@ export function safeName(entry: string): string | null {
  * 落とした zip から、config の名前の形に合うファイルだけを、作業用のフォルダに取り出す（作業用のフォルダの中のパスと、置くときの名前を返す）。
  * 中の名前でファイルを作らない：unzip -p で中身を標準出力に出させ、こちらで決めた名前のファイルに流す（パスの細工が効かない）
  */
-function unzipTo(zip: string, work: string, ds: DatasetConfig): { from: string; name: string }[] {
+async function unzipTo(zip: string, work: string, ds: DatasetConfig): Promise<{ from: string; name: string }[]> {
   const env = { ...process.env, LC_ALL: "C" };
   const run = (args: string[]) => execFileSync("unzip", args, { encoding: "latin1", maxBuffer: 4 * 1024 * 1024, env });
   const entries = run(["-Z1", zip]).split("\n").filter(Boolean);
@@ -107,21 +107,52 @@ function unzipTo(zip: string, work: string, ds: DatasetConfig): { from: string; 
   // 中の名前を unzip に渡すときは、英数字と少しの記号のほかを ?（1 バイト）にした形にする。同じ形になる名前が 2 つあれば断る
   const pattern = (e: string) => e.replace(/[^A-Za-z0-9._ \/-]/g, "?");
   const out: { from: string; name: string }[] = [];
-  entries.forEach((e, i) => {
+  // 目次の申告は偽れるので、実際に書き出した量も数え、合計が上限を超えたら止める（round-32 S-10）
+  let written = 0;
+  for (const [i, e] of entries.entries()) {
     const name = safeName(e) ?? "";
-    if (name === "" || !ds.files.some((x) => new RegExp(x.name, "i").test(name))) return;
+    if (name === "" || !ds.files.some((x) => new RegExp(x.name, "i").test(name))) continue;
     if (entries.filter((o) => pattern(o) === pattern(e)).length > 1) throw new Error("zip の中に、見分けられない名前のファイルがある");
     const from = path.join(work, `${i}.out`);
-    const fd = openSync(from, "wx");
-    try {
-      const r = spawnSync("unzip", ["-p", zip, pattern(e)], { stdio: ["ignore", fd, "ignore"], env });
-      if (r.status !== 0) throw new Error("zip を展開できない");
-    } finally {
-      closeSync(fd);
-    }
+    written += await extractCapped(zip, pattern(e), from, MAX_UNZIPPED_BYTES - written);
     out.push({ from, name });
-  });
+  }
   return out;
+}
+
+/**
+ * unzip -p で zip の中の 1 つを標準出力に出させ、dest（新しく作るファイル）に流す。書いたバイト数を数え、budget を超えたら unzip を止めて、書きかけの dest を消して投げる。
+ * 戻り値は書いたバイト数
+ */
+export function extractCapped(zip: string, entry: string, dest: string, budget: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const file = createWriteStream(dest, { flags: "wx" });
+    const child = spawn("unzip", ["-p", zip, entry], { stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" } });
+    let n = 0;
+    let why: string | null = null;
+    child.stdout.on("data", (b: Buffer) => {
+      if (why !== null) return;
+      n += b.length;
+      if (n > budget) {
+        why = "zip を展開した大きさが上限を超える";
+        child.kill();
+        return;
+      }
+      if (!file.write(b)) {
+        child.stdout.pause();
+        file.once("drain", () => child.stdout.resume());
+      }
+    });
+    child.on("error", () => (why ??= "zip を展開できない"));
+    child.on("close", (code) => {
+      if (why === null && code !== 0) why = "zip を展開できない";
+      file.end(() => {
+        if (why === null) return resolve(n);
+        rmSync(dest, { force: true });
+        reject(new Error(why));
+      });
+    });
+  });
 }
 
 async function main() {
@@ -161,7 +192,7 @@ async function main() {
       try {
         const zip = path.join(work, `${++n}.zip`);
         await get(new URL(t.url), MAX_FILE_BYTES, zip);
-        const files = unzipTo(zip, path.join(work, `${n}`), ds);
+        const files = await unzipTo(zip, path.join(work, `${n}`), ds);
         const snapshot = t.snapshot ?? files.map((f) => snapshotOf(ds.download.date, f.name)).find((s) => s !== null) ?? null;
         if (files.length === 0 || snapshot === null) throw new Error("中に、形に合うファイルがない、または更新日を読み取れない");
         if (ds.since !== undefined && snapshot < ds.since) throw new Error(`世代 ${MASTERS_CONFIG.generation} より前の更新分`);
