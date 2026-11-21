@@ -25,15 +25,16 @@ describe("指摘の数の上限（round-32 S-9）", () => {
       for (const code of kids) put(db, "houkatsu", SNAP, { ...LIVE, group_no: "X000001", code, tokurei: "0" });
     })();
     const heap = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
+    const c0 = process.cpuUsage();
     const r = evaluateGeneric(claimOf([...parents, ...kids]), db, about);
-    const ms = performance.now() - t0;
+    const { user, system } = process.cpuUsage(c0);
     const g04 = r.findings.filter((f) => f.check === "G04");
     expect(g04.length).toBe(FINDING_LIMIT);
     expect(r.omitted?.find((o) => o.check === "G04")?.count).toBe(150 * 3000 - FINDING_LIMIT);
     // どの点検も上限を超えない（マスターにないコード〔G01〕も 3,150 個ある）
     for (const id of new Set(r.findings.map((f) => f.check))) expect(r.findings.filter((f) => f.check === id).length, id).toBeLessThanOrEqual(FINDING_LIMIT);
-    expect(ms).toBeLessThan(2000);
+    // 並列のテストの中では壁時計が延びるので、この点検が使った CPU の時間で縛る
+    expect((user + system) / 1000).toBeLessThan(2000);
     expect((process.memoryUsage().heapUsed - heap) / 1e6).toBeLessThan(200);
     const json = JSON.stringify(genericView(r, null));
     expect(json.length).toBeLessThan(1_000_000);

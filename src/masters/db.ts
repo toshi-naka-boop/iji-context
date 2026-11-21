@@ -70,8 +70,18 @@ export type ShinryoRow = {
 export type IyakuhinRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; zaikei: string; changed_on: string; abolished_on: string; keika_until: number };
 export type TokuteiRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; sanso: string; changed_on: string; keika_until: string; abolished_on: string };
 
+/** コードごとに引く文は、接続ごとに 1 回だけ用意する（コードの数だけ prepare すると、5,000 行のレセプトでは引く時間の多くが prepare になる。round-32 S-9） */
+const statements = new WeakMap<MastersDb, Map<string, Database.Statement>>();
+const prepared = (db: MastersDb, sql: string): Database.Statement => {
+  const m = statements.get(db) ?? new Map<string, Database.Statement>();
+  statements.set(db, m);
+  const s = m.get(sql) ?? db.prepare(sql);
+  m.set(sql, s);
+  return s;
+};
+
 const one = <T>(db: MastersDb, table: "shinryo" | "iyakuhin" | "tokutei", snapshot: string, code: string): T | null =>
-  (db.prepare(`SELECT * FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as T | undefined) ?? null;
+  (prepared(db, `SELECT * FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as T | undefined) ?? null;
 
 /** コードから行を引く（その 1 枚にないコードは null） */
 export const shinryoOf = (db: MastersDb, snapshot: string, code: string): ShinryoRow | null => one<ShinryoRow>(db, "shinryo", snapshot, code);
@@ -83,11 +93,11 @@ export type NamedMaster = "shinryo" | "iyakuhin" | "tokutei" | "comment" | "shob
 
 /** その 1 枚の、そのコードの名称（その 1 枚にないコードは null）。コメントマスターは定型文、傷病名マスターは傷病名 */
 export const nameOf = (db: MastersDb, table: NamedMaster, snapshot: string, code: string): string | null =>
-  (db.prepare(`SELECT name FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as { name: string } | undefined)?.name ?? null;
+  (prepared(db, `SELECT name FROM ${table} WHERE snapshot = ? AND code = ?`).get(snapshot, code) as { name: string } | undefined)?.name ?? null;
 
 /** そのデータの、持っている 1 枚を全部（更新日の古い順）。generation を渡せば、その世代のものだけ */
 export const snapshotsOf = (db: MastersDb, dataset: string, generation?: string): string[] =>
-  (db.prepare("SELECT DISTINCT snapshot FROM sources WHERE dataset = ? AND (? IS NULL OR generation = ?) ORDER BY snapshot").all(dataset, generation ?? null, generation ?? null) as { snapshot: string }[]).map((r) => r.snapshot);
+  (prepared(db, "SELECT DISTINCT snapshot FROM sources WHERE dataset = ? AND (? IS NULL OR generation = ?) ORDER BY snapshot").all(dataset, generation ?? null, generation ?? null) as { snapshot: string }[]).map((r) => r.snapshot);
 
 /** 点検（G01〜G09）の準備ができているか（要る表がそろい、錨が通ったか。作るのは src/masters/verify.ts）。行がなければ null */
 export function checkReady(db: MastersDb, check: string): { ready: boolean; reason: string } | null {
