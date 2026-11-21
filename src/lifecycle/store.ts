@@ -241,13 +241,17 @@ export function readBody(opts: StoreOptions, id: string): string {
   return readFileSync(path.join(dirOf(opts, id), "SKILL.md"), "utf8").replace(/\s+$/, "");
 }
 
-/** 未検証の候補の本文に書き足す（round-9 C-44）。rev は内容が変わるので計算し直す */
-export function appendBody(opts: StoreOptions, id: string, text: string): KnowledgeMeta {
+/**
+ * 未検証の候補の本文に書き足す（round-9 C-44）。rev は内容が変わるので計算し直す。
+ * over は、背反の組の知識（match.codePair）の修正版の向きと条件の文を、会議の回答の値に置き換えるとき（design.md §14-1。X-118）
+ */
+export function appendBody(opts: StoreOptions, id: string, text: string, over?: { polarity: Polarity; conditionNote: string }): KnowledgeMeta {
   const meta = readKnowledge(opts, id);
   if (!meta) throw new Error(`知識が見つからない: ${id}`);
   if (meta.status !== "未検証") throw new Error(`未検証でない知識には書き足さない: ${id}`);
   const body = `${readBody(opts, id)}\n\n${text.replace(/\s+$/, "")}`;
-  const next = { ...meta, rev: computeRev(body, meta.match, meta) };
+  const merged = { ...meta, ...over };
+  const next = { ...merged, rev: computeRev(body, merged.match, merged) };
   writeAtomic(path.join(dirOf(opts, id), "SKILL.md"), `${body}\n`);
   writeAtomic(path.join(dirOf(opts, id), "meta.json"), `${JSON.stringify(next, null, 2)}\n`);
   return next;

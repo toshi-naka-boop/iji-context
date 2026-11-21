@@ -19,10 +19,11 @@ import {
 } from "./store";
 import { assertTime, canonicalTime, ms } from "./time";
 import { evaluateTriggers, triggersOf } from "./triggers";
-import type { Basis, KnowledgeMeta, LifecycleEvent, TriggerKind } from "./types";
+import type { Basis, CodePair, KnowledgeMeta, LifecycleEvent, Polarity, TriggerKind } from "./types";
+import { PAIR_NOTE_MAX } from "./store";
 import { conflictDocs, conflictKeys, docKey } from "../official/match";
 import type { OfficialDoc, OfficialInput } from "../official/types";
-import { notFound } from "../server/errors";
+import { badRequest, notFound } from "../server/errors";
 
 export type ReviewDeps = {
   db: Db;
@@ -324,7 +325,7 @@ export type SameApplied = { submissionId: string; claimId: string; yearMonth: st
 
 export type ItemReason =
   | { kind: "miss"; misses: MissEntry[]; sameApplied: SameApplied[] }
-  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind; official?: OfficialRef[]; conditionNote?: string }
+  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind; official?: OfficialRef[]; conditionNote?: string; claimId?: string; codePair?: CodePair; changes?: string[] }
   | { kind: "ignored"; removedKubun: string[] }
   | { kind: "disposal"; event: string; candidateId?: string | null; official?: OfficialRef[]; conditionNote?: string };
 
@@ -335,7 +336,8 @@ function lastEntryInto(meta: KnowledgeMeta, status: string) {
 function recheckReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): ItemReason {
   const e = lastEntryInto(meta, "要再検証");
   const b = e?.basis ?? {};
-  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger, ...officialReason(deps, meta, now) };
+  // 背反の組の知識（design.md §14-4）：返戻の請求 id と組・改定で差が出た項目
+  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger, ...officialReason(deps, meta, now), ...(b.claimId ? { claimId: b.claimId } : {}), ...(b.codePair ? { codePair: b.codePair } : {}), ...(b.changes ? { changes: b.changes } : {}) };
 }
 
 const missKey = (submissionId: string, resultId: string) => `${submissionId}\0${resultId}`;
@@ -526,6 +528,8 @@ export type DigestEntry = {
   choices: Choice[];
   /** miss のみ：確かめ直しの答えが、この外れの確認の答えを待っている（v21。再度の通知） */
   waitingRecheck?: boolean;
+  /** 背反の組の知識（match.codePair）だけ：組と、今の向き・条件の文。回答 2 では、修正版の向きと条件の文を回答で入れる（design.md §14-1。X-118） */
+  pair?: { codePair: CodePair; polarity: Polarity; conditionNote: string };
 };
 
 /** 最新の整理のまとめ（未回答の項目だけ）。ベテラン本人のメンター（F6）が言い換えて届ける */
@@ -546,6 +550,7 @@ export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items:
       kind: r.kind,
       knowledgeId: r.knowledgeId,
       summary: readKnowledge(deps.store, r.knowledgeId)?.summary ?? "",
+      ...((m) => (m?.match.codePair ? { pair: { codePair: m.match.codePair, polarity: m.polarity, conditionNote: m.conditionNote ?? "" } } : {}))(readKnowledge(deps.store, r.knowledgeId)),
       submissionId: r.submissionId,
       reason: JSON.parse(r.reason) as ItemReason,
       choices: CHOICES[r.kind],
@@ -584,23 +589,33 @@ export function markNotified(deps: ReviewDeps, itemId: string, now: string): voi
   deps.db.update(digestItems).set({ notifiedAt: now }).where(eq(digestItems.itemId, itemId)).run();
 }
 
-/** 回答を記録し、すぐ反映する。失敗しても整理の手順 0 で拾い直す */
+/**
+ * 回答を記録し、すぐ反映する。失敗しても整理の手順 0 で拾い直す。
+ * 背反の組の知識（match.codePair）を回答 2 で直すときは、修正版の向き（polarity）と条件の文（conditionNote）が要る（元からコピーしない。design.md §14-1。X-118）。
+ * それ以外の知識・回答には付けない
+ */
 export function answerItem(
   deps: ReviewDeps,
-  input: { itemId: string; answer: 1 | 2 | 3 | 4; freeText?: string },
+  input: { itemId: string; answer: 1 | 2 | 3 | 4; freeText?: string; polarity?: Polarity; conditionNote?: string },
   now: string,
 ): AnswerOutcome {
   assertTime(now, "now");
   const row = deps.db.select().from(digestItems).where(eq(digestItems.itemId, input.itemId)).get();
   if (!row) throw notFound(`未知の項目: ${input.itemId}`);
   if (row.answer !== null) return { status: "duplicate" }; // round-4 X-19
+  const pair = readKnowledge(deps.store, row.knowledgeId)?.match.codePair !== undefined;
+  // 修正版の候補を作るのは、廃棄提案以外の項目の回答 2（disposal の 2 は「廃棄しない」）
+  const fix = pair && input.answer === 2 && row.kind !== "disposal";
+  if (!fix && (input.polarity !== undefined || input.conditionNote !== undefined)) throw badRequest("向きと条件の文は、背反の組の知識を「直す必要がある」と答えるときだけ付けます");
+  const note = input.conditionNote?.trim() ?? "";
+  if (fix && (input.polarity === undefined || note === "" || note.length > PAIR_NOTE_MAX)) throw badRequest(`背反の組の知識を直すときは、修正版の扱いと、条件（1〜${PAIR_NOTE_MAX} 字）を入れてください`);
   // 最新の会議に載っていない古い項目への回答は記録だけ（round-15 X-58）。回答が届いた時点で確かめ、
   // 回答と stale の印を同じ書き込みで残す（途中で止まっても拾い直しで反映されない。round-16 X-62）
   const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
   const old = latest !== undefined && row.reviewId !== latest.reviewId;
   deps.db
     .update(digestItems)
-    .set({ answer: input.answer, freeText: input.freeText ?? null, answeredAt: now, applied: false, stale: old })
+    .set({ answer: input.answer, freeText: input.freeText ?? null, answeredAt: now, applied: false, stale: old, ...(fix ? { polarity: input.polarity, conditionNote: note } : {}) })
     .where(eq(digestItems.itemId, input.itemId))
     .run();
   if (old) return { status: "stale" };
@@ -618,14 +633,20 @@ function findCandidate(deps: ReviewDeps, relatesTo: string, itemId: string): str
   return null;
 }
 
-/** 修正版の候補を作る。同じ relates_to の未検証の候補があれば書き足す（round-9 C-44）。同じ項目では 1 回だけ */
-function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, freeText: string | null, now: string): string {
+/**
+ * 修正版の候補を作る。同じ relates_to の未検証の候補があれば書き足す（round-9 C-44）。同じ項目では 1 回だけ。
+ * 背反の組の知識（match.codePair）は、修正版の向きと条件の文を回答の値（fix）にする（元からコピーしない。書き足すときも置き換える。design.md §14-1。X-118）
+ */
+function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, freeText: string | null, now: string, fix: { polarity: Polarity | null; conditionNote: string | null } = { polarity: null, conditionNote: null }): string {
   const done = findCandidate(deps, orig.id, itemId);
   if (done) return done;
+  const over = orig.match.codePair !== undefined ? { polarity: fix.polarity, conditionNote: fix.conditionNote } : null;
+  if (over && (over.polarity === null || !over.conditionNote)) throw new Error(`背反の組の知識の修正版に、回答の向きと条件の文がない: ${itemId}`);
+  const pairOver = over ? { polarity: over.polarity!, conditionNote: over.conditionNote! } : undefined;
   const text = `ベテランの回答（レセメン会議）：${freeText?.trim() || "（記述なし）"}\n\n${marker(itemId)}`;
   const open = listKnowledge(deps.store).find((m) => m.relates_to === orig.id && m.status === "未検証");
   if (open) {
-    appendBody(deps.store, open.id, text);
+    appendBody(deps.store, open.id, text, pairOver);
     return open.id;
   }
   const created = createKnowledge(
@@ -638,10 +659,10 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
       source: { type: "エスカレーション", ref: itemId },
       relates_to: orig.id,
       match: orig.match,
-      // 近似の条件と向きも引き継ぐ（round-12 X-49）
-      polarity: orig.polarity,
+      // 近似の条件と向きも引き継ぐ（round-12 X-49）。背反の組の知識は、回答の値にする（X-118）
+      polarity: pairOver?.polarity ?? orig.polarity,
       matchApprox: orig.matchApprox,
-      conditionNote: orig.conditionNote,
+      conditionNote: pairOver?.conditionNote ?? orig.conditionNote,
     },
     now,
   );
@@ -711,20 +732,20 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
         if (meta.status === "承認済み") applyEvent(deps.store, meta.id, { type: "COUNTER_EXAMPLE" }, now, b);
         else if (meta.status === "要再検証") applyEvent(deps.store, meta.id, { type: "RECHECK_FAIL" }, now, b);
       }
-      out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now);
+      out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now, { polarity: row.polarity, conditionNote: row.conditionNote });
     }
   } else if (row.kind === "recheck") {
     if (a === 1 && !transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_PASS", via: "veteran", officialKeys }, now, seenBasis);
     if (a === 2) {
       if (!transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_FAIL" }, now, basis);
-      out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now);
+      out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now, { polarity: row.polarity, conditionNote: row.conditionNote });
     }
   } else if (row.kind === "ignored") {
     if (a === 1) {
       if (meta.status === "承認済み" || meta.status === "要再検証") applyEvent(deps.store, meta.id, { type: "USED" }, now);
       out.notify = { submissionId: row.submissionId ?? "", knowledgeId: meta.id, message: "取り忘れだった" };
     }
-    if (a === 2) out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now);
+    if (a === 2) out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now, { polarity: row.polarity, conditionNote: row.conditionNote });
   } else {
     if (a === 1 && !transitioned) {
       const reason = row.freeText?.trim() || "レセメン会議でベテランが廃棄を承認";
