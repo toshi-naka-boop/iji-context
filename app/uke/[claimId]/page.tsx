@@ -248,6 +248,7 @@ export default function UkeClaimCheck() {
                     scope="full"
                     rowHref={codeHref}
                     laterSheets={c.sheetNotes?.later ?? []}
+                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1) }}
                     notes={[
                       "公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。",
                       ...((c.sheetNotes?.later ?? []).length > 0 ? [`診療年月より前の版のマスターを持っていないので、後の版で代えています：${c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。`] : []),

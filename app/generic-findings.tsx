@@ -4,6 +4,8 @@
 // 包括（G04）は、同じ行（含まれる側）について親が複数あれば 1 つにまとめる。手書きのルールとの重なりで出さなかった指摘は、数を出す（消えたことが分かるように）
 // 適応・併用（G09）は、ほかの点検よりさらに控えめに出す：別の見出しの下にまとめ、既定で折りたたむ。見出しの下に、公開元の但し書きの趣旨と、見られないもの（院外処方の薬、表にない薬・診療行為の数）を、1 行の見出しの閉じた折りたたみで出す。
 // 取り込んだレセプトの点検（full）は、上から要約（動いた点検の数・指摘の数・何も出ないことは問題がない意味ではないこと）→ 指摘 → 点検していないこと・断り（閉じた折りたたみ）の順
+// 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）は、answer（請求 id と、答えを残したあとに読み直す関数）を渡した画面（取り込んだレセプトの点検）でだけ、指摘の下に選択肢を出す
+import { AskInput } from "./fact-input";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
@@ -20,7 +22,7 @@ const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.cod
  * skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば）。
  * full のときだけ：notes は、呼び出し側の断り（折りたたみの中に足す）、laterSheets は、診療年月より後の版で代えているデータの名前（要約に一言添える）
  */
-export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [] }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[] }) {
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void } }) {
   const rowLink = (c: { code: string; name: string | null }) => {
     const href = rowHref?.(c.code);
     return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
@@ -66,6 +68,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
           {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
           <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
+          {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} />)}
           {more.length > 0 && (
             <div className="muted">
               同じ行は、ほかに {more.length} 個の行為にも含まれる項目として載っています：

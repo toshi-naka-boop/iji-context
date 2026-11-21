@@ -3,10 +3,13 @@
 // 入るのは、人が確かめて残した値だけ。医師あての項目は医師の役割だけが残せる（医療事務には「医師に確認が要ります」と出す）。
 // 患者ごとに残す項目（PATIENT_FACT_KEYS。要介護度・居住の場所など。月をまたいで残る）は、患者情報の欄へ誘導する。patientInline の画面（取り込んだレセプトの点検）では、同じ入力をその場にも出す（POST /api/patients/[claimId]/facts）。
 // 施設の設定の情報不足は、事務長なら設定の画面の該当の項目へ、ほかの役割なら「事務長が設定の画面で残します」と案内する（FR-148）。
-// 入力では消えない情報不足（カルテの記録がない・対象外の行）には何も出さない
+// 入力では消えない情報不足（カルテの記録がない・対象外の行）には何も出さない。
+// 背反の特例条件の例外の問い（design.md §13-3）は、同じ入口に選択肢の文字列を残す（AskInput。取り込んだレセプトの点検の画面で、問いのついた指摘の下に出す）
 import { useEffect, useState } from "react";
-import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey } from "../src/claim/facts";
+import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey, type HaihanFactKey } from "../src/claim/facts";
 import type { Finding } from "../src/engine/types";
+import { exceptionOf, parseHaihanKey } from "../src/generic/haihan";
+import type { GenericAsk } from "../src/generic/view";
 import { FACT_LABEL } from "../src/messages";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
 import { LABEL as PATIENT_LABEL, choicesOf, show as showPatientFact, valueOf } from "./work/patient-panel";
@@ -63,6 +66,59 @@ function FactForm(props: { claimId: string; factKey: ClaimFactKey; date: string 
       <button disabled={value.trim() === ""} onClick={() => void save()}>残す</button>
       {err && <span className="notice warn">{err}</span>}
     </span>
+  );
+}
+
+/** 例外の問いの答えの入力：選択肢（「その他」「判定不能」を含む）から 1 つと、確かめ方。日ごとの問いは、聞かれている日の答えを残す */
+function ChoiceForm(props: { claimId: string; factKey: HaihanFactKey; date: string | null; question: string; choices: string[]; onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [source, setSource] = useState<string>(CLAIM_FACT_SOURCES[0]);
+  const [err, setErr] = useState("");
+  async function save() {
+    setErr("");
+    const fact = { key: props.factKey, date: props.date, value, source };
+    const r = await fetch(`/api/claims/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) return setErr(d?.error ?? "エラー");
+    setValue("");
+    props.onSaved();
+  }
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <select aria-label={`${props.question}${dayText(props.date)}`} value={value} onChange={(e) => setValue(e.target.value)} style={{ maxWidth: "100%" }}>
+        <option value="">選ぶ</option>
+        {props.choices.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <select aria-label="確かめ方" value={source} onChange={(e) => setSource(e.target.value)}>
+        {CLAIM_FACT_SOURCES.map((x) => <option key={x} value={x}>{how(x)}</option>)}
+      </select>
+      <button disabled={value === ""} onClick={() => void save()}>残す</button>
+      {err && <span className="notice warn">{err}</span>}
+    </span>
+  );
+}
+
+/**
+ * 背反の特例条件の例外の問い（データで動く点検の G05.exception_ask の下に出す）。残せるのは算定の仕事をする人（医療事務あて）。
+ * 例外の問いは選択肢から、R10 と同じ「別々の診療か」は、はい・いいえで残す。日ごとの問いは、聞かれている日ごとに 1 つ
+ */
+export function AskInput(props: { claimId: string; ask: GenericAsk; onSaved: () => void }) {
+  const role = useRole();
+  const { ask } = props;
+  if (!canSave(role, "clerk")) return role === null ? null : <div className="muted">医療事務が答えを残します。</div>;
+  const dates: (string | null)[] = ask.dates.length > 0 ? ask.dates : [null];
+  return (
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+      <div>{ask.question}</div>
+      {dates.map((d) => (
+        <div key={d ?? ""}>
+          {d && <span className="muted">{dayText(d)} </span>}
+          {ask.kind === "fact"
+            ? <FactForm claimId={props.claimId} factKey={ask.key} date={d} onSaved={props.onSaved} />
+            : <ChoiceForm claimId={props.claimId} factKey={ask.key as HaihanFactKey} date={d} question={ask.question} choices={ask.choices} onSaved={props.onSaved} />}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -141,12 +197,17 @@ export function CheckedFacts(props: { claimId: string; tick: number; onSaved: ()
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {facts.map((f) => {
         const id = `${f.key}|${f.date ?? ""}`;
+        // 例外の問いの答え（haihan:*）は、問いの文と、どの組（コード）の答えかを出す。直すときは同じ選択肢から（答えを変えれば問い直す）
+        const k = isClaimFactKey(f.key) ? null : parseHaihanKey(f.key);
+        const ask = k ? exceptionOf(k.hx)?.ask : undefined;
+        const label = k ? `特例の例外の問い（${k.hx}・コード ${k.codes.join(" と ")}）「${ask?.question ?? ""}」` : FACT_LABEL[f.key as ClaimFactKey];
+        const done = () => { setEditing(""); props.onSaved(); };
         return (
           <div key={id} className="notice ok">
-            確かめた：{FACT_LABEL[f.key]}{dayText(f.date)}＝{show(f.value)}
+            確かめた：{label}{dayText(f.date)}＝{show(f.value)}
             <span className="muted">（{f.checkedByName || f.checkedBy}・{f.checkedAt.slice(0, 10)}・{how(f.source)}）</span>
             {canSave(role, f.target) && (editing === id
-              ? <div style={{ marginTop: 6 }}><FactForm claimId={props.claimId} factKey={f.key} date={f.date} onSaved={() => { setEditing(""); props.onSaved(); }} /></div>
+              ? <div style={{ marginTop: 6 }}>{k ? <ChoiceForm claimId={props.claimId} factKey={f.key as HaihanFactKey} date={f.date} question={ask?.question ?? ""} choices={ask?.choices.map((c) => c.label) ?? []} onSaved={done} /> : <FactForm claimId={props.claimId} factKey={f.key as ClaimFactKey} date={f.date} onSaved={done} />}</div>
               : <> <button onClick={() => setEditing(id)}>直す</button></>)}
           </div>
         );
