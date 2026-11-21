@@ -12,6 +12,11 @@ export const DEFAULT_NOW = period.clockStart;
 const JST = 9 * 3_600_000;
 /** 実際の時刻を、日本時間のタイムゾーン付き ISO 8601 にする（例 2026-11-22T14:05:33+09:00。design.md §3 の時刻の形式） */
 export const jstIsoOf = (d: Date): string => `${new Date(d.getTime() + JST).toISOString().slice(0, 19)}+09:00`;
+/** 時刻の、日本時間の日付（YYYY-MM-DD） */
+const jstDayOf = (s: string): string => new Date(Date.parse(s) + JST).toISOString().slice(0, 10);
+
+/** 実在のクリニックで、日付が変わったときに回した日時（app_settings のキー） */
+const CAUGHT_UP_KEY = "caught_up_at";
 
 export function createClock(ctx: AppContext) {
   const { kind, sqlite, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
@@ -46,7 +51,30 @@ export function createClock(ctx: AppContext) {
     return { now: to, ...r };
   }
 
-  return { now, advanceClock };
+  /** このプロセスで、回そうとして失敗した日（同じ日のうちは毎リクエストで回し直さない。次の日か、開き直したときにまた回す） */
+  let failedDay: string | null = null;
+  /**
+   * real のクリニックで、前に回した日から日付（日本時間）が変わっていれば、今の時刻で tick を回す（リクエストのたびに呼ぶ。src/server/instance.ts）。
+   * 回した日時は DB（app_settings）に残す。同じ日のうちは何もしない（重い処理を毎リクエストで回さない）。回したら結果を、回さなければ null を返す。
+   * demo のクリニックでは何もしない（時計を進めたときに advanceClock が回す）
+   */
+  function catchUp(): ReturnType<typeof tick> | null {
+    if (kind !== "real") return null;
+    const at = now();
+    const day = jstDayOf(at);
+    const last = setting(CAUGHT_UP_KEY);
+    if ((last !== null && jstDayOf(last) >= day) || failedDay === day) return null;
+    try {
+      const r = tick(at);
+      setSetting(CAUGHT_UP_KEY, at);
+      return r;
+    } catch (e) {
+      failedDay = day;
+      throw e;
+    }
+  }
+
+  return { now, advanceClock, catchUp };
 }
 
 export type Clock = ReturnType<typeof createClock>;

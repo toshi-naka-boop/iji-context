@@ -132,3 +132,58 @@ describe("今日の日付と、日付を進める操作", () => {
     }
   });
 });
+
+
+describe("real で、日付が変わったときに回る処理と、実際の日付での期限切れ", () => {
+  const draft = (claim: string): QueryDraft => ({
+    claimId: claim,
+    field: "SY:心房細動",
+    why: "病型の記載がない",
+    question: "心房細動の病型について、診療録に記載がありません。該当するものを選んでください。",
+    indicators: [{ source: "処方 2026-12-01", text: "DOAC" }],
+    options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"],
+    createdBy: "mentor",
+  });
+
+  it("日付が変わったリクエストで、医師確認のリマインド・保留と会議の整理が回る。同じ日のうちは回し直さない。回した日時は DB に残る", () => {
+    const u = auth().register("tick_real", "じつ", "password123", "real");
+    setNow("2026-12-01T10:00:00+09:00");
+    const a = appOf(u); // 最初のリクエスト：その日の分を回す（会議の整理は、まだ一度も回していないので回る）
+    expect(a.setting("caught_up_at")).toBe("2026-12-01T10:00:00+09:00");
+    const reviews = () => {
+      const db = new Database(a.paths.dbFile, { readonly: true });
+      const rows = db.prepare("SELECT ran_at FROM reviews ORDER BY ran_at").all() as { ran_at: string }[];
+      db.close();
+      return rows.map((r) => r.ran_at);
+    };
+    expect(reviews()).toHaveLength(1);
+    const q = createQuery(a.queryLog, draft("U1-1"), a.now());
+
+    // 同じ日のうちは何もしない
+    setNow("2026-12-01T18:00:00+09:00");
+    appOf(u);
+    expect(a.setting("caught_up_at")).toBe("2026-12-01T10:00:00+09:00");
+    expect(readQuery(a.queryLog, q.id).remindedAt).toBeNull();
+
+    // 翌営業日：リマインドが付く
+    setNow("2026-12-02T08:00:00+09:00");
+    appOf(u);
+    expect(a.setting("caught_up_at")).toBe("2026-12-02T08:00:00+09:00");
+    expect(readQuery(a.queryLog, q.id)).toMatchObject({ status: "未回答", remindedAt: "2026-12-02T08:00:00+09:00" });
+
+    // 3 営業日たつと保留。会議の曜日を過ぎていれば、会議の整理も回っている
+    setNow("2026-12-07T09:00:00+09:00");
+    appOf(u);
+    expect(readQuery(a.queryLog, q.id)).toMatchObject({ status: "保留", heldAt: "2026-12-07T09:00:00+09:00" });
+    expect(reviews().length).toBe(2);
+  });
+
+  it("demo では、リクエストで何も回らない（時計を進めたときだけ）", () => {
+    const u = auth().register("tick_demo", "でも", "password123", "demo");
+    setNow("2026-12-01T10:00:00+09:00");
+    const a = appOf(u);
+    expect(a.catchUp()).toBeNull();
+    expect(a.setting("caught_up_at")).toBeNull();
+  });
+
+});

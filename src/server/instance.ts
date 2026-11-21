@@ -122,6 +122,18 @@ function ensureClerk(a: App, user: User) {
   ensured.add(user.id);
 }
 
+/**
+ * 実在のクリニックで、日付が変わっていれば医師確認のリマインド・保留と会議の整理を回す（src/server/app/clock.ts の catchUp。同じ日のうちは何もしない）。
+ * 失敗しても、呼び出し（画面の操作）は止めない。サーバーログに残し、次の日か開き直したときにまた回す
+ */
+function catchUp(a: App) {
+  try {
+    a.catchUp();
+  } catch (e) {
+    console.error(`[clock] 日付が変わったときの処理に失敗: ${e instanceof Error ? `${e.name}: ${e.message.slice(0, 300)}` : "error"}`);
+  }
+}
+
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
 const DEMO_CLERKS = [
   { id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" as const },
@@ -134,6 +146,7 @@ export function getApp(): App {
     const t = tenants.get(u.tenantId) ?? openTenant(u.tenantId);
     touchTenant(u.tenantId, t);
     ensureClerk(t, u);
+    catchUp(t);
     return t;
   }
   if (app) return app;
