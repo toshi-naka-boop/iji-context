@@ -69,15 +69,15 @@ export type GenericCheck = {
 export type GenericUnitDetail = Partial<Pick<UkeUnit, "points" | "count" | "days">> & { items: (Pick<UkeItem, "kind" | "code"> & Partial<Pick<UkeItem, "line" | "quantity" | "shikibetsu" | "unitPrice">>)[] };
 
 /**
- * 請求について分かっていることのうち、G03・G07・G08 が読むもの。分からない項目は省く（その項目に依る点検はしない）：
+ * 請求について分かっていることのうち、G03・G07・G08・G09 が読むもの。分からない項目は省く（その項目に依る点検はしない）：
  * outpatient＝入院外のレセプトか（parseUke が読めるのは入院外だけ。G07 も読む）／birth＝生年月日（YYYYMMDD）／clinic＝施設が診療所か（偽＝病院）
  */
 export type GenericAboutMore = GenericAbout & {
   outpatient?: boolean;
   birth?: string;
   clinic?: boolean;
-  /** 傷病名（SY のコード。未コード化は 0000999）。G08 が読む。持たない請求（区分キーの行）は省く：傷病名の要件は点検しない */
-  diseases?: { code: string }[];
+  /** 傷病名（SY のコード。未コード化は 0000999）。G08・G09 が読む。持たない請求（区分キーの行）は省く：傷病名の要件・適応は点検しない。suspected＝疑い病名（修飾語 8002「の疑い」つき。G09 が読む） */
+  diseases?: { code: string; suspected?: boolean }[];
 };
 
 /** 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位、excluded＝検算の対象外の単位（理由ごと） */

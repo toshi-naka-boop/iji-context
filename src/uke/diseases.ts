@@ -3,6 +3,8 @@
 
 /** 未コード化傷病名のコード */
 export const UNCODED_DISEASE = "0000999";
+/** 修飾語「の疑い」のコード（EM §5-1。作成手引き p24 の記録例）。この修飾語の付いた傷病名が、疑い病名 */
+export const SUSPECTED_MODIFIER = "8002";
 
 export const DISEASE_CODES: Record<string, string> = {
   慢性心不全: "4289018",

@@ -1,14 +1,15 @@
-// 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02・G03・G07・G08 が点検していないこと。
+// 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02・G03・G07・G08・G09 が点検していないこと。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
 import type { MastersDb } from "../masters/db";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
 import { g07NotDone } from "./g07";
 import { g08NotDone } from "./g08";
+import { g09NotDone } from "./g09";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
-/** recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文） */
-export type GenericScope = { recalc?: RecalcSummary; notDone: string[] };
+/** recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す） */
+export type GenericScope = { recalc?: RecalcSummary; notDone: string[]; g09?: string[] };
 
 export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, about: GenericAbout, result: GenericResult): GenericScope {
   const out: GenericScope = { notDone: [] };
@@ -21,5 +22,6 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (ran("G03")) out.notDone.push(...g03NotDone(about));
   if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
+  if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   return out;
 }

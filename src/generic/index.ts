@@ -1,6 +1,6 @@
 // evaluateGeneric(claim, masters, about)：データで動く点検（design.md §12-2）。公開データ（masters.db）の行で、UKE の単位とコードのまま点検する。
 // 手書きのルール（src/engine/ の evaluate）は変えない。指摘は定型文と値だけで作り、LLM は使わない。
-// 入っているのは G01〜G08。あとの段は、CHECKS に点検を足す
+// 入っているのは G01〜G09
 import raw from "../../config/generic-checks.json";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine } from "../engine/types";
@@ -13,6 +13,7 @@ import { g05 } from "./g05";
 import { g06 } from "./g06";
 import { g07 } from "./g07";
 import { g08 } from "./g08";
+import { g09 } from "./g09";
 import { GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
 
 const CHECKS: GenericCheck[] = [g01];
@@ -23,6 +24,7 @@ CHECKS.push(g05);
 CHECKS.push(g06);
 CHECKS.push(g07);
 CHECKS.push(g08);
+CHECKS.push(g09);
 
 /**
  * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。
@@ -56,6 +58,9 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
       result.findings.push(...found.map((f) => ({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? ("確定" as const) : ("条件つき" as const) })));
     }
   }
+  // 同じ診療行為に、傷病名の要件（G08）と診療行為の適応（G09）の両方が出るときは、G08 だけを出す（同じ「対象の傷病名が見当たらない」を 2 回言わない）
+  const g08Codes = new Set(result.findings.filter((f) => f.check === "G08").flatMap((f) => f.codes));
+  result.findings = result.findings.filter((f) => !(f.check === "G09" && f.messageKey.startsWith("G09.si_") && f.codes.some((c) => g08Codes.has(c))));
   return result;
 }
 
