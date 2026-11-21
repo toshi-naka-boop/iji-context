@@ -1,0 +1,10 @@
+// strict を掛けるディレクトリだけを include に並べる（全体の tsconfig.json は strict: false のまま）。
+// include から import される外のファイルも strict で検査される
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "incremental": false
+  },
+  "include": ["next-env.d.ts", "src/engine/**/*.ts"]
+}
