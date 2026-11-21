@@ -54,7 +54,7 @@ describe("段 14：実データの masters.db で", () => {
     const db = openMasters(file)!;
     const claim = claimsOf("jitsurei.UKE")[2];
     const look = g09Look(claim, db, aboutOf(claim)) as G09Look;
-    expect(look.iy).toEqual({ all: 12, inTable: 9 });
+    expect(look.iy).toEqual({ all: 12, inTable: 9, conditioned: 0 });
     // 元のまま：SY は 高血圧症・心房細動・慢性心不全。出るのは、表の傷病名（240 件。湿疹・皮膚炎・鼻炎など）が 1 つもない抗アレルギー薬だけ
     expect(look.findings.map((f) => [f.messageKey, f.codes[0], f.certainty])).toEqual([["G09.iy_no_disease", "610421327", "条件つき"]]);
     // 傷病名を全部消す：表にある 9 つの薬の全部に、薬ごとに 1 件。表にない 3 つ（うち 1 つは薬剤料の逓減のコード）には出ない
@@ -121,18 +121,25 @@ describe("段 14：実データの masters.db で", () => {
     db.close();
   });
 
-  withData("広く掛ける検査：適応の表に行のある全部の医薬品・診療行為について、表の傷病名を 1 つ置くと出ず、傷病名を空にすると出る", () => {
+  withData("広く掛ける検査：適応の表に行のある全部の医薬品・診療行為について、表の傷病名を 1 つ置くと出ず、傷病名を空にすると出る（性別・年齢の条件つきの行があるコードは、空でも出ない）", () => {
     const db = openMasters(file)!;
     const s = pickSnapshot(db, "checkmaster", YM, rev.generation)!.snapshot;
     const shobyo = pickSnapshot(db, "shobyo", YM, rev.generation)!.snapshot;
     for (const [kind, table, key] of [["IY", "cm_tekio", "G09.iy_no_disease"], ["SI", "cm_si_shobyo", "G09.si_no_disease"]] as const) {
       // 表にあるコード（廃止でない傷病名の行がある）と、その傷病名のうち、持っている傷病名マスターにあるもの 1 つ（なければ null）
-      const rows = db.prepare(`SELECT c.code, min(CASE WHEN m.code IS NOT NULL THEN c.shobyo END) AS disease FROM ${table} c LEFT JOIN shobyo m ON m.snapshot = ? AND m.code = c.shobyo WHERE c.snapshot = ? AND c.shobyo > '0000003' AND c.change <> '9' GROUP BY c.code`).all(shobyo, s) as { code: string; disease: string | null }[];
+      // cond＝性別・年齢の条件つきの行（廃止でない）がある。そのコードの適応は見ないので、空でも出ない
+      const rows = db.prepare(`SELECT c.code, min(CASE WHEN m.code IS NOT NULL THEN c.shobyo END) AS disease, max(c.sex <> '0' OR c.age_lower <> 0 OR c.age_upper <> 999.99) AS cond FROM ${table} c LEFT JOIN shobyo m ON m.snapshot = ? AND m.code = c.shobyo WHERE c.snapshot = ? AND c.shobyo > '0000003' AND c.change <> '9' GROUP BY c.code`).all(shobyo, s) as { code: string; disease: string | null; cond: number }[];
       let noMaster = 0;
+      let cond = 0;
       const wrong: string[] = [];
       for (const r of rows) {
         const claim = claimOf([[[kind, r.code]], [5]]);
         const empty = (g09.run(claim, db, withDiseases()) as GenericFinding[]).filter((f) => f.messageKey === key);
+        if (r.cond === 1) {
+          cond++;
+          if (empty.length !== 0) wrong.push(`${r.code} 条件つきなのに空で出る`);
+          continue;
+        }
         if (empty.length !== 1 || empty[0].codes[0] !== r.code || empty[0].certainty !== "条件つき") wrong.push(`${r.code} 空で出ない`);
         if (r.disease === null) {
           noMaster++;
@@ -140,7 +147,8 @@ describe("段 14：実データの masters.db で", () => {
         }
         if ((g09.run(claim, db, withDiseases(r.disease)) as GenericFinding[]).some((f) => f.messageKey.startsWith(key.slice(0, 6)))) wrong.push(`${r.code} × ${r.disease} で出る`);
       }
-      note(`広く掛ける検査（${table}）：${rows.length} コード。傷病名を空にすると全部に出て、表の傷病名を 1 つ置くと出ない。外れ ${wrong.length} 件。表の傷病名がどれも傷病名マスターにないコード ${noMaster} 件（置く検査はしていない）`);
+      note(`広く掛ける検査（${table}）：${rows.length} コード（うち性別・年齢の条件つきの行があるので見ない ${cond}）。ほかは、傷病名を空にすると全部に出て、表の傷病名を 1 つ置くと出ない。外れ ${wrong.length} 件。表の傷病名がどれも傷病名マスターにないコード ${noMaster} 件（置く検査はしていない）`);
+      expect(cond).toBeLessThan(rows.length / 10);
       expect(wrong).toEqual([]);
       expect(rows.length).toBeGreaterThan(kind === "IY" ? 10000 : 1500);
     }
@@ -160,8 +168,8 @@ describe("段 14：実データの masters.db で", () => {
   withData("速さ：薬 20 品目・傷病名 10 のレセプトの点検が 50 ミリ秒以内。薬を上限いっぱい並べた細工したレセプトでも、時間が表の大きさを超えて膨らまない", () => {
     const db = openMasters(file)!;
     const s = pickSnapshot(db, "checkmaster", YM, rev.generation)!.snapshot;
-    // 表の行の多い薬から順に（いちばん重い側）
-    const heavy = (db.prepare("SELECT code FROM cm_tekio WHERE snapshot = ? AND shobyo > '0000003' AND change <> '9' GROUP BY code ORDER BY count(*) DESC LIMIT 4900").all(s) as { code: string }[]).map((r) => r.code);
+    // 表の行の多い薬から順に（いちばん重い側）。性別・年齢の条件つきの行がある薬は、適応を見ずに通るので除く（傷病名を引く道を測る）
+    const heavy = (db.prepare("SELECT code FROM cm_tekio WHERE snapshot = ? AND shobyo > '0000003' AND change <> '9' GROUP BY code HAVING max(sex <> '0' OR age_lower <> 0 OR age_upper <> 999.99) = 0 ORDER BY count(*) DESC LIMIT 4900").all(s) as { code: string }[]).map((r) => r.code);
     const diseases = ["8833421", "4273006", "4289018", "2500015", "4389014", "3320002", "5908007", "8835114", "7262006", "4939008"];
     const timed = (fn: () => unknown): number => {
       const t0 = performance.now();

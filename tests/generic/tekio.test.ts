@@ -58,6 +58,17 @@ describe("G09 適応（医薬品）：表にある薬で、表の傷病名がレ
     expect(notes.some((t) => t.startsWith("適応の表にある薬 1／レセプトの薬 4、表にある診療行為 0／レセプトの診療行為 0。表にない薬・診療行為は、チェックの対象外なので見ていません"))).toBe(true);
   });
 
+  it("言わない：表に性別・年齢の条件つきの行がある薬・診療行為（条件を読めないので、その薬・診療行為の適応は見ない）。数を点検の範囲に出す", () => {
+    const c = claimOf([[["IY", M.aged], ["SI", M.seieki]], [1]]);
+    const db = checkMasters();
+    const a = withDiseases(DISEASE);
+    expect(g09(c, a, db)).toEqual([]);
+    expect(g09Look(c, db, a)).toMatchObject({ iy: { all: 1, inTable: 1, conditioned: 1 }, si: { all: 1, inTable: 1, conditioned: 1 } });
+    expect(genericScopeOf(c, db, a, evaluateGeneric(c, db, a)).g09).toContain("表にある薬のうち 1、診療行為のうち 1 は、表に性別・年齢の条件つきの行があるので、適応を見ていません（条件の読み方を、公開元の仕様書で確かめられていないため）");
+    // 条件のない薬なら、同じ傷病名で出る
+    expect(keys(claimOf([[["IY", M.pentasa]], [1]]), a)).toEqual([["G09.iy_no_disease", M.pentasa]]);
+  });
+
   it("言わない：未コード化の傷病名（0000999）か、マスターにない傷病名コードがあるレセプト（名前では当てない）。傷病名を持たない請求", () => {
     const c = claimOf([[["IY", M.pentasa]], [1]], [[["SI", M.bnp]], [1]]);
     const db = checkMasters();

@@ -15,16 +15,18 @@ export const M = {
   bnp: r2026.codes.D008_19.primary, // A105・A106 ＢＮＰ
   marker: "113001310", // A107 悪性腫瘍特異物質治療管理料（その他・1 項目）
   shohosen: r2026.codes.F400_3.primary, // 処方箋料（EM §2-8）
+  seieki: "160060910", // A67 精液一般検査（性別 1 の行の例）
+  aged: "620099999", // 仮のコード：年齢の条件つきの行だけを持つ薬
 } as const;
 
 /** 錨の傷病名（EM §2-11 表 2）。crohn・uc は A65・A66、nvaf は A108、shinfuzen・dcm は A105・A106、igan は A107 */
-export const S = { crohn: "5559001", uc: "5569003", nvaf: "8846906", shinfuzen: "4289015", dcm: "4254028", igan: "1519006" } as const;
+export const S = { crohn: "5559001", uc: "5569003", nvaf: "8846906", shinfuzen: "4289015", dcm: "4254028", igan: "1519006", seieki: "6069003" } as const;
 
 /** 小さな masters.db に、G09 が読む表を足す。G07・G08・G09 は準備できている */
 export function checkMasters(snapshot = "20261001"): Database.Database {
   const db = commentMasters(snapshot);
   source(db, "checkmaster", snapshot);
-  const tekio = (code: string, shobyo: string, change = "0") => put(db, "cm_tekio", snapshot, { code, shobyo, sex: "0", age_upper: 999.99, check_kubun: "1", max_dose: 99999.99999, max_days: 999, change });
+  const tekio = (code: string, shobyo: string, change = "0", age_lower = 0) => put(db, "cm_tekio", snapshot, { code, shobyo, sex: "0", age_lower, age_upper: 999.99, check_kubun: "1", max_dose: 99999.99999, max_days: 999, change });
   tekio(M.pentasa, S.crohn);
   tekio(M.pentasa, S.uc);
   tekio(M.riva, S.nvaf);
@@ -33,10 +35,13 @@ export function checkMasters(snapshot = "20261001"): Database.Database {
   tekio(M.pentasa, S.shinfuzen, "9");
   tekio(M.buscopan, "0000001");
   tekio(DRUG, S.crohn, "9");
-  const si = (code: string, shobyo: string, utagai: string) => put(db, "cm_si_shobyo", snapshot, { code, shobyo, sex: "0", age_upper: 999.99, nyugai: "0", utagai, change: "0" });
+  // 仮の行：年齢の条件つき（15 歳以上）の傷病名の行だけを持つ薬
+  tekio(M.aged, S.uc, "0", 15);
+  const si = (code: string, shobyo: string, utagai: string, sex = "0") => put(db, "cm_si_shobyo", snapshot, { code, shobyo, sex, age_upper: 999.99, nyugai: "0", utagai, change: "0" });
   si(M.bnp, S.shinfuzen, "0");
   si(M.bnp, S.dcm, "0");
   si(M.marker, S.igan, "1");
+  si(M.seieki, S.seieki, "0", "1");
   // 仮の行：傷病名の要件（G08）も見る診療行為（特定疾患療養管理料 × 気管支喘息。確定病名のみ）
   si(K.tokutei, D.zensoku, "1");
   const pair = (code_l: string, code_r: string, change = "0") => put(db, "cm_heiyo_kinki", snapshot, { code_l, code_r, change });

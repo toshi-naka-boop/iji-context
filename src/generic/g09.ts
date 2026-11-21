@@ -6,12 +6,14 @@
 //   si_no_disease＝医科診療行為傷病名関連マスタに行がある診療行為で、同じ／si_suspected＝表の傷病名が、疑い病名としてだけある（表が、その行為には確定病名だけを対象にしている）
 //   heiyo_kinki＝医薬品併用禁忌関連マスタにある組が、同じ日に両方ある（公開元の事例は「同日に算定された場合」。表には、併用禁忌のほかに併用注意などの組も入っていて、どれかは表から分からない）
 // 作っていないもの（点検の範囲に「していない」と出す）：量と日数（最大投与量・最長投与日数。単位と、1 日あたりか・どの期間かが仕様書に書かれていない。投与量グループ・漫然投与グループの表は
-//   取り込んでいない）、傷病名との禁忌（表を取り込んでいない）、性別・年齢の条件（列の読み方を、値ごとに原文で確かめられていない）、同じ成分の薬をまとめること
+//   取り込んでいない）、傷病名との禁忌（表を取り込んでいない）、性別・年齢の条件の読み分け（列の読み方を、値ごとに原文で確かめられていない）、同じ成分の薬をまとめること
 // 言わない場合（正しい請求に出さない側に倒す）：
 //   表に載っていない薬・診療行為（チェックの対象外。「問題なし」とも言わない。点検の範囲に数を出す）。廃止でない行が 1 つもないコードも同じ
 //   未コード化の傷病名（0000999）か、持っているマスターにない傷病名コードが SY にあるレセプト（名前では当てない）、傷病名を持たない請求（区分キーの行）
 //   院外処方の薬（医科のレセプトに載らない。L-66）
-// 数え方：SY のコードと表の傷病名コードの完全一致（修飾語は見ない）。性別・年齢の条件つきの行も、廃止の行も、当たりに数える。転帰のある傷病名も数える（SY に転帰の日付がなく、
+//   性別・年齢の条件つきの行（性別 0 以外、年齢が 000.00〜999.99 以外。廃止でない傷病名の行）が 1 つでもある薬・診療行為の適応（条件を読めないので、その薬・診療行為には言わない。
+//   点検の範囲に数を出す。公開元の事例は「添付文書に記載された年齢〔性別〕に適応となる傷病名が記載されてない場合」で、条件を読まないと、当たり・外れのどちらも決まらない）
+// 数え方：SY のコードと表の傷病名コードの完全一致（修飾語は見ない）。廃止の行も、当たりに数える。転帰のある傷病名も数える（SY に転帰の日付がなく、
 //   診療年月より前に終わったかが決まらない。G08 と同じ）。疑い病名（修飾語 8002）は、薬では数える（表に列がない）。診療行為では、表の「疑い病名」が 1（確定病名のみ）の行にだけ、数えない
 // 同じコードが複数の単位・複数の日にあっても、指摘はコードごとに 1 件（当たる単位は units に全部入れる）
 import { nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb } from "../masters/db";
@@ -33,8 +35,8 @@ const BEFORE_R8_CASES: ReadonlySet<string> = new Set(["20261030"]);
 
 /** 適応を点検しない理由：none＝傷病名を持たない／uncoded＝未コード化の傷病名がある／unknown＝マスターにない傷病名コードがある */
 type Why = "none" | "uncoded" | "unknown";
-/** 見た数：all＝レセプトにあるコードの数（重複を除く）、inTable＝そのうち表にあるコード */
-type Seen = { all: number; inTable: number };
+/** 見た数：all＝レセプトにあるコードの数（重複を除く）、inTable＝そのうち表にあるコード、conditioned＝そのうち性別・年齢の条件つきの行があるので適応を見なかったコード */
+type Seen = { all: number; inTable: number; conditioned: number };
 export type G09Look = { findings: GenericFinding[]; iy: Seen; si: Seen; why: Why | null; snapshot: string; later: boolean; shohosen: boolean };
 
 /** コード → そのコードのある単位（請求の units の添字） */
@@ -63,7 +65,7 @@ export function g09Look(claim: GenericClaim, masters: MastersDb, about: GenericA
   const s = pick.snapshot;
   const drugs = unitsOf(claim, "IY");
   const acts = unitsOf(claim, "SI");
-  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0 }, si: { all: acts.size, inTable: 0 }, why: null, snapshot: s, later: pick.later, shohosen: false };
+  const out: G09Look = { findings: [], iy: { all: drugs.size, inTable: 0, conditioned: 0 }, si: { all: acts.size, inTable: 0, conditioned: 0 }, why: null, snapshot: s, later: pick.later, shohosen: false };
 
   // レセプトの傷病名。confirmed＝疑い病名でない記載が 1 つでもあるコード
   const diseases = (about as GenericAboutMore).diseases;
@@ -101,12 +103,20 @@ export function g09Look(claim: GenericClaim, masters: MastersDb, about: GenericA
       codes.size <= LOOKUPS ? [...codes].flatMap((d) => (d > REAL ? (one.all(s, code, d) as { shobyo: string }[]) : [])) : (all.all(s, code, REAL) as { shobyo: string }[]).filter((r) => codes.has(r.shobyo));
   };
 
+  /** 性別・年齢の条件つきの行（廃止でない傷病名の行）があるか。あれば、そのコードの適応は見ない */
+  const conditioned = (table: "cm_tekio" | "cm_si_shobyo") => masters.prepare(`SELECT 1 FROM ${table} WHERE snapshot = ? AND code = ? AND shobyo > ? AND change <> '9' AND (sex <> '0' OR age_lower <> 0 OR age_upper <> 999.99) LIMIT 1`);
+
   // 適応（医薬品）
   const inTekio = masters.prepare("SELECT 1 FROM cm_tekio WHERE snapshot = ? AND code = ? AND shobyo > ? AND change <> '9' LIMIT 1");
+  const condTekio = conditioned("cm_tekio");
   const hitTekio = matcher("cm_tekio", "shobyo");
   for (const [code, units] of drugs) {
     if (!inTekio.get(s, code, REAL)) continue;
     out.iy.inTable++;
+    if (condTekio.get(s, code, REAL)) {
+      out.iy.conditioned++;
+      continue;
+    }
     if (out.why !== null || hitTekio(code).length > 0) continue;
     out.findings.push({
       check: "G09",
@@ -122,12 +132,17 @@ export function g09Look(claim: GenericClaim, masters: MastersDb, about: GenericA
 
   // 適応（診療行為）。処方箋料（F400）の行があるかも、ここで見る
   const inSi = masters.prepare("SELECT 1 FROM cm_si_shobyo WHERE snapshot = ? AND code = ? AND change <> '9' LIMIT 1");
+  const condSi = conditioned("cm_si_shobyo");
   const hitSi = matcher("cm_si_shobyo", "shobyo, utagai");
   for (const [code, units] of acts) {
     const row = snap.shinryo ? shinryoOf(masters, snap.shinryo, code) : null;
     if (row?.alpha === "F" && row.kubun_no === 400) out.shohosen = true;
     if (!inSi.get(s, code)) continue;
     out.si.inTable++;
+    if (condSi.get(s, code, REAL)) {
+      out.si.conditioned++;
+      continue;
+    }
     if (out.why !== null) continue;
     // 表が確定病名だけを対象にしている行（疑い病名 1）は、確定の記載があるときだけ当たり。suspected＝疑い病名としてだけあった、表の傷病名
     const suspected: string[] = [];
@@ -203,10 +218,11 @@ export function g09NotDone(claim: GenericClaim, masters: MastersDb, about: Gener
   return [
     `適応・併用：${G09_CAVEAT}`,
     `適応の表にある薬 ${r.iy.inTable}／レセプトの薬 ${r.iy.all}、表にある診療行為 ${r.si.inTable}／レセプトの診療行為 ${r.si.all}。表にない薬・診療行為は、チェックの対象外なので見ていません（適応が広い・問題がない、という意味ではありません）`,
+    ...(r.iy.conditioned + r.si.conditioned > 0 ? [`表にある薬のうち ${r.iy.conditioned}、診療行為のうち ${r.si.conditioned} は、表に性別・年齢の条件つきの行があるので、適応を見ていません（条件の読み方を、公開元の仕様書で確かめられていないため）`] : []),
     `${r.shohosen ? "このレセプトには処方箋料があります。" : ""}院外処方の薬の適応・量は、このレセプトからは見られません（医科のレセプトに薬が載らないため）`,
     ...(r.why !== null ? [WHY_TEXT[r.why]] : []),
-    "量と日数（最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件、同じ成分の薬をまとめた量、過去の月にまたがる日数は、点検していません（表の値の単位と数え方が、公開元の仕様書に書かれていないため。要る表の一部は取り込んでいません）",
-    "疑い病名は、薬では当たりに数えています。診療行為では、表が確定病名だけを対象にしている行に限って、数えていません。転帰（治ゆ・中止など）のある傷病名、性別・年齢の条件つきの行も、当たりに数えています。併用の組は、同じ日に両方あるものだけを見ています",
+    "量と日数（最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件の読み分け、同じ成分の薬をまとめた量、過去の月にまたがる日数は、点検していません（表の値の単位と数え方が、公開元の仕様書に書かれていないため。要る表の一部は取り込んでいません）",
+    "疑い病名は、薬では当たりに数えています。診療行為では、表が確定病名だけを対象にしている行に限って、数えていません。転帰（治ゆ・中止など）のある傷病名も、当たりに数えています。併用の組は、同じ日に両方あるものだけを見ています",
     `チェックマスタは ${r.snapshot.slice(0, 4)}年${Number(r.snapshot.slice(4, 6))}月${Number(r.snapshot.slice(6, 8))}日 公開の版です${BEFORE_R8_CASES.has(r.snapshot) ? "（公開元は、令和8年度診療報酬改定に伴う新しい事例の公開は次回以降としています。改定で変わった取扱いは、まだ反映されていないことがあります）" : ""}`,
   ];
 }
