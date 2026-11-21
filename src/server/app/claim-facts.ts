@@ -78,14 +78,20 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     if (target === "doctor" && role !== "doctor") throw forbidden("これは医師が確かめる項目です。医師の役割の利用者が残します");
     if (target === "clerk" && role === "doctor") throw forbidden("これは医療事務が確かめる項目です。事務・ベテランの役割で残します");
   }
-  function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput) {
+  /**
+   * 答えを書く関数（1 か所。X-105）。written は、f.key のほかに書いた・取り消した key を受け取る（監査ログの対象に足す。round-36 C-142）
+   */
+  function saveClaimFact(claimId: string, clerkId: string, role: Role, f: ClaimFactInput, written?: (keys: string[]) => void) {
     clerks.clerk(clerkId);
     const yearMonth = yearMonthOf(claimId);
     admit(f, yearMonth, role);
     const value = typeof f.value === "string" ? f.value.trim() : f.value;
     const at = now();
-    const insert = (key: string, date: string | null, v: unknown) =>
+    const others = new Set<string>();
+    const insert = (key: string, date: string | null, v: unknown) => {
+      if (key !== f.key) others.add(key);
       sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, key, date ?? "", JSON.stringify(v), f.source, clerkId, at);
+    };
     /** 最新が答えのとき（取り消していないとき）だけ、取り消しの行を足す（行は消さない。C-118） */
     const clear = (key: string, date: string | null) => {
       if (latestClaimFacts(claimId).some((x) => x.key === key && x.date === date)) insert(key, date, CLEARED);
@@ -108,11 +114,13 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
       } else if (isHaihanFactKey(f.key)) insert(f.key, f.date, value);
       else {
         insert(f.key, isDatedFact(f.key) ? f.date : null, value);
-        // 共有の事実を直接書いたとき（R10 の入力）も、その日の、その事実を使う問いの「もう問わない記録」を取り消す（読む側は共有の事実を先に読むので、残っていても効かないが、経過を合わせる）
+        // 共有の事実を直接書いたとき（R10 の入力）も、その日の、その事実を使う問いの「もう問わない記録」を取り消す。答えを変えれば問い直す（§13-2 の 4）ため：
+        // 偽を書くと sameDayOf は別々の診療かを名指しするので、記録が残っていると G05 は「決まらない」のまま問わない（round-36 C-142）
         if (isDatedFact(f.key))
           for (const x of latestClaimFacts(claimId)) if (isHaihanFactKey(x.key) && x.date === f.date && sharedOf(x.key) === f.key) insert(x.key, x.date, CLEARED);
       }
     })();
+    if (others.size > 0) written?.([...others]);
     return claimFacts(claimId);
   }
 

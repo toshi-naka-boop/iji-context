@@ -142,6 +142,8 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
   it("監査ログの対象は請求 id とキーだけ（値・氏名は入らない）。共有の事実を使う問いは、その事実のキーも入れる", async () => {
     const audit = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((r) => r.action === "POST /api/claims/[claimId]/facts" && r.result === "ok");
     expect(audit.map((r) => r.target)).toContain(`${ID} ${KEY} sameDayOushinAfterVisit`);
+    // R10 の入力で共有の事実を書き、その日の haihan:* を取り消したときも、取り消した key を残す（round-36 C-142）
+    expect(audit.map((r) => r.target)).toContain(`${ID} sameDayOushinAfterVisit ${KEY}`);
     expect(audit.map((r) => r.target)).toContain(`${ID} ${haihanKey("HX-03", OUSHIN_CODE, "114004510")}`);
     expect(JSON.stringify(audit)).not.toMatch(/架空|06139992|やまだ|往診のほうが先|その他/);
   });
