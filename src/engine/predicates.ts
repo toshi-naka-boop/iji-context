@@ -140,9 +140,10 @@ const answerOn = (f: Fact<Record<string, boolean>>, day: string): boolean | unde
  * same＝1 回の診療（sameDaySeparate が偽。訪問診療のあとの往診かは聞かずに偽として扱う）／
  * after＝訪問診療のあとに、急変などで往診した（sameDayOushinAfterVisit が真。別々の診療かは聞かずに真として扱う）／
  * not_after＝別々の診療だが、訪問診療のあとの往診ではない（往診が先、など。実施は 2 回だが、往診料は立てられない）。
- * 決まらないときは、次に確かめる事実を 1 つ返す。2 つの答えが食い違う日（1 回の診療で、かつ、あとの往診）は 1 回の診療として扱う
+ * 決まらないときは、次に確かめる事実を 1 つ返す。2 つの答えが食い違う日（1 回の診療で、かつ、あとの往診）は 1 回の診療として扱う。
+ * 背反の特例条件の例外（G05。design.md §13-3）も同じ関数で読むので、読むのは事実だけ（facts）
  */
-export function sameDayOf(ctx: ClaimContext, day: string): { known: true; value: "same" | "after" | "not_after" } | { known: false; need: "sameDayOushinAfterVisit" | "sameDaySeparate" } {
+export function sameDayOf(ctx: Pick<ClaimContext, "facts">, day: string): { known: true; value: "same" | "after" | "not_after" } | { known: false; need: "sameDayOushinAfterVisit" | "sameDaySeparate" } {
   const separate = answerOn(ctx.facts.sameDaySeparate, day);
   const after = answerOn(ctx.facts.sameDayOushinAfterVisit, day);
   if (separate === false) return { known: true, value: "same" };

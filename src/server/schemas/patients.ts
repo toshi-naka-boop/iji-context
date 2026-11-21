@@ -19,11 +19,11 @@ export const factBody = z.strictObject({
 
 /**
  * 請求ごとに確かめた事実の入力。形だけをここで確かめる。事実ごとの決まり（日付ごとの事実は診療年月の日付、値の型）は src/claim/facts.ts の validateClaimFact が確かめて文言を返す。
- * 確かめた人は受け取らない（セッションの本人から決める）
+ * 確かめた人は受け取らない（セッションの本人から決める）。背反の特例条件の例外の問いの答え（haihan:<HX-nn>:<コード①>:<コード②>。design.md §13-3）も同じ入口で受け取る（値は選択肢の文字列）
  */
 export const claimFactBody = z.strictObject({
   fact: z.strictObject({
-    key: z.enum(CLAIM_FACT_KEYS),
+    key: z.union([z.enum(CLAIM_FACT_KEYS), z.string().regex(/^haihan:HX-\d{2}:\d{9}:\d{9}$/).transform((k) => k as `haihan:${string}`)]),
     date: date.nullable(),
     value: z.union([z.boolean(), z.string().max(MAX_MAIN_DISEASE)]),
     source: z.enum(CLAIM_FACT_SOURCES),

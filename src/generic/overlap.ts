@@ -79,6 +79,15 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
   };
   const out: Overlap = { findings: [], duplicate: 0, judged: 0 };
   for (const g of generic) {
+    // 背反の特例の例外に当たる場合の記載（G05.exception_needs_comment。design.md §13-2 の 2。C-119・X-108）：covers には頼らず、
+    // 同じ請求で手書きの R17 が同じコメントコードの記載もれ（情報不足でないもの）を出していれば出さない。R17 が止まった・情報不足を返した・出していないときは出す
+    if (g.messageKey === "G05.exception_needs_comment") {
+      const wanted = (g.params.comments ?? "").split("・");
+      if (hand.findings.some((f) => f.ruleId === "R17" && f.kind === "記載もれ" && f.messageKey === "R17.comment_missing" && rev.comments.some((r) => r.id === f.params?.rule && r.codes.some((c) => wanted.includes(c))))) {
+        out.duplicate++;
+        continue;
+      }
+    }
     const kubun = g.codes.map((code) => kubunOf.get(code));
     // 当たるコードのどれかが、エンジンに渡っていない（手書きの表にないコード）→ 手書きは、その組を見ていない
     const owners = kubun.includes(undefined) ? [] : covers.filter((c) => c.kind === g.kind && c.sets.has(setKey(kubun as string[])) && sameComment(g, kubun));
