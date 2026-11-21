@@ -188,6 +188,6 @@ describe("段 11：実データの masters.db で", () => {
 
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     if (!has) process.stderr.write(`段 11 の実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 5);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 6);
   });
 });
