@@ -3,11 +3,16 @@
 //   同一月内（tani 2）… 同じレセプトに両方あれば、言い切りの候補
 //   同時（tani 3）… 同じ算定単位（点数・回数の単位）に両方あれば、言い切りの候補。別の単位でも、同じ算定日にあれば条件つき（同時に行ったかはレセプトから決まらない。X-96・C-100）
 //   1 週間につき（tani 4）… 7 日以内（算定日の差が 6 日以内）に両方あれば、条件つき。起算日から 7 日か暦の週かは項目ごとに違い、データにないので、言い切らない
-// 特例条件が 1 の行（[点] p28。条件の中身はデータにない）は、どの表でも条件つき。
+// 特例条件が 1 の行（[点] p28。条件の中身はデータにない）は、どの表でも条件つき。ただし、例外の決まり（EM §2-12。config/haihan-exceptions.json）の組に当たる行は、
+// 例外を全部見て決める（design.md §13-2）：どれかに当たる → 出さない（要件・記載が要れば、それを挙げる）／全部に当たらない → exception_none／それ以外 → 条件つき（問いがあれば添える）。
+// 1 週間の表（tani 4）には例外を掛けない（§13-2）。
 // 背反区分（[点] p28 項番6）：1＝コード①を算定する／2＝コード②を算定する／3＝いずれか一方。残す側が決まる組（1・2）は、指摘の値（keep）に入れる。
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
+import { sameDayOf } from "../engine/predicates";
+import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
+import { HAIHAN, haihanKey, sharedFactOf, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence } from "./tensuhyo";
-import { FINDING_LIMIT, type GenericCheck, type GenericFinding } from "./types";
+import { FINDING_LIMIT, type GenericAbout, type GenericAboutMore, type GenericCheck, type GenericClaim, type GenericFinding } from "./types";
 
 type Row = Dated & { tani: number; code1: string; code2: string; kubun: string; tokurei: string };
 
@@ -21,57 +26,288 @@ function within7(a: Occurrence, b: Occurrence): [number, number] | null {
   return null;
 }
 
-export const g05: GenericCheck = {
-  id: "G05",
-  kind: "背反",
-  run(claim, masters, about) {
-    const t = tensuhyoOf(masters, about);
-    if (t === null) return noTensuhyo(about);
-    const occ = occurrencesOf(claim);
-    const rowsOf = masters.prepare("SELECT tani, code1, code2, kubun, tokurei, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND tani = ? AND code1 = ?");
-    // 請求に両方ある組の行を、表と組ごとに 1 つ選ぶ
-    const pairs = new Map<string, Row>();
-    for (const code of occ.keys())
-      for (const tani of [1, 2, 3, 4])
-        for (const row of rowsOf.all(t.snapshot, tani, code) as Row[]) {
-          if (row.code2 === code || !occ.has(row.code2) || !t.live(row)) continue;
-          const key = `${tani}:${[row.code1, row.code2].sort().join(":")}`;
-          if (!pairs.has(key) || row.code1 < row.code2) pairs.set(key, row);
-        }
-    const out: GenericFinding[] = [];
-    // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
-    let more = 0;
-    for (const row of pairs.values()) {
-      const [a, b] = [occ.get(row.code1)!, occ.get(row.code2)!];
-      const cond = row.tokurei !== "0";
-      let hit: { key: string; sure: boolean; units: number[]; params: Record<string, string> } | null = null;
-      if (row.tani === 2) hit = { key: "month", sure: true, units: unitsOf(a, b), params: {} };
-      else if (row.tani === 4) {
-        const near = within7(a, b);
-        if (near) hit = { key: "week", sure: false, units: unitsOf(a, b), params: { dayA: String(near[0]), dayB: String(near[1]) } };
-      } else {
-        const days = commonDays(a, b);
-        const inB = new Set(b.units);
-        const shared = a.units.filter((u) => inB.has(u));
-        if (row.tani === 3 && shared.length > 0) hit = { key: "same_unit", sure: true, units: shared, params: {} };
-        else if (days.length > 0) hit = { key: row.tani === 1 ? "day" : "same_day", sure: row.tani === 1, units: unitsOf(a, b), params: { days: daysText(days) } };
-      }
-      if (hit === null) continue;
-      if (out.length >= FINDING_LIMIT) {
-        more++;
-        continue;
-      }
-      out.push({
-        check: "G05",
-        kind: "背反",
-        certainty: hit.sure && !cond && !t.weak(row) ? "確定" : "条件つき",
-        units: hit.units,
-        codes: [row.code1, row.code2],
-        messageKey: `G05.${hit.key}${cond ? "_cond" : ""}`,
-        params: { a: row.code1, b: row.code2, keep: row.kubun === "1" ? row.code1 : row.kubun === "2" ? row.code2 : "いずれか一方", ...hit.params },
-        source: { data: TABLE.haihan[row.tani], ref: `診療行為コード①=${row.code1}, 診療行為コード②=${row.code2}` },
-      });
-    }
-    return Object.assign(out, { more });
-  },
+/** 問い 1 つ：key は答えを残す key（haihan:* か、sameDayOf が名指しした事実 sameDaySeparate）。dates は答えの日（請求ごとの問いは空） */
+export type PendingAsk = { hx: string; key: string; dates: string[] };
+/** 例外 1 つの結果。miss の answered は、答え（事実）で決まったか */
+type ExResult = { r: "hit" } | { r: "miss"; answered: boolean } | { r: "open"; asks: PendingAsk[] } | { r: "undecided"; split?: { hit: string[]; miss: string[] } };
+
+/** 請求 1 件の、例外の判定に使うもの */
+type Ctx = {
+  occ: Map<string, Occurrence>;
+  comments: string[];
+  outpatient: boolean | undefined;
+  yearMonth: string;
+  answers: GenericAbout["answers"];
+  facts: GenericAbout["facts"];
+  selects(code: string, sel: CodeSel): boolean;
 };
+
+const dateOf = (ym: string, day: number) => `${ym}-${String(day).padStart(2, "0")}`;
+const shortDays = (dates: string[]) => dates.map((d) => String(Number(d.slice(8, 10)))).join("・");
+
+/** レセプトの条件。決まらない（入院外かが分からない）ときは undefined */
+function cond(c: ReceiptCond, x: Ctx, day: number | undefined): boolean | undefined {
+  if ("all" in c) {
+    const r = c.all.map((y) => cond(y, x, day));
+    return r.includes(false) ? false : r.includes(undefined) ? undefined : true;
+  }
+  if ("any" in c) {
+    const r = c.any.map((y) => cond(y, x, day));
+    return r.includes(true) ? true : r.includes(undefined) ? undefined : false;
+  }
+  if ("not" in c) {
+    const r = cond(c.not, x, day);
+    return r === undefined ? undefined : !r;
+  }
+  if ("hasCode" in c) return [...x.occ.entries()].some(([code, o]) => x.selects(code, c.hasCode) && (!c.sameDay || day === undefined || (o.timed && o.days[day - 1] > 0)));
+  // コメントは日付を持たないので、sameDay でも請求の中で見る（§11-5。X-107）
+  if ("hasComment" in c) return x.comments.some((code) => c.hasComment.includes(code));
+  return x.outpatient === undefined ? undefined : (c.receiptKind === "入院外") === x.outpatient;
+}
+
+/** 答えの文字列を、その問いの選択肢の means にする。選択肢にない（古い）答えは「決まらない」 */
+const meansOf = (x: HaihanException, label: string): Means => x.ask?.choices.find((c) => c.label === label)?.means ?? "決まらない";
+
+/** 日ごとの結果を 1 つにまとめる（design.md §13-2：どの日も当たる → 当たる、どの日も当たらない → 当たらない、分かれたら決まらない） */
+function merge(list: { date: string; r: ExResult }[]): ExResult {
+  const open = list.flatMap((e) => (e.r.r === "open" ? e.r.asks : []));
+  if (open.length > 0) return { r: "open", asks: open };
+  if (list.length === 0 || list.some((e) => e.r.r === "undecided")) return { r: "undecided" };
+  if (list.every((e) => e.r.r === "hit")) return { r: "hit" };
+  if (list.every((e) => e.r.r === "miss")) return { r: "miss", answered: list.some((e) => e.r.r === "miss" && e.r.answered) };
+  return { r: "undecided", split: { hit: list.filter((e) => e.r.r === "hit").map((e) => e.date), miss: list.filter((e) => e.r.r === "miss").map((e) => e.date) } };
+}
+
+/** 医療事務の答え 1 つ（その日の、またはその請求の） */
+function answerOn(x: HaihanException, codes: [string, string], date: string | null, c: Ctx): ExResult {
+  const key = haihanKey(x.id, codes[0], codes[1]);
+  // 既存の事実を使う問い（sameDayOushinAfterVisit）は、R10 と同じ関数（sameDayOf）で読む（C-114）。after → 当たる／not_after・same → 当たらない／決まらなければ、sameDayOf が名指しする事実を問う（C-117）
+  if (sharedFactOf(x) !== null && date !== null) {
+    if (c.facts) {
+      const s = sameDayOf({ facts: c.facts }, date);
+      if (s.known) return s.value === "after" ? { r: "hit" } : { r: "miss", answered: true };
+      const a = c.answers?.(key, date) ?? null;
+      // 「その他」「判定不能」と答えた日は、共有の事実を取り消して haihan:* に答えを残している（もう問わない。X-105）
+      if (a !== null) return toResult(meansOf(x, a));
+      return { r: "open", asks: [{ hx: x.id, key: "need" in s && s.need === "sameDaySeparate" ? "sameDaySeparate" : key, dates: [date] }] };
+    }
+    return { r: "open", asks: [{ hx: x.id, key, dates: [date] }] };
+  }
+  const a = c.answers?.(key, date) ?? null;
+  return a === null ? { r: "open", asks: [{ hx: x.id, key, dates: date === null ? [] : [date] }] } : toResult(meansOf(x, a));
+}
+const toResult = (m: Means): ExResult => (m === "当たる" ? { r: "hit" } : m === "当たらない" ? { r: "miss", answered: true } : { r: "undecided" });
+
+/**
+ * 例外 1 つを、背反の行の 1 つの単位（day：1 日・同時の表は算定日、同一月の表は undefined）で判定する。aCode は、組の a 側に当たるコード。
+ * pre が成り立たない → 当たらない／receipt → allow で決まる／fact → 答え／none → 決まらない。当たったあと、すでにある事実で確かめられる要件が満たされないと分かっていれば、当たらない（C-121）
+ */
+function judge(x: HaihanException, row: Row, aCode: string, day: number | undefined, c: Ctx): ExResult {
+  if (x.pre) {
+    const p = cond(x.pre, c, day);
+    if (p === false) return { r: "miss", answered: false };
+    if (p === undefined) return { r: "undecided" };
+  }
+  let out: ExResult;
+  if (x.kind === "none") return { r: "undecided" };
+  if (x.kind === "receipt") {
+    const a = cond(x.allow!, c, day);
+    out = a === true ? { r: "hit" } : a === false ? { r: "miss", answered: false } : { r: "undecided" };
+  } else {
+    const ask = x.ask!;
+    const codes: [string, string] = [row.code1, row.code2];
+    if (ask.scope === "claim") out = answerOn(x, codes, null, c);
+    else if (day !== undefined) out = answerOn(x, codes, dateOf(c.yearMonth, day), c);
+    else {
+      // 同一月の表の、日ごとの問い：askOn の側のコードの算定日ごとに問う（C-115）
+      const code = (ask.askOn ?? "b") === "a" ? aCode : aCode === row.code1 ? row.code2 : row.code1;
+      const o = c.occ.get(code);
+      const days = o && o.timed ? o.days.flatMap((n, i) => (n > 0 ? [i + 1] : [])) : [];
+      out = merge(days.map((d) => ({ date: dateOf(c.yearMonth, d), r: answerOn(x, codes, dateOf(c.yearMonth, d), c) })));
+    }
+  }
+  if (out.r === "hit")
+    for (const k of x.thenRequires?.checks ?? []) {
+      const f = k.fact ? (c.facts as Record<string, { known: boolean; value?: unknown }> | undefined)?.[k.fact.key] : undefined;
+      if (k.fact && f?.known && f.value !== null && !k.fact.ok.includes(String(f.value))) return { r: "miss", answered: true };
+    }
+  return out;
+}
+
+/** 1 つの単位の、組の例外を全部見た結果 */
+type SlotOutcome =
+  | { kind: "silent"; hx: string[] }
+  | { kind: "require"; hx: HaihanException[]; checks: string[]; comments: string[] }
+  | { kind: "none"; answered: boolean }
+  | { kind: "open"; asks: PendingAsk[]; split?: { hx: string; hit: string[]; miss: string[] } };
+
+function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: string, day: number | undefined, c: Ctx): SlotOutcome {
+  const list = p.exceptions.map((id) => config.exceptions.find((e) => e.id === id)!).map((x) => ({ x, r: judge(x, row, aCode, day, c) }));
+  const hits = list.filter((e) => e.r.r === "hit").map((e) => e.x);
+  if (hits.length > 0) {
+    // thenRequires のない例外に当たった組だけ、何も出さない
+    if (hits.some((x) => !x.thenRequires)) return { kind: "silent", hx: hits.filter((x) => !x.thenRequires).map((x) => x.id) };
+    const checks = hits.flatMap((x) => (x.thenRequires?.checks ?? []).filter((k) => {
+      const f = k.fact ? (c.facts as Record<string, { known: boolean; value?: unknown }> | undefined)?.[k.fact.key] : undefined;
+      return !(k.fact && f?.known && k.fact.ok.includes(String(f.value)));
+    }).map((k) => k.text));
+    const comments = [...new Set(hits.flatMap((x) => x.thenRequires?.comments ?? []))];
+    return checks.length === 0 && comments.length === 0 ? { kind: "silent", hx: hits.map((x) => x.id) } : { kind: "require", hx: hits, checks, comments };
+  }
+  if (list.every((e) => e.r.r === "miss")) return { kind: "none", answered: list.some((e) => e.r.r === "miss" && e.r.answered) };
+  const asks = list.flatMap((e) => (e.r.r === "open" ? e.r.asks : []));
+  const split = list.find((e) => e.r.r === "undecided" && e.r.split);
+  return { kind: "open", asks, ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
+}
+
+/** 診療行為が選び方に当たるか（区分番号は、診療年月に使う基本マスターの 1 枚で引く。引けなければ当たらない） */
+function selectorOf(db: MastersDb, about: GenericAbout): (code: string, sel: CodeSel) => boolean {
+  const snap = pickSnapshot(db, "shinryo", about.yearMonth, about.generation)?.snapshot ?? null;
+  const rows = new Map<string, ShinryoRow | null>();
+  return (code, sel) => {
+    if (sel.codes?.includes(code)) return true;
+    const s = sel.section;
+    if (!s || snap === null) return false;
+    if (!rows.has(code)) rows.set(code, shinryoOf(db, snap, code));
+    const r = rows.get(code);
+    return !!r && r.sho === s.sho && r.bu === s.bu && r.kubun_no === s.kubun && (s.eda === undefined || r.eda === s.eda) && (s.kou === undefined || r.kou === s.kou);
+  };
+}
+
+/** 背反の行が当たる組（向きはどちらでも）と、組の a 側のコード */
+function patternOf(config: HaihanConfig, row: Row, selects: Ctx["selects"]): { p: HaihanPattern; aCode: string } | null {
+  for (const p of config.patterns) {
+    if (!(p.tani as number[]).includes(row.tani)) continue;
+    if (selects(row.code1, p.a) && selects(row.code2, p.b)) return { p, aCode: row.code1 };
+    if (selects(row.code1, p.b) && selects(row.code2, p.a)) return { p, aCode: row.code2 };
+  }
+  return null;
+}
+
+/** 例外の決まりを差し替えられる G05（テスト用。出荷は config/haihan-exceptions.json） */
+export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
+  const textOf = (ids: string[]) => ids.map((id) => config.exceptions.find((x) => x.id === id)?.text ?? id).join("／");
+  return {
+    id: "G05",
+    kind: "背反",
+    run(claim: GenericClaim, masters: MastersDb, about: GenericAbout) {
+      const t = tensuhyoOf(masters, about);
+      if (t === null) return noTensuhyo(about);
+      const occ = occurrencesOf(claim);
+      const rowsOf = masters.prepare("SELECT tani, code1, code2, kubun, tokurei, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND tani = ? AND code1 = ?");
+      // 請求に両方ある組の行を、表と組ごとに 1 つ選ぶ
+      const pairs = new Map<string, Row>();
+      for (const code of occ.keys())
+        for (const tani of [1, 2, 3, 4])
+          for (const row of rowsOf.all(t.snapshot, tani, code) as Row[]) {
+            if (row.code2 === code || !occ.has(row.code2) || !t.live(row)) continue;
+            const key = `${tani}:${[row.code1, row.code2].sort().join(":")}`;
+            if (!pairs.has(key) || row.code1 < row.code2) pairs.set(key, row);
+          }
+      const ctx: Ctx = {
+        occ,
+        comments: (claim.comments ?? []).map((x) => x.code),
+        outpatient: (about as GenericAboutMore).outpatient,
+        yearMonth: about.yearMonth,
+        answers: about.answers,
+        facts: about.facts,
+        selects: selectorOf(masters, about),
+      };
+      const out: GenericFinding[] = [];
+      const silenced: string[] = [];
+      // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
+      let more = 0;
+      const push = (f: GenericFinding) => {
+        if (out.length >= FINDING_LIMIT) more++;
+        else out.push(f);
+      };
+      for (const row of pairs.values()) {
+        const [a, b] = [occ.get(row.code1)!, occ.get(row.code2)!];
+        const marked = row.tokurei !== "0";
+        let hit: { key: string; sure: boolean; units: number[]; days: number[]; params: Record<string, string> } | null = null;
+        if (row.tani === 2) hit = { key: "month", sure: true, units: unitsOf(a, b), days: [], params: {} };
+        else if (row.tani === 4) {
+          const near = within7(a, b);
+          if (near) hit = { key: "week", sure: false, units: unitsOf(a, b), days: [], params: { dayA: String(near[0]), dayB: String(near[1]) } };
+        } else {
+          const days = commonDays(a, b);
+          const inB = new Set(b.units);
+          const shared = a.units.filter((u) => inB.has(u));
+          if (row.tani === 3 && shared.length > 0) hit = { key: "same_unit", sure: true, units: shared, days, params: {} };
+          else if (days.length > 0) hit = { key: row.tani === 1 ? "day" : "same_day", sure: row.tani === 1, units: unitsOf(a, b), days, params: { days: daysText(days) } };
+        }
+        if (hit === null) continue;
+        const keep = row.kubun === "1" ? row.code1 : row.kubun === "2" ? row.code2 : "いずれか一方";
+        const base = (messageKey: string, certainty: "確定" | "条件つき", params: Record<string, string>): GenericFinding => ({
+          check: "G05",
+          kind: "背反",
+          certainty,
+          units: hit!.units,
+          codes: [row.code1, row.code2],
+          messageKey,
+          params: { a: row.code1, b: row.code2, keep, ...hit!.params, ...params },
+          source: { data: TABLE.haihan[row.tani], ref: `診療行為コード①=${row.code1}, 診療行為コード②=${row.code2}` },
+        });
+        const matched = marked && row.tani !== 4 ? patternOf(config, row, ctx.selects) : null;
+        if (matched === null) {
+          push(base(`G05.${hit.key}${marked ? "_cond" : ""}`, hit.sure && !marked && !t.weak(row) ? "確定" : "条件つき", {}));
+          continue;
+        }
+        // 例外の判定の単位：1 日の表・同時の表は算定日ごと（算定日がなければ 1 つ）、同一月の表はレセプトごと（design.md §13-2）
+        const slots: (number | undefined)[] = row.tani === 2 || hit.days.length === 0 ? [undefined] : hit.days;
+        const { p, aCode } = matched;
+        const where = (days: (number | undefined)[]) => {
+          const ds = days.filter((d): d is number => d !== undefined);
+          return row.tani === 2 ? "同じレセプト" : hit!.key === "same_unit" ? `同じ算定単位${ds.length ? `（${daysText(ds)}日）` : ""}` : hit!.key === "same_day" ? `別の算定単位ですが、同じ日（${daysText(ds)}日）` : `同じ日（${daysText(ds)}日）`;
+        };
+        const dayParams = (days: (number | undefined)[]) => {
+          const ds = days.filter((d): d is number => d !== undefined);
+          return { where: where(days), ...(ds.length > 0 ? { days: daysText(ds) } : {}) };
+        };
+        const groups = { none: [] as { day: number | undefined; answered: boolean }[], open: [] as { day: number | undefined; o: Extract<SlotOutcome, { kind: "open" }> }[], require: new Map<string, { o: Extract<SlotOutcome, { kind: "require" }>; days: (number | undefined)[] }>() };
+        for (const day of slots) {
+          const o = outcomeOf(p, config, row, aCode, day, ctx);
+          if (o.kind === "silent") silenced.push(...o.hx);
+          else if (o.kind === "none") groups.none.push({ day, answered: o.answered });
+          else if (o.kind === "open") groups.open.push({ day, o });
+          else {
+            const k = `${o.hx.map((x) => x.id).join(",")}|${o.checks.join("|")}|${o.comments.join(",")}`;
+            const g = groups.require.get(k) ?? { o, days: [] };
+            g.days.push(day);
+            groups.require.set(k, g);
+          }
+        }
+        for (const { o, days } of groups.require.values()) {
+          const hx = o.hx.map((x) => x.id);
+          const common = { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), ...dayParams(days) };
+          if (o.checks.length > 0) push(base("G05.exception_needs_check", "条件つき", { ...common, checks: o.checks.join("、") }));
+          if (o.comments.length > 0) {
+            // コメントと日の対応は取らず、件数で照らす（X-107）
+            const have = ctx.comments.filter((code) => o.comments.includes(code)).length;
+            if (have < days.length) push(base("G05.exception_needs_comment", "条件つき", { ...common, comments: o.comments.join("・"), need: String(days.length), have: String(have) }));
+            else if (o.checks.length === 0) silenced.push(...hx);
+          }
+        }
+        if (groups.none.length > 0) {
+          const answered = groups.none.some((n) => n.answered);
+          push(base("G05.exception_none", hit.sure && !t.weak(row) ? "確定" : "条件つき", { hp: p.id, hx: p.exceptions.join("・"), hxText: textOf(p.exceptions), answered: String(answered), because: answered ? "医療事務の答え（確かめた事実）で確かめたので、" : "レセプトで確かめたところ、", ...dayParams(groups.none.map((n) => n.day)) }));
+        }
+        if (groups.open.length > 0) {
+          const days = groups.open.map((g) => g.day);
+          const asks = groups.open.flatMap((g) => g.o.asks);
+          const split = groups.open.find((g) => g.o.split)?.o.split;
+          // 問いを出すのは、答えを読める点検（取り込んだレセプトの点検）だけ（L-76）
+          if (about.answers && asks.length > 0) {
+            const hx = [...new Set(asks.map((x) => x.hx))];
+            push(base("G05.exception_ask", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), asks: JSON.stringify(asks), ...dayParams(days) }));
+          } else if (split && asks.length === 0)
+            push(base("G05.exception_split", "条件つき", { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss), ...dayParams(days) }));
+          else push(base(`G05.${hit.key}_cond`, "条件つき", hit.key === "month" || hit.key === "same_unit" ? {} : { days: daysText(days.filter((d): d is number => d !== undefined)) }));
+        }
+      }
+      return Object.assign(out, { more, silenced });
+    },
+  };
+}
+
+export const g05: GenericCheck = makeG05();

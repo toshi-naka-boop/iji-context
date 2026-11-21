@@ -56,7 +56,13 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
       // 点検ごとに FINDING_LIMIT 件まで。超えた分は数だけ返す（配列の展開で足さない：展開は数十万件で RangeError になる。round-32 S-9）
       const more = Math.max(0, found.length - FINDING_LIMIT) + (found.more ?? 0);
       if (more > 0) (result.omitted ??= []).push({ check: id, kind, count: more });
-      for (const f of found.slice(0, FINDING_LIMIT)) result.findings.push({ ...f, certainty: f.certainty === "確定" && certain.has(f.messageKey) ? "確定" : "条件つき" });
+      // 言い切りの一覧は、種類（messageKey）か、背反の特例の例外の組ごと（messageKey#組の id。design.md §13-4。C-110・X-103）で照らす
+      for (const f of found.slice(0, FINDING_LIMIT)) result.findings.push({ ...f, certainty: f.certainty === "確定" && (certain.has(f.messageKey) || certain.has(`${f.messageKey}#${f.params.hp}`)) ? "確定" : "条件つき" });
+      for (const hx of found.silenced ?? []) {
+        const s = (result.silenced ??= []).find((x) => x.hx === hx);
+        if (s) s.count++;
+        else result.silenced.push({ hx, count: 1 });
+      }
     }
   }
   // G08 と G09 の重複は、ここでは消さない：手書きのルールとの重なり（src/generic/overlap.ts）で G08 が消えることがあるので、その後で消す（round-32 O-16）

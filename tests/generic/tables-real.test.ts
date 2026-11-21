@@ -344,8 +344,9 @@ describe("段 12：実データの masters.db で", () => {
     //  ・往診料と、訪問診療料の在宅ターミナルケア加算（注6）が同じ日（K5。往診料と訪問診療料の同じ日の背反の、加算の側の行。表は特例条件あり）
     // 週 4 回の訪問診療（K3。上限 3）は、round-32 codex-2 で出なくなった（連続する 7 日に上限の 2 倍を超えないので、起算日の数え方では正しい請求であり得る）。
     // 週 3 回を超える訪問診療は、手書きの R13 が見ている
+    // 段 15a（design.md §13-5）：K5 の組は、例外 HX-02（死亡日の往診だけの日の在宅ターミナルケア加算）に当たるので、条件つきの背反（G05.day_cond）から、要件を挙げた G05.exception_needs_check に変わる
     expect(cond).toEqual([
-      ["kokuhoren.UKE #5", "G05.day_cond", "114000110", "114018370"],
+      ["kokuhoren.UKE #5", "G05.exception_needs_check", "114000110", "114018370"],
     ]);
     // 同梱の症例（区分キーの行をコードに直して掛ける道）でも、言い切りの候補は 0 件
     for (const name of NAMES) expect(run(db, claimOfLines(loadCase(name).lines, rev).claim.units).filter((f) => f.certainty === "確定"), name).toEqual([]);
@@ -377,11 +378,17 @@ describe("段 12：実データの masters.db で", () => {
           const mine = (fs: GenericFinding[]) => fs.filter((f) => f.source.data === ["", "背反関連テーブル（1 日につき）", "背反関連テーブル（同一月内）", "背反関連テーブル（同時）", "背反関連テーブル（1 週間につき）"][tani]);
           const sure = tokurei === "0" ? "確定" : "条件つき";
           const c = tokurei === "0" ? "" : "_cond";
-          if (tani === 1) expect(brief(mine(of([unit([a], [3]), unit([b], [3])]))), `${a}×${b}`).toEqual([[`G05.day${c}`, sure, a, b]]);
-          if (tani === 2) expect(brief(mine(apart)), `${a}×${b}`).toEqual([[`G05.month${c}`, sure, a, b]]);
+          // 特例条件ありで、例外の決まり（EM §2-12）の組に当たる行は、例外の指摘（G05.exception_*）か、条件つきで出る（design.md §13-2。点検が言う exception_none の確定は言い切りの候補で、出荷の一覧に載るまで条件つき）
+          const want = (key: string, certainty: string, fs: GenericFinding[]) => {
+            const got = brief(mine(fs));
+            if (tokurei === "1" && got.length === 1 && got[0][0].startsWith("G05.exception_")) return expect([got[0][0] === "G05.exception_none" || got[0][1] === "条件つき", got[0].slice(2)], `${a}×${b}`).toEqual([true, [a, b]]);
+            expect(got, `${a}×${b}`).toEqual([[key, certainty, a, b]]);
+          };
+          if (tani === 1) want(`G05.day${c}`, sure, of([unit([a], [3]), unit([b], [3])]));
+          if (tani === 2) want(`G05.month${c}`, sure, apart);
           if (tani === 3) {
-            expect(brief(mine(of([unit([a, b], [3])]))), `${a}×${b}`).toEqual([[`G05.same_unit${c}`, sure, a, b]]);
-            expect(brief(mine(of([unit([a], [3]), unit([b], [3])]))), `${a}×${b}`).toEqual([[`G05.same_day${c}`, "条件つき", a, b]]);
+            want(`G05.same_unit${c}`, sure, of([unit([a, b], [3])]));
+            want(`G05.same_day${c}`, "条件つき", of([unit([a], [3]), unit([b], [3])]));
           }
           if (tani === 4) expect(brief(mine(of([unit([a], [3]), unit([b], [5])]))), `${a}×${b}`).toEqual([[`G05.week${c}`, "条件つき", a, b]]);
         }

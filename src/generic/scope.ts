@@ -21,6 +21,8 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
     else out.notDone.push("点数の検算は、点数の書いてある単位（取り込んだレセプトの単位）にだけ掛けます。ここの行には点数が書いていないので、検算していません");
   }
   if (ran("G03")) out.notDone.push(...g03NotDone(about));
+  // 背反の特例条件の例外に当たるので出していない組（design.md §13-2 の 2。消えたことが分かるように、数と例外の id を出す）
+  if ((result.silenced ?? []).length > 0) out.notDone.push(`特例の例外に当たるので出していない：${result.silenced!.reduce((s, x) => s + x.count, 0)} 件（${result.silenced!.map((x) => x.hx).join("・")}）`);
   // G04〜G06 の断り（作っていない単位・数え方）。画面の部品が別に足していたのをここに寄せ、月末の点検・算定プレビューの 1 行の表示でも出す（round-32 O-19）
   for (const r of result.ran) if (GENERIC_SCOPE_NOTE[r.check]) out.notDone.push(`${r.check}（${r.kind}）が点検していないこと：${GENERIC_SCOPE_NOTE[r.check]}`);
   if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));

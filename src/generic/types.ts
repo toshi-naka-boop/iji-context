@@ -1,4 +1,5 @@
 // データで動く点検（design.md §12-2・§12-3）の型。手書きのルール（src/engine/。区分キーで動く）とは別の道で、UKE の単位とコードのまま点検する
+import type { Facts } from "../engine/types";
 import type { MastersDb } from "../masters/db";
 import type { UkeComment, UkeItem, UkeUnit } from "../uke/types";
 
@@ -44,8 +45,12 @@ export type GenericClaim = {
   comments?: (Pick<UkeComment, "code"> & Partial<UkeComment>)[];
 };
 
-/** 請求について分かっていること。この段が使うのは、診療年月と、使うマスターの世代（診療年月の版の世代。試算では選んだ版の世代）だけ */
-export type GenericAbout = { yearMonth: string; generation: string };
+/**
+ * 請求について分かっていること：診療年月と、使うマスターの世代（診療年月の版の世代。試算では選んだ版の世代）。
+ * answers・facts は、背反の特例条件の例外（G05。design.md §13-2・§13-3）が読む。取り込んだレセプトの点検だけが渡す（月末の点検・算定プレビュー・measure-generic は渡さない＝どの問いも未決で、問いは出さない）：
+ * answers＝請求ごとの事実（claim_facts）の、その key・日付（請求ごとの事実は null）の最新の答え（なければ・取り消してあれば null）／facts＝その請求の ClaimContext.facts（sameDayOf が読む形）
+ */
+export type GenericAbout = { yearMonth: string; generation: string; answers?: (key: string, date: string | null) => string | null; facts?: Facts };
 
 /**
  * 動かさなかった点検と理由（「問題なし」と区別する。design.md §12-1）。
@@ -59,11 +64,14 @@ export type GenericNotRun = { check: GenericCheckId; kind: GenericKind; reason: 
  */
 export const FINDING_LIMIT = 200;
 
-/** omitted＝上限を超えたので返さなかった指摘の数（点検ごと。超えなかった点検は載せない） */
-export type GenericResult = { findings: GenericFinding[]; ran: { check: GenericCheckId; kind: GenericKind }[]; notRun: GenericNotRun[]; omitted?: { check: GenericCheckId; kind: GenericKind; count: number }[] };
+/** omitted＝上限を超えたので返さなかった指摘の数（点検ごと。超えなかった点検は載せない）。silenced＝特例の例外に当たるので出さなかった数（例外の id ごと） */
+export type GenericResult = { findings: GenericFinding[]; ran: { check: GenericCheckId; kind: GenericKind }[]; notRun: GenericNotRun[]; omitted?: { check: GenericCheckId; kind: GenericKind; count: number }[]; silenced?: { hx: string; count: number }[] };
 
-/** 点検の指摘。more は、上限（FINDING_LIMIT）に達したあと、指摘を作らずに数えただけの数（組を数え上げる G04・G05 が使う） */
-export type GenericFound = GenericFinding[] & { more?: number };
+/**
+ * 点検の指摘。more は、上限（FINDING_LIMIT）に達したあと、指摘を作らずに数えただけの数（組を数え上げる G04・G05 が使う）。
+ * silenced は、背反の特例条件の例外に当たるので出さなかった組と日の、当たった例外の id（1 件ごとに 1 つ。G05 が使う。design.md §13-2 の 2）
+ */
+export type GenericFound = GenericFinding[] & { more?: number; silenced?: string[] };
 
 /** 点検 1 つ。run は、動かせなければ skip（理由）を返す。certainty は点検が決めた値で、言い切りに上げるかは evaluateGeneric が一覧で決める */
 export type GenericCheck = {
