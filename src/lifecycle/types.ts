@@ -42,7 +42,15 @@ export type Match = {
   commentOn?: { kubun: string; present: boolean }[];
   /** 当月を含め、その区分を何か月続けて算定しているか（history から数える）。v6 */
   consecutiveMonths?: { kubun: string; min: number };
+  /**
+   * 背反の 2 つのコード（小さい順）と表（tani 1＝1 日・2＝同一月・3＝同時。1 週間の表は対象にしない）。院内層とベテラン層（会議の修正版）だけが持つ。
+   * これを持つ知識は、ほかのキーを持たない（store が検査）。条件は conditionNote の文だけで、機械では当てない（design.md §14-1）
+   */
+  codePair?: CodePair;
 };
+
+/** 背反の組（design.md §14-1） */
+export type CodePair = { a: string; b: string; tani: 1 | 2 | 3 };
 
 /** 遷移の根拠（v15。round-10 の A・F・E） */
 export type Basis = {
@@ -56,6 +64,12 @@ export type Basis = {
   officialIds?: string[];
   /** ベテランの回答による遷移のとき、その項目 id */
   itemId?: string;
+  /** localReturn のとき、返戻・査定された請求の id（design.md §14-4） */
+  claimId?: string;
+  /** localRevision・localReturn のとき、その組 */
+  codePair?: CodePair;
+  /** localRevision のとき、改定の前後で差が出た項目（design.md §14-4） */
+  changes?: string[];
 };
 
 export type HistoryEntry = {
@@ -103,7 +117,8 @@ export type KnowledgeMeta = {
   history: HistoryEntry[];
 };
 
-export type TriggerKind = "revision" | "reappointment" | "idle" | "official";
+/** localRevision・localReturn は、codePair を持つ知識だけに効く（design.md §14-4） */
+export type TriggerKind = "revision" | "reappointment" | "idle" | "official" | "localRevision" | "localReturn";
 
 export type LifecycleEvent =
   | { type: "VERIFY_APPROVE" }

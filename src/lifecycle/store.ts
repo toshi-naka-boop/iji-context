@@ -104,6 +104,31 @@ function validate(input: CreateInput, knownKubun?: (kubun: string) => boolean): 
   if (input.matchApprox && (!input.conditionNote || input.conditionNote.trim() === "")) {
     throw new Error("matchApprox の知識には conditionNote が必須");
   }
+  if (m.codePair !== undefined) validatePair(input);
+}
+
+/** 背反の組の知識の 1 件の条件文の上限（字。design.md §14-1） */
+export const PAIR_NOTE_MAX = 200;
+
+/**
+ * codePair を持つ知識（design.md §14-1）：ほかの match のキーを持たない・コードは 9 桁で小さい順・表は 1〜3・院内層かベテラン層・いつも近似で条件の文（1〜200 字）が要る。
+ * 院内層の生成元は、allow は手動だけ、avoid は手動か返戻（ベテラン層は会議の修正版で、生成元はエスカレーション）
+ */
+function validatePair(input: CreateInput): void {
+  const m = input.match;
+  const p = m.codePair!;
+  const others = (Object.keys(m) as (keyof Match)[]).filter((k) => k !== "codePair" && m[k] !== undefined);
+  if (others.length > 0) throw new Error(`codePair を持つ知識は、ほかの match のキーを持たない: ${others.join(", ")}`);
+  if (!/^\d{9}$/.test(p.a) || !/^\d{9}$/.test(p.b) || !(p.a < p.b)) throw new Error("codePair のコードは 9 桁で、小さい順に 2 つ");
+  if (![1, 2, 3].includes(p.tani)) throw new Error("codePair の表は 1 日・同一月・同時（tani 1〜3）だけ");
+  if (input.layer !== "院内" && input.layer !== "ベテラン") throw new Error("codePair を持てるのは院内層とベテラン層だけ");
+  if (input.matchApprox !== true) throw new Error("codePair の知識は、いつも近似（matchApprox）");
+  const note = input.conditionNote ?? "";
+  if (note.trim() === "" || note.length > PAIR_NOTE_MAX) throw new Error(`codePair の知識の条件（conditionNote）は 1〜${PAIR_NOTE_MAX} 字`);
+  const polarity = input.polarity ?? defaultPolarity(input.layer, input.source.type);
+  if (input.layer === "院内" && !(polarity === "allow" ? input.source.type === "手動" : input.source.type === "手動" || input.source.type === "返戻")) {
+    throw new Error(`院内層の背反の組の知識の生成元は、allow は手動、avoid は手動か返戻: ${polarity}・${input.source.type}`);
+  }
 }
 
 /** 新しい知識を作る。層×生成元の組み合わせと match の必須項目を検証し、作成後に同期する */

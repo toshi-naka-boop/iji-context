@@ -23,7 +23,10 @@ export type SyncResult = {
 const NAME_RE = /^[a-z0-9-]+$/;
 const GENERATION_FILE = ".iji-generation";
 
-/** 同期対象を集める。承認済みかつ院内以外（FR-12）。走査順に依存しないよう name 昇順で返す */
+/**
+ * 同期対象を集める。承認済みかつ院内以外（FR-12）で、背反の組の知識（match.codePair。ベテラン層の会議の修正版も）でないもの（design.md §14-1：メンターには渡さない）。
+ * 走査順に依存しないよう name 昇順で返す
+ */
 function collect(knowledgeDir: string): { name: string; content: string }[] {
   const out: { name: string; content: string }[] = [];
   if (!existsSync(knowledgeDir)) return out;
@@ -34,7 +37,7 @@ function collect(knowledgeDir: string): { name: string; content: string }[] {
       const metaPath = path.join(dir, "meta.json");
       if (!existsSync(metaPath)) continue;
       const meta = JSON.parse(readFileSync(metaPath, "utf8")) as KnowledgeMeta;
-      if (meta.status !== "承認済み" || meta.layer === "院内") continue;
+      if (meta.status !== "承認済み" || meta.layer === "院内" || meta.match?.codePair !== undefined) continue;
       if (meta.id !== `${layerSlug}/${slug}` || LAYER_SLUG[meta.layer] !== layerSlug) {
         throw new Error(`meta.json の id・layer が置き場所と一致しない: ${layerSlug}/${slug}`);
       }
