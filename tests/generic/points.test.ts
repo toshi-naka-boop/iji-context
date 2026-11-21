@@ -10,6 +10,7 @@ import { agesIn, g03, g03NotDone } from "../../src/generic/g03";
 import { rowNamesOf } from "../../src/generic/lookup";
 import { drugPoints, EXCLUDE_TEXT, kizamiCenti, recalcUnit, type RecalcItem } from "../../src/generic/points";
 import { genericScopeOf } from "../../src/generic/scope";
+import type { TimedClaim } from "../../src/generic/tensuhyo";
 import type { GenericAboutMore, GenericClaim, GenericUnitDetail } from "../../src/generic/types";
 import { parseEm, verifyMasters } from "../../src/masters/verify";
 import { GENERIC_TEXT, GENERIC_TEXT_CERTAIN, genericText } from "../../src/messages";
@@ -300,12 +301,33 @@ describe("G03 行の属性", () => {
     expect(keys(db, claim(ASTHMA_65), { ...about, birth: born(64, "0101") })).toEqual([["G03.age", ASTHMA_65]]);
     const forty: GenericAboutMore = { ...about, birth: born(40, "0101") };
     const f = (g03.run(claim(ASTHMA_65), db, forty) as { messageKey: string; params: Record<string, string> }[])[0];
-    expect(f.params).toMatchObject({ range: "65 歳以上", ageFrom: "40", ageTo: "40" });
-    expect(genericText({ ...f, certainty: "条件つき" })).toMatch(/年齢の範囲（65 歳以上）の外です（診療年月の初日は 40 歳、末日は 40 歳）/);
+    expect(f.params).toMatchObject({ range: "65 歳以上", when: "算定日の分からない単位では診療年月のあいだ", ages: "40" });
+    expect(genericText({ ...f, certainty: "条件つき" })).toMatch(/年齢の範囲（65 歳以上）の外です（算定日の分からない単位では診療年月のあいだの年齢は 40 歳）/);
     // 数字でない年齢の区分（生後の日数など）は、点検しない
     db.prepare("UPDATE shinryo SET age_upper = 'AA' WHERE code = ?").run(INFANT);
     expect(keys(db, claim(INFANT), about)).toEqual([]);
     expect(agesIn(YM, "x")).toBeNull();
+  });
+
+  it("年齢は、その行の算定日の年齢で見る（round-32 codex-3）：当月生まれの患者でも、算定日の年齢が範囲の外なら言う。算定日より後に生まれた行だけ除く", () => {
+    const db = masters();
+    const ym = YM.replace("-", "");
+    const days = (...d: number[]) => Array.from({ length: 31 }, (_, i) => (d.includes(i + 1) ? 1 : 0));
+    const dated = (c: string, ...d: number[]): TimedClaim => ({ units: [{ items: [{ kind: "SI", code: c }], count: d.length, days: days(...d) }] });
+    const born15: GenericAboutMore = { ...about, birth: `${ym}15` };
+    // 6 歳以上の行（ASTHMA_65 の下限を 06 にする）。15 日生まれで、20 日に算定（0 歳）
+    db.prepare("UPDATE shinryo SET age_lower = '06', age_upper = '00' WHERE code = ?").run(ASTHMA_65);
+    const f = g03.run(dated(ASTHMA_65, 20), db, born15) as { messageKey: string; params: Record<string, string> }[];
+    expect(f.map((x) => x.messageKey)).toEqual(["G03.age"]);
+    expect(f[0].params).toMatchObject({ range: "6 歳以上", when: "算定日（20日）", ages: "0" });
+    // 算定日（10 日）より後に生まれた：データの誤りなので、その行は年齢で言わない。同じ請求の 20 日の行は言う
+    expect(keys(db, dated(ASTHMA_65, 10), born15)).toEqual([]);
+    expect((g03.run(dated(ASTHMA_65, 10, 20), db, born15) as { params: Record<string, string> }[])[0].params.when).toBe("算定日（20日）");
+    // 6 歳未満の行（INFANT）：14 日に 6 歳になる患者。13 日の算定は範囲の中（前日に年齢が増える数え方で 13 日に 6 歳に届く行は言わない）、20 日の算定は外
+    const y6 = `${Number(YM.slice(0, 4)) - 6}${YM.slice(5, 7)}`;
+    expect(keys(db, dated(INFANT, 12), { ...about, birth: `${y6}14` })).toEqual([]);
+    expect(keys(db, dated(INFANT, 13), { ...about, birth: `${y6}14` })).toEqual([]);
+    expect(keys(db, dated(INFANT, 20), { ...about, birth: `${y6}14` })).toEqual([["G03.age", INFANT]]);
   });
 
   it("分からない項目に依る点検はしない。していないことを、点検の範囲に出す", () => {
