@@ -242,10 +242,17 @@ export default function UkeClaimCheck() {
               {c.generic && (
                 <>
                   <h3 id="generic-findings" style={{ margin: 0 }}>データで動く点検</h3>
-                  <p className="muted" style={{ margin: 0 }}>公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。</p>
-                  <GenericFindings generic={c.generic} scope="full" rowHref={codeHref} />
-                  {(c.sheetNotes?.later ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>診療年月より前の版のマスターを持っていないので、後の版で代えています：{c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。</p>}
-                  {(c.sheetNotes?.newer ?? []).length > 0 && <p className="muted" style={{ margin: 0 }}>読み方を確かめた版より新しいデータです：{c.sheetNotes!.newer.join("、")}。</p>}
+                  <GenericFindings
+                    generic={c.generic}
+                    scope="full"
+                    rowHref={codeHref}
+                    laterSheets={c.sheetNotes?.later ?? []}
+                    notes={[
+                      "公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。",
+                      ...((c.sheetNotes?.later ?? []).length > 0 ? [`診療年月より前の版のマスターを持っていないので、後の版で代えています：${c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。`] : []),
+                      ...((c.sheetNotes?.newer ?? []).length > 0 ? [`読み方を確かめた版より新しいデータです：${c.sheetNotes!.newer.join("、")}。`] : []),
+                    ]}
+                  />
                 </>
               )}
 
