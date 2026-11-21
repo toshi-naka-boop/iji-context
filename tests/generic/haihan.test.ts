@@ -47,8 +47,11 @@ const sameDay = [unit([C.oushin], [6]), unit([C.houmon], [6, 20])];
 const OU_HO = haihanKey("HX-01", C.oushin, C.houmon);
 
 describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急変の往診・HX-02 死亡日の往診だけの日のターミナルケア加算）", () => {
-  it("答えを渡さない点検（月末の点検・算定プレビュー・measure-generic）では、問いを出さず、今までどおり条件つき（L-76）", () => {
-    expect(brief(g05Of(sameDay).findings)).toEqual([["G05.day_cond", "条件つき", C.oushin, C.houmon]]);
+  it("答えを渡さない点検（月末の点検・算定プレビュー・試算・measure-generic）では、選択肢を出さず（L-76）、例外の一言と問いの文を挙げた条件つきの文にする（利用者の判断 2026-11-22）", () => {
+    const fs = g05Of(sameDay).findings;
+    expect(brief(fs)).toEqual([["G05.exception_check", "条件つき", C.oushin, C.houmon]]);
+    expect([fs[0].params.asks, genericText(fs[0])]).toEqual([undefined, expect.stringContaining("医療事務に確かめること：「この日の往診は、同じ日の訪問診療のあとに、患者の病状の急変などで求められて行ったものですか」")]);
+    expect(genericText(fs[0])).toContain("訪問診療の後に、病状の急変等で往診した場合の往診料");
   });
 
   it("答えがない → 条件つき＋問い（HX-01。sameDayOf が名指しする事実）。文は告示・通知の例外の一言を挙げる", () => {
@@ -90,7 +93,8 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
   it("決まらないの答え（その他・判定不能）→ 条件つきで、もう問わない", () => {
     for (const label of ["その他", "判定不能"]) {
       const fs = g05Of(sameDay, { answers: answersOf({ [`${OU_HO}|${day(6)}`]: label }), facts: factsOf({}) }).findings;
-      expect(brief(fs)).toEqual([["G05.day_cond", "条件つき", C.oushin, C.houmon]]);
+      expect(brief(fs)).toEqual([["G05.exception_check", "条件つき", C.oushin, C.houmon]]);
+      expect(genericText(fs[0])).toContain("これまでの答えでは決まりません");
     }
   });
 
@@ -157,9 +161,12 @@ describe("出荷の決まり：往診料 × 訪問診療料（HP-01。HX-01 急�
     putHaihan(db, "20261001", 1, C.saishin, TERMINAL, "2", "1");
     const fs = g05Of([unit([C.saishin, C.oushin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({ deathPlace: "在宅" }) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
     expect(fs.map((f) => [f.messageKey, f.params.hp, f.params.hx, f.params.checks])).toEqual([["G05.exception_needs_check", "HP-55", "HX-24", "この再診料（加算）は、その日の往診に付くものか（外来の受診・電話などの再診ではない）、死亡日と死亡日前 14 日以内の計 15 日間の、訪問診療料(Ⅰ)又は(Ⅱ)の算定（前の月にまたがることがあります）"]]);
-    // 往診料のない日（外来の再診）は HX-24 に当たらず、再診料が往診に付くかの問い（HX-11）は pre で当たらない → exception_none
-    const outpatient = g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers: answersOf(), facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
-    expect(outpatient.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-55"]]);
+    // 往診料のない日（外来・電話の再診）は HX-24 に当たらない。HX-11 は往診料がないだけでは当たらないにせず、問いに進む（外来・電話の再診は決まらない。round-38 X-111）
+    const outpatient = (answers = answersOf()) => g05Of([unit([C.saishin], [20]), unit([TERMINAL], [20])], { answers, facts: factsOf({}) }, { db }).findings.filter((f) => f.codes.includes(C.saishin));
+    expect(outpatient().map((f) => [f.messageKey, f.params.hp, f.params.hx])).toEqual([["G05.exception_ask", "HP-55", "HX-11"]]);
+    const k11 = `${haihanKey("HX-11", C.saishin, TERMINAL)}|${day(20)}`;
+    expect(outpatient(answersOf({ [k11]: "いいえ、外来の受診か電話などの再診について算定した" })).map((f) => f.messageKey)).not.toContain("G05.exception_none");
+    expect(outpatient(answersOf({ [k11]: "いいえ、訪問診療と同じ 1 回の診療について算定した" })).map((f) => f.messageKey)).toEqual(["G05.exception_none"]);
     // 電話等再診料（往診に付く再診料ではない）の行は組に入れない：HX-24 に当たらず、今までどおり条件つき（round-37 C-150）
     const PHONE = "112007950";
     put(db, "shinryo", "20261001", { code: PHONE, name: "手作りの電話等再診料", alpha: "A", sho: 1, bu: 1, kubun_no: 1 });
@@ -198,12 +205,12 @@ describe("例外の形（テスト用の決まり）", () => {
     const inpatient = g05Of(month, { outpatient: false }, { config });
     expect([inpatient.findings, inpatient.result.silenced]).toEqual([[], [{ hx: "HX-T1", count: 1 }]]);
     // 入院外かが分からない（区分キーの行）なら決まらない
-    expect(brief(g05Of(month, {}, { config }).findings)).toEqual([["G05.month_cond", "条件つき", C.sanso, C.sansoKyunyu]]);
+    expect(brief(g05Of(month, {}, { config }).findings)).toEqual([["G05.exception_check", "条件つき", C.sanso, C.sansoKyunyu]]);
   });
 
   it("確かめられない例外（ウ）が 1 つある組では、ほかの例外が全部当たらなくても exception_none にならない", () => {
     const config = testConfig([RECEIPT, NONE], ["HX-T1", "HX-T2"]);
-    expect(brief(g05Of(month, { outpatient: true }, { config }).findings)).toEqual([["G05.month_cond", "条件つき", C.sanso, C.sansoKyunyu]]);
+    expect(brief(g05Of(month, { outpatient: true }, { config }).findings)).toEqual([["G05.exception_check", "条件つき", C.sanso, C.sansoKyunyu]]);
   });
 
   it("同一月の表の scope: day の問い：b 側の算定日ごとに問い、日によって答えが分かれると「決まらない」で、分かれた日が文に出る", () => {
@@ -228,6 +235,19 @@ describe("例外の形（テスト用の決まり）", () => {
     expect(brief(g05Of([unit([C.oushin], [6]), unit([C.kyukyu], [6])], about, { config, certain }).findings)).toEqual([["G05.exception_none", "条件つき", C.oushin, C.kyukyu]]);
   });
 
+  it("同時の表：同じ算定単位かは算定日ごとに照らす。別の日の同じ単位を、残った日の確定や当たる単位に使わない（round-38 X-110）", () => {
+    const x: HaihanException = { ...ASK_DAY, id: "HX-T6", ask: { ...ASK_DAY.ask!, factKey: "haihan:HX-T6", askOn: undefined } };
+    const config = testConfig([x], ["HX-T6"]);
+    const key = haihanKey("HX-T6", C.oushin, C.kyukyu);
+    // 5 日は同じ単位（当たる）、10 日は別々の単位（当たらない）
+    const units = [unit([C.oushin, C.kyukyu], [5]), unit([C.oushin], [10]), unit([C.kyukyu], [10])];
+    const fs = g05Of(units, { answers: answersOf({ [`${key}|${day(5)}`]: "はい", [`${key}|${day(10)}`]: "いいえ" }) }, { config, certain: new Set(["G05.exception_none#HP-T2"]) }).findings;
+    expect(fs.map((f) => [f.messageKey, f.certainty, f.params.where, f.units])).toEqual([["G05.exception_none", "条件つき", "別の算定単位ですが、同じ日（10日）", [1, 2]]]);
+    // 逆（5 日が当たらない）なら、5 日の同じ単位の分だけが確定で、単位も 5 日のものだけ
+    const rev = g05Of(units, { answers: answersOf({ [`${key}|${day(5)}`]: "いいえ", [`${key}|${day(10)}`]: "はい" }) }, { config, certain: new Set(["G05.exception_none#HP-T2"]) }).findings;
+    expect(rev.map((f) => [f.messageKey, f.certainty, f.params.where, f.units])).toEqual([["G05.exception_none", "確定", "同じ算定単位（5日）", [0]]]);
+  });
+
   it("答えは組ごと：同じ日に同じ例外が掛かる 2 つの組に、別の答えを入れられ、互いに効かない（X-106）", () => {
     const db = tensuhyoMasters();
     putHaihan(db, "20261001", 1, C.oushin, TERMINAL, "3", "1");
@@ -250,6 +270,44 @@ describe("出荷の決まりの形", () => {
     expect(["HP-01", "HP-54", "HP-56"].map((id) => HAIHAN.patterns.find((x) => x.id === id)!.exceptions)).toEqual([["HX-01"], ["HX-01", "HX-02"], []]);
     const x = HAIHAN.exceptions.find((e) => e.id === "HX-01")!;
     expect([x.ask?.factKey, x.thenRequires?.comments]).toEqual(["sameDayOushinAfterVisit", [REASON]]);
+  });
+});
+
+describe("疑義解釈で確かめた例外（利用者の判断 2026-11-22）", () => {
+  it("HX-15 はイ（請求ごとの問い）、HX-19 はア（入院のレセプトなら当たる）。入院外のレセプトでは、C108×G003 の組（HP-20）は例外に当たらない", () => {
+    const x15 = HAIHAN.exceptions.find((e) => e.id === "HX-15")!;
+    expect([x15.kind, x15.ask?.scope, x15.ask?.choices.map((c) => c.means)]).toEqual(["fact", "claim", ["当たる", "当たらない", "決まらない", "決まらない"]]);
+    const x19 = HAIHAN.exceptions.find((e) => e.id === "HX-19")!;
+    expect([x19.kind, x19.allow]).toEqual(["receipt", { receiptKind: "入院" }]);
+    // 小さな表で、C108（114741810）× G003（130007510）の同一月の行を作る（コードで選ぶ組に写して掛ける）
+    const db = tensuhyoMasters();
+    putHaihan(db, "20261001", 2, "114741810", "130007510", "1", "1");
+    const config: HaihanConfig = { patterns: [{ ...HAIHAN.patterns.find((p) => p.id === "HP-20")!, a: { codes: ["114741810"] }, b: { codes: ["130007510"] } }], exceptions: [x19] };
+    const units = [unit(["114741810"], [3]), unit(["130007510"], [10])];
+    expect(g05Of(units, { outpatient: true }, { db, config }).findings.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-20"]]);
+    expect(g05Of(units, { outpatient: false }, { db, config }).findings).toEqual([]);
+  });
+});
+
+describe("医療型短期入所中（HX-21。調べ tankinyusho-exception.md・利用者の判断 2026-11-22）", () => {
+  it("当院が事業所として受け入れている間 → 当たる、ほかの施設の医療型短期入所中 → 決まらない、短期入所中でない・福祉型 → 当たらない。その他・判定不能は決まらない", () => {
+    const x = HAIHAN.exceptions.find((e) => e.id === "HX-21")!;
+    expect(x.ask!.choices.map((c) => [c.label, c.means])).toEqual([
+      ["はい（当院が医療型短期入所の事業所として受け入れている間）", "当たる"],
+      ["はい（ほかの施設の医療型短期入所中）", "決まらない"],
+      ["いいえ（短期入所中ではない）", "当たらない"],
+      ["福祉型の短期入所中", "当たらない"],
+      ["その他", "決まらない"],
+      ["判定不能", "決まらない"],
+    ]);
+    // 同一月の表の、b 側（処置・注射）の算定日ごとの問い。テスト用の組（酸素の管理料 × 酸素吸入）に写して掛ける
+    const config = testConfig([x], ["HX-21"]);
+    const key = haihanKey("HX-21", C.sanso, C.sansoKyunyu);
+    const run1 = (label: string) => g05Of(month, { answers: answersOf({ [`${key}|${day(6)}`]: label, [`${key}|${day(20)}`]: label }) }, { config });
+    const own = run1("はい（当院が医療型短期入所の事業所として受け入れている間）");
+    expect([own.findings, own.result.silenced]).toEqual([[], [{ hx: "HX-21", count: 1 }]]);
+    expect(run1("はい（ほかの施設の医療型短期入所中）").findings.map((f) => f.messageKey)).toEqual(["G05.exception_check"]);
+    for (const label of ["いいえ（短期入所中ではない）", "福祉型の短期入所中"]) expect([label, run1(label).findings.map((f) => f.messageKey)]).toEqual([label, ["G05.exception_none"]]);
   });
 });
 

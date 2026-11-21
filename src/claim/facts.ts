@@ -2,7 +2,7 @@
 // 患者ごとに確かめた情報（src/patient/facts.ts。月をまたいで残る。居住の場所・文書の提供・緊急往診の対象か・管理料を算定する患者かも、そちら）とは別に持つ。判定は、症例・カルテ由来の事実に、残した最新の値を重ねて使う。
 // 入るのは、人が確かめて残した値だけ（機械・AI は埋めない）。誰あての事実か（医師か医療事務か）は、エンジンの宛先の表（src/engine/index.ts の targetOfNeed）が決める
 import type { Facts } from "../engine/types";
-import { exceptionOf, parseHaihanKey } from "../generic/haihan";
+import { exceptionOf, parseHaihanKey, sharedExceptionOf } from "../generic/haihan";
 
 /** 日付ごとに持つ事実（日付 → 真偽。ある日の答えは、ほかの日に効かない） */
 export const DATED_FACT_KEYS = ["sameDaySeparate", "sameDayOushinAfterVisit", "rxLongPsychotropic"] as const;
@@ -63,7 +63,11 @@ export function validateClaimFact(f: ClaimFactInput, yearMonth: string): void {
     if (f.date === null || !inMonth(f.date, yearMonth)) throw new Error("この請求の診療年月の日付を選ぶ");
   } else if (f.date !== null) throw new Error(`${f.key} に日付は付けない`);
   const kind = inputKindOf(f.key);
-  if (kind === "boolean" && typeof f.value !== "boolean") throw new Error(`${f.key} は、はい・いいえで選ぶ`);
+  // 例外の問いと共有する事実（sameDayOushinAfterVisit）は、例外の問いの選択肢（「その他」「判定不能」を含む）の文字列でも答えられる（利用者の判断 2026-11-22）
+  const choices = sharedExceptionOf(f.key)?.ask?.choices;
+  if (kind === "boolean" && typeof f.value === "string" && choices) {
+    if (!choices.some((c) => c.label === f.value)) throw new Error("選択肢から選ぶ");
+  } else if (kind === "boolean" && typeof f.value !== "boolean") throw new Error(`${f.key} は、はい・いいえで選ぶ`);
   if (kind === "deathPlace" && !(DEATH_PLACES as readonly unknown[]).includes(f.value)) throw new Error("看取りの場所は、在宅か在宅以外から選ぶ");
   if (kind === "text" && (typeof f.value !== "string" || f.value.trim() === "" || f.value.length > MAX_MAIN_DISEASE)) throw new Error(`主病は 1〜${MAX_MAIN_DISEASE} 文字で入れる`);
 }

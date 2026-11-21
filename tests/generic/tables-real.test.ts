@@ -260,9 +260,10 @@ describe("段 12：実データの masters.db で", () => {
     expect(pairOf(run(db, [unit(["114000110"], [3]), unit(["114061210"], [4])]), "114000110", "114061210")).toEqual([]);
     expect(run(db, [unit(["114001110"], [3]), unit(["114001110"], [4])])).toEqual([]);
     // 特例条件あり：往診料と訪問診療料の同じ日（A46。急変の往診は算定できる）／在宅酸素と酸素吸入の同じ月（A51）／救急搬送診療料と往診料の同じ単位（A54）
-    expect(pairOf(run(db, [unit(["114000110"], [3]), unit(["114001110"], [3])]), "114000110", "114001110")).toEqual([["G05.day_cond", "条件つき", "114000110", "114001110"]]);
-    expect(pairOf(run(db, [unit(["114003710"], [3]), unit(["140005610"], [9])]), "114003710", "140005610")).toEqual([["G05.month_cond", "条件つき", "114003710", "140005610"]]);
-    expect(pairOf(run(db, [unit(["114000110", "114003010"], [3])]), "114000110", "114003010")).toEqual([["G05.same_unit_cond", "条件つき", "114000110", "114003010"]]);
+    // 3 つとも例外の決まり（EM §2-12 の HP-01・HP-35・HP-14）の組なので、確かめることを挙げた条件つきの文になる（段 15a。利用者の判断 2026-11-22）
+    expect(pairOf(run(db, [unit(["114000110"], [3]), unit(["114001110"], [3])]), "114000110", "114001110")).toEqual([["G05.exception_check", "条件つき", "114000110", "114001110"]]);
+    expect(pairOf(run(db, [unit(["114003710"], [3]), unit(["140005610"], [9])]), "114003710", "140005610")).toEqual([["G05.exception_check", "条件つき", "114003710", "140005610"]]);
+    expect(pairOf(run(db, [unit(["114000110", "114003010"], [3])]), "114000110", "114003010")).toEqual([["G05.exception_check", "条件つき", "114000110", "114003010"]]);
     // 包括の特例条件あり：1 日につき・同一月内の単位のグループから、特例条件ありの行を 1 つずつ探して置く
     for (const [u, key] of [["1", "G04.day_cond"], ["2", "G04.month_cond"]]) {
       const row = db.prepare("SELECT h.code parent, k.code child FROM hojo h JOIN houkatsu k ON k.snapshot = h.snapshot AND k.group_no = h.group1 WHERE h.unit1 = ? AND k.tokurei = '1' AND h.created_on <= ? AND k.created_on <= ? ORDER BY h.code, k.code LIMIT 1").get(u, START, START) as { parent: string; child: string };

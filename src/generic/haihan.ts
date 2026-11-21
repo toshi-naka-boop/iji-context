@@ -80,5 +80,7 @@ export function codesFit(hx: string, codes: [string, string], selects: ((code: s
   const fit = (code: string, sel: CodeSel) => sel.codes?.includes(code) === true || (sel.section !== undefined && (selects === null || selects(code, sel)));
   return config.patterns.some((p) => p.exceptions.includes(hx) && ((fit(codes[0], p.a) && fit(codes[1], p.b)) || (fit(codes[0], p.b) && fit(codes[1], p.a))));
 }
+/** 既存の事実（sameDayOushinAfterVisit など）を使う問いの例外。R10 の入力が、この例外の選択肢で答える（利用者の判断 2026-11-22） */
+export const sharedExceptionOf = (factKey: string, config: HaihanConfig = HAIHAN): HaihanException | undefined => config.exceptions.find((x) => sharedFactOf(x) === factKey);
 /** 既存の事実を使う問いか（その事実の名前）。haihan:* だけの問いなら null */
 export const sharedFactOf = (x: HaihanException): string | null => (x.ask && !x.ask.factKey.startsWith("haihan:") ? x.ask.factKey : null);

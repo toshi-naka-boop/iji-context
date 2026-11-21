@@ -133,7 +133,8 @@ describe("G05 背反", () => {
 
   it("特例条件あり（A46）：往診料と訪問診療料が同じ日にあっても、条件つきでしか出ない（急変の往診は算定できる。条件の中身はデータにない）", () => {
     const fs = run([unit([C.oushin], [6]), unit([C.houmon], [6, 20])]);
-    expect(brief(fs)).toEqual([["G05.day_cond", "条件つき", C.oushin, C.houmon]]);
+    // 往診料×訪問診療料は例外の決まり（EM §2-12 の HP-01）の組なので、確かめることを挙げた条件つきの文になる（段 15a。利用者の判断 2026-11-22）
+    expect(brief(fs)).toEqual([["G05.exception_check", "条件つき", C.oushin, C.houmon]]);
     expect(fs[0].params.keep).toBe("いずれか一方");
     expect(run([unit([C.oushin], [7]), unit([C.houmon], [6, 20])])).toEqual([]);
   });

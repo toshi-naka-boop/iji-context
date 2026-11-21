@@ -131,6 +131,16 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
     expect((await list()).filter((f) => f[1] === day(15))).toEqual([["sameDayOushinAfterVisit", day(15), true, "clerk"]]);
   });
 
+  it("R10 の入力（sameDayOushinAfterVisit）も、HX-01 と同じ選択肢で答えられ、同じ書く関数を通る：その他 → 共有の事実を取り消し、その日の組の haihan:* に記録（利用者の判断 2026-11-22）", async () => {
+    setRole("clerk");
+    expect((await save("sameDayOushinAfterVisit", "たぶん", day(15))).status).toBe(400);
+    expect((await save("sameDayOushinAfterVisit", "その他", day(15))).status).toBe(200);
+    expect((await list()).filter((f) => f[1] === day(15))).toEqual([[KEY, day(15), "その他", "clerk"]]);
+    expect(r10()).toContain(`sameDayOushinAfterVisit@${day(15)}`);
+    expect((await save("sameDayOushinAfterVisit", YES, day(15))).status).toBe(200);
+    expect((await list()).filter((f) => f[1] === day(15))).toEqual([["sameDayOushinAfterVisit", day(15), true, "clerk"]]);
+  });
+
   it("答えは組ごと：同じ日の 2 つの組（haihan:<HX>:<コード①>:<コード②>）に別の答えを残せ、互いに効かない", async () => {
     setRole("clerk");
     const [a, b] = [haihanKey("HX-11", SAISHIN, VISIT_CODE), haihanKey("HX-11", SAISHIN, HOUMON_RO)];
@@ -148,12 +158,22 @@ describe("背反の特例条件の例外の問いの答え（haihan:*）", () =>
       expect([key, (await save(key, YES, day(5))).status]).toEqual([key, 400]);
   });
 
-  it("監査ログの対象は請求 id とキーだけ（値・氏名は入らない）。共有の事実を使う問いは、その事実のキーも入れる", async () => {
+  it("監査ログの対象は請求 id とキーだけ（値・氏名は入らない）。答えを書く関数がほかに書いた・取り消した key は、key ごとに 1 行ずつ残す（切れない。round-38 X-112）", async () => {
+    setRole("clerk");
+    // 同じ日の HX-01 の 2 つの組に「その他」を残したあと、R10 の入力で共有の事実を書く → 2 つの答えを取り消す
+    const RO = haihanKey("HX-01", OUSHIN_CODE, HOUMON_RO);
+    for (const k of [KEY, RO]) expect((await save(k, "その他", day(5))).status).toBe(200);
+    const before = instance.runAs(owner, () => instance.getApp().audit.list(500)).length;
+    expect((await save("sameDayOushinAfterVisit", true, day(5))).status).toBe(200);
+    const added = instance.runAs(owner, () => instance.getApp().audit.list(500)).slice(0, instance.runAs(owner, () => instance.getApp().audit.list(500)).length - before);
+    expect(added.map((r) => r.target).sort()).toEqual([`${ID} sameDayOushinAfterVisit`, `${ID} ${KEY}`, `${ID} ${RO}`].sort());
     const audit = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((r) => r.action === "POST /api/claims/[claimId]/facts" && r.result === "ok");
-    expect(audit.map((r) => r.target)).toContain(`${ID} ${KEY} sameDayOushinAfterVisit`);
-    // R10 の入力で共有の事実を書き、その日の haihan:* を取り消したときも、取り消した key を残す（round-36 C-142）
-    expect(audit.map((r) => r.target)).toContain(`${ID} sameDayOushinAfterVisit ${KEY}`);
+    // 共有の事実を使う問いの答え → その事実の key の行も残る
+    expect(audit.map((r) => r.target)).toContain(`${ID} ${KEY}`);
     expect(audit.map((r) => r.target)).toContain(`${ID} ${haihanKey("HX-11", SAISHIN, VISIT_CODE)}`);
+    for (const r of audit) expect((r.target ?? "").length).toBeLessThanOrEqual(80);
+    // 5 日を前の状態（往診のあとではない）に戻す（次のテストが使う）
+    expect((await save("sameDayOushinAfterVisit", false, day(5))).status).toBe(200);
     expect(JSON.stringify(audit)).not.toMatch(/架空|06139992|やまだ|往診のほうが先|その他/);
   });
 

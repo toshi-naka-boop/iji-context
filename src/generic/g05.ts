@@ -9,9 +9,10 @@
 // 背反区分（[点] p28 項番6）：1＝コード①を算定する／2＝コード②を算定する／3＝いずれか一方。残す側が決まる組（1・2）は、指摘の値（keep）に入れる。
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
 import { sameDayOf } from "../engine/predicates";
+import { FACT_LABEL } from "../messages";
 import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
 import { HAIHAN, haihanKey, sharedFactOf, type Check, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
-import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence } from "./tensuhyo";
+import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence, type TimedClaim } from "./tensuhyo";
 import { FINDING_LIMIT, type GenericAbout, type GenericAboutMore, type GenericCheck, type GenericClaim, type GenericFinding } from "./types";
 
 type Row = Dated & { tani: number; code1: string; code2: string; kubun: string; tokurei: string };
@@ -143,7 +144,7 @@ type SlotOutcome =
   | { kind: "silent"; hx: string[] }
   | { kind: "require"; hx: HaihanException[]; checks: string[]; comments: string[] }
   | { kind: "none"; answered: boolean }
-  | { kind: "open"; asks: PendingAsk[]; split?: { hx: string; hit: string[]; miss: string[] } };
+  | { kind: "open"; asks: PendingAsk[]; hx: string[]; split?: { hx: string; hit: string[]; miss: string[] } };
 
 function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: string, day: number | undefined, c: Ctx): SlotOutcome {
   const list = p.exceptions.map((id) => config.exceptions.find((e) => e.id === id)!).map((x) => ({ x, r: judge(x, row, aCode, day, c) }));
@@ -158,7 +159,7 @@ function outcomeOf(p: HaihanPattern, config: HaihanConfig, row: Row, aCode: stri
   if (list.every((e) => e.r.r === "miss")) return { kind: "none", answered: list.some((e) => e.r.r === "miss" && e.r.answered) };
   const asks = list.flatMap((e) => (e.r.r === "open" ? e.r.asks : []));
   const split = list.find((e) => e.r.r === "undecided" && e.r.split);
-  return { kind: "open", asks, ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
+  return { kind: "open", asks, hx: list.filter((e) => e.r.r === "open" || e.r.r === "undecided").map((e) => e.x.id), ...(split && split.r.r === "undecided" && split.r.split ? { split: { hx: split.x.id, ...split.r.split } } : {}) };
 }
 
 /** 診療行為が選び方に当たるか（区分番号は、診療年月に使う基本マスターの 1 枚で引く。引けなければ当たらない）。答えの入力の検査も使う */
@@ -240,14 +241,15 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
         }
         if (hit === null) continue;
         const keep = row.kubun === "1" ? row.code1 : row.kubun === "2" ? row.code2 : "いずれか一方";
+        let cur = hit;
         const base = (messageKey: string, certainty: "確定" | "条件つき", params: Record<string, string>): GenericFinding => ({
           check: "G05",
           kind: "背反",
           certainty,
-          units: hit!.units,
+          units: cur.units,
           codes: [row.code1, row.code2],
           messageKey,
-          params: { a: row.code1, b: row.code2, keep, ...hit!.params, ...params },
+          params: { a: row.code1, b: row.code2, keep, ...cur.params, ...params },
           source: { data: TABLE.haihan[row.tani], ref: `診療行為コード①=${row.code1}, 診療行為コード②=${row.code2}` },
         });
         const matched = marked && row.tani !== 4 ? patternOf(config, row, ctx.selects) : null;
@@ -255,56 +257,78 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
           push(base(`G05.${hit.key}${marked ? "_cond" : ""}`, hit.sure && !marked && !t.weak(row) ? "確定" : "条件つき", {}));
           continue;
         }
-        // 例外の判定の単位：1 日の表・同時の表は算定日ごと（算定日がなければ 1 つ）、同一月の表はレセプトごと（design.md §13-2）
-        const slots: (number | undefined)[] = row.tani === 2 || hit.days.length === 0 ? [undefined] : hit.days;
         const { p, aCode } = matched;
-        const where = (days: (number | undefined)[]) => {
-          const ds = days.filter((d): d is number => d !== undefined);
-          return row.tani === 2 ? "同じレセプト" : hit!.key === "same_unit" ? `同じ算定単位${ds.length ? `（${daysText(ds)}日）` : ""}` : hit!.key === "same_day" ? `別の算定単位ですが、同じ日（${daysText(ds)}日）` : `同じ日（${daysText(ds)}日）`;
-        };
-        const dayParams = (days: (number | undefined)[]) => {
-          const ds = days.filter((d): d is number => d !== undefined);
-          return { where: where(days), ...(ds.length > 0 ? { days: daysText(ds) } : {}) };
-        };
-        const groups = { none: [] as { day: number | undefined; answered: boolean }[], open: [] as { day: number | undefined; o: Extract<SlotOutcome, { kind: "open" }> }[], require: new Map<string, { o: Extract<SlotOutcome, { kind: "require" }>; days: (number | undefined)[] }>() };
-        for (const day of slots) {
-          const o = outcomeOf(p, config, row, aCode, day, ctx);
-          if (o.kind === "silent") silenced.push(...o.hx);
-          else if (o.kind === "none") groups.none.push({ day, answered: o.answered });
-          else if (o.kind === "open") groups.open.push({ day, o });
-          else {
-            const k = `${o.hx.map((x) => x.id).join(",")}|${o.checks.join("|")}|${o.comments.join(",")}`;
-            const g = groups.require.get(k) ?? { o, days: [] };
-            g.days.push(day);
-            groups.require.set(k, g);
+        // 同時の表は、同じ算定単位かを算定日ごとに照らす（§13-4 (a)。round-38 X-110）：その日に両方のある単位がある日（言い切りの候補）と、ない日（別の単位で同じ日）に分け、
+        // 分けたそれぞれで、その日の単位だけを当たる単位にする。別の日の同じ単位を、残った日の判定に使わない
+        const unitsOn = (d: number, pick: (u: number) => boolean) => [...new Set([...a.units, ...b.units])].filter((u) => pick(u) && ((claim as TimedClaim).units[u].days?.[d - 1] ?? 0) > 0).sort((x, y) => x - y);
+        const inA = new Set(a.units);
+        const both = (u: number) => inA.has(u) && b.units.includes(u);
+        const buckets: { h: NonNullable<typeof hit>; days: number[] }[] =
+          row.tani === 3 && hit.days.length > 0
+            ? [
+                { days: hit.days.filter((d) => unitsOn(d, both).length > 0), key: "same_unit", sure: true },
+                { days: hit.days.filter((d) => unitsOn(d, both).length === 0), key: "same_day", sure: false },
+              ].filter((x) => x.days.length > 0).map((x) => ({ days: x.days, h: { key: x.key, sure: x.sure, days: x.days, units: [...new Set(x.days.flatMap((d) => unitsOn(d, x.key === "same_unit" ? both : () => true)))].sort((m, n) => m - n), params: (x.key === "same_unit" ? {} : { days: daysText(x.days) }) as Record<string, string> } }))
+            : [{ h: hit, days: hit.days }];
+        for (const bucket of buckets) {
+          cur = bucket.h;
+          const hit2 = cur;
+          // 例外の判定の単位：1 日の表・同時の表は算定日ごと（算定日がなければ 1 つ）、同一月の表はレセプトごと（design.md §13-2）
+          const slots: (number | undefined)[] = row.tani === 2 || bucket.days.length === 0 ? [undefined] : bucket.days;
+          const where = (days: (number | undefined)[]) => {
+            const ds = days.filter((d): d is number => d !== undefined);
+            return row.tani === 2 ? "同じレセプト" : hit2.key === "same_unit" ? `同じ算定単位${ds.length ? `（${daysText(ds)}日）` : ""}` : hit2.key === "same_day" ? `別の算定単位ですが、同じ日（${daysText(ds)}日）` : `同じ日（${daysText(ds)}日）`;
+          };
+          const dayParams = (days: (number | undefined)[]) => {
+            const ds = days.filter((d): d is number => d !== undefined);
+            return { where: where(days), ...(ds.length > 0 ? { days: daysText(ds) } : {}) };
+          };
+          const groups = { none: [] as { day: number | undefined; answered: boolean }[], open: [] as { day: number | undefined; o: Extract<SlotOutcome, { kind: "open" }> }[], require: new Map<string, { o: Extract<SlotOutcome, { kind: "require" }>; days: (number | undefined)[] }>() };
+          for (const day of slots) {
+            const o = outcomeOf(p, config, row, aCode, day, ctx);
+            if (o.kind === "silent") silenced.push(...o.hx);
+            else if (o.kind === "none") groups.none.push({ day, answered: o.answered });
+            else if (o.kind === "open") groups.open.push({ day, o });
+            else {
+              const k = `${o.hx.map((x) => x.id).join(",")}|${o.checks.join("|")}|${o.comments.join(",")}`;
+              const g = groups.require.get(k) ?? { o, days: [] };
+              g.days.push(day);
+              groups.require.set(k, g);
+            }
           }
-        }
-        for (const { o, days } of groups.require.values()) {
-          const hx = o.hx.map((x) => x.id);
-          const common = { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), ...dayParams(days) };
-          if (o.checks.length > 0) push(base("G05.exception_needs_check", "条件つき", { ...common, checks: o.checks.join("、") }));
-          if (o.comments.length > 0) {
-            // コメントと日の対応は取らず、件数で照らす（X-107）
-            const have = ctx.comments.filter((code) => o.comments.includes(code)).length;
-            if (have < days.length) push(base("G05.exception_needs_comment", "条件つき", { ...common, comments: o.comments.join("・"), need: String(days.length), have: String(have) }));
-            else if (o.checks.length === 0) silenced.push(...hx);
+          for (const { o, days } of groups.require.values()) {
+            const hx = o.hx.map((x) => x.id);
+            const common = { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), ...dayParams(days) };
+            if (o.checks.length > 0) push(base("G05.exception_needs_check", "条件つき", { ...common, checks: o.checks.join("、") }));
+            if (o.comments.length > 0) {
+              // コメントと日の対応は取らず、件数で照らす（X-107）
+              const have = ctx.comments.filter((code) => o.comments.includes(code)).length;
+              if (have < days.length) push(base("G05.exception_needs_comment", "条件つき", { ...common, comments: o.comments.join("・"), need: String(days.length), have: String(have) }));
+              else if (o.checks.length === 0) silenced.push(...hx);
+            }
           }
-        }
-        if (groups.none.length > 0) {
-          const answered = groups.none.some((n) => n.answered);
-          push(base("G05.exception_none", hit.sure && !t.weak(row) ? "確定" : "条件つき", { hp: p.id, hx: p.exceptions.join("・"), hxText: textOf(p.exceptions), answered: String(answered), because: answered ? "医療事務の答え（確かめた事実）で確かめたので、" : "レセプトで確かめたところ、", ...dayParams(groups.none.map((n) => n.day)) }));
-        }
-        if (groups.open.length > 0) {
-          const days = groups.open.map((g) => g.day);
-          const asks = groups.open.flatMap((g) => g.o.asks);
-          const split = groups.open.find((g) => g.o.split)?.o.split;
-          // 問いを出すのは、答えを読める点検（取り込んだレセプトの点検）だけ（L-76）
-          if (about.answers && asks.length > 0) {
-            const hx = [...new Set(asks.map((x) => x.hx))];
-            push(base("G05.exception_ask", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), asks: JSON.stringify(asks), ...dayParams(days) }));
-          } else if (split && asks.length === 0)
-            push(base("G05.exception_split", "条件つき", { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss), ...dayParams(days) }));
-          else push(base(`G05.${hit.key}_cond`, "条件つき", hit.key === "month" || hit.key === "same_unit" ? {} : { days: daysText(days.filter((d): d is number => d !== undefined)) }));
+          if (groups.none.length > 0) {
+            const answered = groups.none.some((n) => n.answered);
+            push(base("G05.exception_none", hit2.sure && !t.weak(row) ? "確定" : "条件つき", { hp: p.id, hx: p.exceptions.join("・"), hxText: textOf(p.exceptions), answered: String(answered), because: answered ? "医療事務の答え（確かめた事実）で確かめたので、" : "レセプトで確かめたところ、", ...dayParams(groups.none.map((n) => n.day)) }));
+          }
+          if (groups.open.length > 0) {
+            const days = groups.open.map((g) => g.day);
+            const asks = groups.open.flatMap((g) => g.o.asks);
+            const split = groups.open.find((g) => g.o.split)?.o.split;
+            // 問いを出すのは、答えを読める点検（取り込んだレセプトの点検）だけ（L-76）
+            if (about.answers && asks.length > 0) {
+              const hx = [...new Set(asks.map((x) => x.hx))];
+              push(base("G05.exception_ask", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), asks: JSON.stringify(asks), ...dayParams(days) }));
+            } else if (split && asks.length === 0)
+              push(base("G05.exception_split", "条件つき", { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss), ...dayParams(days) }));
+            else {
+              // 答えを渡さない経路（月末の点検・算定プレビュー・試算・measure-generic）と、問いの残っていない「決まらない」は、選択肢を出さず、
+              // 何を確かめればよいか（例外の一言と問いの文）を挙げた条件つきの文にする（利用者の判断 2026-11-22。選択肢は出さない：L-76）
+              const hx = [...new Set(groups.open.flatMap((g) => g.o.hx))];
+              const questions = [...new Set(asks.map((x) => (x.key === "sameDaySeparate" ? FACT_LABEL.sameDaySeparate : (config.exceptions.find((e) => e.id === x.hx)?.ask?.question ?? ""))))].filter((q) => q !== "");
+              push(base("G05.exception_check", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), questions: questions.length > 0 ? `医療事務に確かめること：${questions.map((q) => `「${q}」`).join("／")}` : "例外に当たるかは、レセプトとこれまでの答えでは決まりません。告示・通知を確かめてください", ...dayParams(days) }));
+            }
+          }
         }
       }
       return Object.assign(out, { more, silenced });

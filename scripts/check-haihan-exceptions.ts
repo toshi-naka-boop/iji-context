@@ -1,7 +1,9 @@
 // 背反の特例条件の例外（EM §2-12。design.md §13-1）の引用が、告示・留意事項通知の本文に、その文字列であるかを機械で確かめる。
-// 使い方：npx tsx scripts/check-haihan-exceptions.ts <本文テキストの置き場>
+// 使い方：npx tsx scripts/check-haihan-exceptions.ts <本文テキストの置き場> [疑義解釈の本文テキスト…]
 //   置き場には、001686842.txt（令和8年厚生労働省告示第69号 別表第一）と 001757385.txt（保医発0305第6号 別添1）を置く（手元で落とす。リポジトリに入れない）。
-// 比べ方：本文も引用も、空白と改行を除いてから探す。表 1 の「文書」が告示・留意の行だけを確かめる。疑義解釈の行は機械では確かめない（PDF のページを人が確かめる）。
+//   疑義解釈は公的な回答として、告示・通知と同じに扱う（利用者の判断 2026-11-22）。本文テキストのファイルを 2 つめ以降の引数に並べる（EM §2-12 の冒頭の疑義解釈）。
+// 比べ方：本文も引用も、空白と改行を除いてから探す。表 1 の「文書」が告示・留意の行はその本文で、疑義の行は、渡した疑義解釈の本文のどれかで確かめる。
+// 疑義解釈の本文を渡さなかったときは、疑義の行は確かめない（「機械では確かめない」と出す）。
 // 出すもの：例外ごとの結果、本文テキストの sha256（EM の冒頭に書いた値と違えば知らせる）、数。EM が「確かめた」とした行の引用が見つからなければ、終了コード 1。
 // 確かめられない例外は、EM の行を残して分類をウにする（design.md §13-1。このスクリプトは EM を書き換えない）
 import { createHash } from "node:crypto";
@@ -37,17 +39,19 @@ export function hxRowsOf(em: string): HxRow[] {
 
 const squash = (s: string) => s.replace(/\s/g, "");
 
-/** 引用が本文にあるか。texts は文書の略号 → 本文。null は、機械では確かめない行（疑義解釈など） */
+/** 引用が本文にあるか。texts は文書の略号 → 本文（疑義解釈は、渡したもの全部をつないだもの）。null は、本文を渡していない行 */
 export function checkRow(row: HxRow, texts: Record<string, string>): boolean | null {
   const body = texts[row.doc];
   if (body === undefined) return null;
+  // 空白を除いても、ファイルの境目の印（\u0000）は残るので、境目をまたいでは見つからない
   return row.quote !== "" && squash(body).includes(squash(row.quote));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const dir = process.argv[2];
+  const gigi = process.argv.slice(3);
   if (!dir) {
-    console.error("使い方：npx tsx scripts/check-haihan-exceptions.ts <本文テキストの置き場（001686842.txt・001757385.txt）>");
+    console.error("使い方：npx tsx scripts/check-haihan-exceptions.ts <本文テキストの置き場（001686842.txt・001757385.txt）> [疑義解釈の本文テキスト…]");
     process.exit(2);
   }
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,6 +68,19 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     console.log(`${doc}（${file}）sha256 ${sha}${em.includes(sha) ? "（EM §2-12 の値と同じ）" : "（EM §2-12 の値と違う。落とし直した本文なら、EM の冒頭を直してから確かめ直す）"}`);
     texts[doc] = bytes.toString("utf8");
   }
+  // 疑義解釈：渡したファイルを全部つなげて 1 つの本文にする（引用はどれかに、その文字列であればよい。ファイルの境目をまたいでは見つからないよう、間に印を入れる）
+  const gigiTexts: string[] = [];
+  for (const p of gigi) {
+    if (!existsSync(p)) {
+      console.error(`疑義解釈の本文テキストがない：${p}`);
+      process.exit(2);
+    }
+    const bytes = readFileSync(p);
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    console.log(`疑義（${path.basename(p)}）sha256 ${sha}${em.includes(sha) ? "（EM §2-12 の値と同じ）" : "（EM §2-12 の値と違う。落とし直した本文なら、EM の冒頭を直してから確かめ直す）"}`);
+    gigiTexts.push(bytes.toString("utf8"));
+  }
+  if (gigiTexts.length > 0) texts["疑義"] = gigiTexts.join("\n\u0000\n");
   const rows = hxRowsOf(em);
   let found = 0;
   let missing = 0;
@@ -76,7 +93,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     else if (ok) found++;
     else missing++;
     if (claimed && ok !== true) broken++;
-    const result = ok === null ? "機械では確かめない（疑義解釈など。PDF のページを人が確かめる）" : ok ? "本文に見つかった" : "本文に見つからない";
+    const result = ok === null ? "機械では確かめない（その文書の本文を渡していない）" : ok ? "本文に見つかった" : "本文に見つからない";
     console.log(`${r.id}　分類 ${r.kind}　${r.doc}「${r.quote}」→ ${result}　［EM：${r.status}］${claimed && ok !== true ? "　← EM は「確かめた」なのに確かめられない" : ""}`);
   }
   console.log(`例外 ${rows.length} 件：本文に見つかった ${found}・見つからない ${missing}・機械では確かめない ${manual}。確かめられない例外は、EM の行を残して分類をウにする`);
