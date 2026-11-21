@@ -6,7 +6,9 @@
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
-import { GENERIC_SCOPE_NOTE } from "../src/messages";
+
+/** 指摘がないときの文。言えるのは動いた点検の、点検した範囲についてだけ（していないことは点検の範囲に並べる。round-32 O-19） */
+const NONE = "動いた点検の、点検した範囲では指摘はありません（点検していないことは、ここに並べたとおり）";
 
 /** その理由で動かさなかった点検を「G01（コード）」の形で並べる */
 const names = (list: { check: string; kind: string }[]) => list.map((c) => `${c.check}（${c.kind}）`).join("、");
@@ -19,7 +21,6 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
   const notBuilt = generic.notRun.filter((n) => n.reason === "notBuilt");
   const { duplicate = 0, judged = 0 } = generic.overlap ?? {};
   const hidden = [judged > 0 ? `手書きのルールが判定済み ${judged} 件` : "", duplicate > 0 ? `ユスティの指摘と同じ内容 ${duplicate} 件` : ""].filter((x) => x !== "").join("、");
-  const notes = generic.ran.flatMap((r) => (GENERIC_SCOPE_NOTE[r.check] ? [{ ...r, text: GENERIC_SCOPE_NOTE[r.check] }] : []));
   // 検算（G02）の数：再計算できた単位・合った単位と、検算の対象外の単位（理由ごと）。対象外は「合っている」ではない
   const recalc = generic.scope?.recalc;
   const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
@@ -65,9 +66,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
       )}
       {scope === "full" ? (
         <ul className="muted" style={{ margin: 0, paddingLeft: 20 }}>
-          {generic.ran.length > 0 && <li>動いた点検：{names(generic.ran)}{generic.findings.length === 0 ? "。指摘はありません" : ""}</li>}
+          {generic.ran.length > 0 && <li>動いた点検：{names(generic.ran)}{generic.findings.length === 0 ? `。${NONE}` : ""}</li>}
           {hidden !== "" && <li>出していない指摘：{hidden}</li>}
-          {notes.map((n) => <li key={n.check}>{n.check}（{n.kind}）が点検していないこと：{n.text}</li>)}
           {noData.map((n) => <li key={n.check}>データがなくて動かなかった点検：{n.check}（{n.kind}）。{n.text}</li>)}
           {notReady.map((n) => <li key={n.check}>準備ができていない点検：{n.check}（{n.kind}）。{n.text}</li>)}
           {notBuilt.length > 0 && <li>まだ入っていない点検：{names(notBuilt)}</li>}
@@ -78,7 +78,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
       ) : (
         <p className="muted" style={{ margin: 0 }}>
           データで動く点検：
-          {generic.ran.length > 0 ? `${names(generic.ran)}をしました${generic.findings.length === 0 ? "（指摘はありません）" : ""}。` : ""}
+          {generic.ran.length > 0 ? `${names(generic.ran)}をしました${generic.findings.length === 0 ? `。${NONE}` : ""}。` : ""}
           {hidden !== "" ? `出していない指摘：${hidden}。` : ""}
           {[...noData, ...notReady].map((n) => `${n.check}（${n.kind}）は、${n.text}。`).join("")}
           {skippedLines > 0 ? `コードに直せない ${skippedLines} 行には掛けていません。` : ""}

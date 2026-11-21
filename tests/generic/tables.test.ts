@@ -4,9 +4,10 @@
 import { describe, expect, it } from "vitest";
 import { CERTAIN, evaluateGeneric } from "../../src/generic";
 import { groupSameChild } from "../../src/generic/overlap";
+import { genericScopeOf } from "../../src/generic/scope";
 import type { TimedClaim } from "../../src/generic/tensuhyo";
 import type { GenericFinding } from "../../src/generic/types";
-import { GENERIC_TEXT_CERTAIN, genericText } from "../../src/messages";
+import { GENERIC_SCOPE_NOTE, GENERIC_TEXT_CERTAIN, genericText } from "../../src/messages";
 import { YM } from "../helpers/period";
 import { put, source, GEN } from "./small-masters";
 import { C, putHaihan, tensuhyoMasters } from "./small-tensuhyo";
@@ -302,5 +303,18 @@ describe("細工した請求でも重くならない", () => {
       expect(new Set(fs.map((f) => `${f.messageKey}:${f.codes.join(":")}`)).size).toBe(fs.length);
       expect(fs.length).toBeLessThan(60);
     }
+  });
+});
+
+describe("点検していないこと（round-32 O-19）", () => {
+  it("G04〜G06 が動いたら、点検していないことを点検の範囲（scope.notDone）に出す。月末の点検・算定プレビューの行（区分キーの行）でも同じ", () => {
+    const db = tensuhyoMasters();
+    const claim: TimedClaim = { units: [unit([C.houmon], [6])] };
+    const result = evaluateGeneric(claim, db, about);
+    expect(result.ran.map((r) => r.check)).toEqual(expect.arrayContaining(["G04", "G05", "G06"]));
+    const notDone = genericScopeOf(claim, db, about, result).notDone;
+    for (const [id, kind] of [["G04", "包括"], ["G05", "背反"], ["G06", "回数"]]) expect(notDone).toContain(`${id}（${kind}）が点検していないこと：${GENERIC_SCOPE_NOTE[id]}`);
+    // 動かなかった点検の断りは出さない
+    expect(genericScopeOf(claim, null, about, evaluateGeneric(claim, null, about)).notDone).toEqual([]);
   });
 });
