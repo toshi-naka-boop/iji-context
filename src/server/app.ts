@@ -44,12 +44,10 @@ export function openApp(paths: AppPaths) {
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
-  const { deleteUpload, forgetQueries } = createErase(ctx, uke, patientFactsOf);
-  const { compareOf } = createRevision(uke, casesOf, notes);
-  const { doctorFacts, noteDoctorFact } = createDoctorFacts(ctx, clock, clerks, casesOf);
+  const erase = createErase(ctx, uke, patientFactsOf);
+  const revision = createRevision(uke, casesOf, notes);
+  const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
 
-  const { now, advanceClock } = clock;
-  const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
   const { claimFacts, saveClaimFact } = claimFactsOf;
@@ -57,7 +55,7 @@ export function openApp(paths: AppPaths) {
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
-  const { ukeCheck, ukeTrial } = createUkeCheck(uke, casesOf, patientProfile);
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, deleteNote, listNotes, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
@@ -68,10 +66,6 @@ export function openApp(paths: AppPaths) {
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
   const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
-  const { peerList, peerListFor, peerResolvedByMentor, peerToHuman, peerAnswerByHuman } = peer;
-  const { queue, verify, empathize, propose, knowledgeList, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf, checkOfficial } = knowledge;
-  const { importClaimResult, agenda, answerAgenda, runMeeting } = meeting;
-  const { personal, manager } = prevented;
 
   return {
     paths,
@@ -97,7 +91,6 @@ export function openApp(paths: AppPaths) {
     deleteNote,
     listNotes,
     chartClaim,
-    compareOf,
     patients,
     outlookOf,
     patientFacts,
@@ -107,27 +100,11 @@ export function openApp(paths: AppPaths) {
     patientProfile,
     confirmCoverage,
     checkConnectorPatient,
-    now,
-    advanceClock,
-    upsertClerk,
-    createClerk,
     ukeList,
     importUke,
     sampleUke,
     uploadUke,
-    ukeCheck,
-    ukeTrial,
-    deleteUpload,
-    forgetQueries,
     importedClaims,
-    clerk,
-    setSession,
-    chooseCharacter,
-    characterChosen,
-    setClerkName,
-    welcomed,
-    setStyle,
-    styleOf,
     start,
     choices,
     pick,
@@ -141,36 +118,24 @@ export function openApp(paths: AppPaths) {
     questionsOf,
     setting,
     setSetting,
-    importClaimResult,
     doctorQueries,
-    doctorFacts,
-    noteDoctorFact,
     answerDoctor,
     approveDoctor,
-    agenda,
-    answerAgenda,
-    runMeeting,
     crosscheckOf,
-    peerList,
-    peerListFor,
     proxySubmit,
-    queue,
-    verify,
-    empathize,
-    propose,
-    knowledgeList,
-    checkOfficial,
-    resolveNoticeItems,
-    registerNotice,
-    seedLocalRules,
-    localRulesOf,
-    peerResolvedByMentor,
-    peerToHuman,
-    peerAnswerByHuman,
     sendCrosscheck,
     confirmedDiseases,
-    personal,
-    manager,
+    // 領域の関数をそのまま全部出すもの（領域の側に足した関数は、ここを直さずに出る）
+    ...clock,
+    ...clerks,
+    ...ukeCheck,
+    ...erase,
+    ...revision,
+    ...doctorFacts,
+    ...peer,
+    ...knowledge,
+    ...meeting,
+    ...prevented,
   };
 }
 

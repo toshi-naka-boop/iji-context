@@ -307,6 +307,10 @@ UKE の取り込み画面では、見本の UKE をダウンロードして、�
 - `src/chart/`：カルテ（画像からの書き写し・SOAP への振り分け・事実の取り出し）
 - `src/notice/`：査定・返戻の通知（PDF）の読み取りと対応づけ
 - `src/voice/`：メンターの声（ElevenLabs）
+- `src/patient/`：患者マスタ（患者と保険・公費の加入情報）と、患者情報チェック P01〜P08（ユスティとは別の系統）
+- `src/official/`：公的文書（疑義解釈など）の要旨とリンクの台帳と、ローカルルールとの決まった規則での突き合わせ
+- `src/connect/`：連携の境界の型とコネクタ（フィクスチャ・ORCA API 形式・FHIR JP Core 形式。読み取りだけで、外につなぐものは既定で無効）と外向きの通信の守り。[docs/connectors.md](docs/connectors.md)
+- `src/server/`：API Route から呼ぶ処理の層（ログイン・クリニックごとのデータ・ロール・監査ログ・回数の制限）
 - `src/practice/`・`src/prevented/`：1 件＝1 問の流れ、レベル、防いだ額
 - `eval/`：prompt-eval（本番と同じ関数・モデルで 10 件を回し、決まった規則で判定する。開発サーバーの `/api/eval` から実行）
 - `video/opening/`・`video/demo/`：デモ動画（冒頭と本編）。HTML の舞台を 1 コマずつ描いて書き出す（`npx tsx video/demo/render.ts f3 --full`）

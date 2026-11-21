@@ -1,6 +1,7 @@
 // 連携の境界の型（spec FR-104）。外部とのやり取りは、患者基本情報／請求／カルテ記載の 3 つに分ける。
 // 画面と判定はこの型だけに依存し、個別の接続先（ORCA 形式・FHIR 形式・同梱の合成データ）を知らない
 import type { PatientRecord } from "../patient/profile";
+import { YEAR_MONTH } from "../demo/period";
 import type { UkeFile } from "../uke/types";
 
 /**
@@ -61,15 +62,8 @@ export type Connector = {
 
 /** 患者の id・診療年月は URL やファイル名に入るので、文字種を先に確かめる */
 export const PATIENT_ID = /^[A-Za-z0-9]{1,20}$/;
-export const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export function assertQuery(patientId: string | null, yearMonth: string | null): void {
   if (patientId !== null && !PATIENT_ID.test(patientId)) throw new Error("患者の id に使えない文字がある");
   if (yearMonth !== null && !YEAR_MONTH.test(yearMonth)) throw new Error("診療年月は YYYY-MM で指定する");
-}
-
-/** 診療年月の初日と末日（YYYY-MM-DD） */
-export function monthRange(yearMonth: string): { start: string; end: string } {
-  const [y, m] = yearMonth.split("-").map(Number);
-  return { start: `${yearMonth}-01`, end: `${yearMonth}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}` };
 }

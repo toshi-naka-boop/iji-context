@@ -8,7 +8,7 @@ import { deriveLines, manualLinesOf } from "../../engine/derive";
 import { resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
-import { monthRange } from "../../patient/profile";
+import { monthRange } from "../../demo/period";
 import type { Chart } from "../../uke/crosscheck";
 import { commentOf } from "../../uke/uke";
 import { badRequest, conflict, forbidden, notFound } from "../errors";

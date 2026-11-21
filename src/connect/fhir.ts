@@ -1,9 +1,10 @@
 // HL7 FHIR（JP Core）形式の読み取りコネクタ（spec FR-110）。検索（searchset の Bundle）を読むだけで、書き込みはしない。
 // 相手は同梱の模擬サーバー（fixtures/connect/mock-server.ts）。実機にはつないでいない
 import { z } from "zod";
+import { monthRange } from "../demo/period";
 import { connectJson, ConnectError, connectorEnv, formatError } from "./fetch";
 import type { CoverageInfo } from "../patient/profile";
-import { assertQuery, monthRange, type Connector, type ConnectorChart, type ConnectorPatient } from "./types";
+import { assertQuery, type Connector, type ConnectorChart, type ConnectorPatient } from "./types";
 
 export const FHIR_ID = "fhir";
 

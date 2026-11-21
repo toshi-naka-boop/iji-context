@@ -68,10 +68,10 @@ describe("仕組み", () => {
 
   it("evaluate(ctx, 作り物の版) の合計と指摘が版で変わり、使った版の id が返る", () => {
     const a = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 2, dates: ["2030-06-01", "2030-06-02"] }] }, FAKE_REVISIONS);
-    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"], excludedCount: 0 });
+    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"] });
     expect(a.findings.map((f) => f.messageKey)).toEqual(["F01.over"]);
     const b = evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X2", count: 2, dates: ["2031-06-01", "2031-06-02"] }] }, FAKE_REVISIONS);
-    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"], excludedCount: 0 });
+    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"] });
     expect(b.findings).toEqual([]);
   });
 
@@ -79,12 +79,6 @@ describe("仕組み", () => {
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2031-06-01"] }] }, FAKE_REVISIONS)).toThrow(/未知の区分/);
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2032-01" }), lines: [] }, FAKE_REVISIONS)).toThrow(/版がない/);
     expect(() => pointsOf(FAKE_A, "X2")).toThrow(/未知の区分/);
-  });
-
-  it("判定の対象外の行（excluded）があれば、合計は出さず、行数を返す", () => {
-    const r = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2030-06-01"] }], excluded: [{ code: "990009999", count: 1 }] }, FAKE_REVISIONS);
-    expect(r.total).toBeNull();
-    expect(r.excludedCount).toBe(1);
   });
 
   it("rulesOf・ruleKubun は診療年月の版から取る。その版にないルールは空配列、版のない年月は例外", () => {

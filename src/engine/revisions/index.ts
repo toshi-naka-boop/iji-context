@@ -1,12 +1,11 @@
 // 同梱の版の一覧と、診療年月から版を 1 つに決める規則（design.md §2-5）
 // 該当する版がなければ例外にし、近い版で代用しない
+import { YEAR_MONTH } from "../../demo/period";
 import { assertCodes } from "./codes";
 import { r2024 } from "./r2024";
 import { r2026 } from "./r2026";
 import { r2027_06 } from "./r2027-06";
 import type { Revision } from "./types";
-
-const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** "YYYY-MM" の翌月 */
 function nextMonth(yearMonth: string): string {
