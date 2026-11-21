@@ -525,9 +525,9 @@ flowchart LR
     API --> LC[ライフサイクル判定<br>決定的TS]
     API --> DB[(SQLite / Drizzle)]
     LC --> KD[knowledge/ SKILL.md + meta.json]
-    KD -->|承認済みのみ同期| SK[.claude/skills/]
+    KD -->|承認済みのみ同期| SK[".claude/skills/"]
     M --> SK
-    M --> QL[query-log/]
+    M --> QL["query-log/"]
     V[ElevenLabs TTS・STT<br>初回登録] --> API
 ```
 
@@ -641,9 +641,9 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    YM["診療年月（請求から）"] --> RS{"適用開始が診療年月以前の版があるか"}
-    RS -->|"ある"| PICK["その中で最も新しい版を 1 つ選ぶ"]
-    RS -->|"ない"| ERR["例外にする<br>近い版で代用しない"]
+    YM["診療年月（請求から）"] --> RS{"適用開始と適用終了のあいだに診療年月がある版があるか"}
+    RS -->|"ある"| PICK["その版を 1 つ選ぶ<br>版どうしの期間に空白・重なりはない"]
+    RS -->|"ない"| ERR["例外にする（判定しない）<br>近い版で代用しない<br>版を選んだ試算だけを見せる（FR-157）"]
     PICK --> PT["版の点数表<br>同じ改定年度の中の値の変更も版で表す"]
     PICK --> RL["版のルール一式<br>版ごとの定数を受け取る"]
     PT --> EV["導出と判定"]
