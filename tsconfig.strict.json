@@ -1,11 +1,12 @@
 // strict を掛けるディレクトリだけを include に並べる（全体の tsconfig.json は strict: false のまま）。
 // include から import される外のファイルも strict で検査される。
-// src/server は入れていない：src/server/app.ts から import される src/generic/g02.ts に strictNullChecks の型エラーが 1 件ある
+// src/server は 2026-11-21 に足した：src/server/app.ts から import される src/generic/g02.ts の strictNullChecks の型エラー 1 件
+// （包括の検査の段の点数が null になり得る）を、その群を検算の対象外に回す形で直したため
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "strict": true,
     "incremental": false
   },
-  "include": ["next-env.d.ts", "src/engine/**/*.ts", "src/uke/**/*.ts"]
+  "include": ["next-env.d.ts", "src/engine/**/*.ts", "src/uke/**/*.ts", "src/server/**/*.ts"]
 }
