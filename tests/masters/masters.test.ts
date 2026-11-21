@@ -7,7 +7,7 @@ import iconv from "iconv-lite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { r2026 } from "../../src/engine/revisions/r2026";
 import type { Revision } from "../../src/engine/revisions/types";
-import { createSchema, ingestAll } from "../../src/masters/build";
+import { carryOver, createSchema, ingestAll } from "../../src/masters/build";
 import { MASTERS_CONFIG, snapshotOf } from "../../src/masters/config";
 import { MasterFormatError, readCsv } from "../../src/masters/csv";
 import { mastersStatus, openMasters, pickSnapshot, shinryoOf } from "../../src/masters/db";
@@ -185,6 +185,45 @@ describe("取り込みと形式の検査", () => {
     expect(() => readCsv(file, () => {}, { ...limits, maxBytes: 26 })).toThrow(/ファイルが大きすぎる/);
     expect(() => readCsv(file, () => {}, { ...limits, maxRows: 2 })).toThrow(/行数が上限を超えている/);
     expect(() => readCsv(file, () => {}, { ...limits, maxLineChars: 5 })).toThrow(MasterFormatError);
+  });
+});
+
+describe("世代ごとの 1 枚を残す（design.md §14-4。X-125）", () => {
+  it("世代を替えて作り直すと、前の世代のデータごとのいちばん新しい 1 枚だけを今の masters.db から写す。いまの世代は raw から作り、確かめるのはいまの世代の 1 枚だけ", () => {
+    const raw = path.join(tmp, "carry");
+    put(raw, "shinryo", "20261001", "s_20261001.csv", sjis(SHINRYO.slice(0, 2)));
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(SHINRYO));
+    put(raw, "tensuhyo", "20261102", "03-1 x.csv", sjis(HAIHAN));
+    const oldFile = path.join(tmp, "carry-old.db");
+    const old = new Database(oldFile);
+    createSchema(old);
+    ingestAll(old, raw, MASTERS_CONFIG, "2026-11-21T00:00:00.000Z");
+    old.close();
+    // 次の世代（仮に R10）の raw：20280601 の 1 枚だけ（前の世代の更新分は since より前なので取り込まない）
+    const next = { ...MASTERS_CONFIG, generation: "R10", datasets: Object.fromEntries(Object.entries(MASTERS_CONFIG.datasets).map(([k, d]) => [k, { ...d, since: "20280601" }])) };
+    const raw2 = path.join(tmp, "carry-next");
+    put(raw2, "shinryo", "20280601", "s_20280601.csv", sjis(SHINRYO.slice(0, 1)));
+    put(raw2, "shinryo", "20261102", "s_20261102.csv", sjis(SHINRYO));
+    const db = new Database(":memory:");
+    createSchema(db);
+    const rejected = ingestAll(db, raw2, next, "2028-06-10T00:00:00.000Z");
+    expect(rejected.map((r) => [r.dataset, r.snapshot])).toEqual([["shinryo", "20261102"]]);
+    expect(carryOver(db, oldFile, "R10")).toBe(2);
+    const src = db.prepare("SELECT dataset, snapshot, generation, tbl FROM sources ORDER BY generation, dataset, snapshot").all();
+    expect(src).toEqual([
+      { dataset: "shinryo", snapshot: "20280601", generation: "R10", tbl: "shinryo" },
+      { dataset: "shinryo", snapshot: "20261102", generation: "R8", tbl: "shinryo" },
+      { dataset: "tensuhyo", snapshot: "20261102", generation: "R8", tbl: "haihan" },
+    ]);
+    expect([count(db, "shinryo", "20261102"), count(db, "haihan", "20261102"), count(db, "shinryo", "20261001")]).toEqual([3, 1, 0]);
+    expect(pickSnapshot(db, "shinryo", "2026-10", "R8")).toEqual({ snapshot: "20261102", later: true });
+    // 確かめるのはいまの世代の 1 枚だけ（前の世代の 1 枚の錨は、その世代のときに確かめてある）
+    const em = parseEm(EM([`| A99 | \`shinryo\` | \`code=${HOUMON}\` | \`points=${pt("C001_1I")}\` | 訪問診療料 | 錨 |`], []));
+    const v = verifyMasters(db, em, { write: false, config: next, revisions: [] });
+    expect(v.lines.filter((l) => l.startsWith("錨"))).toEqual([`錨 A99 が外れた（shinryo 20280601）：code=${HOUMON} の行は 0 件、そのうち points=${pt("C001_1I")} は 0 件`, "錨：1 個のうち 0 個が通った（データがなくて確かめていない 0 個）。確かめた回数 1"]);
+    // 同じ世代で作り直すときは写さない。今の masters.db がなければ何もしない
+    expect(carryOver(db, oldFile, "R8")).toBe(0);
+    expect(carryOver(db, path.join(tmp, "none.db"), "R10")).toBe(0);
   });
 });
 
