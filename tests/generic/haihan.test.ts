@@ -289,6 +289,28 @@ describe("疑義解釈で確かめた例外（利用者の判断 2026-11-22）",
   });
 });
 
+describe("医療型短期入所中（HX-21。調べ tankinyusho-exception.md・利用者の判断 2026-11-22）", () => {
+  it("当院が事業所として受け入れている間 → 当たる、ほかの施設の医療型短期入所中 → 決まらない、短期入所中でない・福祉型 → 当たらない。その他・判定不能は決まらない", () => {
+    const x = HAIHAN.exceptions.find((e) => e.id === "HX-21")!;
+    expect(x.ask!.choices.map((c) => [c.label, c.means])).toEqual([
+      ["はい（当院が医療型短期入所の事業所として受け入れている間）", "当たる"],
+      ["はい（ほかの施設の医療型短期入所中）", "決まらない"],
+      ["いいえ（短期入所中ではない）", "当たらない"],
+      ["福祉型の短期入所中", "当たらない"],
+      ["その他", "決まらない"],
+      ["判定不能", "決まらない"],
+    ]);
+    // 同一月の表の、b 側（処置・注射）の算定日ごとの問い。テスト用の組（酸素の管理料 × 酸素吸入）に写して掛ける
+    const config = testConfig([x], ["HX-21"]);
+    const key = haihanKey("HX-21", C.sanso, C.sansoKyunyu);
+    const run1 = (label: string) => g05Of(month, { answers: answersOf({ [`${key}|${day(6)}`]: label, [`${key}|${day(20)}`]: label }) }, { config });
+    const own = run1("はい（当院が医療型短期入所の事業所として受け入れている間）");
+    expect([own.findings, own.result.silenced]).toEqual([[], [{ hx: "HX-21", count: 1 }]]);
+    expect(run1("はい（ほかの施設の医療型短期入所中）").findings.map((f) => f.messageKey)).toEqual(["G05.exception_check"]);
+    for (const label of ["いいえ（短期入所中ではない）", "福祉型の短期入所中"]) expect([label, run1(label).findings.map((f) => f.messageKey)]).toEqual([label, ["G05.exception_none"]]);
+  });
+});
+
 describe("2 回言わない（C-119・X-108）", () => {
   it("手書きの R17 が同じコメントコード（830100086）の記載もれを出していれば、exception_needs_comment を出さない。R17 が情報不足で止まった・出していないときは出す", () => {
     const g = g05Of(sameDay, { answers: answersOf(), facts: factsOf({ after: { [day(6)]: true } }) }).findings;
