@@ -228,6 +228,19 @@ describe("例外の形（テスト用の決まり）", () => {
     expect(brief(g05Of([unit([C.oushin], [6]), unit([C.kyukyu], [6])], about, { config, certain }).findings)).toEqual([["G05.exception_none", "条件つき", C.oushin, C.kyukyu]]);
   });
 
+  it("同時の表：同じ算定単位かは算定日ごとに照らす。別の日の同じ単位を、残った日の確定や当たる単位に使わない（round-38 X-110）", () => {
+    const x: HaihanException = { ...ASK_DAY, id: "HX-T6", ask: { ...ASK_DAY.ask!, factKey: "haihan:HX-T6", askOn: undefined } };
+    const config = testConfig([x], ["HX-T6"]);
+    const key = haihanKey("HX-T6", C.oushin, C.kyukyu);
+    // 5 日は同じ単位（当たる）、10 日は別々の単位（当たらない）
+    const units = [unit([C.oushin, C.kyukyu], [5]), unit([C.oushin], [10]), unit([C.kyukyu], [10])];
+    const fs = g05Of(units, { answers: answersOf({ [`${key}|${day(5)}`]: "はい", [`${key}|${day(10)}`]: "いいえ" }) }, { config, certain: new Set(["G05.exception_none#HP-T2"]) }).findings;
+    expect(fs.map((f) => [f.messageKey, f.certainty, f.params.where, f.units])).toEqual([["G05.exception_none", "条件つき", "別の算定単位ですが、同じ日（10日）", [1, 2]]]);
+    // 逆（5 日が当たらない）なら、5 日の同じ単位の分だけが確定で、単位も 5 日のものだけ
+    const rev = g05Of(units, { answers: answersOf({ [`${key}|${day(5)}`]: "いいえ", [`${key}|${day(10)}`]: "はい" }) }, { config, certain: new Set(["G05.exception_none#HP-T2"]) }).findings;
+    expect(rev.map((f) => [f.messageKey, f.certainty, f.params.where, f.units])).toEqual([["G05.exception_none", "確定", "同じ算定単位（5日）", [0]]]);
+  });
+
   it("答えは組ごと：同じ日に同じ例外が掛かる 2 つの組に、別の答えを入れられ、互いに効かない（X-106）", () => {
     const db = tensuhyoMasters();
     putHaihan(db, "20261001", 1, C.oushin, TERMINAL, "3", "1");
