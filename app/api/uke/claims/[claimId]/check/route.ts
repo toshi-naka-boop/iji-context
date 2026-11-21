@@ -4,7 +4,7 @@ import { getApp } from "../../../../../../src/server/instance";
 import { allow } from "../../../../../../src/server/policy";
 import { claimParams } from "../../../../../../src/server/schemas/patients";
 
-export const GET = route({ roles: allow("GET /api/uke/claims/[claimId]/check"), params: claimParams }, ({ params }) => getApp().ukeCheck(params.claimId));
+export const GET = route({ roles: allow("GET /api/uke/claims/[claimId]/check"), params: claimParams }, ({ params, clerkId }) => getApp().ukeCheck(params.claimId, clerkId));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

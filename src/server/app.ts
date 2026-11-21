@@ -11,6 +11,7 @@ import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
+import { createLocalPairs } from "./app/local-pairs";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
 import { createPatients, type CoverageInput } from "./app/patients";
@@ -43,6 +44,7 @@ export function openApp(paths: AppPaths) {
   const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase);
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
+  const localPairs = createLocalPairs(ctx, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
   const erase = createErase(ctx, uke, patientFactsOf);
@@ -56,13 +58,14 @@ export function openApp(paths: AppPaths) {
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
-  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
-  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf);
+  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (_claimId, clerkId) => localPairs.aboutFor(clerkId));
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
-  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
-    const claim = notes.claimOfNote(noteId, choices, revId);
+  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
+    // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
+    const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -113,7 +116,8 @@ export function openApp(paths: AppPaths) {
     pick,
     draft,
     confirm: confirmQ,
-    questionGeneric: genericOf,
+    /** 月末の点検のデータで動く点検。背反の組の院内の知識は、問題の本人（自分の問題だけを開ける）のレベルで出し方を分ける（design.md §14-3） */
+    questionGeneric: (q: Parameters<typeof genericOf>[0]) => genericOf(q, localPairs.aboutFor(q.clerkId)),
     explain,
     done,
     question: loadQ,
