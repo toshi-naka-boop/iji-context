@@ -94,9 +94,13 @@ export function tenantPaths(id: string): AppPaths {
   const dir = path.join(dataDir(), "tenants", id);
   return { root: process.cwd(), dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: path.join(dir, "query-log") };
 }
-/** クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く */
+/**
+ * クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く。
+ * 種類（demo／real）は auth.db のクリニックの行で決まる
+ */
 function openTenant(tenantId: string): App {
   const paths = tenantPaths(tenantId);
+  const kind = getAuth().tenantKind(tenantId);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
   const store = storeOptionsOf(paths);
   const fresh = !existsSync(paths.knowledgeDir);
@@ -104,7 +108,7 @@ function openTenant(tenantId: string): App {
     seed(store);
     syncSkills(store);
   }
-  const a = openApp(paths);
+  const a = openApp(paths, { kind });
   // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
   a.seedLocalRules();
   a.upsertClerk(DEMO_CLERKS[1]);

@@ -15,6 +15,7 @@ import type { BusinessDays, QueryLog } from "../../query/doctor-query";
 import type { ChoiceGroup } from "../../practice/choice";
 import { officialInputOf } from "../../official/registry";
 import { checkDataset } from "../dataset";
+import type { TenantKind } from "../tenant-kind";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -40,7 +41,9 @@ export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir
 
 export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
 
-export function openContext(paths: AppPaths) {
+/** kind はクリニックの種類（src/server/tenant-kind.ts）。ログインなしの既定のアプリと、種類を渡さない呼び出し（テスト）は demo */
+export function openContext(paths: AppPaths, opts: { kind?: TenantKind } = {}) {
+  const kind: TenantKind = opts.kind ?? "demo";
   const fresh = !existsSync(paths.dbFile);
   const sqlite = new Database(paths.dbFile);
   migrate(sqlite, APP_MIGRATIONS);
@@ -67,7 +70,7 @@ export function openContext(paths: AppPaths) {
   const setSetting = (key: string, value: string) =>
     sqlite.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 
-  return { paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
+  return { kind, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;

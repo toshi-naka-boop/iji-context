@@ -9,6 +9,7 @@ import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { isRole, type Role } from "./roles";
+import { isTenantKind, type TenantKind } from "./tenant-kind";
 
 export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
@@ -78,16 +79,32 @@ export function openAuth(dbFile: string) {
   type Row = { id: string; login: string; name: string; tenant_id: string | null; role: string };
   const toUser = (r: Row): User => ({ id: r.id, login: r.login, name: r.name, tenantId: r.tenant_id ?? r.id, role: isRole(r.role) ? r.role : "clerk" });
 
-  function insertUser(login: string, name: string, password: string, into: { tenantId: string; role: Role } | null): User {
+  /** into が null なら新しいクリニックを作る（種類は kind）。クリニックの行と利用者の行は同じトランザクションで入れる */
+  function insertUser(login: string, name: string, password: string, into: { tenantId: string; role: Role } | null, kind: TenantKind = "demo"): User {
     validateRegistration(login, name, password);
+    if (into === null && !isTenantKind(kind)) throw badRequest("クリニックの種類を選んでください", ["kind"]);
     if (db.prepare("SELECT 1 FROM users WHERE login = ?").get(login)) throw conflict("そのログイン ID は使われています");
     const id = `t${randomBytes(6).toString("hex")}`;
     const user: User = { id, login, name: name.trim(), tenantId: into?.tenantId ?? id, role: into?.role ?? "clerk" };
-    db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, login, user.name, hashPassword(password), new Date().toISOString(), user.tenantId, user.role);
+    const at = new Date().toISOString();
+    db.transaction(() => {
+      if (into === null) db.prepare("INSERT INTO tenants (id, kind, created_at) VALUES (?, ?, ?)").run(id, kind, at);
+      db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, login, user.name, hashPassword(password), at, user.tenantId, user.role);
+    })();
     return user;
   }
-  /** 新しい 1 人クリニックを作って登録する（招待なし）。API からは、開放登録を明示したときだけ呼ぶ（openSignup） */
-  const register = (login: string, name: string, password: string): User => insertUser(login, name, password, null);
+  /**
+   * 新しい 1 人クリニックを作って登録する（招待なし）。API からは、開放登録を明示したときだけ呼ぶ（openSignup）。
+   * kind はクリニックの種類（作るときに決め、変えない）。API は利用者が選んだ値を必ず渡す。省くのはテスト・スクリプトだけ（demo）
+   */
+  const register = (login: string, name: string, password: string, kind: TenantKind = "demo"): User => insertUser(login, name, password, null, kind);
+  /** クリニックの種類。行のないクリニック（種類を持つ前に作られ、マイグレーションで拾えなかったもの）は demo */
+  const tenantKind = (tenantId: string): TenantKind => {
+    const k = (db.prepare("SELECT kind FROM tenants WHERE id = ?").get(tenantId) as { kind: string } | undefined)?.kind;
+    return k === "real" ? "real" : "demo";
+  };
+  /** 種類ごとのクリニックの id（scripts/reset-demo.ts が、demo のクリニックだけを消すのに使う） */
+  const tenantsOfKind = (kind: TenantKind): string[] => (db.prepare("SELECT id FROM tenants WHERE kind = ? ORDER BY id").all(kind) as { id: string }[]).map((r) => r.id);
 
   /** クリニックの利用者の人数 */
   const tenantSize = (tenantId: string) => (db.prepare("SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?").get(tenantId) as { n: number }).n;
@@ -224,6 +241,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { dailyAll, acceptNotice, acceptedNotice, register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantsOfKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

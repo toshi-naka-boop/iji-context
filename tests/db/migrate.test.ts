@@ -23,7 +23,7 @@ describe("migrate", () => {
     // auth.db は別の列を持つ
     const auth = new Database(":memory:");
     expect(migrate(auth, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
-    expect(tables(auth)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
+    expect(tables(auth)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "tenants", "users"]);
   });
 
   it("2 回呼んでも変わらない", () => {
@@ -98,7 +98,25 @@ describe("migrate", () => {
     expect(db.prepare("SELECT id, login, name, tenant_id, role FROM users").all()).toEqual([{ id: "t0123456789ab", login: "old_user", name: "まえから", tenant_id: "t0123456789ab", role: "clerk" }]);
     // セッションは残り、招待と監査の表ができる
     expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
-    expect(tables(db)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
+    expect(tables(db)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "tenants", "users"]);
+    // それまでのクリニックは demo になる（2026-11-22 利用者の判断）
+    expect(db.prepare("SELECT id, kind FROM tenants").all()).toEqual([{ id: "t0123456789ab", kind: "demo" }]);
+  });
+
+  it("auth.db を 5 へ上げると、それまでのクリニック（招待で入った人を含む）は 1 つずつ demo になり、種類は書き換えられない", () => {
+    const db = new Database(":memory:");
+    migrate(db, AUTH_MIGRATIONS.slice(0, 4));
+    const add = db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    add.run("t000000000001", "owner", "もちぬし", "scrypt$x$x$x", "2026-11-01T00:00:00.000Z", "t000000000001", "clerk");
+    add.run("t000000000002", "joined", "しょうたい", "scrypt$x$x$x", "2026-11-02T00:00:00.000Z", "t000000000001", "doctor");
+    add.run("t000000000003", "solo", "ひとり", "scrypt$x$x$x", "2026-11-03T00:00:00.000Z", "t000000000003", "clerk");
+    expect(migrate(db, AUTH_MIGRATIONS)).toBe(5);
+    expect(db.prepare("SELECT id, kind, created_at FROM tenants ORDER BY id").all()).toEqual([
+      { id: "t000000000001", kind: "demo", created_at: "2026-11-01T00:00:00.000Z" },
+      { id: "t000000000003", kind: "demo", created_at: "2026-11-03T00:00:00.000Z" },
+    ]);
+    expect(() => db.prepare("UPDATE tenants SET kind = 'real' WHERE id = 't000000000001'").run()).toThrow(/fixed/);
+    expect(() => db.prepare("INSERT INTO tenants (id, kind, created_at) VALUES ('t000000000009', 'other', 'x')").run()).toThrow(/CHECK/);
   });
 
   it("バージョン 1 の app.db を 2 へ上げると、監査ログと 1 日の回数の表ができ、中身は残る", () => {

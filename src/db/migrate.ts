@@ -143,6 +143,16 @@ ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
 CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
 `,
   },
+  {
+    // クリニックの種類（2026-11-22 利用者の判断）：demo＝作り物のデータ入り・デモの時計／real＝実在のデータ・実際の日付。
+    // 作るときに決め、変えない（種類の書き換えは止める）。それまでのクリニック（利用者の tenant_id）は、どれも demo にする
+    version: 5,
+    sql: `
+CREATE TABLE tenants (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('demo', 'real')), created_at TEXT NOT NULL);
+INSERT INTO tenants (id, kind, created_at) SELECT tenant_id, 'demo', MIN(created_at) FROM users WHERE tenant_id IS NOT NULL GROUP BY tenant_id;
+CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;
