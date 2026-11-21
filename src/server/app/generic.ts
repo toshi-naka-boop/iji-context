@@ -32,5 +32,6 @@ export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: str
     // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
     return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: genericScopeOf(claim, db, about, result) };
   });
-  return { ...view, skippedLines: lines.length - claim.units.length };
+  // 回数 0 の行は、算定していない行なので「掛けなかった行」に数えない
+  return { ...view, skippedLines: lines.filter((l) => l.count > 0).length - claim.units.length };
 }

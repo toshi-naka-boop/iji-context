@@ -194,4 +194,15 @@ describe("行とコードの対応", () => {
     const g: GenericFinding = { check: "G04", kind: "包括", certainty: "条件つき", units: [0, 3], codes: [C.zaiisoukan, accept], messageKey: "G04.month", params: {}, source: { data: "", ref: "" } };
     expect(overlap(hand, r2026, false, mapped, [g])).toEqual({ findings: [], duplicate: 1, judged: 0 });
   });
+
+  it("回数 0（算定日なし）の行は、点検に渡さない（round-32 codex-1）：DX 加算と電子的診療情報連携体制整備加算の背反（同一月内）が出ない", () => {
+    const r = both(withLines(K1, line("A_DENSHI_RENKEI", 0, [])));
+    expect(r.hand.findings.filter((f) => f.ruleId === "R12")).toEqual([]);
+    expect(r.generic.filter((f) => f.codes.includes(C.denshi))).toEqual([]);
+    // 回数 1 なら、同じ組が出る（落とすのは回数 0 の行だけ）
+    const one = both(withLines(K1, line("A_DENSHI_RENKEI", 1, [day(6)])));
+    expect(one.generic.some((f) => f.messageKey === "G05.month" && f.codes.includes(C.denshi))).toBe(true);
+    const { claim, mapped } = claimOfLines([line("C001_1I", 2, [day(6), day(20)]), line("A_DENSHI_RENKEI", 0, [])], r2026);
+    expect([claim.units.length, mapped.map((m) => m.kubun)]).toEqual([1, ["C001_1I"]]);
+  });
 });

@@ -27,7 +27,8 @@ export function claimOfLines(lines: ClaimLine[], rev: Revision): { claim: TimedC
   const claim: TimedClaim = { units: [] };
   const mapped: MappedLine[] = [];
   for (const l of lines) {
-    if (!Object.hasOwn(rev.codes, l.kubun)) continue;
+    // 回数 0 の行（算定日なし。入力の途中で 0 に直した行）は、算定していない行なので渡さない（round-32 codex-1）
+    if (l.count <= 0 || !Object.hasOwn(rev.codes, l.kubun)) continue;
     const { primary, quantity } = rev.codes[l.kubun];
     const dates = quantity ? [...new Set(l.dates)] : l.dates;
     const days = Array.from({ length: 31 }, () => 0);
