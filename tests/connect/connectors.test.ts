@@ -124,11 +124,19 @@ describe("ORCA 形式のコネクタ（請求。診療行為の API は xml2 形
     expect((await claims(["K2"], nextMonth)).files).toEqual([]);
   });
 
-  it("版のコードの表にないコードが 1 つでもあれば、応答ごと受け取らない（コードはエラーに出さない）", async () => {
+  it("版のコードの表にないコードの行は、断らずに点検の対象外の単位として残し、unmapped にも並べる。ほかの行はそのまま点検し、請求は一部の点検になる（U-Y・FR-160）", async () => {
+    pointAt(mock);
+    const good = (await claims(["K2"])).files[0].receipts[0];
     pointAt(mock, "unknown-code");
-    const e = await failure(() => claims(["K2"]));
-    expect([e.kind, e.message]).toEqual(["format", expect.stringContaining("診療年月の版の表にないコード")]);
-    expect(e.message).not.toMatch(/\d{9}/);
+    const { files, unmapped } = await claims(["K2"]);
+    const r = files[0].receipts[0];
+    // 表にない行は、模擬サーバーが 1 行目の算定日のままコードだけ差し替えたもの
+    const dates = good.lines[0].dates;
+    expect(r.lines).toEqual(good.lines);
+    expect(r.others).toEqual([{ unit: expect.any(Number), codes: ["100000001"], points: null, count: dates.length, days: expect.any(Array) }]);
+    expect(r.others![0].days.flatMap((n, i) => (n > 0 ? [`${YM}-${String(i + 1).padStart(2, "0")}`] : []))).toEqual(dates);
+    expect(unmapped).toEqual([{ claimId: r.claimId, code: "100000001", dates }]);
+    expect(toClaimContext(files[0], r.claimId, { facility: loadCase("K2").facility, facts: loadCase("K2").facts, events: [], recordsKnown: false }).partial).toBe(true);
   });
 
   it("壊れた XML、DOCTYPE・実体の宣言つきの XML、項目の欠けた応答は受け取らない", async () => {
