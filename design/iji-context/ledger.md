@@ -254,3 +254,4 @@
 - 2026-11-21（Opus）施設の設定の入力（FR-148）と摘要欄の入力（FR-176）を束ねた（725975d）。束ねるときに、施設の設定を残せる役割を仕様どおり事務長と責任者（ベテラン）に広げた（merge コミットに明記）。詳細は handoff-opus.md
 - 2026-11-21（Opus）strict を src/engine・src/uke・src/server に掛けた（tsconfig.strict.json。統合 76eb9ee）。g02.ts の型の食い違いは、未収載の段を持つ群を検算の対象外に回す形で直した（Opus。今の版では結果は変わらない）。全体に掛けると残り 22 件。詳細は handoff-opus.md
 - 2026-11-21（Opus）strict を tests 以外のすべてに広げた（統合 1e110f7）。ORCA 形式で性別が null の患者は形式の誤りとして止める（62595ac）。tests/ は残り 20 件。詳細は handoff-opus.md
+- 2026-11-21（Opus）言い切りの標本確認：12 種類 × 30 行。G04.day に外れ 4 行（急性増悪のただし書）。certain は空のまま。結果は sources/research/certain-sample.md
