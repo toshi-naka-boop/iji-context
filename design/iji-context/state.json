@@ -1,21 +1,21 @@
 {
-  "currentNode": "完了",
+  "currentNode": "承認CP",
   "status": "awaiting_user",
-  "designVersion": "v24",
-  "approvedDesignVersion": "v24",
-  "approvedDesignSha256": "83fdd8181c1afaa2cd94d8452adf20f619fc92d453c4121253a809385fe21b4c",
-  "approvedAt": "2026-11-20T00:00:00+09:00",
-  "approvalEvidence": "v24:83fdd8181c1a を承認",
-  "requiredApprovalFingerprint": "v24:83fdd8181c1a",
+  "designVersion": "v25",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v25:1689af1f6b1e",
   "baseline": "feat/integration（PR #16、66f29e6）",
-  "criticRound": 31,
+  "criticRound": 35,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§12）",
+    "design.md（§13）",
     "ledger.md",
-    "handoff-opus.md"
+    "sources/research/tokurei-summary.md"
   ],
-  "nextAction": "v24 の段 10a〜14 と反証 round-32 の修正を feat/integration に束ねた（Opus）。Fable が戻ったら handoff-opus.md のチェックリストで見直す。利用者の判断待ち：K5 のターミナルケア加算の算定日、画面の使い勝手の 2 点、実在のレセプトでの精度の確認（言い切りに上げる種類）",
+  "nextAction": "v25 の承認を待つ（承認ブリーフを提示済み）",
   "lastUpdated": "2026-11-21",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
