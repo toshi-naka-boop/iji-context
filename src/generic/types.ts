@@ -60,11 +60,12 @@ export type GenericAbout = {
   /**
    * 背反の組の院内の知識（design.md §14-3）。取り込んだレセプトの点検・月末の点検・算定プレビューが渡す（measure-generic は渡さない）：
    * localKnowledge＝その組（同じ tani）の院内層・ベテラン層の codePair の知識（保管は除く）／level＝本人のレベル（F10）／
-   * pressedAt＝押した事実（local:*）の、その key・日付（同一月の表は null）の最新の時刻（なければ・取り消してあれば null。取り込んだレセプトの点検だけが渡す）
+   * pressed＝押した事実（local:*）の、その key・日付（同一月の表は null）の最新の 1 件の、押した時刻（at）と、押したときの知識の status_since（since）。
+   * なければ・取り消してあれば null。取り込んだレセプトの点検だけが渡す
    */
   localKnowledge?: (pair: CodePair) => LocalPairKnowledge[];
   level?: number;
-  pressedAt?: (key: string, date: string | null) => string | null;
+  pressed?: (key: string, date: string | null) => { at: string; since: string } | null;
 };
 
 /**

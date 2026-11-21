@@ -23,7 +23,12 @@ export const factBody = z.strictObject({
  */
 export const claimFactBody = z.strictObject({
   fact: z.strictObject({
-    key: z.union([z.enum(CLAIM_FACT_KEYS), z.string().regex(/^haihan:HX-\d{2}:\d{9}:\d{9}$/).transform((k) => k as `haihan:${string}`)]),
+    key: z.union([
+      z.enum(CLAIM_FACT_KEYS),
+      z.string().regex(/^haihan:HX-\d{2}:\d{9}:\d{9}$/).transform((k) => k as `haihan:${string}`),
+      // 院内の知識で「この請求も条件に当たる」と押した事実（design.md §14-3）
+      z.string().regex(/^local:(local|veteran)\/[a-z0-9-]{1,60}@[0-9a-f]{12}:\d{9}:\d{9}$/).transform((k) => k as `local:${string}`),
+    ]),
     date: date.nullable(),
     value: z.union([z.boolean(), z.string().max(MAX_MAIN_DISEASE)]),
     source: z.enum(CLAIM_FACT_SOURCES),

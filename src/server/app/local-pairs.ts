@@ -1,8 +1,8 @@
 // 背反の組の院内の知識（design.md §14）：G05 に渡す知識と本人のレベル（知識は院内層・ベテラン層の match.codePair を持つもの。保管は除く）と、作る入口
 import { LAYER_SLUG } from "../../lifecycle/layers";
-import { createKnowledge, listKnowledge, PAIR_NOTE_MAX } from "../../lifecycle/store";
+import { createKnowledge, listKnowledge, PAIR_NOTE_MAX, readKnowledge } from "../../lifecycle/store";
 import type { CodePair, Polarity } from "../../lifecycle/types";
-import type { LocalPairKnowledge } from "../../generic/local-pair";
+import { LOCAL_PAIR_MIN_LEVEL, parseLocalKey, type LocalPairKnowledge } from "../../generic/local-pair";
 import { TABLE } from "../../generic/tensuhyo";
 import type { GenericAbout } from "../../generic/types";
 import type { GenericView } from "../../generic/view";
@@ -39,9 +39,17 @@ export type PairInput = { claimId: string; a: string; b: string; tani: 1 | 2 | 3
 /**
  * 作る入口・押した事実の照らし・返戻の入口（design.md §14-2〜§14-4）。check は、取り込んだレセプトの点検（G05 を計算し直す。USED は出さない）
  */
-export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimId: string, clerkId?: string) => unknown) {
+export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimId: string, clerkId?: string) => unknown, levelOf: (clerkId: string) => number = () => 0) {
   const { store } = ctx;
   const { now } = clock;
+  /** その請求の行の、算定日ごとのコード（"YYYY-MM-DD" → コード）と、請求のコード全部（点検の結果の rows から） */
+  function codesOf(claimId: string): { all: Set<string>; on: (date: string) => Set<string> } {
+    const rows = ((check(claimId) as { rows?: { items: { code: string }[]; dates: string[] }[] }).rows ?? []);
+    return {
+      all: new Set(rows.flatMap((r) => r.items.map((it) => it.code))),
+      on: (date) => new Set(rows.filter((r) => r.dates.includes(date)).flatMap((r) => r.items.map((it) => it.code))),
+    };
+  }
   /** その請求の G05 を計算し直して、院内の知識を添える対象の組か（codePair と tani が一致する指摘があるか） */
   function isTarget(claimId: string, pair: CodePair): boolean {
     const r = check(claimId) as { generic?: GenericView };
@@ -78,5 +86,29 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
       now(),
     );
   }
-  return { isTarget, createPair };
+  /**
+   * 押した事実を書く前に照らす（design.md §14-3。C-173）：本人が Lv.5 以上・知識が承認済みの allow・key の 2 つのコードと rev がその知識のもの・
+   * 請求にその組の行があり、1 日・同時の表ならその日に両方ある（同一月の表は請求に両方。日付を付けない。X-124）・その組が G05 の対象。どれかが合わなければ 400
+   */
+  function admitPress(claimId: string, clerkId: string, f: { key: string; date: string | null }): string {
+    const k = parseLocalKey(f.key);
+    if (!k) throw badRequest("残せない項目です");
+    if (levelOf(clerkId) < LOCAL_PAIR_MIN_LEVEL) throw badRequest(`「条件に当たる」は、Lv.${LOCAL_PAIR_MIN_LEVEL} から残せます`);
+    const m = readKnowledge(store, k.id);
+    const pair = m?.match.codePair;
+    if (!m || !pair || m.status !== "承認済み" || m.polarity !== "allow") throw badRequest("承認済みの「条件に当たれば併せて算定できる」院内の知識ではありません");
+    if (m.rev !== k.rev || pair.a !== k.codes[0] || pair.b !== k.codes[1]) throw badRequest("知識が直されました。点検を開き直してください");
+    const codes = codesOf(claimId);
+    if (pair.tani === 2) {
+      if (f.date !== null) throw badRequest("同一月の組に日付は付けません");
+      if (!codes.all.has(pair.a) || !codes.all.has(pair.b)) throw badRequest("この請求に、この組の行がありません");
+    } else {
+      if (f.date === null) throw badRequest("この請求の診療年月の日付を選ぶ");
+      const on = codes.on(f.date);
+      if (!on.has(pair.a) || !on.has(pair.b)) throw badRequest("この日に、この組の両方の行がありません");
+    }
+    if (!isTarget(claimId, pair)) throw badRequest("この請求の点検に、院内の知識を使う背反の指摘がない組です");
+    return m.status_since;
+  }
+  return { isTarget, createPair, admitPress };
 }

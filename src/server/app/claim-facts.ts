@@ -1,11 +1,12 @@
 // 請求ごとに確かめた事実（履歴を残し、項目と日付ごとに最新の 1 件を使う）。値は、例外の文言とログに出さない。
 // 宛先を守る：医師あての事実（エンジンの宛先の表）を残せるのは医師の役割だけ、医療事務あての事実を残せるのは算定の仕事をする人だけ。
 // 背反の特例条件の例外の問いの答え（haihan:*。design.md §13-3）も同じ表に入れ、宛先は医療事務。答えを書くのは saveClaimFact の 1 か所だけ（X-105）
-import { applyClaimFacts, CLEARED, isClaimFactKey, isDatedFact, isHaihanFactKey, validateClaimFact, type ClaimFact, type ClaimFactInput } from "../../claim/facts";
+import { applyClaimFacts, CLEARED, isClaimFactKey, isDatedFact, isHaihanFactKey, isLocalFactKey, validateClaimFact, type ClaimFact, type ClaimFactInput } from "../../claim/facts";
 import { targetOfNeed } from "../../engine";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { selectorOf } from "../../generic/g05";
 import { codesFit, exceptionOf, haihanKey, parseHaihanKey, sharedExceptionOf, sharedFactOf } from "../../generic/haihan";
+import { parseLocalKey } from "../../generic/local-pair";
 import { withMasters } from "../../masters/db";
 import type { Facts } from "../../engine/types";
 import { badRequest, forbidden, notFound } from "../errors";
@@ -14,6 +15,12 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Uke } from "./uke";
+
+/** 押した事実の値（「役割|押したときの知識の status_since」） */
+const localValueOf = (v: unknown): { role: string; since: string } => {
+  const [role, since] = String(v).split("|");
+  return { role: role ?? "", since: since ?? "" };
+};
 
 type Row = { claim_id: string; key: string; date: string; value: string; source: string; checked_by: string; checked_at: string };
 
@@ -27,7 +34,7 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
    */
   function latestRows(claimId: string): ClaimFact[] {
     const rows = sqlite.prepare("SELECT * FROM claim_facts WHERE id IN (SELECT MAX(id) FROM claim_facts WHERE claim_id = ? GROUP BY key, date) ORDER BY id").all(claimId) as Row[];
-    return rows.filter((r) => isClaimFactKey(r.key) || isHaihanFactKey(r.key)).map((r) => ({
+    return rows.filter((r) => isClaimFactKey(r.key) || isHaihanFactKey(r.key) || isLocalFactKey(r.key)).map((r) => ({
       claimId: r.claim_id,
       key: r.key as ClaimFact["key"],
       date: r.date === "" ? null : r.date,
@@ -55,13 +62,43 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     if (!r) throw notFound(`UKE にないレセプト: ${claimId}`);
     return r.yearMonth;
   };
-  /** 画面に返す形。target は誰あての事実か、checkedByName は確かめた人の名前 */
+  /**
+   * 画面に返す形。target は誰あての事実か、checkedByName は確かめた人の名前。
+   * 院内の知識で押した事実（local:*。design.md §14-3）は、押した人の役割（値に残したもの）だけを返し、名前と id は返さない（FR-16「他人のレベルを見せない」。C-184）
+   */
   function claimFacts(claimId: string) {
     const yearMonth = yearMonthOf(claimId);
     const nameOf = (id: string) => (sqlite.prepare("SELECT name FROM clerks WHERE id = ?").get(id) as { name: string } | undefined)?.name ?? "";
-    return { claimId, yearMonth, facts: latestClaimFacts(claimId).map((f) => ({ ...f, target: targetOf(f.key), checkedByName: nameOf(f.checkedBy) })) };
+    return {
+      claimId,
+      yearMonth,
+      facts: latestClaimFacts(claimId).map((f) => (isLocalFactKey(f.key) ? { ...f, value: true, checkedBy: "", target: "clerk" as const, checkedByName: "", checkedByRole: localValueOf(f.value).role } : { ...f, target: targetOf(f.key), checkedByName: nameOf(f.checkedBy) })),
+    };
   }
-  /** 誰あての項目か。例外の問いの答えは医療事務あて */
+  /** 押した事実を読む関数（G05 の pressed。design.md §14-3）：押した時刻と、押したときの知識の status_since。押していない・取り消してあれば null */
+  function pressedOf(claimId: string): (key: string, date: string | null) => { at: string; since: string } | null {
+    const latest = latestClaimFacts(claimId).filter((f) => isLocalFactKey(f.key));
+    return (key, date) => {
+      const f = latest.find((x) => x.key === key && x.date === date);
+      return f ? { at: f.checkedAt, since: localValueOf(f.value).since } : null;
+    };
+  }
+  /** その請求の押した事実のうち、その知識・その組のもの（rev は問わない）を取り消す（返戻の入口。design.md §14-4）。取り消した key を返す */
+  function clearPressed(claimId: string, clerkId: string, knowledgeId: string, codes: [string, string]): string[] {
+    const at = now();
+    const hit = latestClaimFacts(claimId).filter((f) => {
+      const k = isLocalFactKey(f.key) ? parseLocalKey(f.key) : null;
+      return k !== null && k.id === knowledgeId && k.codes[0] === codes[0] && k.codes[1] === codes[1];
+    });
+    for (const f of hit) sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(CLEARED), f.source, clerkId, at);
+    return [...new Set(hit.map((f) => f.key))];
+  }
+  /** 押した事実を書く前に照らす関数（本人のレベル・知識・組・G05 の対象か。src/server/app/local-pairs.ts）。戻り値は、その知識の今の status_since。組み立ての後に差し込む */
+  let localGuard: ((claimId: string, clerkId: string, f: ClaimFactInput) => string) | null = null;
+  const setLocalGuard = (g: typeof localGuard) => {
+    localGuard = g;
+  };
+  /** 誰あての項目か。例外の問いの答え・院内の知識で押した事実は医療事務あて */
   const targetOf = (key: ClaimFactInput["key"]): "doctor" | "clerk" => (isClaimFactKey(key) ? targetOfNeed(key) : "clerk");
   /** 例外の問いの答えが、既存の事実（sameDayOushinAfterVisit）を使う問いなら、その事実の名前 */
   const sharedOf = (key: string): string | null => {
@@ -108,6 +145,13 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     const yearMonth = yearMonthOf(claimId);
     admit(f, yearMonth, role);
     if (isHaihanFactKey(f.key)) fitsClaim(claimId, yearMonth, parseHaihanKey(f.key)!);
+    // 院内の知識で押した事実（design.md §14-3。C-173）：サーバーが照らしてから書く。値には、押した人の役割（名前・レベルは残さない）と、押したときの知識の status_since を残す
+    if (isLocalFactKey(f.key)) {
+      if (!localGuard) throw badRequest("この請求では残せません");
+      const since = localGuard(claimId, clerkId, f);
+      sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(`${role}|${since}`), f.source, clerkId, now());
+      return claimFacts(claimId);
+    }
     let value = typeof f.value === "string" ? f.value.trim() : f.value;
     // 共有の事実を、例外の問いの選択肢で答えたとき（R10 の入力。利用者の判断 2026-11-22）：当たる・当たらない → 真偽で書く。
     // 「その他」「判定不能」→ その日の共有の事実を取り消し、その日のその例外の組の全部に、答えを haihan:* として残す（G05 の問いと同じ書き方。X-105）
@@ -155,7 +199,7 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     return claimFacts(claimId);
   }
 
-  return { withClaimFacts, claimFacts, saveClaimFact, answersOf };
+  return { withClaimFacts, claimFacts, saveClaimFact, answersOf, pressedOf, clearPressed, setLocalGuard };
 }
 
 export type ClaimFacts = ReturnType<typeof createClaimFacts>;

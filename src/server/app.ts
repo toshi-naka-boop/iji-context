@@ -59,8 +59,10 @@ export function openApp(paths: AppPaths) {
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
-  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (_claimId, clerkId) => localPairs.aboutFor(clerkId));
-  const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck);
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }));
+  const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
+  // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
+  claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */

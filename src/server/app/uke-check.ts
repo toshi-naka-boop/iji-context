@@ -80,7 +80,7 @@ const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: SheetNot
  * exceptions は、背反の特例条件の例外（G05。design.md §13-2・§13-3）に渡す、請求ごとの事実の答え（answers）とその請求の事実（facts）。
  * 取り込んだレセプトの点検だけが渡す（試算は渡さない：問いを出さない。L-76）
  */
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts" | "localKnowledge" | "level" | "pressedAt">) {
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts" | "localKnowledge" | "level" | "pressed">) {
   // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
   // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
@@ -123,7 +123,7 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
  * answersOf は、請求ごとの事実のうち、背反の特例条件の例外の問いの答えを読む関数（src/server/app/claim-facts.ts）。
  * localOf は、背反の組の院内の知識・本人のレベル・押した事実の時刻（design.md §14-3。取り込んだレセプトの点検だけが渡す。試算は渡さない）
  */
-export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null, localOf?: (claimId: string, clerkId?: string) => Pick<GenericAboutMore, "localKnowledge" | "level" | "pressedAt">) {
+export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null, localOf?: (claimId: string, clerkId?: string) => Pick<GenericAboutMore, "localKnowledge" | "level" | "pressed">) {
   /** clerkId は、見ている本人（レベルで院内の知識の出し方を分ける。design.md §14-3） */
   function ukeCheck(claimId: string, clerkId?: string) {
     const { receipt: r, uploaded, claim } = uke.receiptOf(claimId);

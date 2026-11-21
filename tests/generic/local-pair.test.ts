@@ -42,37 +42,42 @@ const run = (units: Unit[], about: Partial<GenericAboutMore>, config: HaihanConf
 const know = (list: LocalPairKnowledge[], want: CodePair = OU_HO) => (p: CodePair) => (p.a === want.a && p.b === want.b && p.tani === want.tani ? list : []);
 /** 往診料と訪問診療料が 6 日・9 日に両方ある請求 */
 const twoDays = [unit([C.oushin], [6, 9]), unit([C.houmon], [6, 9])];
-const pressed = (m: Record<string, string>) => (key: string, date: string | null) => m[`${key}|${date ?? ""}`] ?? null;
+/** 押した事実：key と日付 → 押した時刻（押したときの知識の status_since は since） */
+const pressed = (m: Record<string, string>, since = SINCE) => (key: string, date: string | null) => (m[`${key}|${date ?? ""}`] ? { at: m[`${key}|${date ?? ""}`], since } : null);
 const KEY = localKey("local/pair-a", "aaaaaaaaaaaa", C.oushin, C.houmon);
 const LATER = "2026-10-05T09:00:00+09:00";
 
 describe("Lv.5 の本人・承認済みの allow（design.md §14-5）", () => {
   it("条件とボタン（押していない日ごと）を添える。USED の対象になる", () => {
-    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressedAt: pressed({}) });
+    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({}) });
     expect(r.view.map((f) => [f.local?.mode, f.local?.texts, f.local?.press])).toEqual([["allow", ["院内の知識（承認済み）：条件に当たれば併せて算定できます。条件：根拠：審査で通った。テストの条件"], [{ key: KEY, date: day(6) }, { key: KEY, date: day(9) }]]]);
     expect(r.result.localUsed).toEqual(["local/pair-a"]);
   });
   it("押した日だけ出なくなり、点検の範囲に数と id。押さない日は出る。押さない請求（押した事実なし）は両方の日が出る", () => {
-    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressedAt: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
+    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
     expect(r.findings.map((f) => [f.messageKey, f.params.days])).toEqual([["G05.day_cond", "9"]]);
     expect(r.view[0].local?.press).toEqual([{ key: KEY, date: day(9) }]);
     expect(r.scope.notDone).toContain("院内の知識で、この請求も条件に当たると確かめたので出していない：1 件（local/pair-a）");
-    const both = run(twoDays, { localKnowledge: know([K()]), level: 5, pressedAt: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }) });
+    const both = run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }) });
     expect([both.findings, both.result.localSilenced]).toEqual([[], [{ id: "local/pair-a", count: 2 }]]);
   });
-  it("知識の rev が変わる・承認済みに入り直した（status_since が押した時刻より後）と、前の押下は効かない（C-171・C-180）", () => {
+  it("知識の rev が変わる・承認済みに入り直した（status_since が押した時刻より後。時計が進まず同じ時刻でも）と、前の押下は効かない（C-171・C-180）", () => {
     const p = pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER });
-    expect(run(twoDays, { localKnowledge: know([K({ rev: "bbbbbbbbbbbb" })]), level: 5, pressedAt: p }).findings.length).toBe(1);
-    expect(run(twoDays, { localKnowledge: know([K({ since: "2026-10-06T09:00:00+09:00" })]), level: 5, pressedAt: p }).findings.length).toBe(1);
+    expect(run(twoDays, { localKnowledge: know([K({ rev: "bbbbbbbbbbbb" })]), level: 5, pressed: p }).findings.length).toBe(1);
+    expect(run(twoDays, { localKnowledge: know([K({ since: "2026-10-06T09:00:00+09:00" })]), level: 5, pressed: p }).findings.length).toBe(1);
+    // デモの時計（進まない）：押したのと同じ時刻に、要再検証から承認済みに戻った → 押したときの status_since が違うので効かない
+    expect(run(twoDays, { localKnowledge: know([K({ since: LATER })]), level: 5, pressed: p }).findings.length).toBe(1);
+    // 承認と同じ時刻に押した（承認済みの間）→ 効く
+    expect(run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: SINCE, [`${KEY}|${day(9)}`]: SINCE }) }).findings).toEqual([]);
   });
   it("同一月の表（tani 2）は請求ごとに押す（日付なし）。同時の表（tani 3）は算定日ごと", () => {
     const month: CodePair = pairOf(C.sanso, C.sansoKyunyu, 2);
     const units = [unit([C.sanso], [3]), unit([C.sansoKyunyu], [20])];
-    const r = run(units, { localKnowledge: know([K()], month), level: 6, pressedAt: pressed({}) });
+    const r = run(units, { localKnowledge: know([K()], month), level: 6, pressed: pressed({}) });
     expect(r.view.map((f) => f.local?.press)).toEqual([[{ key: localKey("local/pair-a", "aaaaaaaaaaaa", C.sanso, C.sansoKyunyu), date: null }]]);
-    expect(run(units, { localKnowledge: know([K()], month), level: 6, pressedAt: pressed({ [`${localKey("local/pair-a", "aaaaaaaaaaaa", C.sanso, C.sansoKyunyu)}|`]: LATER }) }).findings).toEqual([]);
+    expect(run(units, { localKnowledge: know([K()], month), level: 6, pressed: pressed({ [`${localKey("local/pair-a", "aaaaaaaaaaaa", C.sanso, C.sansoKyunyu)}|`]: LATER }) }).findings).toEqual([]);
     const same: CodePair = pairOf(C.oushin, C.kyukyu, 3);
-    const t3 = run([unit([C.oushin, C.kyukyu], [4])], { localKnowledge: know([K()], same), level: 5, pressedAt: pressed({}) });
+    const t3 = run([unit([C.oushin, C.kyukyu], [4])], { localKnowledge: know([K()], same), level: 5, pressed: pressed({}) });
     expect(t3.view.map((f) => f.local?.press)).toEqual([[{ key: localKey("local/pair-a", "aaaaaaaaaaaa", C.oushin, C.kyukyu), date: day(4) }]]);
   });
 });
@@ -80,7 +85,7 @@ describe("Lv.5 の本人・承認済みの allow（design.md §14-5）", () => {
 describe("Lv.4 の本人：ヒントとして条件を添え、ボタンは出さない", () => {
   it("allow も avoid も「確かめてください」の指摘のまま、ヒントを添える。押した事実があっても消さない。USED の対象", () => {
     for (const polarity of ["allow", "avoid"] as const) {
-      const r = run(twoDays, { localKnowledge: know([K({ polarity })]), level: 4, pressedAt: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
+      const r = run(twoDays, { localKnowledge: know([K({ polarity })]), level: 4, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
       expect(r.findings.map((f) => [f.messageKey, f.params.days])).toEqual([["G05.day_cond", "6・9"]]);
       expect([r.view[0].local?.mode, r.view[0].local?.press, r.result.localUsed]).toEqual(["hint", [], ["local/pair-a"]]);
       expect(r.view[0].local?.texts[0]).toContain(polarity === "allow" ? "条件に当たれば併せて算定できます" : "併せて算定できません");
@@ -104,19 +109,19 @@ describe("承認済みの avoid・判断の軸にしない状態・食い違い"
     expect([u.view[0].local?.mode, u.view[0].local?.texts, u.result.localUsed]).toEqual(["unverified", ["前回の確かめ（未検証）があります：local/pair-a"], undefined]);
   });
   it("承認済みに allow と avoid が両方ある → 使わない（食い違っていると添える）", () => {
-    const r = run(twoDays, { localKnowledge: know([K(), K({ id: "local/pair-b", polarity: "avoid" })]), level: 9, pressedAt: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
+    const r = run(twoDays, { localKnowledge: know([K(), K({ id: "local/pair-b", polarity: "avoid" })]), level: 9, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
     expect([r.findings.map((f) => [f.messageKey, f.params.days]), r.view[0].local?.mode, r.result.localUsed]).toEqual([[["G05.day_cond", "6・9"]], "conflict", undefined]);
   });
 });
 
 describe("対象：§13 で決まらないものだけ（design.md §14-3）", () => {
   it("(ii) ウの例外だけの組（決まらない）にも添える（X-123）。残った日の文は exception_check のまま", () => {
-    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressedAt: pressed({ [`${KEY}|${day(9)}`]: LATER }), answers: () => null, facts: undefined }, UNDECIDED);
+    const r = run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(9)}`]: LATER }), answers: () => null, facts: undefined }, UNDECIDED);
     expect(r.findings.map((f) => [f.messageKey, f.params.days])).toEqual([["G05.exception_check", "6"]]);
   });
   it("§13 の問いが未決の組、§13 で決まった組には効かない（出荷の決まり HP-01）", () => {
     const facts = (separate?: Record<string, boolean>) => ({ sameDaySeparate: separate ? { known: true, value: separate } : { known: false }, sameDayOushinAfterVisit: { known: false }, deathPlace: { known: false } }) as unknown as GenericAboutMore["facts"];
-    const base = { localKnowledge: know([K()]), level: 9, pressedAt: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }) };
+    const base = { localKnowledge: know([K()]), level: 9, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }) };
     // 問いが未決（答えなし）→ 問いのまま
     const open = run(twoDays, { ...base, answers: () => null, facts: facts() }, HAIHAN);
     expect([open.findings.map((f) => f.messageKey), open.view[0].local, open.result.localUsed]).toEqual([["G05.exception_ask"], undefined, undefined]);

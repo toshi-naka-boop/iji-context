@@ -3,6 +3,7 @@
 // 入るのは、人が確かめて残した値だけ（機械・AI は埋めない）。誰あての事実か（医師か医療事務か）は、エンジンの宛先の表（src/engine/index.ts の targetOfNeed）が決める
 import type { Facts } from "../engine/types";
 import { exceptionOf, parseHaihanKey, sharedExceptionOf } from "../generic/haihan";
+import { isLocalKey } from "../generic/local-pair";
 
 /** 日付ごとに持つ事実（日付 → 真偽。ある日の答えは、ほかの日に効かない） */
 export const DATED_FACT_KEYS = ["sameDaySeparate", "sameDayOushinAfterVisit", "rxLongPsychotropic"] as const;
@@ -23,11 +24,19 @@ export type ClaimFactSource = (typeof CLAIM_FACT_SOURCES)[number];
  * 日付は、その問いが日ごと（scope=day）なら算定日、請求ごとなら持たない
  */
 export type HaihanFactKey = `haihan:${string}`;
+/**
+ * 背反の組の院内の知識で「この請求も条件に当たる」と押した事実（design.md §14-3）：local:<知識の id>@<rev>:<コード①>:<コード②>（コードは小さい順）。
+ * 日付は、1 日・同時の表は算定日、同一月の表は持たない（知識の表で決まるので、照らすのはサーバーの処理。src/server/app/local-pairs.ts）。
+ * 入力の値は「はい」（真）だけで、残すのは押した人の役割（名前・レベルは画面に出さない）
+ */
+export type LocalFactKey = `local:${string}`;
+export const isLocalFactKey = (key: string): key is LocalFactKey => isLocalKey(key);
+
 /** 取り消しの値（design.md §13-3。C-118）：claim_facts は追記だけの表で、key・date ごとに最新の行を使う。最新がこの値なら「答えなし」 */
 export const CLEARED = "__cleared__";
 
 /** date は、日付ごとの事実と、日ごとの例外の問いだけが持つ（ほかは null） */
-export type ClaimFactInput = { key: ClaimFactKey | HaihanFactKey; date: string | null; value: boolean | string; source: ClaimFactSource };
+export type ClaimFactInput = { key: ClaimFactKey | HaihanFactKey | LocalFactKey; date: string | null; value: boolean | string; source: ClaimFactSource };
 export type ClaimFact = ClaimFactInput & { claimId: string; checkedAt: string; checkedBy: string };
 
 export const isClaimFactKey = (key: string): key is ClaimFactKey => (CLAIM_FACT_KEYS as readonly string[]).includes(key);
@@ -52,6 +61,11 @@ export function validateClaimFact(f: ClaimFactInput, yearMonth: string): void {
   // 取り消しの印は、利用者の入力としては受け付けない（どの事実でも。印と答えが区別できなくなる。round-36 C-141）
   if (typeof f.value === "string" && f.value.trim() === CLEARED) throw new Error("この値は残せません");
   if (!CLAIM_FACT_SOURCES.includes(f.source)) throw new Error(`確かめ方が選べない値: ${f.source}`);
+  if (isLocalFactKey(f.key)) {
+    if (f.date !== null && !inMonth(f.date, yearMonth)) throw new Error("この請求の診療年月の日付を選ぶ");
+    if (f.value !== true) throw new Error("「条件に当たる」は、はいだけを残せます");
+    return;
+  }
   if (isHaihanFactKey(f.key)) {
     const ask = exceptionOf(parseHaihanKey(f.key)!.hx)!.ask!;
     if (ask.scope === "day" ? f.date === null || !inMonth(f.date, yearMonth) : f.date !== null) throw new Error(ask.scope === "day" ? "この請求の診療年月の日付を選ぶ" : "この問いに日付は付けない");

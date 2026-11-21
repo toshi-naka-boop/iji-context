@@ -10,12 +10,15 @@ import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClai
 import type { Finding } from "../src/engine/types";
 import { exceptionOf, parseHaihanKey, sharedExceptionOf, sharedFactOf } from "../src/generic/haihan";
 import type { GenericAsk } from "../src/generic/view";
-import { FACT_LABEL } from "../src/messages";
+import { FACT_LABEL, fillLocal, LOCAL_PAIR_TEXT } from "../src/messages";
+import { parseLocalKey } from "../src/generic/local-pair";
+import { ROLE_LABELS } from "../src/server/roles";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
 import { LABEL as PATIENT_LABEL, choicesOf, show as showPatientFact, valueOf } from "./work/patient-panel";
 import type { Role } from "../src/server/roles";
 
-type Saved = ClaimFact & { target: "doctor" | "clerk"; checkedByName: string };
+/** checkedByRole は、院内の知識で押した事実（local:*）だけが持つ（押した人の役割。名前は返らない） */
+type Saved = ClaimFact & { target: "doctor" | "clerk"; checkedByName: string; checkedByRole?: string };
 
 const dayText = (date: string | null) => (date ? `（${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日）` : "");
 const show = (v: boolean | string) => (typeof v === "boolean" ? (v ? "はい" : "いいえ") : v);
@@ -206,6 +209,14 @@ export function CheckedFacts(props: { claimId: string; tick: number; onSaved: ()
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {facts.map((f) => {
         const id = `${f.key}|${f.date ?? ""}`;
+        // 院内の知識で「この請求も条件に当たる」と押した事実（design.md §14-3）：押した人の役割だけを出す（名前・レベルは出さない）。直す入力はない
+        const local = parseLocalKey(f.key);
+        if (local) return (
+          <div key={id} className="notice ok">
+            確かめた：{fillLocal(LOCAL_PAIR_TEXT.pressedFact, { id: local.id, a: local.codes[0], b: local.codes[1] })}{dayText(f.date)}
+            <span className="muted">（{ROLE_LABELS[f.checkedByRole as Role] ?? ""}・{f.checkedAt.slice(0, 10)}・{how(f.source)}）</span>
+          </div>
+        );
         // 例外の問いの答え（haihan:*）は、問いの文と、どの組（コード）の答えかを出す。直すときは同じ選択肢から（答えを変えれば問い直す）
         const k = isClaimFactKey(f.key) ? null : parseHaihanKey(f.key);
         const ask = k ? exceptionOf(k.hx)?.ask : undefined;
