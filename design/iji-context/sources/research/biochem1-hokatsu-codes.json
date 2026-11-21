@@ -1,0 +1,1194 @@
+{
+ "source": "s_20261102.csv (医科診療行為マスター 令和8年度版) 項番16 包括対象検査=1（血液化学検査の包括項目）",
+ "count": 66,
+ "items": [
+  {
+   "code": "160000550",
+   "name": "血中ケトン体（試験紙法）",
+   "basicName": "血中ケトン体（試験紙法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160000650",
+   "name": "血中ケトン体（アンプル法）",
+   "basicName": "血中ケトン体（アンプル法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160000750",
+   "name": "糖（試験紙法）",
+   "basicName": "糖（試験紙法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160000850",
+   "name": "糖（アンプル法）",
+   "basicName": "糖（アンプル法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160000950",
+   "name": "クロール検査（試験紙法）",
+   "basicName": "クロール検査（試験紙法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160001050",
+   "name": "クロール検査（アンプル法）",
+   "basicName": "クロール検査（アンプル法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160017010",
+   "name": "ＢＩＬ／総",
+   "basicName": "総ビリルビン",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160017110",
+   "name": "ＢＩＬ／直",
+   "basicName": "直接ビリルビン",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160017410",
+   "name": "ＴＰ",
+   "basicName": "総蛋白",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160018910",
+   "name": "Ａｌｂ（ＢＣＰ改良法）",
+   "basicName": "アルブミン（ＢＣＰ改良法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019010",
+   "name": "ＢＵＮ",
+   "basicName": "尿素窒素",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019110",
+   "name": "クレアチン",
+   "basicName": "クレアチン",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019210",
+   "name": "クレアチニン",
+   "basicName": "クレアチニン",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019310",
+   "name": "ＵＡ",
+   "basicName": "尿酸",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019410",
+   "name": "グルコース",
+   "basicName": "グルコース",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160019510",
+   "name": "ＬＤ",
+   "basicName": "乳酸デヒドロゲナーゼ（ＬＤ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020010",
+   "name": "ＡＬＰ",
+   "basicName": "アルカリホスファターゼ（ＡＬＰ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020210",
+   "name": "ＣｈＥ",
+   "basicName": "コリンエステラーゼ（ＣｈＥ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020310",
+   "name": "Ａｍｙ",
+   "basicName": "アミラーゼ",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020410",
+   "name": "γ－ＧＴ",
+   "basicName": "γ－グルタミルトランスフェラーゼ（γ－ＧＴ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020510",
+   "name": "ＬＡＰ",
+   "basicName": "ロイシンアミノペプチダーゼ（ＬＡＰ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020610",
+   "name": "ＣＫ",
+   "basicName": "クレアチンキナーゼ（ＣＫ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020710",
+   "name": "ＡＬＤ",
+   "basicName": "アルドラーゼ",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160020910",
+   "name": "ＴＧ",
+   "basicName": "中性脂肪",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021010",
+   "name": "遊離コレステロール",
+   "basicName": "遊離コレステロール",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021110",
+   "name": "ナトリウム及びクロール",
+   "basicName": "ナトリウム及びクロール",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021410",
+   "name": "カリウム",
+   "basicName": "カリウム",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021510",
+   "name": "カルシウム",
+   "basicName": "カルシウム",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021610",
+   "name": "イオン化カルシウム",
+   "basicName": "イオン化カルシウム",
+   "points": "26.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "007"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160021810",
+   "name": "無機リン及びリン酸",
+   "basicName": "無機リン及びリン酸",
+   "points": "17.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "003"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022110",
+   "name": "Ｆｅ",
+   "basicName": "鉄（Ｆｅ）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022210",
+   "name": "マグネシウム",
+   "basicName": "マグネシウム",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022410",
+   "name": "Ｔｃｈｏ",
+   "basicName": "総コレステロール",
+   "points": "17.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "003"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022510",
+   "name": "ＡＳＴ",
+   "basicName": "アスパラギン酸アミノトランスフェラーゼ（ＡＳＴ）",
+   "points": "17.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "003"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022610",
+   "name": "ＡＬＴ",
+   "basicName": "アラニンアミノトランスフェラーゼ（ＡＬＴ）",
+   "points": "17.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "003"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160022810",
+   "name": "蛋白分画",
+   "basicName": "蛋白分画",
+   "points": "18.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "004"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160023210",
+   "name": "リン脂質",
+   "basicName": "リン脂質",
+   "points": "15.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "002"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160023410",
+   "name": "ＨＤＬ－コレステロール",
+   "basicName": "ＨＤＬ－コレステロール",
+   "points": "17.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "003"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160023610",
+   "name": "ＴＩＢＣ（比色法）",
+   "basicName": "総鉄結合能（ＴＩＢＣ）（比色法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160023710",
+   "name": "ＵＩＢＣ（比色法）",
+   "basicName": "不飽和鉄結合能（ＵＩＢＣ）（比色法）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160024010",
+   "name": "リパーゼ",
+   "basicName": "リパーゼ",
+   "points": "24.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "006"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160024710",
+   "name": "Ｃｕ",
+   "basicName": "銅（Ｃｕ）",
+   "points": "23.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "005"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160131950",
+   "name": "ＢＵＮ（尿）",
+   "basicName": "尿素窒素（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132050",
+   "name": "クレアチン（尿）",
+   "basicName": "クレアチン（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132150",
+   "name": "クレアチニン（尿）",
+   "basicName": "クレアチニン（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132250",
+   "name": "ＵＡ（尿）",
+   "basicName": "尿酸（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132350",
+   "name": "アミラーゼ（尿）",
+   "basicName": "アミラーゼ（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132450",
+   "name": "ナトリウム及びクロール（尿）",
+   "basicName": "ナトリウム及びクロール（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132650",
+   "name": "カリウム（尿）",
+   "basicName": "カリウム（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132750",
+   "name": "カルシウム（尿）",
+   "basicName": "カルシウム（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132850",
+   "name": "Ｆｅ（尿）",
+   "basicName": "鉄（Ｆｅ）（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160132950",
+   "name": "マグネシウム（尿）",
+   "basicName": "マグネシウム（尿）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160133150",
+   "name": "蛋白分画（尿）",
+   "basicName": "蛋白分画（尿）",
+   "points": "18.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "004"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160133250",
+   "name": "リパーゼ（尿）",
+   "basicName": "リパーゼ（尿）",
+   "points": "24.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "006"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160133350",
+   "name": "Ｃｕ（尿）",
+   "basicName": "銅（Ｃｕ）（尿）",
+   "points": "23.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "005"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160137950",
+   "name": "グルコース（胸水）",
+   "basicName": "グルコース（胸水）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160138150",
+   "name": "グルコース（髄液）",
+   "basicName": "グルコース（髄液）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160138250",
+   "name": "クロール（髄液）",
+   "basicName": "クロール（髄液）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160138750",
+   "name": "グルコース（腹水）",
+   "basicName": "グルコース（腹水）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160149650",
+   "name": "糖（固定化酵素電極）",
+   "basicName": "糖（固定化酵素電極）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160149750",
+   "name": "クロール検査（固定化酵素電極）",
+   "basicName": "クロール検査（固定化酵素電極）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160149850",
+   "name": "血中ケトン体（固定化酵素電極）",
+   "basicName": "血中ケトン体（固定化酵素電極）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160167250",
+   "name": "ＬＤＬ－コレステロール",
+   "basicName": "ＬＤＬ－コレステロール",
+   "points": "18.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "004"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160171850",
+   "name": "ＢＩＬ／抱",
+   "basicName": "抱合型ビリルビン",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "001"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160173910",
+   "name": "Ｍｎ",
+   "basicName": "マンガン（Ｍｎ）",
+   "points": "27.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "007",
+    "00",
+    "008"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  },
+  {
+   "code": "160176350",
+   "name": "クレアチニン試験紙法（尿）（蛋白／クレアチニン比）",
+   "basicName": "クレアチニン試験紙法（尿）（蛋白／クレアチニン比）",
+   "points": "11.00",
+   "pointKind": "3",
+   "kubun": [
+    "D",
+    "2",
+    "03",
+    "001",
+    "00",
+    "022"
+   ],
+   "changed": "20260601",
+   "abolished": "99999999",
+   "kokujiShikibetsu1": "1"
+  }
+ ]
+}
