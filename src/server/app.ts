@@ -9,6 +9,7 @@ import { openContext, type AppPaths } from "./app/context";
 import { createDoctor } from "./app/doctor";
 import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
+import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
@@ -47,6 +48,7 @@ export function openApp(paths: AppPaths) {
   const { deleteUpload, forgetQueries } = createErase(ctx, uke, patientFactsOf);
   const { compareOf } = createRevision(uke, casesOf, notes);
   const { doctorFacts, noteDoctorFact } = createDoctorFacts(ctx, clock, clerks, casesOf);
+  const { facilitySettings, saveFacility } = createFacility(ctx);
 
   const { now, advanceClock } = clock;
   const { upsertClerk, createClerk, clerk, setSession, chooseCharacter, characterChosen, setClerkName, welcomed, setStyle, styleOf } = clerks;
@@ -141,6 +143,8 @@ export function openApp(paths: AppPaths) {
     questionsOf,
     setting,
     setSetting,
+    facilitySettings,
+    saveFacility,
     importClaimResult,
     doctorQueries,
     doctorFacts,

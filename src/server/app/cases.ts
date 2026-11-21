@@ -8,6 +8,7 @@ import { withMasters } from "../../masters/db";
 import { applyPatientFacts } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
 import { caseFileOf } from "./case-files";
+import { facilityJsonOf } from "./facility";
 import type { ClaimFacts } from "./claim-facts";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
@@ -59,7 +60,7 @@ export function caseBaseOf(root: string, facility: FacilityJson, claimId: string
 }
 
 export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">) {
-  const { paths, facility } = ctx;
+  const { paths } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
   const { latestPatientFacts, ingest, masterFacts } = patients;
@@ -74,8 +75,9 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
 
   /** UKE のレセプト 1 件を、カルテ側の事実・患者マスタと合わせた請求にする */
   function contextOf(file: UkeFile, r: UkeReceipt): ClaimContext {
-    // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる
-    const c = caseBaseOf(paths.root, facility, r.claimId);
+    // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる。
+    // 施設の設定は、config の既定値にクリニックで残した値を重ねたもの（FR-148。src/server/app/facility.ts）。症例ごとの上書きはその上に重なる
+    const c = caseBaseOf(paths.root, facilityJsonOf(ctx), r.claimId);
     // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
     // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
     const patientId = ingest(r.patient);

@@ -2,14 +2,14 @@
 // JSON では null を「不明」とし、ここで三値（Fact）に変える。重ねるのはこの 1 か所
 import type { Facility, FacilityFactKey, Fact } from "./types";
 
-const FACT_KEYS: FacilityFactKey[] = ["dxTier", "baseUp", "priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"];
+export const FACT_KEYS: FacilityFactKey[] = ["dxTier", "baseUp", "priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"];
 
 type ValueOf<F> = F extends Fact<infer T> ? T : never;
 /** 設定ファイルと症例の JSON での形。三値の項目は値そのものか null（不明） */
 export type FacilityJson = Omit<Facility, FacilityFactKey> & { [K in FacilityFactKey]: ValueOf<Facility[K]> | null };
 
-const DX_TIERS = ["1", "2", "なし"];
-const BASE_UPS = ["通常", "注5", "なし"];
+export const DX_TIERS = ["1", "2", "なし"] as const;
+export const BASE_UPS = ["通常", "注5", "なし"] as const;
 
 /** 既定値に上書きを重ねて、判定に渡す施設の設定にする。三値の項目がない・null なら「不明」 */
 export function facilityOf(config: FacilityJson, override: Partial<FacilityJson> = {}): Facility {
