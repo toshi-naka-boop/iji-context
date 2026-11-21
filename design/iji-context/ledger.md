@@ -252,3 +252,4 @@
 - 2026-11-21（Opus）セキュリティの残り 4 件を fix/security-rest で直して束ねた（a354f16）：Origin の拒否を auth_events に残す、CSP を強制（unsafe-inline のまま）、呼び名の上書き（起動し直した後の最初の呼び出しで起きていた）を直す。招待の件は文書どおりの意図なので直さず残余リスクに。利用者の判断待ち：nonce に移すか、持ち主が事務のまま 2 人目を招く状態を許すか。詳細は handoff-opus.md
 - 2026-11-21（Opus）片づけ（O-2・O-6・O-9・O-10）を chore/cleanup-low で直して束ねた（1f2d8d1）。C-80 は解決済み。詳細は handoff-opus.md
 - 2026-11-21（Opus）施設の設定の入力（FR-148）と摘要欄の入力（FR-176）を束ねた（725975d）。束ねるときに、施設の設定を残せる役割を仕様どおり事務長と責任者（ベテラン）に広げた（merge コミットに明記）。詳細は handoff-opus.md
+- 2026-11-21（Opus）strict を src/engine・src/uke・src/server に掛けた（tsconfig.strict.json。統合 76eb9ee）。g02.ts の型の食い違いは、未収載の段を持つ群を検算の対象外に回す形で直した（Opus。今の版では結果は変わらない）。全体に掛けると残り 22 件。詳細は handoff-opus.md
