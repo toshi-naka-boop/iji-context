@@ -154,9 +154,10 @@ export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke
  */
 export function generateJitsurei(): Buffer {
   const { src } = loadSources();
-  const rec = (n: number, cols: Record<number, string | number>) => {
+  // 値が undefined の列は空のまま（TO だけの列を条件つきで広げるため、型の上で undefined があり得る）
+  const rec = (n: number, cols: Record<number, string | number | undefined>) => {
     const out: string[] = Array.from({ length: n }, () => "");
-    for (const [k, v] of Object.entries(cols)) out[Number(k) - 1] = String(v);
+    for (const [k, v] of Object.entries(cols)) if (v !== undefined) out[Number(k) - 1] = String(v);
     return out.join(",");
   };
   /** 「日 → 値」を、1 日の情報が first 列目のレコードの列にする */
