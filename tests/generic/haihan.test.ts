@@ -269,6 +269,22 @@ describe("出荷の決まりの形", () => {
   });
 });
 
+describe("疑義解釈で確かめた例外（利用者の判断 2026-11-22）", () => {
+  it("HX-15 はイ（請求ごとの問い）、HX-19 はア（入院のレセプトなら当たる）。入院外のレセプトでは、C108×G003 の組（HP-20）は例外に当たらない", () => {
+    const x15 = HAIHAN.exceptions.find((e) => e.id === "HX-15")!;
+    expect([x15.kind, x15.ask?.scope, x15.ask?.choices.map((c) => c.means)]).toEqual(["fact", "claim", ["当たる", "当たらない", "決まらない", "決まらない"]]);
+    const x19 = HAIHAN.exceptions.find((e) => e.id === "HX-19")!;
+    expect([x19.kind, x19.allow]).toEqual(["receipt", { receiptKind: "入院" }]);
+    // 小さな表で、C108（114741810）× G003（130007510）の同一月の行を作る（コードで選ぶ組に写して掛ける）
+    const db = tensuhyoMasters();
+    putHaihan(db, "20261001", 2, "114741810", "130007510", "1", "1");
+    const config: HaihanConfig = { patterns: [{ ...HAIHAN.patterns.find((p) => p.id === "HP-20")!, a: { codes: ["114741810"] }, b: { codes: ["130007510"] } }], exceptions: [x19] };
+    const units = [unit(["114741810"], [3]), unit(["130007510"], [10])];
+    expect(g05Of(units, { outpatient: true }, { db, config }).findings.map((f) => [f.messageKey, f.params.hp])).toEqual([["G05.exception_none", "HP-20"]]);
+    expect(g05Of(units, { outpatient: false }, { db, config }).findings).toEqual([]);
+  });
+});
+
 describe("2 回言わない（C-119・X-108）", () => {
   it("手書きの R17 が同じコメントコード（830100086）の記載もれを出していれば、exception_needs_comment を出さない。R17 が情報不足で止まった・出していないときは出す", () => {
     const g = g05Of(sameDay, { answers: answersOf(), facts: factsOf({ after: { [day(6)]: true } }) }).findings;
