@@ -1,13 +1,13 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v25",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v25",
+  "approvedDesignSha256": "1689af1f6b1ee7cc5b6c2fc2c58bc42cdd0fad4d7fa70297ce670809986b6ad9",
+  "approvedAt": "2026-11-21T00:00:00+09:00",
+  "approvalEvidence": "「v25:1689af1f6b1e を承認」",
   "requiredApprovalFingerprint": "v25:1689af1f6b1e",
-  "baseline": "feat/integration（PR #16、66f29e6）",
+  "baseline": "feat/integration（28b8e07）",
   "criticRound": 35,
   "openIssueIds": [],
   "requiredReads": [
@@ -15,7 +15,7 @@
     "ledger.md",
     "sources/research/tokurei-summary.md"
   ],
-  "nextAction": "v25 の承認を待つ（承認ブリーフを提示済み）",
+  "nextAction": "段 15a を実装（Opus のサブエージェント、worktree）。呼び出し側が完了条件を実行して判定",
   "lastUpdated": "2026-11-21",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
