@@ -67,6 +67,9 @@ export class Throttle {
 /** ない ID のときに照合する相手（起動時に 1 回だけ作る） */
 const DUMMY_HASH = hashPassword(randomBytes(16).toString("hex"));
 
+/** 日本時間の日付（src/server/rate-limit.ts の jstDay と同じ式。rate-limit.ts が auth.ts を import するので、循環を避けてここにも置く） */
+const jstDayOf = (now: Date) => new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+
 export function openAuth(dbFile: string) {
   mkdirSync(path.dirname(dbFile), { recursive: true });
   const db = new Database(dbFile);
@@ -214,6 +217,13 @@ export function openAuth(dbFile: string) {
   function endSession(token: string | undefined) {
     if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha256(token));
   }
-  return { acceptNotice, acceptedNotice, register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  /** サーバー全体の 1 日の回数（auth.db の rate_daily。user_id は '*'）。形は src/server/rate-limit.ts の DailyCounter と同じ */
+  const dailyAll = {
+    hit: (bucket: string, userId: string, now = new Date()): number =>
+      (db.prepare("INSERT INTO rate_daily (day, bucket, user_id, count) VALUES (?, ?, ?, 1) ON CONFLICT(day, bucket, user_id) DO UPDATE SET count = count + 1 RETURNING count").get(jstDayOf(now), bucket, userId) as { count: number }).count,
+    count: (bucket: string, userId: string, now = new Date()): number =>
+      (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
+  };
+  return { dailyAll, acceptNotice, acceptedNotice, register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

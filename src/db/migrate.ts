@@ -135,6 +135,14 @@ ALTER TABLE users ADD COLUMN accepted_notice_version TEXT;
 ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
 `,
   },
+  {
+    // サーバー全体の 1 日の回数（spec U-W。2026-11-21 利用者の判断）：LLM・音声の呼び出しを、全部のクリニック・全部の利用者で数える。
+    // 利用者ごとの数は tenant の app.db の rate_daily にあり、ここには全体の数だけを置く（user_id は '*'）
+    version: 4,
+    sql: `
+CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

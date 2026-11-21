@@ -186,7 +186,7 @@ export function route<B extends ZodType | undefined = undefined, P extends ZodTy
           throw forbidden(need ? `この操作は${need}の役割で行います（いまの役割：${ROLE_LABELS[viewer.role]}）` : "この操作は、1 人で使っているクリニックでだけできます");
         }
         if (needsConsent && !(viewer && getAuth().acceptedNotice(viewer.id))) throw new ConsentRequired();
-        if (opts.limit && viewer) enforceLimit(opts.limit, `${viewer.tenantId}:${viewer.id}`, viewer.id, getApp().dailyCounter);
+        if (opts.limit && viewer) enforceLimit(opts.limit, `${viewer.tenantId}:${viewer.id}`, viewer.id, getApp().dailyCounter, undefined, undefined, getAuth().dailyAll);
         const query = (opts.query ? parse(opts.query, Object.fromEntries(new URL(req.url).searchParams), "query") : undefined) as Infer<Q>;
         if (opts.body) parsedBody = parse(opts.body, await readJson(req, opts.maxBytes ?? limits().jsonBytes), "body") as Infer<B>;
         const form = opts.form ? await readForm(req, opts.form.maxBytes) : null;

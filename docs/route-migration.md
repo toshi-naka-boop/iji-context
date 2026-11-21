@@ -64,7 +64,7 @@ export const POST = route({ roles: allow("POST /api/meeting/answer"), body: meet
 
 ## 5. 回数制限
 
-LLM を呼ぶルートは `limit: "llm"`、音声は `limit: "voice"`。利用者ごとの 1 分あたりと 1 日の上限で、値は `config/limits.json`。
+LLM を呼ぶルートは `limit: "llm"`、音声は `limit: "voice"`。利用者ごとの 1 分あたりと 1 日の上限、それにサーバー全体の 1 日の上限（`perDayAll`、auth.db に数を持つ）で、値は `config/limits.json`。
 失敗した呼び出しも 1 回と数える。LLM を呼ばないルートには付けない。
 
 ## 6. 監査ログ

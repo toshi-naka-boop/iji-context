@@ -23,7 +23,7 @@ describe("migrate", () => {
     // auth.db は別の列を持つ
     const auth = new Database(":memory:");
     expect(migrate(auth, AUTH_MIGRATIONS)).toBe(AUTH_MIGRATIONS.length);
-    expect(tables(auth)).toEqual(["auth_events", "invites", "sessions", "users"]);
+    expect(tables(auth)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
   });
 
   it("2 回呼んでも変わらない", () => {
@@ -98,7 +98,7 @@ describe("migrate", () => {
     expect(db.prepare("SELECT id, login, name, tenant_id, role FROM users").all()).toEqual([{ id: "t0123456789ab", login: "old_user", name: "まえから", tenant_id: "t0123456789ab", role: "clerk" }]);
     // セッションは残り、招待と監査の表ができる
     expect(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 1 });
-    expect(tables(db)).toEqual(["auth_events", "invites", "sessions", "users"]);
+    expect(tables(db)).toEqual(["auth_events", "invites", "rate_daily", "sessions", "users"]);
   });
 
   it("バージョン 1 の app.db を 2 へ上げると、監査ログと 1 日の回数の表ができ、中身は残る", () => {

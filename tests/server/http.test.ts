@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { APP_MIGRATIONS, migrate } from "../../src/db/migrate";
-import type { User } from "../../src/server/auth";
+import { openAuth, type User } from "../../src/server/auth";
 import { UserError } from "../../src/server/errors";
 import type { Allowed } from "../../src/server/policy";
 import { createDailyCounter, enforceLimit, resetLimits } from "../../src/server/rate-limit";
@@ -226,6 +226,32 @@ describe("回数制限", () => {
     expect(() => enforceLimit("llm", "k2", "u2", daily, day1, cfg)).not.toThrow();
     expect(() => enforceLimit("llm", "k", "u1", daily, new Date("2026-11-17T15:00:00Z"), cfg)).not.toThrow();
     db.close();
+  });
+
+  it("サーバー全体の 1 日の上限（perDayAll）は、別のクリニック・別の利用者の呼び出しも合わせて数え、auth.db に残る（spec U-W）", () => {
+    resetLimits();
+    const day1 = new Date("2026-11-17T03:00:00Z");
+    const cfg = { perMinute: 100, perDay: 100, perDayAll: 3 };
+    const authFile = path.join(tmp, "auth-all.db");
+    let auth = openAuth(authFile);
+    const tenantA = new Database(":memory:");
+    const tenantB = new Database(":memory:");
+    migrate(tenantA, APP_MIGRATIONS);
+    migrate(tenantB, APP_MIGRATIONS);
+    enforceLimit("llm", "a:u1", "u1", createDailyCounter(tenantA), day1, cfg, auth.dailyAll);
+    enforceLimit("llm", "a:u2", "u2", createDailyCounter(tenantA), day1, cfg, auth.dailyAll);
+    auth.close();
+    auth = openAuth(authFile);
+    enforceLimit("llm", "b:u3", "u3", createDailyCounter(tenantB), day1, cfg, auth.dailyAll);
+    // 利用者ごとの数はまだ 1 回でも、全体で 3 回に達したので止まる
+    expect(() => enforceLimit("llm", "b:u4", "u4", createDailyCounter(tenantB), day1, cfg, auth.dailyAll)).toThrow(/サーバー全体の上限/);
+    // perDayAll のない種類は全体で数えない。日付が変わると戻る
+    expect(() => enforceLimit("upload", "b:u4", "u4", createDailyCounter(tenantB), day1, { perMinute: 100, perDay: 100 }, auth.dailyAll)).not.toThrow();
+    expect(auth.dailyAll.count("upload", "*", day1)).toBe(0);
+    expect(() => enforceLimit("llm", "b:u4", "u4", createDailyCounter(tenantB), new Date("2026-11-17T15:00:00Z"), cfg, auth.dailyAll)).not.toThrow();
+    auth.close();
+    tenantA.close();
+    tenantB.close();
   });
 });
 

@@ -1,4 +1,5 @@
 // 回数制限（spec FR-139）：LLM・音声・UKE のアップロードのルートは、利用者ごとの 1 分あたりの回数と、1 日の上限を持つ。上限値は config/limits.json。
+// LLM・音声は、サーバー全体の 1 日の上限（perDayAll）も持つ。全体の数は auth.db の rate_daily に置く（spec U-W。2026-11-21）
 // 1 分あたりはプロセスの中で数え（Throttle）、1 日の数は tenant の app.db（rate_daily）に置いて再起動で消えないようにする。
 // 接続元の IP は、前段の Caddy が付けた値だけを信用する（clientIp）
 import type Database from "better-sqlite3";
@@ -8,7 +9,7 @@ import { Throttle } from "./auth";
 import { UserError } from "./errors";
 
 export type LimitName = "llm" | "voice" | "upload";
-export type Limits = Record<LimitName, { perMinute: number; perDay: number }> & { jsonBytes: number };
+export type Limits = Record<LimitName, { perMinute: number; perDay: number; perDayAll?: number }> & { jsonBytes: number };
 
 let cached: Limits | null = null;
 export function limits(): Limits {
@@ -38,15 +39,18 @@ const perMinute = new Map<LimitName, Throttle>();
 
 /**
  * 上限を超えていたら 429 の UserError。超えていなければ 1 回と数える（失敗した呼び出しも数える。費用は呼んだ時点でかかるため）。
- * key は利用者ごと（tenant と利用者 id）
+ * key は利用者ごと（tenant と利用者 id）。all はサーバー全体の数（auth.db。src/server/auth.ts の dailyAll）
  */
-export function enforceLimit(name: LimitName, key: string, userId: string, daily: DailyCounter, now = new Date(), cfg = limits()[name]) {
+export function enforceLimit(name: LimitName, key: string, userId: string, daily: DailyCounter, now = new Date(), cfg = limits()[name], all?: DailyCounter) {
   let t = perMinute.get(name);
   if (!t) perMinute.set(name, (t = new Throttle(cfg.perMinute, 60_000)));
   if (t.blocked(key, now.getTime())) throw new UserError(429, "続けて呼びすぎています。1 分ほど待ってからもう一度試してください");
   if (daily.count(name, userId, now) >= cfg.perDay) throw new UserError(429, "今日の上限に達しました。明日もう一度試してください");
+  // サーバー全体の上限（perDayAll がある種類だけ）。全員の数なので、誰の呼び出しかは数に入れない
+  if (all && cfg.perDayAll !== undefined && all.count(name, "*", now) >= cfg.perDayAll) throw new UserError(429, "今日のサーバー全体の上限に達しました。明日もう一度試すか、管理者に知らせてください");
   t.hit(key, now.getTime());
   daily.hit(name, userId, now);
+  if (all && cfg.perDayAll !== undefined) all.hit(name, "*", now);
 }
 
 /** テスト用：プロセスの中の数をリセットする */
