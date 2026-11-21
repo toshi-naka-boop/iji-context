@@ -50,7 +50,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0 }: { generic:
       ))}
       {g09Open && (
         <details className="muted">
-          <summary>審査支払機関のコンピュータチェックの対象（適応・禁忌・量と日数）：{g09.length} 件</summary>
+          {/* 作ったのは適応と併用だけ。折りたたんだままでも、量と日数を見ていないことが分かるように見出しに添える（round-32 O-18） */}
+          <summary>審査支払機関のコンピュータチェックの対象（適応・併用）：{g09.length} 件。投与量・投与日数は点検していません</summary>
           <ul style={{ margin: "4px 0", paddingLeft: 20 }}>
             {g09Notes.map((t, i) => <li key={i}>{t}</li>)}
           </ul>

@@ -201,7 +201,7 @@ describe("G09 は言い切らない。点検の範囲に、但し書きと、見
     const notes = scope(claimOf([[["IY", M.pentasa]], [5]])).g09!;
     expect(notes[0]).toMatch(/^適応・併用：審査支払機関のコンピュータチェックは、診療内容の適否を一律に決めるものではなく.*査定されると決まったわけではありません/);
     expect(notes).toContain("院外処方の薬の適応・量は、このレセプトからは見られません（医科のレセプトに薬が載らないため）");
-    expect(notes.some((t) => t.startsWith("量と日数（最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件") && t.includes("点検していません"))).toBe(true);
+    expect(notes.some((t) => t.startsWith("投与量・投与日数（表の最大投与量・最長投与日数）、傷病名との禁忌、性別・年齢の条件") && t.includes("点検していません"))).toBe(true);
     expect(notes.some((t) => t.startsWith("チェックマスタは 2026年10月1日 公開の版です"))).toBe(true);
     // G09 の説明は、ほかの点検の「していないこと」とは別に持つ
     expect(scope(claimOf([[["IY", M.pentasa]], [5]])).notDone.some((t) => t.includes("適応"))).toBe(false);
