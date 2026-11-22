@@ -84,6 +84,11 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
   const [msg, setMsg] = useState("");
   const [reexam, setReexam] = useState<Record<number, boolean>>({});
   const [done, setDone] = useState<Record<number, string>>({});
+  // 見本（作り物の K6 の通知）は、デモのクリニックにだけ出す
+  const [demo, setDemo] = useState(false);
+  useEffect(() => {
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => setDemo(d?.kind === "demo")).catch(() => {});
+  }, []);
 
   async function send(payload: unknown) {
     setBusy(true);
@@ -120,7 +125,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
       <p className="muted">通知に書かれていることを取り出し、確かめた項目だけを知識の候補にします。</p>
       <NoticeText />
       <p>
-        <button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・前の月の査定）を読む</button>{" "}
+        {demo && <><button onClick={() => send({ sample: true })} disabled={busy}>サンプル（K6・前の月の査定）を読む</button>{" "}</>}
         <input type="file" accept="application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
       </p>
       {busy && <div className="muted">通知を読んでいます…</div>}

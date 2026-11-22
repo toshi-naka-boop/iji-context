@@ -239,6 +239,16 @@ describe("real に作り物のデータを入れない・見せない", () => {
     expect(appOf(demo).drills().fix.length).toBeGreaterThan(0);
   });
 
+  it("real では見本の通知（K6）を読ませない（AI のサービスに送る前に断る）", async () => {
+    const notice = (await import("../../app/api/notice/route")).POST;
+    const real = auth().register("notice_real", "じつ", "password123", "real");
+    const cookie = cookieOf(real);
+    await switchTo(cookie, "veteran");
+    const r = await notice(post("/api/notice", cookie, { sample: true }));
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toContain("デモで試すクリニックだけ");
+  });
+
   it("real では見本の UKE をダウンロードさせず、同梱の UKE と同じ内容のアップロードを断る。ほかの UKE は取り込める（請求の番号はアプリが振る）", async () => {
     const real = auth().register("sample_real", "じつ", "password123", "real");
     const cookie = cookieOf(real);
