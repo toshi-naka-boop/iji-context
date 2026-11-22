@@ -361,6 +361,8 @@ export const LOCAL_PAIR_TEXT = {
   /** 会議の修正版（と承認の画面）に出す、実際に使われる扱いと条件（round-43 codex #3） */
   fixLine: "修正版の扱い：{label}。条件：{note}",
   usedAs: "使われる扱い：{label}。条件：{note}",
+  /** 承認済みでないあいだに出た改定の差（承認し直す議題・承認のキュー。design.md §14-4 v28） */
+  revisionDiff: "改定で差が出ています：{changes}（改定日 {date}）",
   /** 押した事実の取り消し（round-43 codex #4） */
   unpress: "取り消す",
 } as const;

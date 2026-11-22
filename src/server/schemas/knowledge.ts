@@ -18,7 +18,8 @@ export const knowledgeQuery = z.strictObject({ view: z.enum(["queue"]).optional(
 
 // 要約・本文が空白だけのときの文言は propose（src/server/app/knowledge.ts）が持つ。要約は propose が 200 文字に切る
 export const knowledgeBody = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("verify"), id: knowledgeId, approve: z.boolean(), reason: z.string().max(500).optional() }),
+  // revisionSeen：承認の画面に出した改定の差の改定日（design.md §14-4 v28）
+  z.strictObject({ action: z.literal("verify"), id: knowledgeId, approve: z.boolean(), reason: z.string().max(500).optional(), revisionSeen: z.array(z.string().max(40)).max(20).optional() }),
   z.strictObject({ action: z.literal("empathy"), id: knowledgeId }),
   z.strictObject({ action: z.literal("propose"), summary: z.string().max(1024), body: z.string().max(4000), relatesTo: knowledgeId.nullable().optional() }),
 ]);

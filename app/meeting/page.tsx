@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
-import { LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
+import { fillLocal, LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
 import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
@@ -45,6 +45,9 @@ function MeetingRoom() {
 
 const KIND: Record<string, string> = { miss: "外れの確認", recheck: "確かめ直し", ignored: "新人が外した理由", disposal: "廃棄提案" };
 
+/** 承認済みでないあいだに出た改定の差（承認し直す議題に並べる。design.md §14-4 v28） */
+const diffLines = (r: Record<string, unknown>): string[] => Object.entries((r.revisionDiffs as Record<string, string[]> | undefined) ?? {}).map(([d, c]) => fillLocal(LOCAL_PAIR_TEXT.revisionDiff, { changes: c.join("／"), date: d.slice(0, 10) }));
+
 function reasonText(e: DigestEntry): string {
   const r = e.reason as Record<string, unknown>;
   if (e.kind === "miss") {
@@ -55,11 +58,11 @@ function reasonText(e: DigestEntry): string {
   if (e.kind === "recheck") {
     // 背反の組の知識（design.md §14-4）：返戻の請求と組・改定で差が出た項目
     const trigger = r.trigger === "official" ? "公的文書" : r.trigger === "localReturn" ? "この組の返戻・査定" : r.trigger === "localRevision" ? "改定でこの組に差が出た" : String(r.trigger);
-    const extra = [r.claimId ? `請求 ${String(r.claimId)}` : "", Array.isArray(r.changes) ? `差が出た項目：${(r.changes as string[]).join("／")}` : ""].filter((x) => x !== "");
+    const extra = [r.claimId ? `請求 ${String(r.claimId)}` : "", Array.isArray(r.changes) ? `差が出た項目：${(r.changes as string[]).join("／")}` : "", ...diffLines(r)].filter((x) => x !== "");
     return `きっかけ：${String(r.event)}${r.trigger ? `（${trigger}）` : ""}${extra.length > 0 ? `\n${extra.join("\n")}` : ""}`;
   }
   if (e.kind === "ignored") return `外した区分：${(r.removedKubun as string[]).join("・")}`;
-  return `きっかけ：${String(r.event)}`;
+  return [`きっかけ：${String(r.event)}`, ...diffLines(r)].join("\n");
 }
 
 /** 議題の理由に載った公的文書（このルールと矛盾の恐れがあるもの。要旨とリンクだけ）。決めるのは責任者で、自動では停止しない */

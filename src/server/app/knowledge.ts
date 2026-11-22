@@ -7,7 +7,7 @@ import { IDLE_DAYS, LAYER_SLUG } from "../../lifecycle/layers";
 import { matchState } from "../../lifecycle/match";
 import { verificationQueue } from "../../lifecycle/queue";
 import { seedLocalRules as seedInHouse } from "../../lifecycle/seed-local";
-import { applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../lifecycle/store";
+import { acceptRevisionDiffs, applyEvent, createKnowledge, listKnowledge, pendingRevisionDiffs, readBody, readKnowledge } from "../../lifecycle/store";
 import { jstYearMonth } from "../../lifecycle/time";
 import type { Actor, KnowledgeMeta } from "../../lifecycle/types";
 import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
@@ -34,7 +34,8 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   const { loadQ, checkLines } = questions;
 
   /** 検証キュー：未検証の知識を共感数の多い順（同数は古い順）。状態は変えない */
-  const queue = () => verificationQueue(listKnowledge(store)).map((m) => ({ ...m, body: readBody(store, m.id) }));
+  /** revisionDiffs は、承認済みでないあいだに出た改定の差（あるときだけ。承認の前に見せる。design.md §14-4 v28） */
+  const queue = () => verificationQueue(listKnowledge(store)).map((m) => ({ ...m, body: readBody(store, m.id), ...((d) => (Object.keys(d).length > 0 ? { revisionDiffs: d } : {}))(pendingRevisionDiffs(m)) }));
   /** 検証・共感は未検証の知識にだけできる。知識がない・状態が違うときは、利用者向けの誤りとして先に断る（文言は lifecycle のものと同じ） */
   function unverified(id: string, event: "VERIFY_APPROVE" | "VERIFY_REJECT" | "EMPATHY") {
     const m = readKnowledge(store, id);
@@ -42,8 +43,17 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
     if (m.status !== "未検証") throw conflict(`許されない遷移: 状態「${m.status}」にイベント ${event} は適用できない（${id}）`);
   }
   /** ベテランの検証（承認で承認済み、却下で保管） */
-  function verify(id: string, approve: boolean, reason?: string) {
+  /**
+   * revisionSeen は、承認の画面に出した改定の差の改定日（議題を通らない承認の道。design.md §14-4 v28）。
+   * 承認済みでないあいだに出た改定の差があるのに、画面に出した日に含まれていなければ承認しない（409）。含まれていれば、その改定の棚卸を済みにしてから承認する
+   */
+  function verify(id: string, approve: boolean, reason?: string, revisionSeen: string[] = []) {
     unverified(id, approve ? "VERIFY_APPROVE" : "VERIFY_REJECT");
+    if (approve) {
+      const unseen = Object.keys(pendingRevisionDiffs(readKnowledge(store, id)!)).filter((d) => !revisionSeen.includes(d));
+      if (unseen.length > 0) throw conflict("改定で差が出ています。差を確かめてから承認してください（読み直してください）");
+      acceptRevisionDiffs(store, id, revisionSeen);
+    }
     return applyEvent(store, id, approve ? { type: "VERIFY_APPROVE" } : { type: "VERIFY_REJECT", reason: reason?.trim() || "ベテランの検証で却下" }, now()).meta;
   }
   /** 共感（候補の並び順だけに効く。状態は変えない） */

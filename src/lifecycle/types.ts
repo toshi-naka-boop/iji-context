@@ -112,7 +112,12 @@ export type KnowledgeMeta = {
    * 背反の組の知識（match.codePair）の、改定の棚卸の記録（改定日 → pending＝改定後の 1 枚がまだなく保留／same＝差がなかった／changed＝差が出た・比べられないので要再検証にした）。
    * 知識の状態や status_since とは別に持つので、別の理由で承認し直しても保留は消えない（design.md §14-4。round-43 codex #2）。rev のハッシュに入れない
    */
-  revision_checks?: Record<string, "pending" | "same" | "changed">;
+  revision_checks?: Record<string, "pending" | "same" | "changed" | "diff" | "accepted">;
+  /**
+   * 承認済みでないあいだ（要再検証・未検証・停止など）に改定日が来て、比べて差が出たときの差の中身（改定日 → 項目。revision_checks は diff）。
+   * 承認し直す議題・承認のキューに「改定で差が出ています」と出し、差を見たうえで承認したら revision_checks を accepted にして消す（design.md §14-4 v28。round-46 C-211）。状態とは別に持ち、rev のハッシュに入れない
+   */
+  revision_diffs?: Record<string, string[]>;
   /** 会議で確認済みの公的文書の鍵（昇順。既定は空。rev のハッシュに入れない。design.md §4-3） */
   official_seen: string[];
   /**

@@ -8,8 +8,8 @@ import { r2027_06 } from "../../src/engine/revisions/r2027-06";
 import { HAIHAN, HAIHAN_BY_GENERATION, type HaihanConfig } from "../../src/generic/haihan";
 import { MASTERS_CONFIG } from "../../src/masters/config";
 import { generationsAt, NO_BEFORE, pairRevisionDiff } from "../../src/generic/local-revision";
-import { buildDigest } from "../../src/lifecycle/review";
-import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
+import { answerItem, buildDigest } from "../../src/lifecycle/review";
+import { applyEvent, createKnowledge, listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import type { CodePair } from "../../src/lifecycle/types";
 import { harness } from "../lifecycle/review-helpers";
 import { source } from "./small-masters";
@@ -160,5 +160,75 @@ describe("改定の棚卸を途中で止めても、やり直すと同じ結果�
     applyEvent(h.deps.store, m.id, { type: "RECHECK_PASS", via: "veteran" }, "2026-06-07T09:00:00+09:00");
     h.review("2026-06-13T09:00:00+09:00");
     expect([readKnowledge(h.deps.store, m.id)?.status, readKnowledge(h.deps.store, m.id)?.history.filter((x) => x.event === "TRIGGER{localRevision}").length]).toEqual(["承認済み", 1]);
+  });
+});
+
+describe("承認済みでないあいだに改定の差が出た知識（design.md §14-4 v28。round-46 C-211）", () => {
+  let h: ReturnType<typeof harness>;
+  afterEach(() => h.cleanup());
+  const D = "2026-06-01T00:00:00+09:00";
+  const CH = ["基本マスターの 114001110 の行（名称）"];
+  /** 承認済みの知識を、改定日の後・最初の会議の前に返戻で要再検証にしてから、会議の整理を回す（差が出る） */
+  function returnedBeforeMeeting() {
+    h = harness();
+    const T = "2026-05-01T09:00:00+09:00";
+    const m = createKnowledge(h.deps.store, { layer: "院内", slug: "p-diff", summary: "p", body: "p", source: { type: "手動", ref: "t" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：その他。条件", match: { codePair: { a: "112007410", b: "114001110", tani: 1 } } }, T);
+    applyEvent(h.deps.store, m.id, { type: "VERIFY_APPROVE" }, T);
+    h.deps.localRevision = () => CH;
+    applyEvent(h.deps.store, m.id, { type: "TRIGGER", trigger: "localReturn" }, "2026-06-03T09:00:00+09:00", { trigger: "localReturn", claimId: "U1-1" });
+    h.review("2026-06-06T09:00:00+09:00");
+    return m.id;
+  }
+  const revisionTriggers = (id: string) => readKnowledge(h.deps.store, id)!.history.filter((x) => x.event === "TRIGGER{localRevision}").length;
+
+  it("承認し直す議題（返戻で出た確かめ直し）に、差の中身が出る。差を見て承認したあとの整理で、同じ改定の差でもう一度要再検証にならない", () => {
+    const id = returnedBeforeMeeting();
+    const k = readKnowledge(h.deps.store, id)!;
+    expect([k.status, k.revision_checks, k.revision_diffs]).toEqual(["要再検証", { [D]: "diff" }, { [D]: CH }]);
+    const item = buildDigest(h.deps).items.find((x) => x.knowledgeId === id && x.kind === "recheck")!;
+    expect(item.reason).toEqual(expect.objectContaining({ trigger: "localReturn", revisionDiffs: { [D]: CH } }));
+    answerItem(h.deps, { itemId: item.itemId, answer: 1 }, "2026-06-06T10:00:00+09:00");
+    expect([readKnowledge(h.deps.store, id)?.status, readKnowledge(h.deps.store, id)?.revision_checks, readKnowledge(h.deps.store, id)?.revision_diffs]).toEqual(["承認済み", { [D]: "accepted" }, {}]);
+    h.review("2026-06-13T09:00:00+09:00");
+    h.review("2026-06-20T09:00:00+09:00");
+    expect([readKnowledge(h.deps.store, id)?.status, revisionTriggers(id)]).toEqual(["承認済み", 0]);
+  });
+
+  it("差を見せずに承認済みに戻った（議題を通らない）ときは、残した差で次の整理が要再検証にする", () => {
+    const id = returnedBeforeMeeting();
+    applyEvent(h.deps.store, id, { type: "RECHECK_PASS", via: "veteran" }, "2026-06-07T09:00:00+09:00");
+    h.review("2026-06-13T09:00:00+09:00");
+    const k = readKnowledge(h.deps.store, id)!;
+    expect([k.status, revisionTriggers(id), k.history.at(-1)?.basis?.changes, k.revision_checks]).toEqual(["要再検証", 1, CH, { [D]: "changed" }]);
+  });
+
+  it("廃棄提案の議題にも差の中身が出て、「廃棄しない」（承認済みに戻す）で済みになる", () => {
+    const id = returnedBeforeMeeting();
+    const item = buildDigest(h.deps).items.find((x) => x.knowledgeId === id && x.kind === "recheck")!;
+    answerItem(h.deps, { itemId: item.itemId, answer: 4 }, "2026-06-06T10:00:00+09:00");
+    applyEvent(h.deps.store, id, { type: "RECHECK_FAIL" }, "2026-06-07T09:00:00+09:00");
+    h.review("2026-06-13T09:00:00+09:00");
+    const disp = buildDigest(h.deps).items.find((x) => x.knowledgeId === id && x.kind === "disposal")!;
+    expect(disp.reason).toEqual(expect.objectContaining({ revisionDiffs: { [D]: CH } }));
+    answerItem(h.deps, { itemId: disp.itemId, answer: 2 }, "2026-06-13T10:00:00+09:00");
+    h.review("2026-06-20T09:00:00+09:00");
+    expect([readKnowledge(h.deps.store, id)?.status, readKnowledge(h.deps.store, id)?.revision_checks, revisionTriggers(id)]).toEqual(["承認済み", { [D]: "accepted" }, 0]);
+  });
+
+  it("議題を通らない承認（承認のキュー）：修正版に差が写り、キューに差を出す。差を出していない承認は 409、出した承認で済みになり、もう一度要再検証にならない", async () => {
+    const id = returnedBeforeMeeting();
+    const item = buildDigest(h.deps).items.find((x) => x.knowledgeId === id && x.kind === "recheck")!;
+    answerItem(h.deps, { itemId: item.itemId, answer: 2, polarity: "allow", conditionNote: "根拠：その他。直した条件" }, "2026-06-06T10:00:00+09:00");
+    const cand = listKnowledge(h.deps.store).find((x) => x.relates_to === id)!;
+    expect([cand.revision_checks, cand.revision_diffs]).toEqual([{ [D]: "diff" }, { [D]: CH }]);
+    const { createKnowledgeOps } = await import("../../src/server/app/knowledge");
+    const ops = createKnowledgeOps({ store: h.deps.store, official: { docs: [] } } as never, { now: () => "2026-06-07T09:00:00+09:00" } as never, { cases: () => [] } as never, {} as never, {} as never);
+    expect(ops.queue().find((x) => x.id === cand.id)?.revisionDiffs).toEqual({ [D]: CH });
+    expect(() => ops.verify(cand.id, true)).toThrow(/改定で差が出ています/);
+    expect(readKnowledge(h.deps.store, cand.id)?.status).toBe("未検証");
+    expect(ops.verify(cand.id, true, undefined, [D]).status).toBe("承認済み");
+    expect(readKnowledge(h.deps.store, cand.id)?.revision_checks).toEqual({ [D]: "accepted" });
+    h.review("2026-06-13T09:00:00+09:00");
+    expect([readKnowledge(h.deps.store, cand.id)?.status, revisionTriggers(cand.id)]).toEqual(["承認済み", 0]);
   });
 });

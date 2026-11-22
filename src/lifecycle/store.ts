@@ -241,13 +241,38 @@ export function writeCounts(
   return next;
 }
 
-/** 改定の棚卸の記録を書く（状態・history は変えない。design.md §14-4） */
-export function writeRevisionChecks(opts: StoreOptions, id: string, checks: NonNullable<KnowledgeMeta["revision_checks"]>): KnowledgeMeta {
+/** 改定の棚卸の記録を書く（状態・history は変えない。design.md §14-4）。diffs を渡したときは、承認済みでないあいだに出た差の中身も置き換える */
+export function writeRevisionChecks(opts: StoreOptions, id: string, checks: NonNullable<KnowledgeMeta["revision_checks"]>, diffs?: NonNullable<KnowledgeMeta["revision_diffs"]>): KnowledgeMeta {
   const meta = readKnowledge(opts, id);
   if (!meta) throw new Error(`知識が見つからない: ${id}`);
-  const next = { ...meta, revision_checks: checks };
+  const next = { ...meta, revision_checks: checks, ...(diffs ? { revision_diffs: diffs } : {}) };
   writeAtomic(path.join(dirOf(opts, id), "meta.json"), `${JSON.stringify(next, null, 2)}\n`);
   return next;
+}
+
+/**
+ * 承認済みでないあいだに出た改定の差を、見たうえで承認した（design.md §14-4 v28）：その改定日の棚卸を済み（accepted）にし、差の中身を消す。
+ * dates を省くと、今ある差の全部。何度呼んでも同じ結果
+ */
+export function acceptRevisionDiffs(opts: StoreOptions, id: string, dates?: string[]): KnowledgeMeta | undefined {
+  const meta = readKnowledge(opts, id);
+  if (!meta) return undefined;
+  const checks = { ...meta.revision_checks };
+  const diffs = { ...meta.revision_diffs };
+  const targets = (dates ?? Object.keys(checks)).filter((d) => checks[d] === "diff");
+  if (targets.length === 0) return meta;
+  for (const d of targets) {
+    checks[d] = "accepted";
+    delete diffs[d];
+  }
+  return writeRevisionChecks(opts, id, checks, diffs);
+}
+
+/** 承認済みでないあいだに出た改定の差（改定日 → 差の中身。revision_checks が diff のものだけ） */
+export function pendingRevisionDiffs(meta: KnowledgeMeta): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [d, v] of Object.entries(meta.revision_checks ?? {})) if (v === "diff") out[d] = meta.revision_diffs?.[d] ?? [];
+  return out;
 }
 
 /** SKILL.md の本文 */

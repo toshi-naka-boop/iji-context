@@ -124,7 +124,9 @@ describe("改定の棚卸の保留を、修正版に引き継ぐ（round-45 code
     ready = true;
     h.review("2026-06-20T09:00:00+09:00");
     const after = readKnowledge(h.deps.store, cand.id)!;
-    expect([seen, after.status, after.history.at(-1)?.event, after.revision_checks]).toEqual([[D], "要再検証", "TRIGGER{localRevision}", { [D]: "changed" }]);
+    // 停止した元の知識も比べる（差は、廃棄提案の議題に出すため残る。design.md §14-4 v28）
+    expect([[...new Set(seen)], after.status, after.history.at(-1)?.event, after.revision_checks]).toEqual([[D], "要再検証", "TRIGGER{localRevision}", { [D]: "changed" }]);
+    expect(readKnowledge(h.deps.store, m.id)?.revision_checks).toEqual({ [D]: "diff" });
   });
 });
 

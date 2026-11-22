@@ -16,6 +16,8 @@ import {
   fitSummary,
   writeCounts,
   writeRevisionChecks,
+  acceptRevisionDiffs,
+  pendingRevisionDiffs,
   type StoreOptions,
 } from "./store";
 import { assertTime, canonicalTime, ms } from "./time";
@@ -281,8 +283,9 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
     const d = latestRevision(deps.calendar, now);
     for (const meta of listKnowledge(deps.store)) {
       const pair = meta.match.codePair;
-      if (!pair || meta.status === "停止" || meta.status === "保管") continue;
+      if (!pair || meta.status === "保管") continue;
       const checks = { ...meta.revision_checks };
+      const diffs = { ...meta.revision_diffs };
       // 前の整理が、要再検証にしたあと結果を残す前に止まったときは、history の TRIGGER{localRevision}（根拠の改定日）から結果を戻す（やり直しても同じ結果。round-45 codex #2）
       let changed = false;
       for (const h of meta.history)
@@ -291,13 +294,16 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
           changed = true;
         }
       // 見る改定日：直近の改定日（その日に承認済みだった知識だけ。改定の後に承認した知識は、承認した人が改定後のデータで見ている）と、保留のままの改定日
-      const dates = [...new Set([...(d !== null && checks[d] === undefined && approvedAt(meta, d) ? [d] : []), ...Object.keys(checks).filter((k) => checks[k] === "pending")])].sort();
+      // 承認済みでないあいだに出た差（diff）は、差を見せる承認の道（議題・承認のキュー）で accepted になる。差を見せずに承認済みに戻ったときは、残した差で要再検証にする
+      const dates = [...new Set([...(d !== null && checks[d] === undefined && approvedAt(meta, d) ? [d] : []), ...Object.keys(checks).filter((k) => checks[k] === "pending" || (checks[k] === "diff" && meta.status === "承認済み"))])].sort();
       for (const date of dates) {
         hooks.onStep?.("trigger", meta.id);
-        const r = deps.localRevision(pair, date);
-        // 承認済みでないあいだ（要再検証・未検証・contested）は、決めずに保留のまま残す（承認し直したあとで比べる）
-        const next = r === "pending" || (r.length > 0 && meta.status !== "承認済み") ? "pending" : r.length === 0 ? "same" : "changed";
-        if (checks[date] !== next) {
+        const r = checks[date] === "diff" ? (diffs[date] ?? []) : deps.localRevision(pair, date);
+        // 承認済みでないあいだ（要再検証・未検証・停止など）に差が出たら、差の中身を残す（diff。承認し直す議題に出す。design.md §14-4 v28）
+        const next = r === "pending" ? "pending" : r.length === 0 ? "same" : meta.status === "承認済み" ? "changed" : "diff";
+        if (next === "diff") diffs[date] = r as string[];
+        if (next === "changed") delete diffs[date];
+        if (checks[date] !== next || next === "diff") {
           checks[date] = next;
           changed = true;
         }
@@ -308,7 +314,7 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
         }
       }
       hooks.onStep?.("localRevision", meta.id);
-      if (changed) writeRevisionChecks(deps.store, meta.id, checks);
+      if (changed) writeRevisionChecks(deps.store, meta.id, checks, diffs);
     }
   }
 
@@ -410,9 +416,9 @@ export type SameApplied = { submissionId: string; claimId: string; yearMonth: st
 
 export type ItemReason =
   | { kind: "miss"; misses: MissEntry[]; sameApplied: SameApplied[] }
-  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind; official?: OfficialRef[]; conditionNote?: string; claimId?: string; codePair?: CodePair; changes?: string[] }
+  | { kind: "recheck"; event: string; submissionIds?: string[]; kubun?: string[]; trigger?: TriggerKind; official?: OfficialRef[]; conditionNote?: string; claimId?: string; codePair?: CodePair; changes?: string[]; revisionDiffs?: Record<string, string[]> }
   | { kind: "ignored"; removedKubun: string[] }
-  | { kind: "disposal"; event: string; candidateId?: string | null; official?: OfficialRef[]; conditionNote?: string };
+  | { kind: "disposal"; event: string; candidateId?: string | null; official?: OfficialRef[]; conditionNote?: string; revisionDiffs?: Record<string, string[]> };
 
 function lastEntryInto(meta: KnowledgeMeta, status: string) {
   return [...meta.history].reverse().find((h) => h.to === status);
@@ -422,7 +428,13 @@ function recheckReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): Item
   const e = lastEntryInto(meta, "要再検証");
   const b = e?.basis ?? {};
   // 背反の組の知識（design.md §14-4）：返戻の請求 id と組・改定で差が出た項目
-  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger, ...officialReason(deps, meta, now), ...(b.claimId ? { claimId: b.claimId } : {}), ...(b.codePair ? { codePair: b.codePair } : {}), ...(b.changes ? { changes: b.changes } : {}) };
+  return { kind: "recheck", event: e?.event ?? "", submissionIds: b.submissionIds, kubun: b.kubun, trigger: b.trigger, ...officialReason(deps, meta, now), ...(b.claimId ? { claimId: b.claimId } : {}), ...(b.codePair ? { codePair: b.codePair } : {}), ...(b.changes ? { changes: b.changes } : {}), ...diffsReason(meta) };
+}
+
+/** 承認し直す議題に並べる、承認済みでないあいだに出た改定の差（design.md §14-4 v28。あるときだけ） */
+function diffsReason(meta: KnowledgeMeta): { revisionDiffs?: Record<string, string[]> } {
+  const d = pendingRevisionDiffs(meta);
+  return Object.keys(d).length > 0 ? { revisionDiffs: d } : {};
 }
 
 const missKey = (submissionId: string, resultId: string) => `${submissionId}\0${resultId}`;
@@ -473,9 +485,9 @@ function disposalReason(deps: ReviewDeps, meta: KnowledgeMeta, now: string): Ite
   const e = lastEntryInto(meta, "停止");
   const b = e?.basis ?? {};
   if (e?.event === "RECHECK_FAIL") {
-    return { kind: "disposal", event: e.event, candidateId: b.itemId ? findCandidate(deps, meta.id, b.itemId) : null, ...officialReason(deps, meta, now) };
+    return { kind: "disposal", event: e.event, candidateId: b.itemId ? findCandidate(deps, meta.id, b.itemId) : null, ...officialReason(deps, meta, now), ...diffsReason(meta) };
   }
-  return { kind: "disposal", event: e?.event ?? "", ...officialReason(deps, meta, now) };
+  return { kind: "disposal", event: e?.event ?? "", ...officialReason(deps, meta, now), ...diffsReason(meta) };
 }
 
 /** 項目を作る。（種類・知識・提出・snapshot）が同じ未回答の項目は使い回す（round-10 C-49） */
@@ -778,13 +790,26 @@ function inheritRevisionChecks(deps: ReviewDeps, orig: KnowledgeMeta, candidateI
   if (!orig.match.codePair) return;
   const from = orig.revision_checks ?? {};
   const d = latestRevision(deps.calendar, now);
-  const owed = [...Object.keys(from).filter((k) => from[k] === "pending"), ...(d !== null && from[d] === undefined && approvedAt(orig, d) ? [d] : [])];
+  const owed = [...Object.keys(from).filter((k) => from[k] === "pending" || from[k] === "diff"), ...(d !== null && from[d] === undefined && approvedAt(orig, d) ? [d] : [])];
   if (owed.length === 0) return;
   const cand = readKnowledge(deps.store, candidateId);
   if (!cand) return;
   const checks = { ...cand.revision_checks };
-  for (const k of owed) if (checks[k] === undefined) checks[k] = "pending";
-  writeRevisionChecks(deps.store, candidateId, checks);
+  const diffs = { ...cand.revision_diffs };
+  // 元で差が出ていた改定日は、差の中身ごと写す（修正版を承認するときに見せる。design.md §14-4 v28）
+  for (const k of owed)
+    if (checks[k] === undefined) {
+      checks[k] = from[k] === "diff" ? "diff" : "pending";
+      if (from[k] === "diff") diffs[k] = orig.revision_diffs?.[k] ?? [];
+    }
+  writeRevisionChecks(deps.store, candidateId, checks, diffs);
+}
+
+/** 議題の理由に並べた改定の差（revisionDiffs）の改定日を、済み（accepted）にする。理由に出ていない差は残す（差を見せずに承認したことになるので、あとの整理で要再検証にする） */
+function acceptShownDiffs(deps: ReviewDeps, knowledgeId: string, reasonJson: string): void {
+  const reason = JSON.parse(reasonJson) as ItemReason;
+  const shown = (reason.kind === "recheck" || reason.kind === "disposal") && reason.revisionDiffs ? Object.keys(reason.revisionDiffs) : [];
+  if (shown.length > 0) acceptRevisionDiffs(deps.store, knowledgeId, shown);
 }
 
 /** 回答の反映。順番は「状態の遷移 → 候補 → applied=true」で、どこで止まっても拾い直しで二重にならない */
@@ -855,6 +880,8 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
       out.candidateId = ensureCandidate(deps, meta, itemId, row.freeText, now, { polarity: row.polarity, conditionNote: row.conditionNote });
     }
   } else if (row.kind === "recheck") {
+    // 議題に並べた改定の差を見たうえで承認した → その改定の棚卸は済み（design.md §14-4 v28。何度やり直しても同じ）
+    if (a === 1) acceptShownDiffs(deps, meta.id, row.reason);
     if (a === 1 && !transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_PASS", via: "veteran", officialKeys }, now, seenBasis);
     if (a === 2) {
       if (!transitioned) applyEvent(deps.store, meta.id, { type: "RECHECK_FAIL" }, now, basis);
@@ -871,6 +898,7 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
       const reason = row.freeText?.trim() || "レセメン会議でベテランが廃棄を承認";
       applyEvent(deps.store, meta.id, { type: "DISPOSAL_APPROVE", reason }, now, basis);
     }
+    if (a === 2) acceptShownDiffs(deps, meta.id, row.reason);
     if (a === 2 && !transitioned) applyEvent(deps.store, meta.id, { type: "DISPOSAL_REJECT", officialKeys }, now, seenBasis);
   }
   deps.db.update(digestItems).set({ applied: true }).where(eq(digestItems.itemId, itemId)).run();
