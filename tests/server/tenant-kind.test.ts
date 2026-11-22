@@ -162,6 +162,72 @@ describe("使い方が未定のクリニック（種類を持つ前に作られ�
   });
 });
 
+describe("未定から real を選んだクリニックの、作り物の知識（印で除外する。2026-11-22 利用者の判断）", () => {
+  const forget = (tenantId: string) => {
+    const db = new Database(path.join(tmp, "auth.db"));
+    db.prepare("DELETE FROM tenants WHERE id = ?").run(tenantId);
+    db.close();
+  };
+  const choose = async (u: User, kind: "demo" | "real") => (await import("../../app/api/tenant/kind/route")).POST(post("/api/tenant/kind", cookieOf(u), { kind }));
+  const ids = (u: User) => listKnowledge(appOf(u).store).map((m) => m.id);
+  /** デモのときに作り物が入り、会議の整理で議題になり、K6 の地域ルールが承認されて Skill になったクリニック（を未定にしたもの） */
+  async function oldDemoClinic(login: string) {
+    const u = auth().register(login, "まえから", "password123", "demo");
+    const a = appOf(u);
+    const k6 = listKnowledge(a.store).find((m) => m.layer === "地域" && m.source_event.ref.startsWith("査定:K6-"))!;
+    expect(k6).toBeDefined();
+    a.verify(k6.id, true);
+    // 実在の利用者が作った知識（作り物でない）
+    const own = a.propose({ summary: "まえからの院内の決まり", body: "本文" }) as { id: string };
+    // 種の古い承認済みのものが、使われない期間（180 日）で会議の議題になる
+    a.advanceClock(at(20));
+    const agendaBefore = a.agenda().items.map((i) => i.knowledgeId);
+    expect(agendaBefore.some((id) => id.startsWith("in-house/seed-") || id.includes("seed-"))).toBe(true);
+    const before = listKnowledge(a.store).map((m) => [m.id, m.status, m.history.length]);
+    forget(u.tenantId);
+    return { u, k6: k6.id, own: own.id, before };
+  }
+
+  it("real を選ぶと、作り物の知識は判断・会議・トリガー・Skill から外れ、一覧では作り物として見える。状態と history は変わらない", async () => {
+    const { u, k6, own, before } = await oldDemoClinic("sample_k_real");
+    expect((await choose(u, "real")).status).toBe(200);
+    const a = appOf(u);
+    // 判断に使う一覧（ローカルルール欄・提出結果の集計・トリガーが読む）から外れる。実在の利用者が作った知識は残る
+    expect(ids(u).some((id) => id.includes("seed-"))).toBe(false);
+    expect(ids(u)).not.toContain(k6);
+    expect(ids(u)).toContain(own);
+    // 状態と history は変わらない
+    expect(listKnowledge(a.store, { withExcluded: true }).map((m) => [m.id, m.status, m.history.length])).toEqual(before);
+    // 一覧では作り物として見える
+    const list = a.knowledgeList();
+    expect(list.filter((k) => k.sample).map((k) => k.id)).toEqual(expect.arrayContaining([k6, expect.stringContaining("seed-01")]));
+    expect(list.find((k) => k.id === own)?.sample).toBe(false);
+    // Skill（メンターが読む）に作り物の地域ルールがない
+    expect(readdirSync(a.store.skillsDir).some((n) => n.includes(k6.split("/")[1]))).toBe(false);
+    // 会議の議題に作り物がなく、日付が変わって会議の整理が回っても出ない
+    expect(a.agenda().items.filter((i) => i.knowledgeId.includes("seed-") || i.knowledgeId === k6)).toEqual([]);
+    setNow("2027-06-01T10:00:00+09:00");
+    appOf(u);
+    expect(appOf(u).agenda().items.filter((i) => i.knowledgeId.includes("seed-") || i.knowledgeId === k6)).toEqual([]);
+    expect(listKnowledge(appOf(u).store, { withExcluded: true }).filter((m) => m.id.includes("seed-") || m.id === k6).map((m) => [m.id, m.status, m.history.length])).toEqual(before.filter(([id]) => String(id).includes("seed-") || id === k6));
+  });
+
+  it("demo を選んだときと、新しい real のクリニックでは変わらない", async () => {
+    const { u, k6 } = await oldDemoClinic("sample_k_demo");
+    expect((await choose(u, "demo")).status).toBe(200);
+    expect(ids(u)).toContain(k6);
+    expect(ids(u).some((id) => id.includes("seed-"))).toBe(true);
+    expect(appOf(u).knowledgeList().some((k) => k.sample)).toBe(false);
+
+    const fresh = auth().register("sample_k_new", "あたらしい", "password123", "real");
+    const a = appOf(fresh);
+    const own = a.propose({ summary: "あたらしい院内の決まり", body: "本文" }) as { id: string };
+    expect(listKnowledge(a.store).map((m) => m.id)).toEqual(listKnowledge(a.store, { withExcluded: true }).map((m) => m.id));
+    expect(ids(fresh)).toContain(own.id);
+    expect(a.knowledgeList().some((k) => k.sample)).toBe(false);
+  });
+});
+
 describe("今日の日付と、日付を進める操作", () => {
   it("real の今日は実際の時刻（日本時間・タイムゾーン付き）で、デモの時計の設定を読まない", () => {
     const u = auth().register("now_real", "いま", "password123", "real");

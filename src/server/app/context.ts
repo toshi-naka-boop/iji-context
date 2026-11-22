@@ -16,6 +16,7 @@ import type { ChoiceGroup } from "../../practice/choice";
 import { officialInputOf } from "../../official/registry";
 import { checkDataset } from "../dataset";
 import type { TenantStatus } from "../tenant-kind";
+import { isSampleKnowledge } from "../sample-data";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -34,9 +35,12 @@ export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar" 
   return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
 }
 
-/** 本番の配線が作る StoreOptions。区分のキーの検査（同梱の版の点数表にあるか）を必ず渡す（design.md §3） */
-export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir">): StoreOptions {
-  return { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir, knownKubun: isKnownKubun };
+/**
+ * 本番の配線が作る StoreOptions。区分のキーの検査（同梱の版の点数表にあるか）を必ず渡す（design.md §3）。
+ * demo 以外のクリニック（real・未定）では、同梱の作り物から生まれた知識（src/server/sample-data.ts）を、判断・会議・トリガー・Skill から外す
+ */
+export function storeOptionsOf(paths: Pick<AppPaths, "knowledgeDir" | "skillsDir">, kind: TenantStatus = "demo"): StoreOptions {
+  return { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir, knownKubun: isKnownKubun, ...(kind === "demo" ? {} : { excluded: isSampleKnowledge }) };
 }
 
 export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
@@ -53,7 +57,7 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {})
   // データの版の印：新しい置き場には今の印を付け、印が違う置き場は警告を記録して開く（止めない・作り直さない）
   const dataset = checkDataset(sqlite, fresh);
   const db = drizzle(sqlite);
-  const store = storeOptionsOf(paths);
+  const store = storeOptionsOf(paths, kind);
   const queryLog: QueryLog = { dir: paths.queryLogDir };
   const cfg = (f: string) => path.join(paths.root, "config", f);
   const calendar = json<Calendar>(cfg("calendar.json"));

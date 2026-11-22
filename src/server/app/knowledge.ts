@@ -53,7 +53,7 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
     // 要約は 1 行（文言は lifecycle の createKnowledge のものと同じ）
     if (/[\r\n]/.test(input.summary.trim())) throw badRequest("summary は 1 行・1024 文字以内で必須");
     // 番号は、いまある提案の番号の最大の次。件数から振ると、番号が飛んだときに既存の id とぶつかる
-    const n = Math.max(0, ...listKnowledge(store).map((m) => Number(/\/proposal-(\d+)$/.exec(m.id)?.[1] ?? 0)));
+    const n = Math.max(0, ...listKnowledge(store, { withExcluded: true }).map((m) => Number(/\/proposal-(\d+)$/.exec(m.id)?.[1] ?? 0)));
     return createKnowledge(
       store,
       { layer: "院内", slug: `proposal-${String(n + 1).padStart(4, "0")}`, summary: input.summary.trim().slice(0, 200), body: input.body.trim(), source: { type: "提案", ref: `proposal-${n + 1}` }, relates_to: input.relatesTo ?? null, match: {} },
@@ -205,7 +205,8 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   const knowledgeList = () => {
     const yearMonth = jstYearMonth(now());
     const judged = hasRevision(yearMonth);
-    return listKnowledge(store).map((m) => ({ id: m.id, layer: m.layer, status: m.status, summary: m.summary, empathy: m.empathy, hits: m.hits, misses: m.misses, official: m.layer !== "制度" && judged ? officialOf(m, yearMonth) : null }));
+    // このクリニックでは使わない作り物の知識（real・未定）も一覧には出し、sample で見分けられるようにする（状態はそのまま）
+    return listKnowledge(store, { withExcluded: true }).map((m) => ({ id: m.id, layer: m.layer, status: m.status, summary: m.summary, empathy: m.empathy, hits: m.hits, misses: m.misses, sample: store.excluded?.(m) === true, official: m.layer !== "制度" && judged && !store.excluded?.(m) ? officialOf(m, yearMonth) : null }));
   };
 
   return { queue, verify, empathize, propose, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf, knowledgeList, checkOfficial };

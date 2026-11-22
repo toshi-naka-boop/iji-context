@@ -53,7 +53,7 @@ export const LOCAL_SEEDS: Seed[] = [
 const nameOf = (kubun: string) => resolveRevision(period.yearMonth).points[kubun]?.name ?? kubun;
 
 /** 種として入った知識か（種を入れる処理が source_event.ref に付けている印） */
-const SEED_REF = "seed:";
+export const SEED_REF = "seed:";
 
 /**
  * 種として承認済みで入った知識に、その時点で矛盾の恐れになる公的文書を「確認済み」として記録する（OFFICIAL_BASELINE。design.md §4-3）。

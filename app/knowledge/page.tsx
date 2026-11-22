@@ -9,7 +9,7 @@ import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-c
 
 const STATUS_COLOR: Record<string, string> = { 承認済み: "var(--accent)", 未検証: "var(--sky)", 要再検証: "var(--warn-mark)", 停止: "#5a4632", 保管: "var(--muted)" };
 
-type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null };
+type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null; sample?: boolean };
 type Peer = { id: string; question: string; status: string; answer: string | null; answered_by: string | null; knowledge_id: string | null };
 
 async function post(url: string, body: unknown) {
@@ -36,7 +36,9 @@ export default function Knowledge() {
   useEffect(load, []);
   const run = (p: Promise<unknown>) => p.then(() => { setErr(""); load(); }).catch((e) => setErr(e.message));
 
-  const count = (s: string) => all.filter((k) => k.status === s).length;
+  // 作り物（同梱の合成データから生まれた知識。実在のデータで使うクリニックでは使わない）は、数えずに別の欄に出す
+  const count = (s: string) => all.filter((k) => k.status === s && !k.sample).length;
+  const samples = all.filter((k) => k.sample);
 
   return (
     <main className="shell">
@@ -102,6 +104,19 @@ export default function Knowledge() {
         ))}
       </section>
 
+      {samples.length > 0 && (
+        <section className="panel" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>作り物（このクリニックでは使いません）</h3>
+          <p className="muted">デモのときに入った、同梱の合成データから生まれた知識です。消さずに残していますが、ローカルルールの欄・メンター・レセメン会議・提出結果の集計には使いません。状態はデモのときのままです。</p>
+          {samples.map((k) => (
+            <div key={k.id} style={{ marginTop: 8 }}>
+              <span className="badge" style={{ marginRight: 4 }}>作り物（このクリニックでは使いません）</span>
+              <span className="muted" style={{ marginRight: 4 }}>{k.status}</span>
+              {k.layer === "地域" ? "地域ルール" : k.layer === "ベテラン" ? "医事責任者の判断" : "院内ルール"}：{k.summary.replace("（中身は伏せています）", "")}
+            </div>
+          ))}
+        </section>
+      )}
       <section className="panel" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>改善を提案する</h3>
         <p><input style={{ width: "100%" }} placeholder="要約（1 行）" value={prop.summary} onChange={(e) => setProp({ ...prop, summary: e.target.value })} /></p>

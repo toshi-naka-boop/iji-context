@@ -539,9 +539,14 @@ export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items:
     .where(and(eq(digestItems.reviewId, latest.reviewId), isNull(digestItems.answer)))
     .all()
     .sort((a, b) => (a.kind + a.knowledgeId + (a.submissionId ?? "") < b.kind + b.knowledgeId + (b.submissionId ?? "") ? -1 : 1));
+  // このクリニックでは使わない知識（deps.store.excluded）の項目は、議題に出さない（行は消さない。2026-11-22 利用者の判断）
+  const shown = rows.filter((r) => {
+    const m = deps.store.excluded ? readKnowledge(deps.store, r.knowledgeId) : undefined;
+    return !(m && deps.store.excluded?.(m));
+  });
   return {
     reviewId: latest.reviewId,
-    items: rows.map((r) => ({
+    items: shown.map((r) => ({
       itemId: r.itemId,
       kind: r.kind,
       knowledgeId: r.knowledgeId,
