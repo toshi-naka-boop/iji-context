@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import kijun from "../../config/shisetsu-kijun.json";
-import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES } from "../../src/facility/codes";
+import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES, KIJUN_OWNERS, NAYOSE, NOTE14_CODE } from "../../src/facility/codes";
 import { LISTED_CODES } from "../../src/facility/declaration";
 
 const em = readFileSync(path.join(__dirname, "../../design/iji-context/sources/evidence-master-iji-context.md"), "utf8");
@@ -33,5 +33,13 @@ describe("config/shisetsu-kijun.json と EM §2-11 表 4", () => {
     const all = kijun.rows.flatMap((r) => r.codes);
     for (const c of [...GRADE_CODES, ...HOSPITAL_CODES]) expect([c, all.includes(c)]).toEqual([c, true]);
     expect(GRADE_CHOICES.map((g) => g.code)).toEqual(["3055", "3055", "4247", "4247", "3056", "3168", null]);
+  });
+
+  it("G10 の読み方の定数（名寄せ・注14・担当のルールの表）のコードは、表 4 の行にある（段 17e）", () => {
+    const all = kijun.rows.flatMap((r) => r.codes);
+    const used = [...Object.keys(NAYOSE), ...Object.values(NAYOSE).flat(), NOTE14_CODE, ...KIJUN_OWNERS.flatMap((o) => o.codes)];
+    for (const c of used) expect([c, all.includes(c)]).toEqual([c, true]);
+    // 名寄せ元は種別で決まるコードと同じ（［基］p172）
+    expect([...NAYOSE["8032"]].sort()).toEqual([...GRADE_CODES].sort());
   });
 });

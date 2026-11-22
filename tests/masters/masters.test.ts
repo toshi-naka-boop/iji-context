@@ -478,6 +478,16 @@ describe("区分番号の列（design.md §15-3。code M-1）", () => {
     put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(rowsOf("X")));
     expect(build(raw).rejected.map((r) => r.reason)).toEqual([expect.stringContaining("項番 94")]);
   });
+  it("錨（A70・A72・A73）の項番が外れた masters.db では、G10 の準備ができていない（段 17e）", () => {
+    const raw = path.join(tmp, "kubun-off");
+    // 形は数字のまま、値だけを錨と違えた行（列を読み違えたときと同じ）
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(rowsOf("7")));
+    const { db, rejected } = build(raw);
+    expect(rejected).toEqual([]);
+    const r = verifyMasters(db, em, { write: false, revisions: [] });
+    expect(r.failures).toBeGreaterThan(0);
+    expect(r.ready.find((x) => x.check === "G10")!.ready).toBe(false);
+  });
 });
 
 describe("単位の列（design.md §15-3。round-52 C-262。錨の案 A117〜A119 は EM の追記 E-8 の承認待ち）", () => {
