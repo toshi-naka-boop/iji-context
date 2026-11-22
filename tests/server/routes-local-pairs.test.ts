@@ -119,6 +119,8 @@ describe.skipIf(!hasMasters)("（マスターがあるとき）design.md §14-5 
     K = ((await res.json()) as { id: string }).id;
     expect([meta(K).status, meta(K).layer, meta(K).match]).toEqual(["未検証", "院内", { codePair: { a: A, b: B, tani: 1 } }]);
     expect((await createPair({ condition: "別の文" })).status).toBe(409);
+    // 点検の応答に、作る入口のフォームが選ばせない向き（409 で断る向き）が載る
+    expect((check() as { localPairTaken?: unknown }).localPairTaken).toEqual([{ a: A, b: B, tani: 1, polarities: ["allow"] }]);
     // 未検証のあいだは判断の軸にしない（id だけ添える）
     expect(g05()[0].local?.mode).toBe("unverified");
     setRole("veteran");

@@ -32,3 +32,15 @@ export const pairOf = (c1: string, c2: string, tani: 1 | 2 | 3): CodePair => (c1
  * dates は、ボタンを出す日（押していない日。同一月の表は空）
  */
 export type LocalAttach = { mode: "allow" | "avoid" | "hint" | "conflict" | "unverified"; pair: CodePair; knowledge: { id: string; rev: string; polarity: Polarity; conditionNote: string }[]; dates: string[] };
+
+/** 同じ組（2 つのコードと表）か */
+export const samePair = (x: { a: string; b: string; tani: number }, y: { a: string; b: string; tani: number }): boolean => x.a === y.a && x.b === y.b && x.tani === y.tani;
+/**
+ * 「この請求のこの組が返戻・査定された」の入口を、どこに出すか（design.md §14-4）：その組の G05 の指摘があれば指摘のカードの中、
+ * なければ（押して条件に当たるにした組など）カードの外。outside は、カードに入らない組
+ */
+export function returnsOutside<T extends { a: string; b: string; tani: number }>(returns: T[], findingPairs: ({ a: string; b: string; tani: number } | undefined)[]): T[] {
+  return returns.filter((r) => !findingPairs.some((p) => p !== undefined && samePair(p, r)));
+}
+/** 作る入口のフォームで選べる向き：作る入口が断る向き（taken。点検の応答の localPairTaken）を除く。空なら、フォームを出さない */
+export const polarityChoices = (taken: readonly Polarity[]): Polarity[] => (["allow", "avoid"] as const).filter((p) => !taken.includes(p));

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
-import { fillLocal, LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
+import { eventText, fillLocal, LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
 import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
@@ -57,12 +57,11 @@ function reasonText(e: DigestEntry): string {
   }
   if (e.kind === "recheck") {
     // 背反の組の知識（design.md §14-4）：返戻の請求と組・改定で差が出た項目
-    const trigger = r.trigger === "official" ? "公的文書" : r.trigger === "localReturn" ? "この組の返戻・査定" : r.trigger === "localRevision" ? "改定でこの組に差が出た" : String(r.trigger);
     const extra = [r.claimId ? `請求 ${String(r.claimId)}` : "", Array.isArray(r.changes) ? `差が出た項目：${(r.changes as string[]).join("／")}` : "", ...diffLines(r)].filter((x) => x !== "");
-    return `きっかけ：${String(r.event)}${r.trigger ? `（${trigger}）` : ""}${extra.length > 0 ? `\n${extra.join("\n")}` : ""}`;
+    return `きっかけ：${eventText(String(r.event), r.trigger ? String(r.trigger) : undefined)}${extra.length > 0 ? `\n${extra.join("\n")}` : ""}`;
   }
   if (e.kind === "ignored") return `外した区分：${(r.removedKubun as string[]).join("・")}`;
-  return [`きっかけ：${String(r.event)}`, ...diffLines(r)].join("\n");
+  return [`きっかけ：${eventText(String(r.event))}`, ...diffLines(r)].join("\n");
 }
 
 /** 議題の理由に載った公的文書（このルールと矛盾の恐れがあるもの。要旨とリンクだけ）。決めるのは責任者で、自動では停止しない */

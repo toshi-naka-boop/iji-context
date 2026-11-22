@@ -2,13 +2,20 @@
 // 背反の組の院内の知識（design.md §14-2〜§14-4）の入力：作る入口（対象の G05 の指摘の下）・「この請求も条件に当たる」のボタン。取り込んだレセプトの点検の画面だけが出す
 import { useState } from "react";
 import { CLAIM_FACT_SOURCES } from "../src/claim/facts";
-import { LOCAL_PAIR_BASES, LOCAL_PAIR_TEXT } from "../src/messages";
+import { polarityChoices } from "../src/generic/local-pair";
+import type { Polarity } from "../src/lifecycle/types";
+import { LOCAL_PAIR_BASES, LOCAL_PAIR_TEXT, pressText } from "../src/messages";
 
 type Pair = { a: string; b: string; tani: number };
 
-/** 「この組の扱いを院内の知識として残す」：扱い（polarity）・根拠・条件の文。作ると未検証で、承認はベテラン */
-export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: () => void }) {
-  const [polarity, setPolarity] = useState<"allow" | "avoid">("allow");
+/**
+ * 「この組の扱いを院内の知識として残す」：扱い（polarity）・根拠・条件の文。作ると未検証で、承認はベテラン。
+ * taken は、その組で作る入口が断る向き（点検の応答の localPairTaken）。その向きは選ばせず、両方なら一文だけにする（サーバーも断る）
+ */
+export function LocalPairCreate(props: { claimId: string; pair: Pair; taken?: Polarity[]; onSaved: () => void }) {
+  const choices = polarityChoices(props.taken ?? []);
+  const [picked, setPolarity] = useState<Polarity>("allow");
+  const polarity = choices.includes(picked) ? picked : choices[0];
   const [basis, setBasis] = useState<string>(LOCAL_PAIR_BASES[0]);
   const [condition, setCondition] = useState("");
   const [msg, setMsg] = useState("");
@@ -23,6 +30,7 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
     setMsg(`残しました（${d?.id ?? ""}。未検証）`);
     props.onSaved();
   }
+  if (choices.length === 0) return <div className="muted" style={{ marginTop: 6 }}>{msg && `${msg}　`}{LOCAL_PAIR_TEXT.createFull}</div>;
   return (
     <details style={{ marginTop: 6 }}>
       <summary>{LOCAL_PAIR_TEXT.create}</summary>
@@ -30,9 +38,8 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
         <div className="muted">{LOCAL_PAIR_TEXT.createNote}</div>
         <label>
           扱い{" "}
-          <select value={polarity} onChange={(e) => setPolarity(e.target.value as "allow" | "avoid")}>
-            <option value="allow">{LOCAL_PAIR_TEXT.allowLabel}</option>
-            <option value="avoid">{LOCAL_PAIR_TEXT.avoidLabel}</option>
+          <select value={polarity} onChange={(e) => setPolarity(e.target.value as Polarity)}>
+            {choices.map((p) => <option key={p} value={p}>{p === "allow" ? LOCAL_PAIR_TEXT.allowLabel : LOCAL_PAIR_TEXT.avoidLabel}</option>)}
           </select>
         </label>
         <label>
@@ -47,8 +54,6 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
     </details>
   );
 }
-
-const dayText = (date: string | null) => (date ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日：` : "");
 
 /**
  * 「この請求も条件に当たる」（Lv.5 以上・承認済みの allow。design.md §14-3）：押すと、その請求のその組（その日）は算定できる扱いになり、G05 は出ない。
@@ -72,7 +77,7 @@ export function LocalPress(props: { claimId: string; press: { key: string; date:
       </select>
       {props.press.map((p) => (
         <button key={`${p.key}|${p.date ?? ""}`} onClick={() => void press(p)}>
-          {dayText(p.date)}{p.date ? LOCAL_PAIR_TEXT.pressDay : LOCAL_PAIR_TEXT.press}
+          {pressText(p.date)}
         </button>
       ))}
       {err && <span className="notice warn">{err}</span>}
@@ -80,8 +85,13 @@ export function LocalPress(props: { claimId: string; press: { key: string; date:
   );
 }
 
-/** 「この請求のこの組が返戻・査定された」（design.md §14-4）：その組の承認済みの allow の院内の知識を要再検証にし、この請求で押した事実を取り消す */
-export function LocalReturn(props: { claimId: string; pair: { a: string; b: string; tani: number; ids: string[] }; onSaved: () => void }) {
+const named = (code: string, name: string | null) => (name ? `${code} ${name}` : code);
+
+/**
+ * 「この請求のこの組が返戻・査定された」（design.md §14-4）：その組の承認済みの allow の院内の知識を要再検証にし、この請求で押した事実を取り消す。
+ * その組の G05 の指摘のカードの中に出す。指摘がない組（カードの外）は、names に 2 つの行の名称を渡す（コードに添える）
+ */
+export function LocalReturn(props: { claimId: string; pair: { a: string; b: string; tani: number; ids: string[] }; names?: { a: string | null; b: string | null }; onSaved: () => void }) {
   const [msg, setMsg] = useState("");
   async function send() {
     setMsg("");
@@ -92,8 +102,8 @@ export function LocalReturn(props: { claimId: string; pair: { a: string; b: stri
     props.onSaved();
   }
   return (
-    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div>院内の知識 {props.pair.ids.join("・")}（コード {props.pair.a} と {props.pair.b}）</div>
+    <div className={props.names ? "notice" : ""} style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+      <div>院内の知識 {props.pair.ids.join("・")}{props.names ? `（${named(props.pair.a, props.names.a)} と ${named(props.pair.b, props.names.b)}）` : ""}</div>
       <div className="muted">{LOCAL_PAIR_TEXT.returnedNote}</div>
       <span><button onClick={() => void send()}>{LOCAL_PAIR_TEXT.returned}</button> {msg && <span className="notice warn">{msg}</span>}</span>
     </div>

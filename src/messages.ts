@@ -2,6 +2,7 @@
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
 import type { GenericFinding, GenericNotRun } from "./generic/types";
+import type { TriggerKind } from "./lifecycle/types";
 import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
@@ -333,8 +334,9 @@ export type LocalPairBasis = (typeof LOCAL_PAIR_BASES)[number];
 export const LOCAL_PAIR_TEXT = {
   /** Lv.5 以上・承認済みの allow（ボタンを添える） */
   allow: "院内の知識（承認済み）：条件に当たれば併せて算定できます。条件：{note}",
-  press: "この請求も条件に当たる",
-  pressDay: "この日も条件に当たる",
+  /** 押すボタン（同一月の表は請求ごと、ほかは日ごと）。1 日目から付くので「も」は付けない */
+  press: "この請求は条件に当たる",
+  pressDay: "{day}：条件に当たる",
   /** Lv.1〜4 のヒント */
   hintAllow: "院内の知識：条件に当たれば併せて算定できます。条件：{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
   hintAvoid: "院内の知識：併せて算定できません。{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
@@ -345,6 +347,8 @@ export const LOCAL_PAIR_TEXT = {
   /** 作る入口（取り込んだレセプトの点検の、対象の G05 の指摘の下） */
   create: "この組の扱いを院内の知識として残す",
   createNote: "患者の氏名・番号を書かないでください。条件は文で書き、機械では当てません（請求ごとに、人が条件に当たるかを確かめます）",
+  /** 作る入口が断る向きが両方ある組（フォームを出さない） */
+  createFull: "この組には、両方の扱いの院内の知識がすでにあります（知識の画面で見られます）",
   allowLabel: "条件に当たれば併せて算定できる",
   avoidLabel: "併せて算定できない",
   /** 条件の文の先頭に付ける根拠 */
@@ -368,3 +372,34 @@ export const LOCAL_PAIR_TEXT = {
 } as const;
 /** 文言の {名前} を値で埋める */
 export const fillLocal = (t: string, v: Record<string, string>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
+/** 「条件に当たる」のボタンの文。date は押す日（"YYYY-MM-DD"。同一月の表は null） */
+export const pressText = (date: string | null): string =>
+  date ? fillLocal(LOCAL_PAIR_TEXT.pressDay, { day: `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日` }) : LOCAL_PAIR_TEXT.press;
+
+/** 会議の議題の「きっかけ」に出す、見直しのトリガーの名前（design.md §4-3・§14-4） */
+export const TRIGGER_LABEL: Record<TriggerKind, string> = {
+  revision: "改定",
+  reappointment: "改選",
+  idle: "長く使われていない",
+  official: "公的文書",
+  localRevision: "改定でこの組に差が出た",
+  localReturn: "この組の返戻・査定",
+};
+/** 会議の議題の「きっかけ」に出す、トリガー以外のイベントの名前（要再検証・停止に入ったイベント。design.md §4-2） */
+export const EVENT_LABEL: Record<string, string> = {
+  COUNTER_EXAMPLE: "外れの確認で「直す必要がある」と答えた",
+  RECHECK_FAIL: "確かめ直しで「直す必要がある」と答えた",
+  IDLE_EXPIRED: "要再検証のまま長く使われていない",
+};
+const triggerLabel = (t: string): string => TRIGGER_LABEL[t as TriggerKind] ?? t;
+/**
+ * 議題の「きっかけ」の文。event は history のイベント名（TRIGGER{idle} などの形）、trigger は根拠に残したトリガー。
+ * トリガーのイベントはその名前だけにし、根拠のトリガーが別の名前のときだけ括弧で添える。表にない名前はそのまま出す
+ */
+export function eventText(event: string, trigger?: string): string {
+  const m = /^TRIGGER\{(\w+)\}$/.exec(event);
+  const base = m ? triggerLabel(m[1]) : (EVENT_LABEL[event] ?? event);
+  const extra = trigger ? triggerLabel(trigger) : "";
+  if (base === "") return extra;
+  return extra !== "" && extra !== base ? `${base}（${extra}）` : base;
+}

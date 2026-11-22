@@ -5,9 +5,11 @@
 // 適応・併用（G09）は、ほかの点検よりさらに控えめに出す：別の見出しの下にまとめ、既定で折りたたむ。見出しの下に、公開元の但し書きの趣旨と、見られないもの（院外処方の薬、表にない薬・診療行為の数）を、1 行の見出しの閉じた折りたたみで出す。
 // 取り込んだレセプトの点検（full）は、上から要約（動いた点検の数・指摘の数・何も出ないことは問題がない意味ではないこと）→ 指摘 → 点検していないこと・断り（閉じた折りたたみ）の順
 // 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）は、answer（請求 id と、答えを残したあとに読み直す関数）を渡した画面（取り込んだレセプトの点検）でだけ、指摘の下に選択肢を出す
-// 背反の組の院内の知識（design.md §14-3）は、どの画面でも添えた文を出す
+// 背反の組の院内の知識（design.md §14-3）は、どの画面でも添えた文を出す。返戻の入口（§14-4）は、answer に localReturns を渡した画面で、その組の G05 の指摘の中に出す
 import { AskInput } from "./fact-input";
-import { LocalPairCreate, LocalPress } from "./local-pair";
+import { LocalPairCreate, LocalPress, LocalReturn } from "./local-pair";
+import { samePair } from "../src/generic/local-pair";
+import type { Polarity } from "../src/lifecycle/types";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
@@ -24,7 +26,7 @@ const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.cod
  * skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば）。
  * full のときだけ：notes は、呼び出し側の断り（折りたたみの中に足す）、laterSheets は、診療年月より後の版で代えているデータの名前（要約に一言添える）
  */
-export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[] } }) {
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[]; localReturns?: { a: string; b: string; tani: number; ids: string[] }[]; localPairTaken?: { a: string; b: string; tani: number; polarities: Polarity[] }[] } }) {
   const rowLink = (c: { code: string; name: string | null }) => {
     const href = rowHref?.(c.code);
     return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
@@ -73,7 +75,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           {/* 院内の知識（design.md §14-3）：Lv.5 以上は条件とボタン、Lv.1〜4 はヒント。食い違い・前回の確かめ（未検証）は一言だけ */}
           {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
           {answer && f.local?.mode === "allow" && <LocalPress claimId={answer.claimId} press={f.local.press} onSaved={answer.onSaved} />}
-          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} onSaved={answer.onSaved} />}
+          {answer && f.check === "G05" && f.localPair && (answer.localReturns ?? []).filter((p) => samePair(p, f.localPair!)).map((p) => <LocalReturn key={`return-${p.a}:${p.b}:${p.tani}`} claimId={answer.claimId} pair={p} onSaved={answer.onSaved} />)}
+          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} taken={answer.localPairTaken?.find((p) => samePair(p, f.localPair!))?.polarities} onSaved={answer.onSaved} />}
           {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
           {more.length > 0 && (
             <div className="muted">

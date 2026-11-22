@@ -13,6 +13,8 @@ import { createErase } from "./app/erase";
 import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
+import { samePair } from "../generic/local-pair";
+import type { GenericView } from "../generic/view";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
 import { createPatients, type CoverageInput } from "./app/patients";
@@ -153,7 +155,11 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const r = ukeCheck.ukeCheck(claimId, clerkId);
       localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
       // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
-      return "rows" in r ? { ...r, localReturns: localPairOps.returnsOf(claimId, r) } : r;
+      // 作る入口のフォームが選ばせない向き（design.md §14-2）。作る入口を出す G05 の指摘の組ごと
+      if (!("rows" in r)) return r;
+      const pairs = ((r as { generic?: GenericView }).generic?.findings ?? []).flatMap((f) => (f.check === "G05" && f.localPair ? [f.localPair] : []));
+      const localPairTaken = pairs.filter((p, i) => pairs.findIndex((q) => samePair(p, q)) === i).map((p) => ({ ...p, polarities: localPairOps.takenPolarities(p) }));
+      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken };
     },
     /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),

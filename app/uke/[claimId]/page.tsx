@@ -14,6 +14,7 @@ import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
 import { GenericFindings } from "../../generic-findings";
 import { LocalReturn } from "../../local-pair";
+import { returnsOutside } from "../../../src/generic/local-pair";
 import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
@@ -51,6 +52,8 @@ type Check = {
   rows?: Row[];
   /** 「この請求のこの組が返戻・査定された」を出す組（承認済みの allow の院内の知識がある組。design.md §14-4） */
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
+  /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
+  localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
 };
 /** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
 type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
@@ -134,6 +137,8 @@ export default function UkeClaimCheck() {
     const r = rows.find((x) => x.items.some((it) => it.code === code));
     return r ? `#uke-unit-${r.unit}` : undefined;
   };
+  /** 行のコードの名称（マスターの名称、なければ行に付いた名称。どちらもなければ null） */
+  const rowName = (code: string) => c?.names?.items[code]?.name ?? rows.flatMap((r) => r.items).find((it) => it.code === code)?.name ?? null;
   /** 単位に当たる指摘を、種類ごとの件数にする（手書きのルールは行の区分で、データで動く点検は行のコードで当てる） */
   const countBy = (kinds: string[]) => [...new Set(kinds)].map((k) => `${k} ${kinds.filter((x) => x === k).length}`).join("・");
   const marksOf = (r: Row) => ({
@@ -251,14 +256,15 @@ export default function UkeClaimCheck() {
                     scope="full"
                     rowHref={codeHref}
                     laterSheets={c.sheetNotes?.later ?? []}
-                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
+                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), localReturns: check?.localReturns ?? [], localPairTaken: check?.localPairTaken ?? [], handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
                     notes={[
                       "公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。",
                       ...((c.sheetNotes?.later ?? []).length > 0 ? [`診療年月より前の版のマスターを持っていないので、後の版で代えています：${c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。`] : []),
                       ...((c.sheetNotes?.newer ?? []).length > 0 ? [`読み方を確かめた版より新しいデータです：${c.sheetNotes!.newer.join("、")}。`] : []),
                     ]}
                   />
-                  {!trial && (check?.localReturns ?? []).map((p) => <LocalReturn key={`${p.a}:${p.b}:${p.tani}`} claimId={c.claimId} pair={p} onSaved={() => setTick((t) => t + 1)} />)}
+                  {/* その組の G05 の指摘がない（押して条件に当たるにした）組だけ、ここに出す（指摘があれば、指摘のカードの中。design.md §14-4） */}
+                  {!trial && returnsOutside(check?.localReturns ?? [], c.generic.findings.filter((f) => f.check === "G05").map((f) => f.localPair)).map((p) => <LocalReturn key={`${p.a}:${p.b}:${p.tani}`} claimId={c.claimId} pair={p} names={{ a: rowName(p.a), b: rowName(p.b) }} onSaved={() => setTick((t) => t + 1)} />)}
                 </>
               )}
 
