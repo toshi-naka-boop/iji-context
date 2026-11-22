@@ -114,8 +114,8 @@ describe("G10 の三値（合成の請求）", () => {
     const outside = runG10(db, c, [row("grade", { choice: "outside" }), row("code:721")]) as GenericFinding[];
     expect(keys(outside)).toEqual([`G10.not_held:${HOUMON}:3055/4247/3056/3168/3057/3058/3169`]);
     expect(g10NotDone(c, db, aboutOf([row("grade", { choice: "outside" }), row("code:721")]))).toEqual(["施設基準の要る行：1 行（申告で持つ 0・持たない 1・分からない 0）", "注14 の基準の行は見ていません：1 行",
-      // 手作りの表では、同じ区分番号の鍵（C001）に施設基準のない行が並ぶので、正しい側は 1 つに決まらない
-      "正しい側をマスターで 1 つに決められなかった行：1 行（見ていません）",
+      // 正しい側は探さず、持たない行の数を出す（L-91。2026-11-23）
+      "施設基準を持たない行の正しい側は探していません：1 行",
     ]);
   });
 
@@ -185,7 +185,7 @@ describe("手書きのルールと 2 回言わない（C-216）", () => {
   });
 });
 
-describe("正しい側（L-91）", () => {
+describe("正しい側（L-91。2026-11-23 に添え書きを止めた）", () => {
   /** DX を元の行にして、同じ区分番号の鍵・同じ点数識別の兄弟の行を作り物で置く（施設基準の組だけを変える） */
   function siblings(groups: string[]): Database.Database {
     const db = mastersWithKijun();
@@ -198,33 +198,20 @@ describe("正しい側（L-91）", () => {
   }
   const NO_DX = () => [row("code:4100", { notified: "no", startOn: null }), row("code:4102"), row("code:721")];
 
-  it("申告を満たす行がちょうど 1 つなら、文にその行の名称とコードを添える（条件つきのまま。点数は書かない）", () => {
+  it("申告を満たす兄弟の行がちょうど 1 つでも、文に行を添えず、点検の範囲に数を出す", () => {
     const db = siblings(["4102"]);
     const f = (runG10(db, claimOf({ code: DX }), NO_DX()) as GenericFinding[])[0];
-    expect(f.params.side).toBe(`。同じ区分番号で、申告の施設基準を満たす行は「${REV.points.C001_N13_DX2.name}」（${DX2}）です。算定できるかは確かめてください`);
-    expect(genericView({ findings: [f], ran: [], notRun: [] }, null).findings[0].text).toContain(`（${DX2}）です。算定できるかは確かめてください`);
-    expect(g10NotDone(claimOf({ code: DX }), db, aboutOf(NO_DX())).some((t) => t.startsWith("正しい側"))).toBe(false);
+    expect([f.messageKey, f.params.side]).toEqual(["G10.not_held", ""]);
+    expect(genericView({ findings: [f], ran: [], notRun: [] }, null).findings[0].text).not.toContain(DX2);
+    expect(g10NotDone(claimOf({ code: DX }), db, aboutOf(NO_DX()))).toContain("施設基準を持たない行の正しい側は探していません：1 行");
   });
 
-  it("2 行あるとき・申告が分からない行が混じるときは添えず、点検の範囲に数を出す", () => {
-    for (const groups of [["4102", "721"], ["4102", "3825"]]) {
-      const db = siblings(groups);
-      const f = (runG10(db, claimOf({ code: DX }), NO_DX()) as GenericFinding[])[0];
-      expect([groups, f.params.side]).toEqual([groups, ""]);
-      expect(g10NotDone(claimOf({ code: DX }), db, aboutOf(NO_DX()))).toContain("正しい側をマスターで 1 つに決められなかった行：1 行（見ていません）");
-    }
-  });
-
-  it("版の区分（R18 の区分）の行には添えない", () => {
+  it("版の区分（R18 の区分）の行は、正しい側を R18 が言うので数に入れない", () => {
     const db = mastersWithKijun();
-    // 在支診の在医総管と同じ鍵に、組①が 3055 の行（機能強化型の側）を置く
-    const strong = code("C002_1N_I1");
-    const k = db.prepare("SELECT sho, bu, kubun_no, eda, kou, point_kind FROM shinryo WHERE code = ?").get(KANRI) as Record<string, number | string>;
-    db.prepare("UPDATE shinryo SET sho = ?, bu = ?, kubun_no = ?, eda = ?, kou = ?, point_kind = ?, shisetsu_g1 = '3055/4247', shisetsu_g2 = '721' WHERE code = ?").run(k.sho, k.bu, k.kubun_no, k.eda, k.kou, k.point_kind, strong);
     expect(sidelessOf(REV).has(KANRI)).toBe(true);
     const f = (runG10(db, claimOf({ code: KANRI }), [row("grade", { choice: "solo_nobeds" }), row("code:721")]) as GenericFinding[])[0];
     expect([f.messageKey, f.params.side]).toEqual(["G10.not_held", ""]);
-    expect(g10NotDone(claimOf({ code: KANRI }), db, aboutOf([row("grade", { choice: "solo_nobeds" }), row("code:721")])).some((t) => t.startsWith("正しい側"))).toBe(false);
+    expect(g10NotDone(claimOf({ code: KANRI }), db, aboutOf([row("grade", { choice: "solo_nobeds" }), row("code:721")])).some((t) => t.startsWith("施設基準を持たない行の正しい側"))).toBe(false);
   });
 });
 

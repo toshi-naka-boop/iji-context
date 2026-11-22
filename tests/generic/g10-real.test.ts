@@ -119,7 +119,7 @@ describe("段 17e：実データの masters.db で G10", () => {
       app.close();
     }
   });
-  withData("デモのクリニックの申告で、施設基準のある全コードを 1 行ずつ置き、正しい側（同じ区分番号・同じ点数識別で申告を満たす行）が「ちょうど 1 行」になった組の数と標本 30 組を報告する", () => {
+  withData("施設基準のある全コードを 1 行ずつ置いても、正しい側の行は添えない（L-91。2026-11-23 に添え書きを止めた）", () => {
     const db = openMasters(file)!;
     const snap = pickSnapshot(db, "shinryo", YM, rev.generation)!.snapshot;
     const rows = db.prepare("SELECT * FROM shinryo WHERE snapshot = ? AND (shisetsu_g1 != '0' OR shisetsu_g2 != '0' OR shisetsu_g3 != '0') ORDER BY code").all(snap) as ShinryoRow[];
@@ -127,39 +127,6 @@ describe("段 17e：実データの masters.db で G10", () => {
     const seed: DeclarationRow[] = demoSeedRows().map((d, i) => ({ ...d, id: i + 1, createdAt: "" }));
     const about = aboutWith(declarationView(seed, seedDates().checkedOn));
     const found = g10Of({ units: rows.map((r) => ({ items: [{ kind: "SI", code: r.code }] })) }, about);
-    const not = new Set(found.filter((f) => f.messageKey === "G10.not_held").map((f) => f.codes[0]));
-    const sided = new Map(found.filter((f) => f.params.side !== "").map((f) => [f.codes[0], f.params.side]));
-    // 版の区分（R18 の区分）の行には添えない
-    expect([...sided.keys()].filter((c) => about.sideless!.has(c))).toEqual([]);
-    const nameOf = new Map(rows.map((r) => [r.code, r.name]));
-    const list = [...sided].sort(([a], [b]) => a.localeCompare(b));
-    const step = Math.max(1, Math.floor(list.length / 30));
-    const sample = list.filter((_, i) => i % step === 0).slice(0, 30);
-    console.log(`正しい側（デモの申告）：施設基準のある ${rows.length} コードのうち、申告で持たない ${not.size}、正しい側が「ちょうど 1 行」になった組 ${sided.size}`);
-    for (const [code, side] of sample) console.log(`  ${code} ${nameOf.get(code)} → ${side.replace(/^。同じ区分番号で、申告の施設基準を満たす行は/, "").replace(/です。算定できるかは確かめてください$/, "")}`);
-    expect(sided.size).toBeLessThanOrEqual(not.size);
-
-    // 読み違いを人が見るための組：その行の施設基準のコードだけを「持たない」、ほかの全部を「持つ」にした申告で、1 行ずつ正しい側を探す
-    const db2 = openMasters(file)!;
-    const pairs: [string, string, string][] = [];
-    const zaitaku: string[] = [];
-    let tried = 0;
-    for (const r of rows) {
-      const groups = groupsOf(r);
-      if (groups === "note14" || about.sideless!.has(r.code)) continue;
-      tried++;
-      const own = new Set(groups.flat());
-      const view: DeclarationView = { held: (c) => (own.has(c) ? { v: "not", reason: "notified_no" } : { v: "held" }), nameOf: () => null };
-      const f = g10.run({ units: [{ items: [{ kind: "SI", code: r.code }] }] }, db2, { ...about, declaration: view });
-      const side = Array.isArray(f) ? f.find((x) => x.params.side !== "")?.params.side : undefined;
-      if (side) pairs.push([r.code, r.name, side.replace(/^。同じ区分番号で、申告の施設基準を満たす行は/, "").replace(/です。算定できるかは確かめてください$/, "")]);
-      if (side && r.alpha === "C") zaitaku.push(`${r.code} ${r.name} → ${pairs.at(-1)![2]}`);
-    }
-    db2.close();
-    const step2 = Math.max(1, Math.floor(pairs.length / 30));
-    console.log(`正しい側（その行の施設基準だけを持たない申告）：探した ${tried} コードのうち「ちょうど 1 行」になった組 ${pairs.length}。標本 30 組：`);
-    for (const [code, name, side] of pairs.filter((_, i) => i % step2 === 0).slice(0, 30)) console.log(`  ${code} ${name} → ${side}`);
-    console.log(`うち在宅医療（区分番号 C）の組 ${zaitaku.length}：\n  ${zaitaku.join("\n  ")}`);
-    expect(pairs.length).toBeGreaterThan(0);
+    expect(found.filter((f) => f.params.side !== "")).toEqual([]);
   });
 });

@@ -152,42 +152,12 @@ function declOf(group: { codes: string[]; on: GroupOn[] }): { item: string; reco
   return [...out].map(([item, reconfirm]) => ({ item, reconfirm }));
 }
 
-const groupKey = (r: ShinryoRow) => `${r.shisetsu_g1}|${r.shisetsu_g2}|${r.shisetsu_g3}`;
-
 /**
- * 施設基準で分かれるコードの「正しい側」（design.md §15-5。L-91）：同じ 1 枚から、区分番号の鍵（章・部・区分番号・枝番・項番）と点数識別が同じで、
- * 施設基準の組が元の行と違う行を集め、同じ申告・同じ算定日で「持つ」になる行がちょうど 1 行ならその行。0 行・2 行以上・「分からない」が混じるときは null
+ * 「正しい側」を探さない行（design.md §15-5。L-91）：施設基準を持たない行のうち、版の区分（R18 の区分）のコードでないもの。
+ * 同じ区分番号の鍵・同じ点数識別の行には別の注加算・別の検査が並び、マスターの列からは「施設基準だけで分かれた行」を決められないので、
+ * 正しい側は添えず、点検の範囲に数だけを出す（2026-11-23 利用者の判断。段 17e の実データの標本で読み違いが出た。reviews/fable-consult-l91.md）
  */
-function sideOf(same: (r: ShinryoRow) => ShinryoRow[], view: DeclarationView, line: LineJudge): ShinryoRow | null {
-  const r = line.row;
-  const others = same(r).filter((o) => o.code !== r.code && groupKey(o) !== groupKey(r));
-  const held: ShinryoRow[] = [];
-  for (const o of others) {
-    const groups = groupsOf(o);
-    if (groups === "note14") return null;
-    const res = lineOf(view, o, groups, line.ons).result;
-    if (res === "unknown") return null;
-    if (res === "held") held.push(o);
-  }
-  return held.length === 1 ? held[0] : null;
-}
-
-/** 正しい側を探す行（持たない行のうち、版の区分のコードでないもの）と、その結果 */
-function sidesOf(masters: MastersDb, snapshot: string, about: GenericAbout, lines: LineJudge[]): Map<string, ShinryoRow | null> {
-  const out = new Map<string, ShinryoRow | null>();
-  const want = lines.filter((l) => l.result === "not" && !about.sideless?.has(l.code));
-  if (want.length === 0) return out;
-  // 同じ区分番号の鍵と点数識別の行は、鍵ごとに 1 回だけ引く
-  const stmt = masters.prepare("SELECT * FROM shinryo WHERE snapshot = ? AND sho = ? AND bu = ? AND kubun_no = ? AND eda = ? AND kou = ? AND point_kind = ? ORDER BY code");
-  const cache = new Map<string, ShinryoRow[]>();
-  const same = (r: ShinryoRow) => {
-    const key = [r.sho, r.bu, r.kubun_no, r.eda, r.kou, r.point_kind].join("/");
-    if (!cache.has(key)) cache.set(key, stmt.all(snapshot, r.sho, r.bu, r.kubun_no, r.eda, r.kou, r.point_kind) as ShinryoRow[]);
-    return cache.get(key)!;
-  };
-  for (const l of want) out.set(l.code, sideOf(same, about.declaration!, l));
-  return out;
-}
+const sideNotSearched = (about: GenericAbout, lines: LineJudge[]) => lines.filter((l) => l.result === "not" && !about.sideless?.has(l.code)).length;
 
 export const g10: GenericCheck = {
   id: "G10",
@@ -196,13 +166,11 @@ export const g10: GenericCheck = {
     const j = judgeG10(claim, masters, about);
     if ("skip" in j) return j;
     const view = about.declaration!;
-    const sides = sidesOf(masters, j.snapshot, about, j.lines);
     const out: GenericFinding[] = [];
     for (const l of j.lines) {
       if (l.result === "held") continue;
       // 持たない行は持たない組を、分からない行は分からない組を、組ごとに 1 件で言う（手書きのルールと 2 回言わない決まりは組のコードで決める）
       const v = l.result;
-      const side = v === "not" ? sides.get(l.code) : undefined;
       for (const g of l.groups) {
         if (!g.on.some((x) => x.result === v)) continue;
         const shown = shownOf(g.codes);
@@ -219,7 +187,7 @@ export const g10: GenericCheck = {
             kijun: `${shown.map((c) => kijunText(view, c)).join("・")}${shown.length > 1 ? "のどれか" : ""}`,
             kijunCodes: g.codes.join("/"),
             reason: reasonText(view, g, l.ons, v),
-            side: side ? `。同じ区分番号で、申告の施設基準を満たす行は「${side.name}」（${side.code}）です。算定できるかは確かめてください` : "",
+            side: "",
             later: l.later ? LATER_NOTE : "",
             decl: JSON.stringify({ month: about.yearMonth, items: declOf(g) }),
           },
@@ -231,16 +199,16 @@ export const g10: GenericCheck = {
   },
 };
 
-/** 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、注14 の基準の行、正しい側を 1 つに決められなかった行 */
+/** 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、注14 の基準の行、正しい側を探していない行 */
 export function g10NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const j = judgeG10(claim, masters, about);
   if ("skip" in j) return [];
   const n = (r: Result) => j.lines.filter((l) => l.result === r).length;
-  const undecided = [...sidesOf(masters, j.snapshot, about, j.lines).values()].filter((s) => s === null).length;
+  const unsearched = sideNotSearched(about, j.lines);
   return [
     `施設基準の要る行：${j.lines.length} 行（申告で持つ ${n("held")}・持たない ${n("not")}・分からない ${n("unknown")}）`,
     ...(j.note14 > 0 ? [`注14 の基準の行は見ていません：${j.note14} 行`] : []),
-    ...(undecided > 0 ? [`正しい側をマスターで 1 つに決められなかった行：${undecided} 行（見ていません）`] : []),
+    ...(unsearched > 0 ? [`施設基準を持たない行の正しい側は探していません：${unsearched} 行`] : []),
   ];
 }
 
