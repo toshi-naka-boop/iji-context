@@ -157,7 +157,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
                   {it.itemName} → {it.kubun ?? (chosen[i] ? `${chosen[i]}（選んだ区分）` : "？")}
                   {it.choices.length > 0 && (
                     <div>
-                      <select value={chosen[i] ?? ""} onChange={(e) => setChosen({ ...chosen, [i]: e.target.value })} disabled={!!done[i]}>
+                      <select style={{ maxWidth: 220 }} value={chosen[i] ?? ""} onChange={(e) => setChosen({ ...chosen, [i]: e.target.value })} disabled={!!done[i]}>
                         <option value="">区分を選ぶ</option>
                         {it.choices.map((c) => <option key={c.kubun} value={c.kubun}>{c.name}（{c.kubun}）</option>)}
                       </select>
