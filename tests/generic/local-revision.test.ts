@@ -1,4 +1,5 @@
-// 段 16：改定の棚卸（design.md §14-4・§14-5）。改定前後の世代の 1 枚で、その組の背反の行・コードの行・EM の組のどれかに差がある知識だけ要再検証になる。1 枚がないときは保留（C-181）
+// 段 16：改定の棚卸（design.md §14-4・§14-5。v27）。改定前後の世代の 1 枚で、その組の背反の行・コードの行・EM の組のどれかに差がある知識だけ要再検証になる。
+// 改定後の 1 枚がないときは保留（C-181）、改定前の 1 枚・EM の行がないときは要再検証（C-202）
 import type Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { r2024 } from "../../src/engine/revisions/r2024";
@@ -6,7 +7,7 @@ import { r2026 } from "../../src/engine/revisions/r2026";
 import { r2027_06 } from "../../src/engine/revisions/r2027-06";
 import { HAIHAN, HAIHAN_BY_GENERATION, type HaihanConfig } from "../../src/generic/haihan";
 import { MASTERS_CONFIG } from "../../src/masters/config";
-import { generationsAt, pairRevisionDiff } from "../../src/generic/local-revision";
+import { generationsAt, NO_BEFORE, pairRevisionDiff } from "../../src/generic/local-revision";
 import { buildDigest } from "../../src/lifecycle/review";
 import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import type { CodePair } from "../../src/lifecycle/types";
@@ -60,15 +61,24 @@ describe("改定の前後でその組に差が出たか（pairRevisionDiff）", 
     t.prepare("UPDATE shinryo SET name = '別の名称' WHERE snapshot = ? AND code = ?").run(NEW, C.shoshin);
     expect(pairRevisionDiff(t, PAIR, GENS, EM)).toEqual([]);
   });
-  it("比べる 1 枚（どちらかの世代の電子点数表・医科診療行為マスター）か、EM の版の行がないときは保留（pending）", () => {
+  it("改定後の 1 枚（電子点数表・医科診療行為マスター）か改定後の EM の行がないときだけ保留（pending）。マスターがないときも保留（改定後の 1 枚もない）", () => {
     expect(pairRevisionDiff(tensuhyoMasters(OLD), PAIR, GENS, EM)).toBe("pending");
     expect(pairRevisionDiff(twoGenerations(), PAIR, GENS, { R8: HAIHAN })).toBe("pending");
+    expect(pairRevisionDiff(null, PAIR, GENS, EM)).toBe("pending");
+  });
+  it("改定前の 1 枚・改定前の EM の行・改定前の版がなくて比べられないときは、要再検証にする文を返す（C-202・設計 v27）", () => {
+    // マスターを消して作り直した：改定後（R10）の 1 枚だけがある
+    const onlyAfter = twoGenerations();
+    onlyAfter.prepare("DELETE FROM sources WHERE generation = 'R8'").run();
+    expect(pairRevisionDiff(onlyAfter, PAIR, GENS, EM)).toEqual([NO_BEFORE]);
+    expect(pairRevisionDiff(twoGenerations(), PAIR, GENS, { R10: HAIHAN })).toEqual([NO_BEFORE]);
+    expect(pairRevisionDiff(twoGenerations(), PAIR, { before: null, after: "R10" }, EM)).toEqual([NO_BEFORE]);
   });
   it("改定日から前後の世代：令和 8 年度の改定日は R6 → R8。版のない改定日（令和 10 年度）は決まらない（null）", () => {
     const revs = [r2024, r2026, r2027_06];
     expect(generationsAt("2026-06-01T00:00:00+09:00", revs)).toEqual({ before: "R6", after: "R8" });
     expect(generationsAt("2028-06-01T00:00:00+09:00", revs)).toBeNull();
-    expect(generationsAt("2024-06-01T00:00:00+09:00", revs)).toBeNull();
+    expect(generationsAt("2024-06-01T00:00:00+09:00", revs)).toEqual({ before: null, after: "R6" });
   });
 });
 

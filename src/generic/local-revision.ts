@@ -1,19 +1,20 @@
 // 改定の棚卸（design.md §14-4）：背反の組の院内の知識（match.codePair）ごとに、改定の前後でその組に差が出たかを見る。差が出た知識だけを要再検証にする（利用者の判断「差分が出たものだけ」）。
 // 比べるもの：背反の表のその組の行（あるか・表・算定する側・特例条件）／2 つのコードの基本マスターの行（あるか・名称・所定の値・区分番号）／EM §2-12 のその組に当たる HP・例外。
 // 比べるのは、masters.db の改定前の世代のいちばん新しい 1 枚と、改定後の世代のいちばん新しい 1 枚（§12-1）。EM は、世代ごとに残した版の行（HAIHAN_BY_GENERATION）。
-// 比べる 1 枚・版の行がまだないときは、決めずに保留する（pending。C-181）
+// 改定後の 1 枚（電子点数表・医科診療行為マスター・EM の行）がまだないときだけ、決めずに保留する（pending。C-181）。
+// 改定前の 1 枚や改定前の EM の行がなくて比べられないとき（マスターを消して作り直した・新しい環境など）は、差が分からないので要再検証にする（round-43 C-202・利用者の判断 2026-11-22。設計 v27）
 import type { Revision } from "../engine/revisions/types";
 import type { CodePair } from "../lifecycle/types";
 import { shinryoOf, snapshotsOf, type MastersDb } from "../masters/db";
 import { HAIHAN_BY_GENERATION, type CodeSel, type HaihanConfig } from "./haihan";
 
-/** 改定日（"YYYY-MM-DD..." の日本時間の日）から、改定前と改定後の世代。その日に始まる版がない・その前の世代の版がなければ null */
-export function generationsAt(revisionDate: string, revisions: Revision[]): { before: string; after: string } | null {
+/** 改定日（"YYYY-MM-DD..." の日本時間の日）から、改定前と改定後の世代。その日に始まる版がなければ null（改定後がない）。その前の世代の版がなければ before は null（改定前がない） */
+export function generationsAt(revisionDate: string, revisions: Revision[]): { before: string | null; after: string } | null {
   const ym = revisionDate.slice(0, 7);
   const after = revisions.find((r) => r.effectiveFrom === ym);
   if (!after) return null;
   const before = revisions.filter((r) => r.effectiveFrom < ym && r.generation !== after.generation).sort((x, y) => (x.effectiveFrom < y.effectiveFrom ? 1 : -1))[0];
-  return before ? { before: before.generation, after: after.generation } : null;
+  return { before: before?.generation ?? null, after: after.generation };
 }
 
 /** その世代の、区分番号で選ぶ組の照らし方（その 1 枚の基本マスターで引く） */
@@ -31,14 +32,19 @@ function emOf(config: HaihanConfig, pair: CodePair, selects: (code: string, sel:
   return JSON.stringify({ hp, hx });
 }
 
+/** 改定前の 1 枚・EM の行がなくて比べられないときの、差の中身の文（要再検証にする。design.md §14-4 v27） */
+export const NO_BEFORE = "改定前の 1 枚（電子点数表・医科診療行為マスター）か、改定前の EM §2-12 の行がなく、比べられない";
+
 /**
- * 改定の前後で、その組に差が出た項目（文。差がなければ空）。比べる 1 枚（電子点数表・医科診療行為マスター）か EM の版の行が、どちらかの世代にないときは "pending"
+ * 改定の前後で、その組に差が出た項目（文。差がなければ空）。
+ * 改定後の世代の 1 枚（電子点数表・医科診療行為マスター）か EM の行がないときは "pending"（保留）。改定前の側がないときは [NO_BEFORE]（要再検証）
  */
-export function pairRevisionDiff(db: MastersDb, pair: CodePair, gens: { before: string; after: string }, em: Record<string, HaihanConfig> = HAIHAN_BY_GENERATION): string[] | "pending" {
-  const latest = (dataset: string, gen: string) => snapshotsOf(db, dataset, gen).at(-1) ?? null;
+export function pairRevisionDiff(db: MastersDb | null, pair: CodePair, gens: { before: string | null; after: string }, em: Record<string, HaihanConfig> = HAIHAN_BY_GENERATION): string[] | "pending" {
+  const latest = (dataset: string, gen: string | null) => (db && gen ? (snapshotsOf(db, dataset, gen).at(-1) ?? null) : null);
   const t = [latest("tensuhyo", gens.before), latest("tensuhyo", gens.after)];
   const s = [latest("shinryo", gens.before), latest("shinryo", gens.after)];
-  if (t.includes(null) || s.includes(null) || !em[gens.before] || !em[gens.after]) return "pending";
+  if (t[1] === null || s[1] === null || !em[gens.after]) return "pending";
+  if (!db || t[0] === null || s[0] === null || gens.before === null || !em[gens.before]) return [NO_BEFORE];
   const changes: string[] = [];
   const haihanOf = (snapshot: string) =>
     (db.prepare("SELECT tani, code1, code2, kubun, tokurei, abolished_on FROM haihan WHERE snapshot = ? AND ((code1 = ? AND code2 = ?) OR (code1 = ? AND code2 = ?)) ORDER BY tani, code1, code2").all(snapshot, pair.a, pair.b, pair.b, pair.a) as Record<string, unknown>[]).map((r) => JSON.stringify(r)).join("\n");

@@ -7,7 +7,9 @@ import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
 import { isKnownKubun } from "../../engine/revisions";
 import { hasRevision, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { HAIHAN, HAIHAN_BY_GENERATION } from "../../generic/haihan";
 import { generationsAt, pairRevisionDiff } from "../../generic/local-revision";
+import { MASTERS_CONFIG } from "../../masters/config";
 import { withMasters } from "../../masters/db";
 import type { FacilityJson } from "../../engine/facility";
 import type { Calendar } from "../../lifecycle/calendar";
@@ -40,8 +42,9 @@ export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar" 
     ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth),
     hasRevision: (yearMonth) => hasRevision(yearMonth),
     localRevision: (pair, revisionDate) => {
+      // 改定後の版がない・マスターがない（改定後の 1 枚もない）ときは保留。改定後の EM の行は、今の世代なら出荷の決まり（config/haihan-exceptions.json）
       const gens = generationsAt(revisionDate, SELECTABLE_REVISIONS);
-      return gens ? withMasters((db) => (db ? pairRevisionDiff(db, pair, gens) : "pending")) : "pending";
+      return gens ? withMasters((db) => (db ? pairRevisionDiff(db, pair, gens, { ...HAIHAN_BY_GENERATION, [MASTERS_CONFIG.generation]: HAIHAN }) : "pending")) : "pending";
     },
   };
 }

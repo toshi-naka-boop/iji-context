@@ -39,7 +39,8 @@ export type ReviewDeps = {
   hasRevision?: (yearMonth: string) => boolean;
   /**
    * 背反の組の院内の知識（match.codePair）の、改定の前後でその組に差が出た項目（任意。渡すのは本番の配線。design.md §14-4）。
-   * revisionDate は直近の改定日。差がなければ空、比べる 1 枚・版の行がまだなければ "pending"（保留：要再検証にしない。C-181）。渡されなければ判定しない
+   * revisionDate は改定日。差がなければ空、改定後の 1 枚・版の行がまだなければ "pending"（保留：要再検証にしない。C-181）。
+   * 改定前の 1 枚・EM の行がなくて比べられないときは、その旨の文 1 つ（要再検証にする。round-43 C-202・設計 v27）。渡されなければ判定しない
    */
   localRevision?: (pair: CodePair, revisionDate: string) => string[] | "pending";
   /**
