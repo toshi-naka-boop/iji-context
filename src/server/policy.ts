@@ -124,6 +124,8 @@ export const POLICY = {
   "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだレセプトの試算（design.md §11-12）：版を選んで、その場で計算して返す。保存しない。点検と同じ役割
   "GET /api/uke/claims/[claimId]/trial": row(["clerk", "veteran", "manager"], "none", true),
+  // 「この請求の点検を確かめた」（design.md §14-3・段 17g）：実在用のクリニックで F10 の処理件数に数える。点検を見られる役割と同じ（役割では分けない。C-184）
+  "POST /api/uke/claims/[claimId]/reviewed": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
   "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 

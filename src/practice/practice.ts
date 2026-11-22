@@ -103,8 +103,11 @@ export function levelOf(count: number, thresholds: number[]): number {
   return lv;
 }
 
-/** 本人向けの表示。自分のレベルだけを返し、他人のレベルは返さない（FR-16） */
-export function myStatus(questions: Question[], clerkId: string, thresholds: number[], choiceWeight = 1): { level: number; count: number; streak: number } {
+/**
+ * 本人向けの表示。自分のレベルだけを返し、他人のレベルは返さない（FR-16）。
+ * extra は問題のほかに処理件数へ足す件数（実在用のクリニックで、取り込んだレセプトの点検を確かめた請求。design.md §14-3・段 17g）。連続正解には入れない
+ */
+export function myStatus(questions: Question[], clerkId: string, thresholds: number[], choiceWeight = 1, extra = 0): { level: number; count: number; streak: number } {
   const s = score(questions, clerkId, choiceWeight);
-  return { level: levelOf(s.credit, thresholds), count: s.count, streak: s.streak };
+  return { level: levelOf(s.credit + extra, thresholds), count: s.count + extra, streak: s.streak };
 }

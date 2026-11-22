@@ -3,6 +3,7 @@
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
+import { createClaimReviews } from "./app/claim-reviews";
 import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
@@ -44,7 +45,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const notes = createNotes(ctx, clock, clerks, uke, casesOf);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
-  const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase);
+  // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
+  const claimReviews = createClaimReviews(ctx, clock);
+  const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase, claimReviews.countOf);
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
   const localPairs = createLocalPairs(ctx, questions);
@@ -157,9 +160,17 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
       // 作る入口のフォームが選ばせない向き（design.md §14-2）。作る入口を出す G05 の指摘の組ごと
       if (!("rows" in r)) return r;
+      // 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。本人の分だけ。design.md §14-3・段 17g）
+      const reviewed = claimReviews.reviewedOf(claimId, clerkId);
       const pairs = ((r as { generic?: GenericView }).generic?.findings ?? []).flatMap((f) => (f.check === "G05" && f.localPair ? [f.localPair] : []));
       const localPairTaken = pairs.filter((p, i) => pairs.findIndex((q) => samePair(p, q)) === i).map((p) => ({ ...p, polarities: localPairOps.takenPolarities(p) }));
-      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken };
+      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken, ...(reviewed !== undefined ? { reviewed } : {}) };
+    },
+    /** 「この請求の点検を確かめた」（design.md §14-3・段 17g）。点検できたレセプト（行を返したもの）だけを数える。返すのは本人の件数とレベルだけ */
+    reviewClaim: (claimId: string, clerkId: string) => {
+      const out = claimReviews.review(claimId, clerkId, "rows" in ukeCheck.ukeCheck(claimId, clerkId));
+      const s = questions.status(clerkId);
+      return { ...out, count: s.count, level: s.level };
     },
     /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),

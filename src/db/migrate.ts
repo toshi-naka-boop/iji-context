@@ -147,6 +147,14 @@ ALTER TABLE facility_declarations ADD COLUMN from_month TEXT;
       applyKind(sqlite, env.kind, env.at);
     },
   },
+  {
+    // 取り込んだレセプトの点検で、本人が「この請求の点検を確かめた」を押した記録（design.md §14-3・段 17g。L-123）。実在用のクリニックで F10 の処理件数に数える。
+    // 同じ請求・同じ本人は 1 件だけ（主キー）。押した日（reviewed_at）を残す。指摘の数や結果は持たない
+    version: 14,
+    sql: `
+CREATE TABLE claim_reviews (claim_id TEXT NOT NULL, clerk_id TEXT NOT NULL, reviewed_at TEXT NOT NULL, PRIMARY KEY (claim_id, clerk_id));
+`,
+  },
 ];
 
 /** ログインの auth.db */

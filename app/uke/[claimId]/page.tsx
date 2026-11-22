@@ -58,6 +58,8 @@ type Check = {
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
   /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
   localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
+  /** 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。確かめていなければ null。design.md §14-3・段 17g） */
+  reviewed?: { at: string } | null;
 };
 /** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
 type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
@@ -103,6 +105,7 @@ export default function UkeClaimCheck() {
   /** 選んでいる版。診療年月の版なら点検、ほかの版なら試算 */
   const [rev, setRev] = useState("");
   const [trial, setTrial] = useState<Trial | null>(null);
+  const [reviewMsg, setReviewMsg] = useState("");
   useEffect(() => {
     if (!user) return;
     getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`)
@@ -121,6 +124,15 @@ export default function UkeClaimCheck() {
     setErr("");
     getJson<Trial>(`/api/uke/claims/${encodeURIComponent(claimId)}/trial?rev=${encodeURIComponent(rev)}`).then(setTrial).catch((e: Error) => setErr(e.message));
   }, [user, claimId, check, rev, tick]);
+
+  /** 「この請求の点検を確かめた」（実在用のクリニックで、本人の処理件数に 1 件数える。同じ請求は 1 回だけ） */
+  async function sendReviewed() {
+    setReviewMsg("");
+    const r = await fetch(`/api/uke/claims/${encodeURIComponent(claimId)}/reviewed`, { method: "POST" });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) return setReviewMsg(d?.error ?? "エラー");
+    setTick((t) => t + 1);
+  }
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -366,6 +378,18 @@ export default function UkeClaimCheck() {
                   {(c.patientFindings ?? []).map((f, i) => (
                     <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
                   ))}
+                  {check?.reviewed !== undefined && (
+                    <div className="notice">
+                      {check.reviewed ? (
+                        <span>この請求の点検を確かめました（{days([check.reviewed.at.slice(0, 10)])}）。あなたの処理件数に数えています。</span>
+                      ) : (
+                        <>
+                          <div className="muted">ここまでの点検を確かめたら押してください。あなたの処理件数に 1 件数えます（同じ請求は 1 回だけ。指摘の数や結果では数えません）。</div>
+                          <span><button onClick={() => void sendReviewed()}>この請求の点検を確かめた</button> {reviewMsg && <span className="notice warn">{reviewMsg}</span>}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </>

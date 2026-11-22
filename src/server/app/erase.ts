@@ -74,6 +74,7 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           sqlite.prepare(`DELETE FROM chart_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM chart_comments WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_facts WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
+          sqlite.prepare(`DELETE FROM claim_reviews WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM doctor_fact_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           // ベテランへの問い。ベテランのメンターにも同じ問いが渡っているので、そのやり取りも消す
           const peers = sqlite.prepare(`DELETE FROM peer_questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds).changes;
