@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "完了",
+  "status": "done",
   "designVersion": "v28",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v28",
+  "approvedDesignSha256": "6b9e93c84ed88420a5682ac6f02cb59d7f9b0246d584ccfe087cf4dbf66284e4",
+  "approvedAt": "2026-11-22T03:38:09.910Z",
+  "approvalEvidence": "v28:6b9e93c84ed8 を承認",
   "requiredApprovalFingerprint": "v28:6b9e93c84ed8",
   "baseline": "feat/integration（064ef4a）",
   "criticRound": 41,
@@ -14,7 +14,7 @@
     "design.md（§14・§13・§3）",
     "ledger.md"
   ],
-  "nextAction": "v28（§14-4 承認のときに改定の差を見せる）の承認を待つ",
+  "nextAction": "通知の登録を実在の請求に対応させる（F5 に関わる部分は設計ループ）→ デモでしか動かない箇所の B 以降",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
