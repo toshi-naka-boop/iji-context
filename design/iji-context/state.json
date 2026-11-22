@@ -1,11 +1,11 @@
 {
-  "currentNode": "実装",
+  "currentNode": "改訂",
   "status": "in_progress",
-  "designVersion": "v29",
-  "approvedDesignVersion": "v29",
-  "approvedDesignSha256": "c7cf12473320c843efd0008a6cce8d8dba0e021c9d31ad811df09d1cb85b8b41",
-  "approvedAt": "2026-11-22T11:45:46.877Z",
-  "approvalEvidence": "v29:c7cf12473320 を承認",
+  "designVersion": "v30",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
   "requiredApprovalFingerprint": "v29:c7cf12473320",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 49,
@@ -13,7 +13,7 @@
   "requiredReads": [
     "design.md（§15）"
   ],
-  "nextAction": "段 17a から実装（§15-10 の段）",
+  "nextAction": "v30：Fable の見直し（reviews/fable-audit-2026-11-22-*.md）と利用者の判断（台帳 2026-11-22）で §15 を直し、round-50 の批評 → 承認。段 17a・17b は実装済み（feat/practical-ab 0a50f6b）、17c 以降は止める",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
