@@ -6,14 +6,14 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v30:682757287fd2",
+  "requiredApprovalFingerprint": "v30:c8ec1982c186",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 53,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§15）"
   ],
-  "nextAction": "§15-8 の単純化と round-53 の残り（C-271・C-272・C-274）を反映 → 別の目で例を回す → 承認",
+  "nextAction": "別の目で例を回す確かめ（round-54）→ 承認",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
