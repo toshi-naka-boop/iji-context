@@ -315,3 +315,4 @@
 - 2026-11-22 round-47（v29 §15。critic: claude/claude-opus-5-5、codex/gpt-6.1-sol xhigh）。9 件（high 3）を全部受理し §15 に反映。前提 L-87・L-100 は利用者に質問中
 - 2026-11-22 round-48（v29 §15 の 2 巡目。critic: claude/claude-opus-5-5、codex/gpt-6.1-sol xhigh）。9 件（high 3）を全部受理し §15 に反映
 - 2026-11-22 round-49（v29 §15 の 3 巡目＝上限。critic: claude/claude-opus-5-5、codex/gpt-6.1-sol xhigh）。8 件（high 3）を全部受理し §15 に反映。直しは批評に掛け直していない。利用者の判断：L-87 在医総管の届出は 721 の行で持つ、L-100 取り込んだ実在の請求にカルテを貼る入口を開く
+- 2026-11-22 利用者が v29:c7cf12473320 を承認（§15 実務の算定 A・B）。段 17a から実装に入る
