@@ -222,7 +222,7 @@ describe("承認済みでないあいだに改定の差が出た知識（design.
     const cand = listKnowledge(h.deps.store).find((x) => x.relates_to === id)!;
     expect([cand.revision_checks, cand.revision_diffs]).toEqual([{ [D]: "diff" }, { [D]: CH }]);
     const { createKnowledgeOps } = await import("../../src/server/app/knowledge");
-    const ops = createKnowledgeOps({ store: h.deps.store, official: { docs: [] } } as never, { now: () => "2026-06-07T09:00:00+09:00" } as never, { cases: () => [] } as never, {} as never, {} as never);
+    const ops = createKnowledgeOps({ store: h.deps.store, official: { docs: [] } } as never, { now: () => "2026-06-07T09:00:00+09:00" } as never, { ukeFiles: () => [] }, {} as never, {} as never);
     expect(ops.queue().find((x) => x.id === cand.id)?.revisionDiffs).toEqual({ [D]: CH });
     expect(() => ops.verify(cand.id, true)).toThrow(/改定で差が出ています/);
     expect(readKnowledge(h.deps.store, cand.id)?.status).toBe("未検証");

@@ -46,7 +46,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const questionCase = createQuestionCase(casesOf, notes, doctor);
   const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase);
   const peer = createPeer(ctx, clock);
-  const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
+  const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
   const localPairs = createLocalPairs(ctx, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
+import { CHOOSABLE } from "../../src/notice/problems";
 import { eventText, fillLocal, LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
 import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
@@ -83,6 +84,8 @@ function OfficialDocs({ e }: { e: DigestEntry }) {
 }
 
 type Read = { fileName: string; notice: Notice; items: ResolvedItem[] };
+/** 残っている問題（区分を選んだ項目は、区分の問題を除く。選べるかの判定はサーバーがもう一度する） */
+const rest = (it: ResolvedItem, chosen: string | undefined) => (chosen ? it.problems.filter((p) => !CHOOSABLE.includes(p)) : it.problems);
 
 /** 査定・返戻の通知（PDF）を読む。Claude は書かれていることを取り出すだけで、知識の候補にするのは本人が確かめてから */
 function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
@@ -91,6 +94,8 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
   const [msg, setMsg] = useState("");
   const [reexam, setReexam] = useState<Record<number, boolean>>({});
   const [done, setDone] = useState<Record<number, string>>({});
+  /** 項目名から区分が決まらなかった項目で、本人が選んだ区分 */
+  const [chosen, setChosen] = useState<Record<number, string>>({});
   // 見本（作り物の K6 の通知）は、デモのクリニックにだけ出す
   const [demo, setDemo] = useState(false);
   useEffect(() => {
@@ -101,6 +106,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
     setBusy(true);
     setMsg("");
     setDone({});
+    setChosen({});
     try {
       const r = await fetch("/api/notice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const d = await r.json();
@@ -120,7 +126,7 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
   }
   async function register(index: number) {
     if (!read) return;
-    const r = await fetch("/api/notice/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ notice: read.notice, index, reexamFiled: !!reexam[index], fileName: read.fileName }) });
+    const r = await fetch("/api/notice/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ notice: read.notice, index, reexamFiled: !!reexam[index], fileName: read.fileName, ...(chosen[index] ? { kubun: chosen[index] } : {}) }) });
     const d = await r.json();
     setDone({ ...done, [index]: r.ok ? `知識の候補にしました（${d.status}）` : d.error });
     if (r.ok) onRegistered();
@@ -147,16 +153,26 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
               <tr key={i}>
                 <td>{it.yearMonth}</td>
                 <td>{it.patientName}<br /><span className="muted">{it.claimId ?? "見つからない"}</span></td>
-                <td>{it.itemName} → {it.kubun ?? "？"}</td>
+                <td>
+                  {it.itemName} → {it.kubun ?? (chosen[i] ? `${chosen[i]}（選んだ区分）` : "？")}
+                  {it.choices.length > 0 && (
+                    <div>
+                      <select value={chosen[i] ?? ""} onChange={(e) => setChosen({ ...chosen, [i]: e.target.value })} disabled={!!done[i]}>
+                        <option value="">区分を選ぶ</option>
+                        {it.choices.map((c) => <option key={c.kubun} value={c.kubun}>{c.name}（{c.kubun}）</option>)}
+                      </select>
+                    </div>
+                  )}
+                </td>
                 <td>{it.outcome}</td>
                 <td>{it.reason}</td>
-                <td>{it.problems.length === 0 ? `${it.prefecture}・${payerLabel(it.payer)}` : <span className="warn">{it.problems.join(" / ")}</span>}</td>
+                <td>{rest(it, chosen[i]).length === 0 ? `${it.prefecture}・${payerLabel(it.payer)}` : <span className="warn">{rest(it, chosen[i]).join(" / ")}</span>}</td>
                 <td>
                   {it.outcome === "査定" && (
                     <label className="muted"><input type="checkbox" checked={!!reexam[i]} onChange={(e) => setReexam({ ...reexam, [i]: e.target.checked })} /> 再審査を申し出る</label>
                   )}
                   <br />
-                  <button disabled={it.problems.length > 0 || !!done[i]} onClick={() => register(i)}>確かめた。知識の候補にする</button>
+                  <button disabled={rest(it, chosen[i]).length > 0 || !!done[i]} onClick={() => register(i)}>確かめた。知識の候補にする</button>
                   {done[i] && <div className="muted">{done[i]}</div>}
                 </td>
               </tr>
