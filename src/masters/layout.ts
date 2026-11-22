@@ -30,9 +30,13 @@ const change = oneOf("0", "1", "2", "3", "5", "9");
 /** チェックマスタの年齢（[チ] p18 項番6・7）：XXX.XX。下限なし 000.00、上限なし 999.99 */
 const ageDecimal: ColType = { check: /^\d{3}\.\d{2}$/, as: "real" };
 
-/** 取り込む項目。item は仕様書の項番（1 起算。配列は繰り返しの項目で、0 でない値を "," でつないで 1 列にする） */
-export type Column = { item: number | number[]; col: string; name: string; type: ColType };
-const c = (item: number | number[], col: string, name: string, type: ColType): Column => ({ item, col, name, type });
+/** 配列の項目のつなぎ方：0 でない値を sep でつなぎ、どれも 0 なら empty。join を省いた配列の項目は "," でつなぎ、どれも 0 なら空 */
+export type ArrayJoin = { sep: string; empty: string };
+/** 取り込む項目。item は仕様書の項番（1 起算。配列は繰り返しの項目で、0 でない値を項番の順につないで 1 列〔文字〕にする） */
+export type Column = { item: number | number[]; col: string; name: string; type: ColType; join?: ArrayJoin };
+const c = (item: number | number[], col: string, name: string, type: ColType, join?: ArrayJoin): Column => ({ item, col, name, type, ...(join ? { join } : {}) });
+/** 施設基準の組の列のつなぎ方（design.md §15-3） */
+const SHISETSU_JOIN: ArrayJoin = { sep: "/", empty: "0" };
 
 export type TableLayout = {
   /** config/masters.json の files の layout が指す名前（ファイル名の形・項目数・文字コードは config の側で持つ） */
@@ -99,7 +103,11 @@ const shinryo: TableLayout = {
     c(51, "kensa_group", "検査等実施判断グループ区分", int),
     c(68, "kokuji1", "告示等識別区分（１）", oneOf("1", "3", "5", "7", "9")), // p41。1 基本項目／3 合成項目／5 準用項目／7 加算項目／9 通則加算項目
     c(69, "kokuji2", "告示等識別区分（２）", oneOf("1", "3", "7")), // p41。1 基本項目／3 合成項目／7 加算項目
-    c([72, 73, 74, 75, 76, 77, 78, 79, 80, 81], "shisetsu", "施設基準①〜⑩", int), // p41（別紙7-8）。その行に要る施設基準コード。未使用は 0
+    // p41（別紙7-8）・p172〜173（設定要領）。その行に要る施設基準コード。未使用は 0。組の中は「どれか」、組のあいだは「どれも」なので、組ごとに 1 列にする（design.md §15-3。J-3）。
+    // 0 でないコードを項番の順に「/」でつなぎ、全部 0 なら "0"（EM §2-11 の錨の書き方と同じ文字列）
+    c([72, 73, 74, 75, 76, 77], "shisetsu_g1", "施設基準①〜⑥（グループ①）", int, SHISETSU_JOIN),
+    c([78, 79, 80], "shisetsu_g2", "施設基準⑦〜⑨（グループ②）", int, SHISETSU_JOIN),
+    c([81], "shisetsu_g3", "施設基準⑩（グループ③）", int, SHISETSU_JOIN),
     c(85, "alpha", "コード表用番号（アルファベット部）", { check: /^[A-Z*\-－＊]?$/, as: "text" }), // p42。区分番号のアルファベット。区分番号のない行為は *、点数表の外は -
     c(87, "changed_on", "変更年月日", date), // p42。情報に変更が生じたときに適用となる日（使い始めの日ではない。design.md §12-1）
     c(88, "abolished_on", "廃止年月日", date), // p42。使える最後の日。廃止していなければ 99999999

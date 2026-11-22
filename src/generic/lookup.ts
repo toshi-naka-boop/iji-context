@@ -2,7 +2,7 @@
 // 引くのは、診療年月に使う 1 枚（pickSnapshot）。世代の 1 枚がないマスターの分は、空のまま返す（近い世代で代用しない）
 import type { Revision } from "../engine/revisions/types";
 import type { Outside } from "../engine/types";
-import { checkReady, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
+import { checkReady, hasShisetsu, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
 import type { GenericAbout } from "./types";
 
 const snapshotOf = (db: MastersDb, table: NamedMaster, about: GenericAbout): string | null => pickSnapshot(db, table, about.yearMonth, about.generation)?.snapshot ?? null;
@@ -13,7 +13,7 @@ const noLabel = (r: ShinryoRow): string | null => (/^[A-Z]$/.test(r.alpha) ? `${
 /**
  * 名称。items は診療行為・医薬品・特定器材のコード → 名称（診療行為は区分番号も）、comments はコメントコード → 定型文、diseases は傷病名コード → 傷病名。
  * マスターにないコードは載らない（画面はコードだけを出す）。todokede＝施設基準のある診療行為（指摘にはせず、名称に「届出が要ります」と添える。design.md §12-3 の G03。
- * 施設基準の列の読み方を確かめた masters.db〔G03 の準備ができている〕のときだけ付ける）
+ * 施設基準の列の読み方を確かめた masters.db〔G03 の準備ができている〕のときだけ付ける。施設基準のある行は、組ごとの 3 列のどれかが 0 でない行。design.md §15-3）
  */
 export type RowNames = { items: Record<string, { name: string; no: string | null; todokede?: true }>; comments: Record<string, string>; diseases: Record<string, string> };
 
@@ -26,7 +26,7 @@ export function rowNamesOf(db: MastersDb, about: GenericAbout, codes: { items: {
     if (s === null) continue;
     if (kind === "SI") {
       const r = shinryoOf(db, s, code);
-      if (r) out.items[code] = { name: r.name, no: noLabel(r), ...(todokede && r.shisetsu !== "" ? { todokede: true as const } : {}) };
+      if (r) out.items[code] = { name: r.name, no: noLabel(r), ...(todokede && hasShisetsu(r) ? { todokede: true as const } : {}) };
     } else {
       const name = nameOf(db, kind === "IY" ? "iyakuhin" : "tokutei", s, code);
       if (name !== null) out.items[code] = { name, no: null };

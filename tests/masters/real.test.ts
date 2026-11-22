@@ -26,8 +26,9 @@ describe("実データの masters.db", () => {
   withData("読み方を確かめた版の件数が、EM §2-11 の件数と合う（基本マスター 6 本・電子点数表・コメント関連テーブル・チェックマスタ）", () => {
     const db = openMasters(file)!;
     const rows = (tbl: string) => sourcesOf(db).filter((s) => s.tbl === tbl && s.snapshot === s.verified).reduce((n, s) => n + s.rows, 0);
-    for (const c of em.counts.filter((x) => Object.keys(x.where).length === 0)) expect(rows(c.table), c.table).toBe(c.count);
-    expect(em.counts.filter((x) => Object.keys(x.where).length === 0)).toHaveLength(14);
+    const whole = em.counts.filter((x) => Object.keys(x.where).length === 0 && !x.not);
+    for (const c of whole) expect(rows(c.table), c.table).toBe(c.count);
+    expect(whole).toHaveLength(14);
     db.close();
   });
 
@@ -38,6 +39,17 @@ describe("実データの masters.db", () => {
     expect(r.failures).toBe(0);
     expect(r.lines).toContain("版の表との食い違い：0 件");
     expect(r.lines[0]).toMatch(new RegExp(`^錨：${em.anchors.length} 個のうち ${em.anchors.length} 個が通った`));
+    db.close();
+  });
+
+  withData("施設基準の組ごとの列（design.md §15-3）：錨 A109〜A116 が通り、組ごとの件数（g1≠0 4,623・g2≠0 900・g3≠0 286）が合う", () => {
+    const db = openMasters(file)!;
+    const r = verifyMasters(db, em, { write: false });
+    expect(em.anchors.filter((a) => /^A1(09|1[0-6])$/.test(a.id))).toHaveLength(8);
+    expect(r.lines.filter((l) => /^錨 A1(09|1[0-6]) /.test(l))).toEqual([]);
+    const n = (col: string) => (db.prepare(`SELECT count(*) AS n FROM shinryo WHERE snapshot = ? AND ${col} != '0'`).get(em.verified.shinryo) as { n: number }).n;
+    expect(["shisetsu_g1", "shisetsu_g2", "shisetsu_g3"].map(n)).toEqual([4623, 900, 286]);
+    expect(r.ready.filter((x) => x.check === "G10" || x.check === "G11").map((x) => x.ready)).toEqual([true, true]);
     db.close();
   });
 
@@ -62,6 +74,6 @@ describe("実データの masters.db", () => {
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     // console は、通ったテストの分を vitest が表示しないことがあるので、標準エラーに直接書く
     if (!has) process.stderr.write(`実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 3);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 4);
   });
 });

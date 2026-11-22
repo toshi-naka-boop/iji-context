@@ -65,7 +65,7 @@ export type ShinryoRow = {
   hospital_clinic: string; shobyo_kanren: string; jitsunissu: string; nissu_kaisu: string;
   kizami_kind: string; kizami_lower: number; kizami_upper: number; kizami_step: number; kizami_points: number; kizami_error: string;
   limit_count: number; limit_error: string; chu_code: number; chu_seq: string; tsusoku_age: string; age_lower: string; age_upper: string; time_kasan: string;
-  kensa_kind: string; kensa_group: number; kokuji1: string; kokuji2: string; shisetsu: string; alpha: string; changed_on: string; abolished_on: string;
+  kensa_kind: string; kensa_group: number; kokuji1: string; kokuji2: string; shisetsu_g1: string; shisetsu_g2: string; shisetsu_g3: string; alpha: string; changed_on: string; abolished_on: string;
   sho: number; bu: number; kubun_no: number; eda: number; kou: number;
 };
 export type IyakuhinRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; zaikei: string; changed_on: string; abolished_on: string; keika_until: number };
@@ -100,8 +100,22 @@ export const nameOf = (db: MastersDb, table: NamedMaster, snapshot: string, code
 export const snapshotsOf = (db: MastersDb, dataset: string, generation?: string): string[] =>
   (prepared(db, "SELECT DISTINCT snapshot FROM sources WHERE dataset = ? AND (? IS NULL OR generation = ?) ORDER BY snapshot").all(dataset, generation ?? null, generation ?? null) as { snapshot: string }[]).map((r) => r.snapshot);
 
-/** 点検（G01〜G09）の準備ができているか（要る表がそろい、錨が通ったか。作るのは src/masters/verify.ts）。行がなければ null */
+/** 施設基準の組ごとの列（shisetsu_g1〜g3。design.md §15-3）を読む点検 */
+const SHISETSU_CHECKS = new Set(["G10", "G11"]);
+export const OLD_SHISETSU_REASON = "施設基準の列が古い形です。masters:build で作り直してください";
+
+/** 医科診療行為マスターの表に、施設基準の組ごとの列があるか（ない＝組ごとの列にする前に作った masters.db） */
+export const hasShisetsuGroups = (db: MastersDb): boolean => (db.prepare("PRAGMA table_info(shinryo)").all() as { name: string }[]).some((c) => c.name === "shisetsu_g1");
+
+/** 施設基準のある行か（組ごとの 3 列のどれかが 0 でない）。組ごとの列のない古い masters.db の行は、ない側にする */
+export const hasShisetsu = (r: ShinryoRow): boolean => [r.shisetsu_g1, r.shisetsu_g2, r.shisetsu_g3].some((v) => v !== undefined && v !== "0");
+
+/**
+ * 点検（G01〜G11）の準備ができているか（要る表がそろい、錨が通ったか。作るのは src/masters/verify.ts）。行がなければ null。
+ * G10・G11 は、施設基準の組ごとの列のない古い masters.db では、行の有無によらず準備ができていない（design.md §15-3）
+ */
 export function checkReady(db: MastersDb, check: string): { ready: boolean; reason: string } | null {
+  if (SHISETSU_CHECKS.has(check) && !hasShisetsuGroups(db)) return { ready: false, reason: OLD_SHISETSU_REASON };
   const r = db.prepare("SELECT ready, reason FROM checks_ready WHERE check_id = ?").get(check) as { ready: number; reason: string } | undefined;
   return r ? { ready: r.ready === 1, reason: r.reason } : null;
 }
@@ -111,11 +125,19 @@ export type MastersStatus = {
   present: boolean;
   /** 取り込んだファイル。newer＝読み方を確かめた版（verified）より新しいデータ */
   sources: { dataset: string; snapshot: string; table: string; file: string; rows: number; importedAt: string; verified: string | null; newer: boolean }[];
-  /** 点検 G01〜G09 の準備（要る表がそろい、錨が通ったか） */
+  /** 点検 G01〜G11 の準備（要る表がそろい、錨が通ったか） */
   checks: { check: string; ready: boolean; reason: string }[];
   /** 形式が合わず、取り込まなかったファイル */
   rejected: { dataset: string; snapshot: string; file: string; reason: string }[];
 };
+
+/** checks_ready の行。施設基準の組ごとの列のない古い masters.db では、G10・G11 を準備ができていないことにする（行がなくても出す） */
+function checksOf(db: MastersDb): MastersStatus["checks"] {
+  const rows = (db.prepare("SELECT check_id, ready, reason FROM checks_ready ORDER BY check_id").all() as { check_id: string; ready: number; reason: string }[]).map((c) => ({ check: c.check_id, ready: c.ready === 1, reason: c.reason }));
+  if (hasShisetsuGroups(db)) return rows;
+  const old = [...SHISETSU_CHECKS].map((check) => ({ check, ready: false, reason: OLD_SHISETSU_REASON }));
+  return [...rows.filter((c) => !SHISETSU_CHECKS.has(c.check)), ...old].sort((a, b) => a.check.localeCompare(b.check));
+}
 
 export function mastersStatus(): MastersStatus {
   const db = openMasters();
@@ -124,7 +146,7 @@ export function mastersStatus(): MastersStatus {
     return {
       present: true,
       sources: sourcesOf(db).map((s) => ({ dataset: s.dataset, snapshot: s.snapshot, table: s.tbl, file: s.file, rows: s.rows, importedAt: s.imported_at, verified: s.verified, newer: s.verified !== null && s.snapshot > s.verified })),
-      checks: (db.prepare("SELECT check_id, ready, reason FROM checks_ready ORDER BY check_id").all() as { check_id: string; ready: number; reason: string }[]).map((c) => ({ check: c.check_id, ready: c.ready === 1, reason: c.reason })),
+      checks: checksOf(db),
       rejected: db.prepare("SELECT dataset, snapshot, file, reason FROM rejected ORDER BY dataset, snapshot, file").all() as MastersStatus["rejected"],
     };
   } catch {

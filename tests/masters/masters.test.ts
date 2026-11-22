@@ -10,9 +10,9 @@ import type { Revision } from "../../src/engine/revisions/types";
 import { carryOver, createSchema, ingestAll } from "../../src/masters/build";
 import { MASTERS_CONFIG, snapshotOf } from "../../src/masters/config";
 import { MasterFormatError, readCsv } from "../../src/masters/csv";
-import { mastersStatus, openMasters, pickSnapshot, shinryoOf } from "../../src/masters/db";
+import { checkReady, mastersStatus, OLD_SHISETSU_REASON, openMasters, pickSnapshot, shinryoOf } from "../../src/masters/db";
 import { LAYOUTS } from "../../src/masters/layout";
-import { parseEm, verifyMasters } from "../../src/masters/verify";
+import { parseEm, readEm, verifyMasters, type Em } from "../../src/masters/verify";
 
 const OUSHIN = r2026.codes.C000.primary; // 往診料（EM §2-8）
 const KINKYU = r2026.codes.C000_N1_KINKYU.primary; // 緊急往診加算（在支診等）
@@ -311,7 +311,7 @@ describe("錨・件数・版の表との食い違い・点検の準備", () => {
     expect(g05.missing).toContain("haihan:tani=4, kubun=3");
     expect(result.ready.find((r) => r.check === "G09")).toMatchObject({ ready: false, reason: "データがない：checkmaster", missing: ["データ:checkmaster"] });
     expect(result.ready.every((r) => !r.ready)).toBe(true);
-    expect(db.prepare("SELECT count(*) AS n, sum(ready) AS ready FROM checks_ready").get()).toEqual({ n: 9, ready: 0 });
+    expect(db.prepare("SELECT count(*) AS n, sum(ready) AS ready FROM checks_ready").get()).toEqual({ n: 11, ready: 0 });
     // 外れた錨は、準備に数えない
     const off = one([A46.replace("kubun=3", "kubun=1")]).result.ready.find((r) => r.check === "G05")!;
     expect(off.missing).toContain("haihan:tani=1, tokurei=1");
@@ -339,11 +339,101 @@ describe("アプリからの読み取り", () => {
       const status = mastersStatus();
       expect(status.present).toBe(true);
       expect(status.sources.map((s) => [s.table, s.snapshot, s.rows, s.newer])).toEqual([["shinryo", "20261001", 2, false], ["shinryo", "20261102", 3, true], ["haihan", "20261102", 1, true]]);
-      expect(status.checks).toHaveLength(9);
+      expect(status.checks).toHaveLength(11);
       // 読み取り専用で開く
       const ro = openMasters()!;
       expect(() => ro.exec("DELETE FROM sources")).toThrow();
       ro.close();
+    } finally {
+      if (before === undefined) delete process.env.RESEMEN_MASTER_DIR;
+      else process.env.RESEMEN_MASTER_DIR = before;
+    }
+  });
+});
+
+describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
+  const root = path.join(__dirname, "..", "..");
+  const ids = ["A109", "A110", "A111", "A112", "A113", "A114", "A115", "A116"];
+  /** EM §2-11 表 2 の施設基準の錨だけ（コード・点数・施設基準の値は EM の採用値） */
+  const real = readEm(root);
+  const em: Em = { ...real, anchors: real.anchors.filter((a) => ids.includes(a.id)), formulas: [], counts: [] };
+  const START = { shisetsu_g1: 72, shisetsu_g2: 78, shisetsu_g3: 81 } as const;
+  /** 錨の確かめる値から、医科診療行為マスターの 1 行を作る。shift は施設基準の項番をずらす数（組の列をずらした作り物） */
+  const rowsOf = (shift: number) =>
+    em.anchors.map((a) => {
+      const set: Record<number, string> = {};
+      for (const [col, start] of Object.entries(START)) {
+        const v = a.expect[col] ?? "0";
+        if (v !== "0") v.split("/").forEach((code, i) => (set[start + i + shift] = code));
+      }
+      return shinryoRow(a.where.code, `手作りの行 ${a.where.code}`, Number(a.expect.points ?? 0), set);
+    });
+  const run = (name: string, shift: number) => {
+    const raw = path.join(tmp, `shisetsu-${name}`);
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(rowsOf(shift)));
+    const { db, rejected } = build(raw);
+    expect(rejected).toEqual([]);
+    return { db, result: verifyMasters(db, em, { write: true, revisions: [] }) };
+  };
+  const failed = (lines: string[]) => [...new Set(lines.map((l) => /^錨 (A\d+) が外れた/.exec(l)?.[1]).filter(Boolean))];
+
+  it("EM §2-11 に錨 A109〜A116 と、組ごとの件数（≠0）の 3 行がある", () => {
+    expect(em.anchors.map((a) => a.id)).toEqual(ids);
+    expect(real.counts.filter((c) => c.not)).toEqual([
+      { table: "shinryo", where: {}, not: { shisetsu_g1: "0" }, count: 4623 },
+      { table: "shinryo", where: {}, not: { shisetsu_g2: "0" }, count: 900 },
+      { table: "shinryo", where: {}, not: { shisetsu_g3: "0" }, count: 286 },
+    ]);
+  });
+
+  it("組ごとに 0 でないコードを項番の順に「/」でつなぎ、全部 0 なら 0。錨が全部通り、G03・G10・G11 の準備ができる", () => {
+    const { db, result } = run("ok", 0);
+    expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114717810'").get()).toEqual({ shisetsu_g1: "3055/4247/3057/3058", shisetsu_g2: "721", shisetsu_g3: "4101" });
+    expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114018470'").get()).toEqual({ shisetsu_g1: "0", shisetsu_g2: "0", shisetsu_g3: "0" });
+    expect([result.failures, failed(result.lines)]).toEqual([0, []]);
+    for (const id of ["G10", "G11"]) expect(result.ready.find((r) => r.check === id)).toMatchObject({ ready: true });
+    expect(result.ready.find((r) => r.check === "G03")!.missing.filter((m) => m.includes("shisetsu"))).toEqual([]);
+  });
+
+  it("組の列を 1 つずらした作り物の CSV では、錨が外れて失敗する（masters:build は失敗で masters.db を置き換えない）", () => {
+    // 後ろへ 1 つ：組③の 4101 が項番82（施設基準の外）に出て、A112 が外れる
+    const later = run("later", 1).result;
+    expect(later.failures).toBeGreaterThan(0);
+    expect(failed(later.lines)).toEqual(["A112"]);
+    // 前へ 1 つ：組①の先頭が項番71（施設基準の外）に、組②の先頭が組①に入る。施設基準のない A116 だけが通る
+    const earlier = run("earlier", -1).result;
+    expect(earlier.failures).toBeGreaterThan(0);
+    expect(failed(earlier.lines)).toEqual(ids.slice(0, 7));
+  });
+
+  it("件数の「列≠値」：その値でない行を数え、合わなければ失敗。錨では「≠」を断る", () => {
+    const { db } = run("count", 0);
+    const em2 = parseEm(EM([], ["| `shinryo` | `shisetsu_g3≠0` | 1 |", "| `shinryo` | `shisetsu_g2≠0, shisetsu_g1=721` | 2 |"]));
+    const r = verifyMasters(db, em2, { write: false, revisions: [] });
+    // 組②に値がある行は A109・A110・A112 の 3 行。そのうち組①が 721 の行はない
+    expect(r.lines.filter((l) => l.startsWith("件数が違う"))).toEqual(["件数が違う（shinryo 20261102）：shisetsu_g1=721, shisetsu_g2≠0 は 0 件、EM §2-11 は 2 件"]);
+    expect(r.failures).toBe(1);
+    expect(() => parseEm(EM(["| A99 | `shinryo` | `code=1` | `shisetsu_g1≠0` | x | y |"], []))).toThrow(/「≠」は件数の表だけで使える/);
+  });
+
+  it("組ごとの列のない古い形の masters.db では、G10・G11 が準備できていない（作り直しを促す）。ほかの点検は checks_ready のまま", () => {
+    const { db } = run("old", 0);
+    db.exec("ALTER TABLE shinryo DROP COLUMN shisetsu_g1; ALTER TABLE shinryo DROP COLUMN shisetsu_g2; ALTER TABLE shinryo DROP COLUMN shisetsu_g3; ALTER TABLE shinryo ADD COLUMN shisetsu TEXT NOT NULL DEFAULT ''");
+    db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G03', 1, '')").run();
+    for (const id of ["G10", "G11"]) expect(checkReady(db, id)).toEqual({ ready: false, reason: OLD_SHISETSU_REASON });
+    expect(checkReady(db, "G03")).toEqual({ ready: true, reason: "" });
+    // 設定の画面（mastersStatus）にも、行がなくても G10・G11 を出す
+    const dir = path.join(tmp, "old-app");
+    mkdirSync(dir, { recursive: true });
+    db.prepare("DELETE FROM checks_ready WHERE check_id IN ('G10', 'G11')").run();
+    db.exec(`VACUUM INTO '${path.join(dir, "masters.db")}'`);
+    const before = process.env.RESEMEN_MASTER_DIR;
+    process.env.RESEMEN_MASTER_DIR = dir;
+    try {
+      expect(mastersStatus().checks.filter((c) => ["G10", "G11"].includes(c.check))).toEqual([
+        { check: "G10", ready: false, reason: OLD_SHISETSU_REASON },
+        { check: "G11", ready: false, reason: OLD_SHISETSU_REASON },
+      ]);
     } finally {
       if (before === undefined) delete process.env.RESEMEN_MASTER_DIR;
       else process.env.RESEMEN_MASTER_DIR = before;
