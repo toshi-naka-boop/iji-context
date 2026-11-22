@@ -318,6 +318,38 @@ describe("real で、日付が変わったときに回る処理と、実際の�
     expect(reviews().length).toBe(2);
   });
 
+  it("失敗したら同じ日のうちに次のリクエストで回し直す。続けて失敗するときは間隔を空け、回せたら元に戻る", async () => {
+    const { openApp } = await import("../../src/server/app");
+    const { writeFileSync, mkdirSync, unlinkSync } = await import("node:fs");
+    const dir = mkdtempSync(path.join(tmpdir(), "iji-catchup-"));
+    // 医師確認の記録の置き場をファイルにして、読めない（一時的な失敗）ようにする
+    const logDir = path.join(dir, "query-log");
+    writeFileSync(logDir, "");
+    const a = openApp({ root: repo, dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: logDir }, { kind: "real" });
+    try {
+      setNow("2026-12-01T10:00:00+09:00");
+      expect(() => a.catchUp()).toThrow();
+      // 1 回目の失敗のあとは、次のリクエストですぐ回し直す（まだ失敗）
+      setNow("2026-12-01T10:00:01+09:00");
+      expect(() => a.catchUp()).toThrow();
+      // 2 回続けて失敗したので、1 分は回さない
+      setNow("2026-12-01T10:00:30+09:00");
+      expect(a.catchUp()).toBeNull();
+      // 直ったあと、間隔が過ぎれば同じ日のうちに回せる
+      unlinkSync(logDir);
+      mkdirSync(logDir);
+      setNow("2026-12-01T10:01:02+09:00");
+      expect(a.catchUp()).not.toBeNull();
+      expect(a.setting("caught_up_at")).toBe("2026-12-01T10:01:02+09:00");
+      // 回せたら、その日のうちはもう回さない
+      setNow("2026-12-01T11:00:00+09:00");
+      expect(a.catchUp()).toBeNull();
+    } finally {
+      a.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("demo では、リクエストで何も回らない（時計を進めたときだけ）", () => {
     const u = auth().register("tick_demo", "でも", "password123", "demo");
     setNow("2026-12-01T10:00:00+09:00");

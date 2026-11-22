@@ -17,6 +17,9 @@ const jstDayOf = (s: string): string => new Date(Date.parse(s) + JST).toISOStrin
 
 /** 実在のクリニックで、日付が変わったときに回した日時（app_settings のキー） */
 const CAUGHT_UP_KEY = "caught_up_at";
+/** 日付が変わったときの処理が続けて失敗したときの、回し直す間隔（最初の間隔と上限。設計パラメータ） */
+const RETRY_BASE_MS = 60_000;
+const RETRY_MAX_MS = 30 * 60_000;
 
 export function createClock(ctx: AppContext) {
   const { kind, sqlite, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
@@ -51,25 +54,32 @@ export function createClock(ctx: AppContext) {
     return { now: to, ...r };
   }
 
-  /** このプロセスで、回そうとして失敗した日（同じ日のうちは毎リクエストで回し直さない。次の日か、開き直したときにまた回す） */
-  let failedDay: string | null = null;
+  /**
+   * 続けて失敗した回数と、次に回してよい時刻（このプロセスの中だけ）。1 回目の失敗のあとは次のリクエストですぐ回し直す（一時的な失敗を同じ日のうちに取り戻す）。
+   * 2 回以上続けて失敗したら、1 分・2 分・4 分…と間隔を空け、30 分を上限にする（失敗が続くときに、毎リクエストで重い処理を回さない）。回せたら元に戻す
+   */
+  let failures = 0;
+  let retryAt = 0;
   /**
    * real のクリニックで、前に回した日から日付（日本時間）が変わっていれば、今の時刻で tick を回す（リクエストのたびに呼ぶ。src/server/instance.ts）。
    * 回した日時は DB（app_settings）に残す。同じ日のうちは何もしない（重い処理を毎リクエストで回さない）。回したら結果を、回さなければ null を返す。
+   * 失敗したら回した日時を残さず、上の間隔で回し直す。
    * demo のクリニックでは何もしない（時計を進めたときに advanceClock が回す）。未定のクリニックでも何もしない（使い方を選ぶまで、記録に触らない）
    */
   function catchUp(): ReturnType<typeof tick> | null {
     if (kind !== "real") return null;
     const at = now();
-    const day = jstDayOf(at);
     const last = setting(CAUGHT_UP_KEY);
-    if ((last !== null && jstDayOf(last) >= day) || failedDay === day) return null;
+    if ((last !== null && jstDayOf(last) >= jstDayOf(at)) || Date.now() < retryAt) return null;
     try {
       const r = tick(at);
       setSetting(CAUGHT_UP_KEY, at);
+      failures = 0;
+      retryAt = 0;
       return r;
     } catch (e) {
-      failedDay = day;
+      failures += 1;
+      retryAt = failures >= 2 ? Date.now() + Math.min(RETRY_BASE_MS * 2 ** (failures - 2), RETRY_MAX_MS) : 0;
       throw e;
     }
   }
