@@ -25,6 +25,8 @@ import { PAIR_NOTE_MAX } from "./store";
 import { conflictDocs, conflictKeys, docKey } from "../official/match";
 import type { OfficialDoc, OfficialInput } from "../official/types";
 import { badRequest, notFound } from "../server/errors";
+import { fillLocal, LOCAL_PAIR_TEXT } from "../messages";
+import { TABLE } from "../generic/tensuhyo";
 
 export type ReviewDeps = {
   db: Db;
@@ -687,10 +689,14 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
   const over = orig.match.codePair !== undefined ? { polarity: fix.polarity, conditionNote: fix.conditionNote } : null;
   if (over && (over.polarity === null || !over.conditionNote)) throw new Error(`背反の組の知識の修正版に、回答の向きと条件の文がない: ${itemId}`);
   const pairOver = over ? { polarity: over.polarity!, conditionNote: over.conditionNote! } : undefined;
-  const text = `ベテランの回答（レセメン会議）：${freeText?.trim() || "（記述なし）"}\n\n${marker(itemId)}`;
+  // 背反の組の知識は、要約と本文に、実際に使われる扱いと条件を出す（承認する人が、使われる向きを見て承認できるように。round-43 codex #3）
+  const pair = orig.match.codePair;
+  const pairSummary = pair && pairOver ? fitSummary("", fillLocal(pairOver.polarity === "allow" ? LOCAL_PAIR_TEXT.summaryAllow : LOCAL_PAIR_TEXT.summaryAvoid, { a: pair.a, b: pair.b, table: TABLE.haihan[pair.tani] }), "（修正の候補）") : null;
+  const pairLine = pairOver ? `${fillLocal(LOCAL_PAIR_TEXT.fixLine, { label: pairOver.polarity === "allow" ? LOCAL_PAIR_TEXT.allowLabel : LOCAL_PAIR_TEXT.avoidLabel, note: pairOver.conditionNote })}\n\n` : "";
+  const text = `ベテランの回答（レセメン会議）：${freeText?.trim() || "（記述なし）"}\n\n${pairLine}${marker(itemId)}`;
   const open = listKnowledge(deps.store).find((m) => m.relates_to === orig.id && m.status === "未検証");
   if (open) {
-    appendBody(deps.store, open.id, text, pairOver);
+    appendBody(deps.store, open.id, text, pairOver && pairSummary ? { ...pairOver, summary: pairSummary } : undefined);
     return open.id;
   }
   const created = createKnowledge(
@@ -698,7 +704,7 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
     {
       layer: "ベテラン",
       slug: `fix-${itemId.slice(0, 12)}`,
-      summary: fitSummary("", orig.summary, "（修正の候補）"),
+      summary: pairSummary ?? fitSummary("", orig.summary, "（修正の候補）"),
       body: `元の知識: ${orig.id}\n\n${text}`,
       source: { type: "エスカレーション", ref: itemId },
       relates_to: orig.id,

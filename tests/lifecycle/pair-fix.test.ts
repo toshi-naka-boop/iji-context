@@ -2,7 +2,7 @@
 // 修正版は、回答の向き（polarity）と条件の文（conditionNote）を持つ（元からコピーしない）。承認すると、直した値で G05 に渡る
 import { afterEach, describe, expect, it } from "vitest";
 import { answerItem, buildDigest } from "../../src/lifecycle/review";
-import { applyEvent, createKnowledge, listKnowledge, readBody } from "../../src/lifecycle/store";
+import { appendBody, applyEvent, createKnowledge, listKnowledge, readBody } from "../../src/lifecycle/store";
 import { createLocalPairs } from "../../src/server/app/local-pairs";
 import type { AppContext } from "../../src/server/app/context";
 import { harness } from "./review-helpers";
@@ -51,8 +51,18 @@ describe("会議の修正版で polarity・conditionNote を直す（X-118）", 
     const cand = listKnowledge(h.deps.store).find((m) => m.relates_to === id)!;
     expect([cand.layer, cand.status, cand.polarity, cand.conditionNote, cand.matchApprox, cand.match]).toEqual(["ベテラン", "未検証", "avoid", "根拠：返戻・査定された。直した条件", true, { codePair: PAIR }]);
     expect(readBody(h.deps.store, cand.id)).toContain("返戻されたので");
+    // 承認する人が見る要約と本文に、実際に使われる扱いと条件を出す（元の「条件に当たれば…」を引き継がない。round-43 codex #3）
+    expect(cand.summary).toBe(`背反の組 ${PAIR.a}・${PAIR.b}（背反関連テーブル（1 日につき））：併せて算定できない（修正の候補）`);
+    expect(readBody(h.deps.store, cand.id)).toContain("修正版の扱い：併せて算定できない。条件：根拠：返戻・査定された。直した条件");
     applyEvent(h.deps.store, cand.id, { type: "VERIFY_APPROVE" }, T2);
     const used = createLocalPairs({ store: h.deps.store } as unknown as AppContext, { status: () => ({ level: 5, count: 0, streak: 0 }) }).knowledgeFor(PAIR);
     expect(used.map((k) => [k.id, k.status, k.polarity, k.conditionNote])).toEqual([[id, "停止", "allow", "根拠：審査で通った。元の条件"], [cand.id, "承認済み", "avoid", "根拠：返戻・査定された。直した条件"]]);
+  });
+  it("未検証の候補に書き足すときも、要約・向き・条件を書き足す値にする（rev は計算し直す）", () => {
+    const { id, item } = recheckItem();
+    answerItem(h.deps, { itemId: item.itemId, answer: 2, polarity: "avoid", conditionNote: "根拠：その他。一つ目" }, T2);
+    const cand = listKnowledge(h.deps.store).find((m) => m.relates_to === id)!;
+    const next = appendBody(h.deps.store, cand.id, "二つ目の回答", { polarity: "allow", conditionNote: "根拠：その他。二つ目", summary: "二つ目の要約" });
+    expect([next.polarity, next.conditionNote, next.summary, next.rev === cand.rev]).toEqual(["allow", "根拠：その他。二つ目", "二つ目の要約", false]);
   });
 });

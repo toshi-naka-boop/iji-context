@@ -218,7 +218,7 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
       hits: m.hits,
       misses: m.misses,
       official: m.layer !== "制度" && judged ? officialOf(m, yearMonth) : null,
-      ...(m.match.codePair ? { pair: { ...m.match.codePair, table: TABLE.haihan[m.match.codePair.tani], conditionNote: m.conditionNote ?? "", emDecided: emDecided.has(m.id) } } : {}),
+      ...(m.match.codePair ? { pair: { ...m.match.codePair, table: TABLE.haihan[m.match.codePair.tani], conditionNote: m.conditionNote ?? "", polarity: m.polarity, emDecided: emDecided.has(m.id) } } : {}),
     }));
   };
 

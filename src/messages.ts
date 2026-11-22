@@ -358,6 +358,11 @@ export const LOCAL_PAIR_TEXT = {
   summaryAvoid: "背反の組 {a}・{b}（{table}）：併せて算定できない",
   /** 押した事実の一覧（請求ごとの事実）での名前。押した人の名前・レベルは出さず、役割だけ */
   pressedFact: "院内の知識 {id} の条件に当たる（コード {a} と {b}）",
+  /** 会議の修正版（と承認の画面）に出す、実際に使われる扱いと条件（round-43 codex #3） */
+  fixLine: "修正版の扱い：{label}。条件：{note}",
+  usedAs: "使われる扱い：{label}。条件：{note}",
+  /** 押した事実の取り消し（round-43 codex #4） */
+  unpress: "取り消す",
 } as const;
 /** 文言の {名前} を値で埋める */
 export const fillLocal = (t: string, v: Record<string, string>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
