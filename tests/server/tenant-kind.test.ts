@@ -212,6 +212,35 @@ describe("未定から real を選んだクリニックの、作り物の知識�
     expect(listKnowledge(appOf(u).store, { withExcluded: true }).filter((m) => m.id.includes("seed-") || m.id === k6).map((m) => [m.id, m.status, m.history.length])).toEqual(before.filter(([id]) => String(id).includes("seed-") || id === k6));
   });
 
+  it("real を選ぶと、見本の請求を指す問題・医師確認・ベテランへの問いは、一覧に出ない（消さない）。demo を選ぶと出たまま", async () => {
+    const make = async (login: string) => {
+      const u = auth().register(login, "まえから", "password123", "demo");
+      const a = appOf(u);
+      a.start("new1", claimId("K1"));
+      createQuery(a.queryLog, { claimId: claimId("K4"), field: "SY:心房細動", why: "病型の記載がない", question: "心房細動の病型について、診療録に記載がありません。該当するものを選んでください。", indicators: [{ source: "処方", text: "DOAC" }], options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"], createdBy: "mentor" }, a.now());
+      a.peerToHuman("new1", "K1 の算定で迷った点", claimId("K1"));
+      forget(u.tenantId);
+      return u;
+    };
+    const shown = (u: User) => {
+      const a = appOf(u);
+      return { questions: a.questionsOf("new1").length, doctor: a.doctorQueries().length, peer: a.peerListFor({ clerkId: "new1", role: "veteran" }).length };
+    };
+    const real = await make("sample_rec_real");
+    expect((await choose(real, "real")).status).toBe(200);
+    expect(shown(real)).toEqual({ questions: 0, doctor: 0, peer: 0 });
+    // 消してはいない
+    const db = new Database(instance.tenantPaths(real.tenantId).dbFile, { readonly: true });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM questions").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM peer_questions").get()).toEqual({ n: 1 });
+    db.close();
+    expect(readdirSync(appOf(real).queryLog.dir).filter((n) => n.endsWith(".json"))).toHaveLength(1);
+
+    const demo = await make("sample_rec_demo");
+    expect((await choose(demo, "demo")).status).toBe(200);
+    expect(shown(demo)).toEqual({ questions: 1, doctor: 1, peer: 1 });
+  });
+
   it("demo を選んだときと、新しい real のクリニックでは変わらない", async () => {
     const { u, k6 } = await oldDemoClinic("sample_k_demo");
     expect((await choose(u, "demo")).status).toBe(200);

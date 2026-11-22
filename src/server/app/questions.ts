@@ -22,7 +22,7 @@ import { badRequest, conflict, notFound } from "../errors";
 const REAL_NO_DRILLS = "練習問題は、デモのクリニックだけで使えます（同梱の作り物の症例で始めるため）";
 
 export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, cases: Cases, notes: Notes, doctor: Doctor, questionCase: QuestionCase) {
-  const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
+  const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups, hiddenClaim } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
   const { isUploaded } = cases;
@@ -57,7 +57,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     const bad = lines.find((l) => !Object.hasOwn(points, l.kubun));
     if (bad) throw badRequest(`未知の区分: ${bad.kubun}`);
   };
-  const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
+  // 見本の請求の問題は、demo 以外のクリニックでは一覧・集計に出さない（行は残す）
+  const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question).filter((q) => !hiddenClaim(q.claimId));
 
   /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
   function startDrill(clerkId: string, drillId: string): Question {

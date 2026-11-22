@@ -16,7 +16,7 @@ import type { ChoiceGroup } from "../../practice/choice";
 import { officialInputOf } from "../../official/registry";
 import { checkDataset } from "../dataset";
 import type { TenantStatus } from "../tenant-kind";
-import { isSampleKnowledge } from "../sample-data";
+import { isSampleClaim, isSampleKnowledge } from "../sample-data";
 
 export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
 
@@ -77,7 +77,13 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {})
   const setSetting = (key: string, value: string) =>
     sqlite.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 
-  return { kind, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
+  /**
+   * この請求を指す記録を、一覧・会議・点検に出さないか：demo 以外（real・未定）のクリニックで、同梱の見本の請求（K…）を指すもの。
+   * デモのときに作った問題・医師確認・訪問カルテ・ベテランへの問い・提出を、消さずに残して見せない（2026-11-22 利用者の判断）
+   */
+  const hiddenClaim = (claimId: string | null | undefined): boolean => kind !== "demo" && !!claimId && isSampleClaim(claimId);
+
+  return { kind, hiddenClaim, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;
