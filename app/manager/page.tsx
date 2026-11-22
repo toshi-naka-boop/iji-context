@@ -5,6 +5,7 @@ import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
 import { NoteList } from "../chart/note-list";
 import { AuditLog } from "./audit-log";
+import { RecheckNotice } from "./recheck";
 
 type Report = {
   label: string;
@@ -48,6 +49,7 @@ export default function Manager() {
           ))}
         </div>
       )}
+      {r && <RecheckNotice />}
       {r && <NoteList />}
       {r && <AuditLog />}
     </main>
