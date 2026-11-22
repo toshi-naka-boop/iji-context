@@ -214,13 +214,13 @@ function withLocal(about: GenericAbout, ym: string, row: Row, days: (number | un
   const lv = about.level ?? 0;
   if (lv < LOCAL_PAIR_MIN_LEVEL) return [make(days, undefined, attach("hint", approved))];
   if (avoid.length > 0) return [make(days, "G05.local_avoid", { ...attach("avoid", avoid), localNote: avoid.map((k) => k.conditionNote).join("／"), localIds: avoid.map((k) => k.id).join("・") })];
-  // Lv.5 以上・承認済みの allow：押した日（同一月の表は請求）は出さない。押した事実が効くのは、知識が今も承認済みで rev が同じで、押した時刻が今の承認済みに入った時刻より後のとき（C-171・C-180）。
-  // 時計が進まないこと（デモの時計）があるので、「今の承認済みの間に押した」を、押したときの status_since が今の status_since と同じで、押した時刻がそれ以後か、で見る
+  // Lv.5 以上・承認済みの allow：押した日（同一月の表は請求）は出さない。押した事実が効くのは、知識が今も承認済みで rev が同じで、今の承認済みの間に押したとき（C-171・C-180）。
+  // 「今の承認済みの間」は、時刻ではなく承認済みに入った回数で見る（時計が進まないと、承認し直しても status_since が同じになる。round-43 C-200）
   const dateOf = (d: number | undefined) => (d === undefined ? null : `${ym}-${String(d).padStart(2, "0")}`);
   const pressedBy = (d: number | undefined) =>
     allow.find((k) => {
       const p = about.pressed?.(localKey(k.id, k.rev, pair.a, pair.b), dateOf(d)) ?? null;
-      return p !== null && p.since === k.since && Date.parse(p.at) >= Date.parse(k.since);
+      return p !== null && p.round === k.round;
     });
   const left = days.filter((d) => {
     const k = pressedBy(d);

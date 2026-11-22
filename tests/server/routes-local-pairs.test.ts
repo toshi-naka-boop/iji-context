@@ -143,6 +143,20 @@ describe.skipIf(!hasMasters)("（マスターがあるとき）design.md §14-5 
     expect(pressed.map((x) => [x.date, x.checkedByRole, x.checkedByName, x.checkedBy])).toEqual([[day(5), "clerk", "", ""]]);
   });
 
+  it("時計が進まないまま、要再検証 → 承認済みに戻すと、前の押下は効かない（押し直すと効く。round-43 C-200）", async () => {
+    const store = instance.runAs(owner, () => instance.getApp().store);
+    const T = instance.runAs(owner, () => instance.getApp().now());
+    const since = meta(K).status_since;
+    applyEvent(store, K, { type: "TRIGGER", trigger: "localRevision" }, T, { trigger: "localRevision", codePair: { a: A, b: B, tani: 1 }, changes: ["テスト"] });
+    applyEvent(store, K, { type: "RECHECK_PASS", via: "veteran", officialKeys: [] }, T);
+    // 承認済みに戻った時刻は前と同じ（時計が進んでいない）
+    expect([meta(K).status, meta(K).status_since]).toEqual(["承認済み", since]);
+    const key = localKey(K, meta(K).rev, A, B);
+    expect(g05().map((f) => f.local?.press)).toEqual([[{ key, date: day(5) }, { key, date: day(15) }]]);
+    expect((await save(key, true, day(5))).status).toBe(200);
+    expect(g05().map((f) => f.local?.press)).toEqual([[{ key, date: day(15) }]]);
+  });
+
   it("添えた知識に USED が出る（同じ請求・同じ知識は 1 日 1 回）。算定プレビューでは出さない", () => {
     check();
     const now = instance.runAs(owner, () => instance.getApp().now());

@@ -1,6 +1,7 @@
 // 背反の組の院内の知識（design.md §14）：G05 に渡す知識と本人のレベル（知識は院内層・ベテラン層の match.codePair を持つもの。保管は除く）と、作る入口
 import { LAYER_SLUG } from "../../lifecycle/layers";
 import { applyEvent, createKnowledge, listKnowledge, PAIR_NOTE_MAX, readKnowledge } from "../../lifecycle/store";
+import { approvalRound } from "../../lifecycle/machine";
 import { ms } from "../../lifecycle/time";
 import type { CodePair, Polarity } from "../../lifecycle/types";
 import { LOCAL_PAIR_MIN_LEVEL, parseLocalKey, type LocalPairKnowledge } from "../../generic/local-pair";
@@ -18,12 +19,12 @@ export type LocalAbout = Pick<GenericAbout, "localKnowledge" | "level">;
 
 export function createLocalPairs(ctx: AppContext, questions: Pick<Questions, "status">) {
   const { store } = ctx;
-  /** その組（同じ tani）の院内層・ベテラン層の知識（保管は除く。G05 が読むのは meta の polarity・conditionNote・status・rev と status_since だけ） */
+  /** その組（同じ tani）の院内層・ベテラン層の知識（保管は除く。G05 が読むのは meta の polarity・conditionNote・status・rev と、承認済みに入った回数だけ） */
   function knowledgeFor(pair: CodePair): LocalPairKnowledge[] {
     return listKnowledge(store)
       .filter((m) => (m.layer === "院内" || m.layer === "ベテラン") && m.status !== "保管")
       .filter((m) => m.match.codePair?.a === pair.a && m.match.codePair.b === pair.b && m.match.codePair.tani === pair.tani)
-      .map((m) => ({ id: m.id, status: m.status, polarity: m.polarity, conditionNote: m.conditionNote ?? "", rev: m.rev, since: m.status_since }));
+      .map((m) => ({ id: m.id, status: m.status, polarity: m.polarity, conditionNote: m.conditionNote ?? "", rev: m.rev, round: approvalRound(m) }));
   }
   /** 本人のレベル（F10。処理件数の累計。練習問題も数える）。ボタンを出すかは、これだけで決める（C-184。役割では分けない） */
   const levelOf = (clerkId: string): number => questions.status(clerkId).level;
@@ -91,7 +92,7 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
    * 押した事実を書く前に照らす（design.md §14-3。C-173）：本人が Lv.5 以上・知識が承認済みの allow・key の 2 つのコードと rev がその知識のもの・
    * 請求にその組の行があり、1 日・同時の表ならその日に両方ある（同一月の表は請求に両方。日付を付けない。X-124）・その組が G05 の対象。どれかが合わなければ 400
    */
-  function admitPress(claimId: string, clerkId: string, f: { key: string; date: string | null }): string {
+  function admitPress(claimId: string, clerkId: string, f: { key: string; date: string | null }): number {
     const k = parseLocalKey(f.key);
     if (!k) throw badRequest("残せない項目です");
     if (levelOf(clerkId) < LOCAL_PAIR_MIN_LEVEL) throw badRequest(`「条件に当たる」は、Lv.${LOCAL_PAIR_MIN_LEVEL} から残せます`);
@@ -109,7 +110,7 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
       if (!on.has(pair.a) || !on.has(pair.b)) throw badRequest("この日に、この組の両方の行がありません");
     }
     if (!isTarget(claimId, pair)) throw badRequest("この請求の点検に、院内の知識を使う背反の指摘がない組です");
-    return m.status_since;
+    return approvalRound(m);
   }
   /**
    * 指摘に添えた承認済みの知識に USED を出す（design.md §14-3。C-172・X-121）。取り込んだレセプトの点検・月末の点検だけが呼ぶ（算定プレビューでは出さない）。

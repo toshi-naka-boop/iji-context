@@ -16,10 +16,11 @@ import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Uke } from "./uke";
 
-/** 押した事実の値（「役割|押したときの知識の status_since」） */
-const localValueOf = (v: unknown): { role: string; since: string } => {
-  const [role, since] = String(v).split("|");
-  return { role: role ?? "", since: since ?? "" };
+/** 押した事実の値（「役割|r承認済みに入った回数」。回数の読めない値は -1＝どの回にも当たらない） */
+const localValueOf = (v: unknown): { role: string; round: number } => {
+  const [role, r] = String(v).split("|");
+  const m = /^r(\d+)$/.exec(r ?? "");
+  return { role: role ?? "", round: m ? Number(m[1]) : -1 };
 };
 
 type Row = { claim_id: string; key: string; date: string; value: string; source: string; checked_by: string; checked_at: string };
@@ -75,12 +76,12 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
       facts: latestClaimFacts(claimId).map((f) => (isLocalFactKey(f.key) ? { ...f, value: true, checkedBy: "", target: "clerk" as const, checkedByName: "", checkedByRole: localValueOf(f.value).role } : { ...f, target: targetOf(f.key), checkedByName: nameOf(f.checkedBy) })),
     };
   }
-  /** 押した事実を読む関数（G05 の pressed。design.md §14-3）：押した時刻と、押したときの知識の status_since。押していない・取り消してあれば null */
-  function pressedOf(claimId: string): (key: string, date: string | null) => { at: string; since: string } | null {
+  /** 押した事実を読む関数（G05 の pressed。design.md §14-3）：押したときの、知識が承認済みに入った回数。押していない・取り消してあれば null */
+  function pressedOf(claimId: string): (key: string, date: string | null) => { round: number } | null {
     const latest = latestClaimFacts(claimId).filter((f) => isLocalFactKey(f.key));
     return (key, date) => {
       const f = latest.find((x) => x.key === key && x.date === date);
-      return f ? { at: f.checkedAt, since: localValueOf(f.value).since } : null;
+      return f ? { round: localValueOf(f.value).round } : null;
     };
   }
   /** その請求の押した事実のうち、その知識・その組のもの（rev は問わない）を取り消す（返戻の入口。design.md §14-4）。取り消した key を返す */
@@ -93,8 +94,8 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     for (const f of hit) sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(CLEARED), f.source, clerkId, at);
     return [...new Set(hit.map((f) => f.key))];
   }
-  /** 押した事実を書く前に照らす関数（本人のレベル・知識・組・G05 の対象か。src/server/app/local-pairs.ts）。戻り値は、その知識の今の status_since。組み立ての後に差し込む */
-  let localGuard: ((claimId: string, clerkId: string, f: ClaimFactInput) => string) | null = null;
+  /** 押した事実を書く前に照らす関数（本人のレベル・知識・組・G05 の対象か。src/server/app/local-pairs.ts）。戻り値は、その知識が承認済みに入った回数。組み立ての後に差し込む */
+  let localGuard: ((claimId: string, clerkId: string, f: ClaimFactInput) => number) | null = null;
   const setLocalGuard = (g: typeof localGuard) => {
     localGuard = g;
   };
@@ -145,11 +146,11 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     const yearMonth = yearMonthOf(claimId);
     admit(f, yearMonth, role);
     if (isHaihanFactKey(f.key)) fitsClaim(claimId, yearMonth, parseHaihanKey(f.key)!);
-    // 院内の知識で押した事実（design.md §14-3。C-173）：サーバーが照らしてから書く。値には、押した人の役割（名前・レベルは残さない）と、押したときの知識の status_since を残す
+    // 院内の知識で押した事実（design.md §14-3。C-173）：サーバーが照らしてから書く。値には、押した人の役割（名前・レベルは残さない）と、押したときの知識が承認済みに入った回数を残す（round-43 C-200）
     if (isLocalFactKey(f.key)) {
       if (!localGuard) throw badRequest("この請求では残せません");
-      const since = localGuard(claimId, clerkId, f);
-      sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(`${role}|${since}`), f.source, clerkId, now());
+      const round = localGuard(claimId, clerkId, f);
+      sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(`${role}|r${round}`), f.source, clerkId, now());
       return claimFacts(claimId);
     }
     let value = typeof f.value === "string" ? f.value.trim() : f.value;

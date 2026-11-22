@@ -28,8 +28,7 @@ const UNDECIDED: HaihanConfig = {
   patterns: [{ id: "HP-T1", a: { codes: [C.oushin] }, b: { codes: [C.houmon] }, tani: [1], exceptions: ["HX-T1"] }],
   exceptions: [{ id: "HX-T1", text: "テスト用の例外（原文で確かめられない）", kind: "none" }],
 };
-const SINCE = "2026-10-01T09:00:00+09:00";
-const K = (over: Partial<LocalPairKnowledge> = {}): LocalPairKnowledge => ({ id: "local/pair-a", status: "承認済み", polarity: "allow", conditionNote: "根拠：審査で通った。テストの条件", rev: "aaaaaaaaaaaa", since: SINCE, ...over });
+const K = (over: Partial<LocalPairKnowledge> = {}): LocalPairKnowledge => ({ id: "local/pair-a", status: "承認済み", polarity: "allow", conditionNote: "根拠：審査で通った。テストの条件", rev: "aaaaaaaaaaaa", round: 1, ...over });
 const OU_HO: CodePair = pairOf(C.oushin, C.houmon, 1);
 const run = (units: Unit[], about: Partial<GenericAboutMore>, config: HaihanConfig = NO_HP) => {
   const db = tensuhyoMasters();
@@ -42,8 +41,8 @@ const run = (units: Unit[], about: Partial<GenericAboutMore>, config: HaihanConf
 const know = (list: LocalPairKnowledge[], want: CodePair = OU_HO) => (p: CodePair) => (p.a === want.a && p.b === want.b && p.tani === want.tani ? list : []);
 /** 往診料と訪問診療料が 6 日・9 日に両方ある請求 */
 const twoDays = [unit([C.oushin], [6, 9]), unit([C.houmon], [6, 9])];
-/** 押した事実：key と日付 → 押した時刻（押したときの知識の status_since は since） */
-const pressed = (m: Record<string, string>, since = SINCE) => (key: string, date: string | null) => (m[`${key}|${date ?? ""}`] ? { at: m[`${key}|${date ?? ""}`], since } : null);
+/** 押した事実：key と日付 → 押した印（押したときの知識が承認済みに入った回数は round） */
+const pressed = (m: Record<string, string>, round = 1) => (key: string, date: string | null) => (m[`${key}|${date ?? ""}`] ? { round } : null);
 const KEY = localKey("local/pair-a", "aaaaaaaaaaaa", C.oushin, C.houmon);
 const LATER = "2026-10-05T09:00:00+09:00";
 
@@ -61,14 +60,12 @@ describe("Lv.5 の本人・承認済みの allow（design.md §14-5）", () => {
     const both = run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }) });
     expect([both.findings, both.result.localSilenced]).toEqual([[], [{ id: "local/pair-a", count: 2 }]]);
   });
-  it("知識の rev が変わる・承認済みに入り直した（status_since が押した時刻より後。時計が進まず同じ時刻でも）と、前の押下は効かない（C-171・C-180）", () => {
+  it("知識の rev が変わる・承認済みに入り直した（承認済みに入った回数が変わった）と、前の押下は効かない（C-171・C-180・round-43 C-200）", () => {
     const p = pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER });
     expect(run(twoDays, { localKnowledge: know([K({ rev: "bbbbbbbbbbbb" })]), level: 5, pressed: p }).findings.length).toBe(1);
-    expect(run(twoDays, { localKnowledge: know([K({ since: "2026-10-06T09:00:00+09:00" })]), level: 5, pressed: p }).findings.length).toBe(1);
-    // デモの時計（進まない）：押したのと同じ時刻に、要再検証から承認済みに戻った → 押したときの status_since が違うので効かない
-    expect(run(twoDays, { localKnowledge: know([K({ since: LATER })]), level: 5, pressed: p }).findings.length).toBe(1);
-    // 承認と同じ時刻に押した（承認済みの間）→ 効く
-    expect(run(twoDays, { localKnowledge: know([K()]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: SINCE, [`${KEY}|${day(9)}`]: SINCE }) }).findings).toEqual([]);
+    expect(run(twoDays, { localKnowledge: know([K({ round: 2 })]), level: 5, pressed: p }).findings.length).toBe(1);
+    // 今の承認済みの間に押した → 効く
+    expect(run(twoDays, { localKnowledge: know([K({ round: 2 })]), level: 5, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER, [`${KEY}|${day(9)}`]: LATER }, 2) }).findings).toEqual([]);
   });
   it("同一月の表（tani 2）は請求ごとに押す（日付なし）。同時の表（tani 3）は算定日ごと", () => {
     const month: CodePair = pairOf(C.sanso, C.sansoKyunyu, 2);

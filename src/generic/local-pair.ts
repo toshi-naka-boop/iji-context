@@ -5,8 +5,8 @@ import type { CodePair, KnowledgeStatus, Polarity } from "../lifecycle/types";
 /** 条件を見せて算定できる扱い（ボタン）にするレベル（L-83。config/levels.json の Lv.5 ＝ 180 件。利用者の判断 2026-11-22） */
 export const LOCAL_PAIR_MIN_LEVEL = 5;
 
-/** G05 に渡す知識 1 件。since は今の状態に入った時刻（status_since） */
-export type LocalPairKnowledge = { id: string; status: KnowledgeStatus; polarity: Polarity; conditionNote: string; rev: string; since: string };
+/** G05 に渡す知識 1 件。round は承認済みに入った回数（src/lifecycle/machine.ts の approvalRound。押した事実が、今の承認済みの間に押したものかを見る） */
+export type LocalPairKnowledge = { id: string; status: KnowledgeStatus; polarity: Polarity; conditionNote: string; rev: string; round: number };
 
 /** 押した事実の key：local:<知識の id>@<rev>:<コード①>:<コード②>（コードは小さい順。design.md §14-3） */
 export const localKey = (id: string, rev: string, a: string, b: string): string => `local:${id}@${rev}:${[a, b].sort().join(":")}`;
