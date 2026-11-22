@@ -150,6 +150,23 @@ describe("使い方が未定のクリニック（種類を持つ前に作られ�
     expect(auth().tenantKind(owner.tenantId)).toBe("demo");
   });
 
+  it("未定のあいだは招待を受けず（招待は残る）、招待も作れない。持ち主は選べるまま", async () => {
+    const solo = auth().register("und_inv", "ひとり", "password123", "demo");
+    const invite = auth().createInvite(solo, "clerk");
+    forget(solo.tenantId);
+    const register = (await import("../../app/api/auth/register/route")).POST;
+    const r = await register(post("/api/auth/register", null, { login: "und_inv_join", name: "しょうたい", password: "password123", inviteCode: invite.code }));
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toBe("事務長がこのクリニックの使い方を選ぶまでお待ちください");
+    expect(auth().login("und_inv_join", "password123")).toBeNull();
+    expect(auth().tenantSize(solo.tenantId)).toBe(1);
+    expect(auth().canChooseKind(solo)).toBe(true);
+    expect(() => auth().createInvite(solo, "clerk")).toThrow(/お待ちください/);
+    // 選んだあとは、残っていた招待で入れる
+    expect((await (await import("../../app/api/tenant/kind/route")).POST(post("/api/tenant/kind", cookieOf(solo), { kind: "real" }))).status).toBe(200);
+    expect((await register(post("/api/auth/register", null, { login: "und_inv_join", name: "しょうたい", password: "password123", inviteCode: invite.code }))).status).toBe(200);
+  });
+
   it("1 人で使っているクリニックは、持ち主が（事務の役割のままでも）選べる", async () => {
     const solo = auth().register("und_solo", "ひとり", "password123", "demo");
     forget(solo.tenantId);

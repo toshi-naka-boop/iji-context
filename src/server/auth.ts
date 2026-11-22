@@ -13,6 +13,8 @@ import { isTenantKind, type TenantKind, type TenantStatus } from "./tenant-kind"
 
 export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
+/** 使い方が未定のクリニックで、選ぶまで待ってもらうときの文言（src/server/errors.ts の TenantUndecided と同じ） */
+const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
 /** 招待コードの期限（日） */
 const INVITE_DAYS = 7;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -137,6 +139,8 @@ export function openAuth(dbFile: string) {
    */
   function createInvite(by: User, role: Role, now = new Date()): { code: string; role: Role; expiresAt: string } {
     if (!canInvite(by)) throw forbidden("招待を作れるのは事務長だけです");
+    // 使い方が未定のあいだは招待を作らない（人が増えると、1 人のクリニックの持ち主が使い方を選べなくなる。反証 round-44 #4）
+    if (tenantKind(by.tenantId) === "undecided") throw conflict(UNDECIDED_WAIT);
     const code = randomBytes(16).toString("base64url");
     const expiresAt = new Date(now.getTime() + INVITE_DAYS * 86_400_000).toISOString();
     db.prepare("INSERT INTO invites (code_hash, tenant_id, role, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").run(sha256(code), by.tenantId, role, by.id, now.toISOString(), expiresAt);
@@ -180,6 +184,8 @@ export function openAuth(dbFile: string) {
         // 照合は長さの決まったハッシュどうしを、時間差の出ない比較で行う（見つからないときも同じだけ比べる）
         const same = timingSafeEqual(Buffer.from(inv?.code_hash ?? sha256(""), "hex"), Buffer.from(hash, "hex"));
         if (!inv || !same || inv.used_at !== null || inv.expires_at <= now.toISOString() || !isRole(inv.role)) throw refuse();
+        // 招待したクリニックの使い方が未定のあいだは受けない（招待は使わずに残す。選んだあとに使える）
+        if (tenantKind(inv.tenant_id) === "undecided") throw conflict(UNDECIDED_WAIT);
         const user = insertUser(login, name, password, { tenantId: inv.tenant_id, role: inv.role });
         db.prepare("UPDATE invites SET used_at = ?, used_by = ? WHERE code_hash = ? AND used_at IS NULL").run(now.toISOString(), user.id, hash);
         return user;
