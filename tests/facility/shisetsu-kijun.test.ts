@@ -19,7 +19,7 @@ const emRows = section
 
 describe("config/shisetsu-kijun.json と EM §2-11 表 4", () => {
   it("行が 1 対 1 で、コード・名称・ページ・厚生局の略称・使う区分が同じ", () => {
-    expect(emRows.length).toBe(17);
+    expect(emRows.length).toBe(18);
     const json = kijun.rows.map((r) => [r.codes.length ? r.codes.join("・") : "—（コードなし）", r.name, r.page, r.abbrev, r.use]);
     expect(json).toEqual(emRows);
   });
