@@ -1,7 +1,8 @@
 // UKE：見本の 2 本と、アップロードで受け取った UKE の読み込み（spec FR-106〜109）、利用者ごとの取り込みの記録。
-// 見本の 2 本を請求に並べるのはデモのクリニックだけ。実在のデータで使うクリニック（real）では、見本はダウンロードだけで、取り込むとアップロードした UKE と同じ扱いになる
+// 見本の 2 本を請求に並べ、ダウンロードさせるのはデモのクリニックだけ。実在のデータで使うクリニック（real）と未定のクリニックでは、見本を配らず、
+// 同梱の UKE（fixtures/uke/*.UKE）と同じ内容のアップロードも断る（作り物の患者を実在の請求として持たない）
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { UkeClaim, UkeFile, UkePatient, UkeReceipt } from "../../uke/types";
 import { parseUke, readStoredUke, readUke, UkeError } from "../../uke/uke";
@@ -13,8 +14,15 @@ import type { AppContext } from "./context";
 
 export function createUke(ctx: AppContext, clerks: Clerks) {
   const { kind, paths, sqlite, setting, setSetting } = ctx;
-  /** 見本の 2 本を請求に並べるか（デモのクリニックだけ） */
+  /** 見本の 2 本を請求に並べ、ダウンロードさせるか（デモのクリニックだけ） */
   const withSamples = kind === "demo";
+  /** 同梱の UKE（fixtures/uke/*.UKE）の内容のハッシュ。demo 以外のクリニックで、同じ内容のアップロードを断るのに使う */
+  let bundled: Set<string> | null = null;
+  const bundledHashes = (): Set<string> => {
+    const dir = path.join(paths.root, "fixtures", "uke");
+    bundled ??= new Set(readdirSync(dir).filter((f) => /\.UKE$/i.test(f)).map((f) => createHash("sha256").update(readFileSync(path.join(dir, f))).digest("hex")));
+    return bundled;
+  };
   const { clerk } = clerks;
 
   const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
@@ -138,6 +146,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   }
   /** 見本の UKE のバイト列（ダウンロード用。FR-109）。名前は一覧にあるものだけ */
   function sampleUke(name: string): { name: string; bytes: Buffer } {
+    if (!withSamples) throw notFound("見本の UKE は、デモで試すクリニックだけで使えます");
     const i = UKE_FILES.findIndex((f) => path.basename(f) === name);
     if (i < 0) throw notFound("見本の UKE ではありません");
     return { name: path.basename(UKE_FILES[i]), bytes: sampleBytes()[i] };
@@ -158,9 +167,10 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     const reject = (reason: string): never => {
       throw badRequest(`この UKE は取り込めません（${reason}）`);
     };
-    // 見本と同じ内容のファイルは、デモのクリニックでは見本として取り込む。real では、ほかのアップロードと同じに扱う（請求 id はアプリが振る）
+    // 見本と同じ内容のファイルは、デモのクリニックでは見本として取り込む。real と未定のクリニックでは、同梱の UKE と同じ内容なら断る
     const hit = withSamples ? sampleBytes().findIndex((b) => b.equals(buf)) : -1;
     const sha256 = createHash("sha256").update(buf).digest("hex");
+    if (!withSamples && bundledHashes().has(sha256)) return reject("同梱の見本（合成データ）と同じ内容です。実在のデータで使うクリニックには、見本を取り込めません");
     const state = uploadState();
     if (hit < 0 && state.files.some((u) => u.sha256 === sha256)) return reject("同じファイルをすでに取り込んでいます。取り込み直すときは、取り込み済みのファイルを消してからにしてください");
     const upload: Upload = { seq: state.next, sha256 };

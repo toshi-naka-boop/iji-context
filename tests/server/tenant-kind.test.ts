@@ -2,7 +2,7 @@
 // real は今日が実際の日付（日本時間）で進められず、作り物のデータ（院内ルールの種・K6 の地域ルール・見本の UKE・練習問題）を入れない・見せない。
 // 日付が変わったリクエストで、医師確認のリマインド・保留と会議の整理が回る。実際のルート（app/api/**/route.ts）を呼んで確かめる
 import Database from "better-sqlite3";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { listKnowledge } from "../../src/lifecycle/store";
 import { createQuery, readQuery, type QueryDraft } from "../../src/query/doctor-query";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
+import { readUke, writeUke } from "../../src/uke/uke";
 import { at, claimId } from "../helpers/period";
 import { autoConsent } from "../helpers/consent";
 
@@ -52,7 +53,13 @@ const upload = (cookie: string, bytes: Uint8Array) => {
   form.set("file", new Blob([bytes as BlobPart]), "upload.UKE");
   return new Request("http://localhost/api/uke/upload", { method: "POST", headers: { cookie }, body: form });
 };
-const SAMPLE = readFileSync(path.join(repo, "fixtures", "uke", "kokuhoren.UKE"));
+const UKE_DIR = path.join(repo, "fixtures", "uke");
+const SAMPLE = readFileSync(path.join(UKE_DIR, "kokuhoren.UKE"));
+/** 同梱のどれとも内容が違う UKE（見本の 1 枚目を、架空の別の患者にしたもの） */
+const OWN = (() => {
+  const f = readUke(SAMPLE);
+  return writeUke({ ...f, receipts: [{ ...f.receipts[0], patient: { ...f.receipts[0].patient, name: "架空 桐子", birth: "19480808" } }] });
+})();
 
 describe("クリニックの種類", () => {
   it("招待なしの登録で選んだ種類がクリニックに付き、招待で入った人はそのクリニックの種類になる。招待のときに種類は選べない", async () => {
@@ -232,16 +239,28 @@ describe("real に作り物のデータを入れない・見せない", () => {
     expect(appOf(demo).drills().fix.length).toBeGreaterThan(0);
   });
 
-  it("real で見本の UKE をアップロードすると、見本としてではなく、取り込んだ UKE と同じ扱いになる（請求の番号はアプリが振る）", async () => {
+  it("real では見本の UKE をダウンロードさせず、同梱の UKE と同じ内容のアップロードを断る。ほかの UKE は取り込める（請求の番号はアプリが振る）", async () => {
     const real = auth().register("sample_real", "じつ", "password123", "real");
     const cookie = cookieOf(real);
-    const r = await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, SAMPLE));
+    expect((await (await import("../../app/api/uke/sample/route")).GET(get("/api/uke/sample?name=kokuhoren.UKE", cookie))).status).toBe(404);
+    const send = (await import("../../app/api/uke/upload/route")).POST;
+    const { resetLimits } = await import("../../src/server/rate-limit");
+    for (const f of readdirSync(UKE_DIR).filter((x) => x.endsWith(".UKE"))) {
+      resetLimits();
+      const r = await send(upload(cookie, readFileSync(path.join(UKE_DIR, f))));
+      expect([f, r.status]).toEqual([f, 400]);
+      expect((await r.json()).error).toContain("同梱の見本");
+    }
+    expect(appOf(real).ukeList("new1")).toEqual([]);
+    resetLimits();
+    const r = await send(upload(cookie, OWN));
     expect(r.status).toBe(200);
     const list = (await r.json()) as { name: string; uploaded: boolean; receipts: { claimId: string }[] }[];
     expect(list.map((u) => u.uploaded)).toEqual([true]);
-    expect(list[0].receipts.every((x) => /^U1-\d+$/.test(x.claimId))).toBe(true);
-    expect(appOf(real).cases().every((c) => c.claimId.startsWith("U1-"))).toBe(true);
-    expect(appOf(real).importedClaims("new1").length).toBeGreaterThan(0);
+    expect(list[0].receipts.map((x) => x.claimId)).toEqual(["U1-1"]);
+    // demo では今までどおり見本をダウンロードできる
+    const demo = auth().register("sample_demo", "でも", "password123", "demo");
+    expect((await (await import("../../app/api/uke/sample/route")).GET(get("/api/uke/sample?name=kokuhoren.UKE", cookieOf(demo)))).status).toBe(200);
   });
 });
 
@@ -301,7 +320,7 @@ describe("real で、日付が変わったときに回る処理と、実際の�
     const real = auth().register("exp_real", "じつ", "password123", "real");
     const cookie = cookieOf(real);
     setNow("2026-12-01T10:00:00+09:00");
-    expect((await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, SAMPLE))).status).toBe(200);
+    expect((await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, OWN))).status).toBe(200);
     const a = appOf(real);
     const claim = a.cases()[0].claimId;
     a.savePatientFact(claim, "new1", { key: "careLevel", value: 2, source: "介護保険証", validUntil: "2026-12-05" });
