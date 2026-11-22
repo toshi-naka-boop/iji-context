@@ -704,6 +704,7 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
   const open = listKnowledge(deps.store).find((m) => m.relates_to === orig.id && m.status === "未検証");
   if (open) {
     appendBody(deps.store, open.id, text, pairOver && pairSummary ? { ...pairOver, summary: pairSummary } : undefined);
+    inheritRevisionChecks(deps, orig, open.id, now);
     return open.id;
   }
   const created = createKnowledge(
@@ -723,7 +724,25 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
     },
     now,
   );
+  inheritRevisionChecks(deps, orig, created.id, now);
   return created.id;
+}
+
+/**
+ * 背反の組の知識の修正版に、元の知識の済んでいない改定の棚卸を引き継ぐ（round-45 codex #1）：元の保留（pending）と、直近の改定日に元が承認済みで、まだ棚卸していないもの。
+ * 修正版は改定の後に承認されるので、自分では棚卸の対象にならない。引き継いだ保留は、修正版が承認されたあとの整理で比べる
+ */
+function inheritRevisionChecks(deps: ReviewDeps, orig: KnowledgeMeta, candidateId: string, now: string): void {
+  if (!orig.match.codePair) return;
+  const from = orig.revision_checks ?? {};
+  const d = latestRevision(deps.calendar, now);
+  const owed = [...Object.keys(from).filter((k) => from[k] === "pending"), ...(d !== null && from[d] === undefined && approvedAt(orig, d) ? [d] : [])];
+  if (owed.length === 0) return;
+  const cand = readKnowledge(deps.store, candidateId);
+  if (!cand) return;
+  const checks = { ...cand.revision_checks };
+  for (const k of owed) if (checks[k] === undefined) checks[k] = "pending";
+  writeRevisionChecks(deps.store, candidateId, checks);
 }
 
 /** 回答の反映。順番は「状態の遷移 → 候補 → applied=true」で、どこで止まっても拾い直しで二重にならない */

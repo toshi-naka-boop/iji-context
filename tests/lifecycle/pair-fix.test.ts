@@ -2,7 +2,7 @@
 // 修正版は、回答の向き（polarity）と条件の文（conditionNote）を持つ（元からコピーしない）。承認すると、直した値で G05 に渡る
 import { afterEach, describe, expect, it } from "vitest";
 import { answerItem, buildDigest } from "../../src/lifecycle/review";
-import { appendBody, applyEvent, createKnowledge, listKnowledge, readBody } from "../../src/lifecycle/store";
+import { appendBody, applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../src/lifecycle/store";
 import { createLocalPairs } from "../../src/server/app/local-pairs";
 import type { AppContext } from "../../src/server/app/context";
 import { harness } from "./review-helpers";
@@ -64,5 +64,37 @@ describe("会議の修正版で polarity・conditionNote を直す（X-118）", 
     const cand = listKnowledge(h.deps.store).find((m) => m.relates_to === id)!;
     const next = appendBody(h.deps.store, cand.id, "二つ目の回答", { polarity: "allow", conditionNote: "根拠：その他。二つ目", summary: "二つ目の要約" });
     expect([next.polarity, next.conditionNote, next.summary, next.rev === cand.rev]).toEqual(["allow", "根拠：その他。二つ目", "二つ目の要約", false]);
+  });
+});
+
+describe("改定の棚卸の保留を、修正版に引き継ぐ（round-45 codex #1）", () => {
+  it("保留のまま、別の理由（返戻）で修正版を作ると、保留が修正版に移り、修正版が承認されたあとの整理で比べられる", () => {
+    h = harness();
+    const T = "2026-05-01T09:00:00+09:00";
+    const m = createKnowledge(h.deps.store, { layer: "院内", slug: "pair-hold", summary: "組", body: "組", source: { type: "手動", ref: "uke:A1" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：審査で通った。元の条件", match: { codePair: PAIR } }, T);
+    applyEvent(h.deps.store, m.id, { type: "VERIFY_APPROVE" }, T);
+    let ready = false;
+    const seen: string[] = [];
+    h.deps.localRevision = () => (ready ? ["基本マスターの 114001110 の行（名称）"] : "pending");
+    const D = "2026-06-01T00:00:00+09:00";
+    h.review("2026-06-06T09:00:00+09:00");
+    expect(readKnowledge(h.deps.store, m.id)?.revision_checks).toEqual({ [D]: "pending" });
+    // 返戻 → 会議で直す（修正版を作る。元は停止）
+    applyEvent(h.deps.store, m.id, { type: "TRIGGER", trigger: "localReturn" }, "2026-06-08T09:00:00+09:00", { trigger: "localReturn", claimId: "U1-1", codePair: PAIR });
+    h.review("2026-06-13T09:00:00+09:00");
+    const item = buildDigest(h.deps).items.find((x) => x.knowledgeId === m.id && x.kind === "recheck")!;
+    answerItem(h.deps, { itemId: item.itemId, answer: 2, polarity: "allow", conditionNote: "根拠：その他。直した条件" }, "2026-06-13T09:00:00+09:00");
+    const cand = listKnowledge(h.deps.store).find((x) => x.relates_to === m.id)!;
+    expect([readKnowledge(h.deps.store, m.id)?.status, cand.revision_checks]).toEqual(["停止", { [D]: "pending" }]);
+    // 修正版を承認（改定の後）→ そろったら比べて要再検証
+    applyEvent(h.deps.store, cand.id, { type: "VERIFY_APPROVE" }, "2026-06-14T09:00:00+09:00");
+    h.deps.localRevision = (pair, d) => {
+      seen.push(d);
+      return ready ? ["基本マスターの 114001110 の行（名称）"] : "pending";
+    };
+    ready = true;
+    h.review("2026-06-20T09:00:00+09:00");
+    const after = readKnowledge(h.deps.store, cand.id)!;
+    expect([seen, after.status, after.history.at(-1)?.event, after.revision_checks]).toEqual([[D], "要再検証", "TRIGGER{localRevision}", { [D]: "changed" }]);
   });
 });
