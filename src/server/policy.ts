@@ -102,6 +102,8 @@ export const POLICY = {
   // 請求ごとに確かめた事実（情報不足の項目への答え）。医師あての事実は医師の役割だけが残せるので、医師にも開ける（事実ごとの宛先はハンドラの中で分ける）
   "GET /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
   "POST /api/claims/[claimId]/facts": row([...WORK, "doctor"], "none", true),
+  // 「この請求のこの組が返戻・査定された」（design.md §14-4）。権限は事実の入力と同じ（医療事務あての入力なので、医師の役割はハンドラが 403）
+  "POST /api/claims/[claimId]/local-return": row([...WORK, "doctor"], "none", true),
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),
@@ -122,6 +124,8 @@ export const POLICY = {
   // 知識の閲覧には同意のゲートも置かない（CLAUDE.md 固定条件「可視性にゲートを置かない」）
   "GET /api/knowledge": row(ALL, "none", false),
   "POST /api/knowledge": row(ALL, "none", false),
+  // 背反の組の院内の知識を作る（design.md §14-2）。取り込んだ請求を読んで G05 を計算し直すので、請求の事実の入力と同じ役割（医療事務あて）で、同意が要る（round-43 C-201）
+  "POST /api/knowledge/pair": row(WORK, "none", true),
   // 公的文書の条件に当たるかを確かめる（design.md §11-3）：「当たる」は全員（絞るときはこの行を変える）。「当たらない」は ④ を黙らせられるので責任者だけ
   "POST /api/knowledge/[id]/official-check/applies": row(ALL, "none", false),
   "POST /api/knowledge/[id]/official-check/not-applies": row(["veteran"], "none", false),

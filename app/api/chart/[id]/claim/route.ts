@@ -15,7 +15,7 @@ function choicesOf(raw: string | undefined): Record<string, string> {
   }
 }
 
-export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, ({ params, query }) => getApp().chartClaim(Number(params.id), choicesOf(query.choices), query.rev));
+export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, ({ params, query, clerkId }) => getApp().chartClaim(Number(params.id), choicesOf(query.choices), query.rev, clerkId));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

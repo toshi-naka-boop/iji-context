@@ -117,6 +117,8 @@ const TABLE_TEXT: Record<string, string> = {
   "G05.exception_none": "コード {a} と {b} は、併せて算定できない組です（{where}。表で算定する側：{keep}）。{because}告示・通知の例外〔{hxText}〕に当たりません。この組の例外の一覧がそろっているかは確かめ終えていないので、告示・通知を確かめてください（{hp}）",
   "G05.exception_ask": "コード {a} と {b} は、条件によっては併せて算定できません（{where}。表で算定する側：{keep}）。告示・通知の例外〔{hxText}〕に当たれば併せて算定できるので、下の問いに答えてください（{hp}）",
   "G05.exception_check": "コード {a} と {b} は、条件によっては併せて算定できません（{where}。表で算定する側：{keep}）。告示・通知の例外〔{hxText}〕に当たれば併せて算定できます。{questions}（{hp}）",
+  // 院内の知識（承認済み・avoid）を添えた背反（design.md §14-3。Lv.5 以上の本人）
+  "G05.local_avoid": "コード {a} と {b} は、院内の知識（承認済み）で、併せて算定できない組です（{where}。表で算定する側：{keep}）。{localNote}（{localIds}）",
   "G05.exception_split": "コード {a} と {b} は、条件によっては併せて算定できません（{where}。表で算定する側：{keep}）。告示・通知の例外〔{hxText}〕に当たるかが日によって分かれています（当たる日：{hitDays}日、当たらない日：{missDays}日）。告示・通知を確かめてください（{hp}）",
   "G06.day": "コード {code} は、1 日に {limit} 回までとして電子点数表に載っていますが、{days}日に、それを超える回数があります（多い日で {count} 回）。告示・通知を確かめてください",
   "G06.day_cond": "コード {code} は、条件によっては、1 日に {limit} 回までです（条件の中身はデータにありません）。{days}日に、それを超える回数があります（多い日で {count} 回）。告示・通知を確かめてください",
@@ -321,3 +323,46 @@ export function patientFindingText(f: Pick<PatientFinding, "messageKey" | "param
   const text = PATIENT_FINDING_TEXT[f.messageKey] ?? f.messageKey;
   return text.replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
 }
+
+/**
+ * 背反の組の院内の知識（design.md §14-1〜§14-4）の文言。点数・金額の語を入れない。
+ * bases は、条件の文の先頭に付ける根拠（定型）。allow と「返戻・査定された」の組は作れない
+ */
+export const LOCAL_PAIR_BASES = ["審査で通った", "返戻・査定された", "疑義照会の答え", "その他"] as const;
+export type LocalPairBasis = (typeof LOCAL_PAIR_BASES)[number];
+export const LOCAL_PAIR_TEXT = {
+  /** Lv.5 以上・承認済みの allow（ボタンを添える） */
+  allow: "院内の知識（承認済み）：条件に当たれば併せて算定できます。条件：{note}",
+  press: "この請求も条件に当たる",
+  pressDay: "この日も条件に当たる",
+  /** Lv.1〜4 のヒント */
+  hintAllow: "院内の知識：条件に当たれば併せて算定できます。条件：{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
+  hintAvoid: "院内の知識：併せて算定できません。{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
+  avoidNote: "院内の知識：{note}",
+  conflict: "院内の知識が食い違っています（承認済みに、併せて算定できるものと、できないものがあります：{ids}）。どちらも使っていません",
+  unverified: "前回の確かめ（未検証）があります：{ids}",
+  silenced: "院内の知識で、この請求も条件に当たると確かめたので出していない",
+  /** 作る入口（取り込んだレセプトの点検の、対象の G05 の指摘の下） */
+  create: "この組の扱いを院内の知識として残す",
+  createNote: "患者の氏名・番号を書かないでください。条件は文で書き、機械では当てません（請求ごとに、人が条件に当たるかを確かめます）",
+  allowLabel: "条件に当たれば併せて算定できる",
+  avoidLabel: "併せて算定できない",
+  /** 条件の文の先頭に付ける根拠 */
+  basisPrefix: "根拠：{basis}。",
+  /** 返戻の入口 */
+  returned: "この請求のこの組が返戻・査定された",
+  returnedNote: "押すと、この組の院内の知識（承認済み・条件に当たれば併せて算定できる）を要再検証にし、この請求で押した「条件に当たる」を取り消します",
+  /** ローカルルール欄（知識の一覧） */
+  emDecided: "EM の決まりがある組です（例外の決まりで決まるので、この知識は使われません）",
+  summaryAllow: "背反の組 {a}・{b}（{table}）：条件に当たれば併せて算定できる",
+  summaryAvoid: "背反の組 {a}・{b}（{table}）：併せて算定できない",
+  /** 押した事実の一覧（請求ごとの事実）での名前。押した人の名前・レベルは出さず、役割だけ */
+  pressedFact: "院内の知識 {id} の条件に当たる（コード {a} と {b}）",
+  /** 会議の修正版（と承認の画面）に出す、実際に使われる扱いと条件（round-43 codex #3） */
+  fixLine: "修正版の扱い：{label}。条件：{note}",
+  usedAs: "使われる扱い：{label}。条件：{note}",
+  /** 押した事実の取り消し（round-43 codex #4） */
+  unpress: "取り消す",
+} as const;
+/** 文言の {名前} を値で埋める */
+export const fillLocal = (t: string, v: Record<string, string>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");

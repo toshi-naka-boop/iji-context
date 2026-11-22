@@ -105,6 +105,21 @@ CREATE TABLE chart_comments (note_id INTEGER NOT NULL, claim_id TEXT NOT NULL, d
 CREATE INDEX chart_comments_claim ON chart_comments (claim_id);
 `,
   },
+  {
+    // 背反の組の院内の知識に USED を出した記録（design.md §14-3。C-172・X-121）：同じ請求・同じ知識は 1 日（日本時間）1 回まで。行があれば、その日はもう出さない
+    version: 10,
+    sql: `
+CREATE TABLE local_used (claim_id TEXT NOT NULL, knowledge_id TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY (claim_id, knowledge_id, day));
+`,
+  },
+  {
+    // 会議の回答で直す背反の組の知識（design.md §14-1。X-118）の、修正版が持つ向きと条件の文（回答 2 のときだけ。ほかの知識・回答は空）
+    version: 11,
+    sql: `
+ALTER TABLE digest_items ADD COLUMN polarity TEXT;
+ALTER TABLE digest_items ADD COLUMN condition_note TEXT;
+`,
+  },
 ];
 
 /** ログインの auth.db */

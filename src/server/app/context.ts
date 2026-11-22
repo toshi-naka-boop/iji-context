@@ -6,7 +6,11 @@ import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
 import { ruleKubun } from "../../engine";
 import { isKnownKubun } from "../../engine/revisions";
-import { hasRevision } from "../../engine/revisions";
+import { hasRevision, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { HAIHAN, HAIHAN_BY_GENERATION } from "../../generic/haihan";
+import { generationsAt, pairRevisionDiff } from "../../generic/local-revision";
+import { MASTERS_CONFIG } from "../../masters/config";
+import { withMasters } from "../../masters/db";
 import type { FacilityJson } from "../../engine/facility";
 import type { Calendar } from "../../lifecycle/calendar";
 import type { ReviewDeps } from "../../lifecycle/review";
@@ -30,9 +34,21 @@ export function defaultPaths(root = process.cwd()): AppPaths {
   };
 }
 
-/** 本番の配線が作る ReviewDeps。版の有無（hasRevision）を必ず渡す（渡し忘れると、版のない提出で会議の整理が止まる） */
+/**
+ * 本番の配線が作る ReviewDeps。版の有無（hasRevision）を必ず渡す（渡し忘れると、版のない提出で会議の整理が止まる）。
+ * 背反の組の院内の知識の改定の棚卸（localRevision。design.md §14-4）は、masters.db の改定前後の世代の 1 枚で比べる（masters.db がなければ保留）
+ */
 export function reviewDepsOf(base: Pick<ReviewDeps, "db" | "store" | "calendar" | "official">): ReviewDeps {
-  return { ...base, ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth), hasRevision: (yearMonth) => hasRevision(yearMonth) };
+  return {
+    ...base,
+    ruleKubun: (ruleId, yearMonth) => ruleKubun(ruleId, yearMonth),
+    hasRevision: (yearMonth) => hasRevision(yearMonth),
+    localRevision: (pair, revisionDate) => {
+      // 改定後の版がない・マスターがない（改定後の 1 枚もない）ときは保留。改定後の EM の行は、今の世代なら出荷の決まり（config/haihan-exceptions.json）
+      const gens = generationsAt(revisionDate, SELECTABLE_REVISIONS);
+      return gens ? withMasters((db) => (db ? pairRevisionDiff(db, pair, gens, { ...HAIHAN_BY_GENERATION, [MASTERS_CONFIG.generation]: HAIHAN }) : "pending")) : "pending";
+    },
+  };
 }
 
 /**

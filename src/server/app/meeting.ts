@@ -26,7 +26,8 @@ export function createMeeting(ctx: AppContext, clock: Clock) {
   const recountKnowledge = () => {
     for (const m of listKnowledge(deps.store)) recount(deps, m.id);
   };
-  const answerAgenda = (itemId: string, answer: 1 | 2 | 3 | 4, freeText?: string) => answerItem(deps, { itemId, answer, freeText }, now());
+  /** fix は、背反の組の知識を回答 2 で直すときの、修正版の向きと条件の文（design.md §14-1） */
+  const answerAgenda = (itemId: string, answer: 1 | 2 | 3 | 4, freeText?: string, fix?: { polarity?: "allow" | "avoid"; conditionNote?: string }) => answerItem(deps, { itemId, answer, freeText, ...fix }, now());
   const runMeeting = () => meetingReview(deps, now());
 
   return { importClaimResult, agenda, answerAgenda, runMeeting, recountKnowledge };

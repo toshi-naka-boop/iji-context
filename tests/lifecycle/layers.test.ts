@@ -81,10 +81,10 @@ describe("層×生成元（§4-1）", () => {
 
   it("層ごとに効くトリガー（FR-66）。official（④ 公的文書）は v22 で足した列で、既存の 3 列の値は変えない", () => {
     expect(LAYER_TRIGGERS).toEqual({
-      制度: { revision: true, reappointment: false, idle: false, official: false },
-      地域: { revision: false, reappointment: true, idle: true, official: true },
-      ベテラン: { revision: false, reappointment: false, idle: true, official: true },
-      院内: { revision: false, reappointment: false, idle: true, official: true },
+      制度: { revision: true, reappointment: false, idle: false, official: false, localRevision: false, localReturn: false },
+      地域: { revision: false, reappointment: true, idle: true, official: true, localRevision: false, localReturn: false },
+      ベテラン: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
+      院内: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
     });
   });
 });

@@ -42,7 +42,15 @@ export type Match = {
   commentOn?: { kubun: string; present: boolean }[];
   /** 当月を含め、その区分を何か月続けて算定しているか（history から数える）。v6 */
   consecutiveMonths?: { kubun: string; min: number };
+  /**
+   * 背反の 2 つのコード（小さい順）と表（tani 1＝1 日・2＝同一月・3＝同時。1 週間の表は対象にしない）。院内層とベテラン層（会議の修正版）だけが持つ。
+   * これを持つ知識は、ほかのキーを持たない（store が検査）。条件は conditionNote の文だけで、機械では当てない（design.md §14-1）
+   */
+  codePair?: CodePair;
 };
+
+/** 背反の組（design.md §14-1） */
+export type CodePair = { a: string; b: string; tani: 1 | 2 | 3 };
 
 /** 遷移の根拠（v15。round-10 の A・F・E） */
 export type Basis = {
@@ -56,6 +64,14 @@ export type Basis = {
   officialIds?: string[];
   /** ベテランの回答による遷移のとき、その項目 id */
   itemId?: string;
+  /** localReturn のとき、返戻・査定された請求の id（design.md §14-4） */
+  claimId?: string;
+  /** localRevision・localReturn のとき、その組 */
+  codePair?: CodePair;
+  /** localRevision のとき、改定の前後で差が出た項目（design.md §14-4） */
+  changes?: string[];
+  /** localRevision のとき、どの改定日の棚卸か（結果を残す前に止まったときに、history から結果を戻す。round-45 codex #2） */
+  revisionDate?: string;
 };
 
 export type HistoryEntry = {
@@ -92,6 +108,11 @@ export type KnowledgeMeta = {
   status_since: string;
   retired_reason: string | null;
   empathy: number;
+  /**
+   * 背反の組の知識（match.codePair）の、改定の棚卸の記録（改定日 → pending＝改定後の 1 枚がまだなく保留／same＝差がなかった／changed＝差が出た・比べられないので要再検証にした）。
+   * 知識の状態や status_since とは別に持つので、別の理由で承認し直しても保留は消えない（design.md §14-4。round-43 codex #2）。rev のハッシュに入れない
+   */
+  revision_checks?: Record<string, "pending" | "same" | "changed">;
   /** 会議で確認済みの公的文書の鍵（昇順。既定は空。rev のハッシュに入れない。design.md §4-3） */
   official_seen: string[];
   /**
@@ -103,7 +124,8 @@ export type KnowledgeMeta = {
   history: HistoryEntry[];
 };
 
-export type TriggerKind = "revision" | "reappointment" | "idle" | "official";
+/** localRevision・localReturn は、codePair を持つ知識だけに効く（design.md §14-4） */
+export type TriggerKind = "revision" | "reappointment" | "idle" | "official" | "localRevision" | "localReturn";
 
 export type LifecycleEvent =
   | { type: "VERIFY_APPROVE" }

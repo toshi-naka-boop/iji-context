@@ -13,6 +13,10 @@ import type { Actor, KnowledgeMeta } from "../../lifecycle/types";
 import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
 import { SAMPLE_NOTICE_BASE, SAMPLE_NOTICE_PDF } from "../../notice/sample";
 import { checkable, docKey, judge, judgeAll, related } from "../../official/match";
+import { selectorOf } from "../../generic/g05";
+import { pairHasPattern } from "../../generic/haihan";
+import { TABLE } from "../../generic/tensuhyo";
+import { withMasters } from "../../masters/db";
 import type { OfficialDoc } from "../../official/types";
 import type { UkeSources } from "../../uke/cases";
 import { badRequest, conflict, notFound } from "../errors";
@@ -96,8 +100,10 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
   function matchText(m: KnowledgeMeta, yearMonth: string): string {
     const points = resolveRevision(yearMonth).points;
     const name = (k: string) => points[k]?.name ?? k;
-    const { ruleId, kubunAll, payer, prefecture, facts, commentOn, consecutiveMonths } = m.match;
+    const { ruleId, kubunAll, payer, prefecture, facts, commentOn, consecutiveMonths, codePair } = m.match;
     const parts = [
+      // 背反の組の知識（design.md §14-1）：条件は conditionNote の文だけで、機械では当てない
+      ...(codePair ? [`背反の組 ${codePair.a}・${codePair.b}（${TABLE.haihan[codePair.tani]}）`] : []),
       ...(kubunAll && kubunAll.length > 0 ? [`${kubunAll.map(name).join("・")}を算定している`] : ruleId !== undefined ? [`ユスティの ${ruleId} が当てはまる`] : []),
       ...(payer !== undefined ? [`審査支払機関が${payer}`] : []),
       ...(prefecture !== undefined ? [prefecture] : []),
@@ -206,7 +212,24 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
     const yearMonth = jstYearMonth(now());
     const judged = hasRevision(yearMonth);
     // このクリニックでは使わない作り物の知識（real・未定）も一覧には出し、sample で見分けられるようにする（状態はそのまま）
-    return listKnowledge(store, { withExcluded: true }).map((m) => ({ id: m.id, layer: m.layer, status: m.status, summary: m.summary, empathy: m.empathy, hits: m.hits, misses: m.misses, sample: store.excluded?.(m) === true, official: m.layer !== "制度" && judged && !store.excluded?.(m) ? officialOf(m, yearMonth) : null }));
+    const metas = listKnowledge(store, { withExcluded: true });
+    // 背反の組の知識には、組・条件と、EM の例外の組（HP）が入っているか（入っていれば §13 で決まるので使われない。design.md §14-3）を添える
+    const emDecided = withMasters((db) => {
+      const sel = db && judged ? selectorOf(db, { yearMonth, generation: resolveRevision(yearMonth).generation }) : null;
+      return new Set(metas.filter((m) => m.match.codePair && pairHasPattern(m.match.codePair, sel)).map((m) => m.id));
+    });
+    return metas.map((m) => ({
+      id: m.id,
+      layer: m.layer,
+      status: m.status,
+      summary: m.summary,
+      empathy: m.empathy,
+      hits: m.hits,
+      misses: m.misses,
+      sample: store.excluded?.(m) === true,
+      official: m.layer !== "制度" && judged && !store.excluded?.(m) ? officialOf(m, yearMonth) : null,
+      ...(m.match.codePair ? { pair: { ...m.match.codePair, table: TABLE.haihan[m.match.codePair.tani], conditionNote: m.conditionNote ?? "", polarity: m.polarity, emDecided: emDecided.has(m.id) } } : {}),
+    }));
   };
 
   return { queue, verify, empathize, propose, resolveNoticeItems, registerNotice, seedLocalRules, localRulesOf, knowledgeList, checkOfficial };

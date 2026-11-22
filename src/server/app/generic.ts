@@ -7,7 +7,7 @@ import { evaluateGeneric } from "../../generic";
 import { rowNamesOf, type RowNames } from "../../generic/lookup";
 import { claimOfLines, overlap, type MappedLine } from "../../generic/overlap";
 import { genericScopeOf } from "../../generic/scope";
-import type { GenericResult } from "../../generic/types";
+import type { GenericAbout, GenericResult } from "../../generic/types";
 import { genericView, type GenericView } from "../../generic/view";
 import { withMasters } from "../../masters/db";
 
@@ -23,14 +23,17 @@ export function genericOut(result: GenericResult, names: RowNames | null, hand: 
   return { ...genericView({ ...result, findings: o.findings }, names), overlap: { duplicate: o.duplicate, judged: o.judged } };
 }
 
-/** skippedLines は、コードに直せないので掛けなかった行の数（コードを持たない区分と、包括の検査の区分）。hand は、同じ行を手書きのルールで判定した結果 */
-export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: string, hand: Hand, recordsKnown: boolean): GenericOut & { skippedLines: number } {
+/**
+ * skippedLines は、コードに直せないので掛けなかった行の数（コードを持たない区分と、包括の検査の区分）。hand は、同じ行を手書きのルールで判定した結果。
+ * local は、背反の組の院内の知識と本人のレベル（design.md §14-3。月末の点検・算定プレビューが渡す。試算は渡さない）。localUsed は、指摘に添えた承認済みの知識の id
+ */
+export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: string, hand: Hand, recordsKnown: boolean, local?: Pick<GenericAbout, "localKnowledge" | "level">): GenericOut & { skippedLines: number; localUsed: string[] } {
   const { claim, mapped } = claimOfLines(lines, rev);
-  const about = { yearMonth, generation: rev.generation };
+  const about: GenericAbout = { yearMonth, generation: rev.generation, ...local };
   const view = withMasters((db) => {
     const result = evaluateGeneric(claim, db, about);
     // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
-    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: genericScopeOf(claim, db, about, result) };
+    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: genericScopeOf(claim, db, about, result), localUsed: result.localUsed ?? [] };
   });
   // 回数 0 の行は、算定していない行なので「掛けなかった行」に数えない
   return { ...view, skippedLines: lines.filter((l) => l.count > 0).length - claim.units.length };

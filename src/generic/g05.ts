@@ -8,12 +8,15 @@
 // 1 週間の表（tani 4）には例外を掛けない（§13-2）。
 // 背反区分（[点] p28 項番6）：1＝コード①を算定する／2＝コード②を算定する／3＝いずれか一方。残す側が決まる組（1・2）は、指摘の値（keep）に入れる。
 // 表は組を両向きに持つ（[点] p22・p35）。同じ組は 1 回だけ言う：コードの小さいほうがコード①の行を使い、その向きの行がない組は、ある向きの行を使う
+// 院内の知識（design.md §14-3）：特例条件が 1 の行（1 日・同一月・同時の表）のうち、(i) どの組（HP）にも当たらない、または (ii) 未決の問いがなく「決まらない」になったものに、
+// その組の院内層・ベテラン層の codePair の知識（承認済み）を添える。添え方は本人のレベルで分ける（src/generic/local-pair.ts）。§13 で決まったもの・問いが未決のものには添えない
 import { sameDayOf } from "../engine/predicates";
 import { FACT_LABEL } from "../messages";
 import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
 import { HAIHAN, haihanKey, sharedFactOf, type Check, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence, type TimedClaim } from "./tensuhyo";
 import { FINDING_LIMIT, type GenericAbout, type GenericAboutMore, type GenericCheck, type GenericClaim, type GenericFinding } from "./types";
+import { LOCAL_PAIR_MIN_LEVEL, localKey, pairOf, type LocalAttach } from "./local-pair";
 
 type Row = Dated & { tani: number; code1: string; code2: string; kubun: string; tokurei: string };
 
@@ -186,6 +189,49 @@ function patternOf(config: HaihanConfig, row: Row, selects: Ctx["selects"]): { p
   return null;
 }
 
+/**
+ * 院内の知識を添える（design.md §14-3）。make は、残った日（1 日・同時の表は算定日、同一月の表は undefined の 1 つ）で指摘を作る関数。
+ * 戻り値は出す指摘（0 件＝押した事実で全部の日を出さない）。used・silenced に、添えた承認済みの知識の id と、出さなかった日の知識の id を足す
+ */
+function withLocal(about: GenericAbout, ym: string, row: Row, days: (number | undefined)[], make: (days: (number | undefined)[], messageKey?: string, params?: Record<string, string>) => GenericFinding, out: { used: string[]; silenced: string[] }): GenericFinding[] {
+  if (!about.localKnowledge) return [make(days)];
+  const pair = pairOf(row.code1, row.code2, row.tani as 1 | 2 | 3);
+  const list = about.localKnowledge(pair);
+  const approved = list.filter((k) => k.status === "承認済み");
+  const allow = approved.filter((k) => k.polarity === "allow");
+  const avoid = approved.filter((k) => k.polarity === "avoid");
+  const view = (ks: typeof list) => ks.map((k) => ({ id: k.id, rev: k.rev, polarity: k.polarity, conditionNote: k.conditionNote }));
+  // 対象の指摘には組を印として付ける（作る入口を出す。design.md §14-2）
+  const tag = { localPair: JSON.stringify(pair) };
+  const attach = (mode: LocalAttach["mode"], ks: typeof list, dates: string[] = []): Record<string, string> => ({ ...tag, local: JSON.stringify({ mode, pair, knowledge: view(ks), dates } satisfies LocalAttach) });
+  // 承認済みが 1 つもなければ、判断の軸にしない。未検証だけは「前回の確かめ」として id を添える
+  if (approved.length === 0) {
+    const unverified = list.filter((k) => k.status === "未検証");
+    return [unverified.length > 0 ? make(days, undefined, attach("unverified", unverified)) : make(days, undefined, tag)];
+  }
+  // 承認済みの知識を指摘に添えたら、食い違って使わないときも USED を出す（§14-3「どちらの polarity でも」。round-43 C-204）
+  out.used.push(...approved.map((k) => k.id));
+  if (allow.length > 0 && avoid.length > 0) return [make(days, undefined, attach("conflict", approved))];
+  const lv = about.level ?? 0;
+  if (lv < LOCAL_PAIR_MIN_LEVEL) return [make(days, undefined, attach("hint", approved))];
+  if (avoid.length > 0) return [make(days, "G05.local_avoid", { ...attach("avoid", avoid), localNote: avoid.map((k) => k.conditionNote).join("／"), localIds: avoid.map((k) => k.id).join("・") })];
+  // Lv.5 以上・承認済みの allow：押した日（同一月の表は請求）は出さない。押した事実が効くのは、知識が今も承認済みで rev が同じで、今の承認済みの間に押したとき（C-171・C-180）。
+  // 「今の承認済みの間」は、時刻ではなく承認済みに入った回数で見る（時計が進まないと、承認し直しても status_since が同じになる。round-43 C-200）
+  const dateOf = (d: number | undefined) => (d === undefined ? null : `${ym}-${String(d).padStart(2, "0")}`);
+  const pressedBy = (d: number | undefined) =>
+    allow.find((k) => {
+      const p = about.pressed?.(localKey(k.id, k.rev, pair.a, pair.b), dateOf(d)) ?? null;
+      return p !== null && p.round === k.round;
+    });
+  const left = days.filter((d) => {
+    const k = pressedBy(d);
+    if (k) out.silenced.push(k.id);
+    return !k;
+  });
+  if (left.length === 0) return [];
+  return [make(left, undefined, attach("allow", allow, left.flatMap((d) => (d === undefined ? [] : [dateOf(d)!]))))];
+}
+
 /** 例外の決まりを差し替えられる G05（テスト用。出荷は config/haihan-exceptions.json） */
 export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
   // 例外が 1 つも見つかっていない組（round-36 C-122：二重の死亡診断加算）は、そのことを一言にする
@@ -218,6 +264,7 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
       };
       const out: GenericFinding[] = [];
       const silenced: string[] = [];
+      const local = { used: [] as string[], silenced: [] as string[] };
       // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
       let more = 0;
       const push = (f: GenericFinding) => {
@@ -254,7 +301,23 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
         });
         const matched = marked && row.tani !== 4 ? patternOf(config, row, ctx.selects) : null;
         if (matched === null) {
-          push(base(`G05.${hit.key}${marked ? "_cond" : ""}`, hit.sure && !marked && !t.weak(row) ? "確定" : "条件つき", {}));
+          const key = `G05.${hit.key}${marked ? "_cond" : ""}`;
+          const certainty = hit.sure && !marked && !t.weak(row) ? "確定" : "条件つき";
+          if (!marked || row.tani === 4) {
+            push(base(key, certainty, {}));
+            continue;
+          }
+          // (i) 特例条件の行で、どの組（HP）にも当たらない → 院内の知識を添える（design.md §14-3）。残った日の指摘にするときは、その日の単位と日だけにする
+          const h0 = hit;
+          const slots: (number | undefined)[] = row.tani === 2 || h0.days.length === 0 ? [undefined] : h0.days;
+          const make = (ds: (number | undefined)[], messageKey?: string, params: Record<string, string> = {}) => {
+            const nums = ds.filter((d): d is number => d !== undefined);
+            const sub = nums.length === h0.days.length || nums.length === 0 ? h0 : { ...h0, days: nums, units: h0.units.filter((u) => nums.some((d) => ((claim as TimedClaim).units[u].days?.[d - 1] ?? 0) > 0)), params: h0.key === "same_unit" ? h0.params : { days: daysText(nums) } };
+            cur = sub;
+            const where = row.tani === 2 ? "同じレセプト" : sub.key === "same_unit" ? "同じ算定単位" : sub.key === "same_day" ? `別の算定単位ですが、同じ日（${daysText(sub.days)}日）` : `同じ日（${daysText(sub.days)}日）`;
+            return base(messageKey ?? key, certainty, messageKey ? { where, ...params } : params);
+          };
+          for (const f of withLocal(about, ctx.yearMonth, row, slots, make, local)) push(f);
           continue;
         }
         const { p, aCode } = matched;
@@ -319,9 +382,20 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
             if (about.answers && asks.length > 0) {
               const hx = [...new Set(asks.map((x) => x.hx))];
               push(base("G05.exception_ask", "条件つき", { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), asks: JSON.stringify(asks), ...dayParams(days) }));
-            } else if (split && asks.length === 0)
-              push(base("G05.exception_split", "条件つき", { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss), ...dayParams(days) }));
-            else {
+            } else if (asks.length === 0) {
+              // (ii) 未決の問いがなく「決まらない」（日で分かれた・その他・判定不能・ウの例外）→ 院内の知識を添える（design.md §14-3。X-123）。残った日の指摘にするときは、その日の単位だけにする
+              const hx = [...new Set(groups.open.flatMap((g) => g.o.hx))];
+              const unitsBefore = cur.units;
+              const make = (ds: (number | undefined)[], messageKey?: string, params: Record<string, string> = {}) => {
+                const nums = ds.filter((d): d is number => d !== undefined);
+                cur = { ...hit2, units: nums.length === 0 || nums.length === days.length ? unitsBefore : unitsBefore.filter((u) => nums.some((d) => ((claim as TimedClaim).units[u].days?.[d - 1] ?? 0) > 0)) };
+                const own: { messageKey: string; params: Record<string, string> } = split
+                  ? { messageKey: "G05.exception_split", params: { hp: p.id, hx: split.hx, hxText: textOf([split.hx]), hitDays: shortDays(split.hit), missDays: shortDays(split.miss) } }
+                  : { messageKey: "G05.exception_check", params: { hp: p.id, hx: hx.join("・"), hxText: textOf(hx), questions: "例外に当たるかは、レセプトとこれまでの答えでは決まりません。告示・通知を確かめてください" } };
+                return base(messageKey ?? own.messageKey, "条件つき", { ...own.params, ...dayParams(ds), ...params });
+              };
+              for (const f of withLocal(about, ctx.yearMonth, row, days, make, local)) push(f);
+            } else {
               // 答えを渡さない経路（月末の点検・算定プレビュー・試算・measure-generic）と、問いの残っていない「決まらない」は、選択肢を出さず、
               // 何を確かめればよいか（例外の一言と問いの文）を挙げた条件つきの文にする（利用者の判断 2026-11-22。選択肢は出さない：L-76）
               const hx = [...new Set(groups.open.flatMap((g) => g.o.hx))];
@@ -331,7 +405,7 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
           }
         }
       }
-      return Object.assign(out, { more, silenced });
+      return Object.assign(out, { more, silenced, ...(local.silenced.length > 0 ? { localSilenced: local.silenced } : {}), ...(local.used.length > 0 ? { localUsed: [...new Set(local.used)] } : {}) });
     },
   };
 }

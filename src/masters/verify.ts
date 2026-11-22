@@ -199,7 +199,8 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   let failures = 0;
   let warnings = 0;
   const ds = datasetOf(config);
-  const src = db.prepare("SELECT DISTINCT dataset, tbl, snapshot FROM sources ORDER BY tbl, snapshot").all() as { dataset: string; tbl: string; snapshot: string }[];
+  // 確かめるのは、いまの世代の 1 枚だけ。前の世代から残した 1 枚（src/masters/build.ts の carryOver）は、その世代のときに確かめてある（design.md §14-4。X-125）
+  const src = db.prepare("SELECT DISTINCT dataset, tbl, snapshot FROM sources WHERE generation = ? ORDER BY tbl, snapshot").all(config.generation) as { dataset: string; tbl: string; snapshot: string }[];
   const snapshotsOf = (table: string): string[] => src.filter((s) => s.tbl === table).map((s) => s.snapshot);
   const where = (p: Pairs) => Object.keys(p).map((k) => `${k} = ?`).join(" AND ") || "1 = 1";
 
@@ -311,7 +312,7 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   for (const r of ready) lines.push(`点検 ${r.check}（${r.label}）：${r.ready ? "準備できている" : `動かさない（${r.reason}）`}`);
 
   if (opt.write) {
-    for (const [dataset, verified] of Object.entries(em.verified)) db.prepare("UPDATE sources SET verified = ? WHERE dataset = ?").run(verified, dataset);
+    for (const [dataset, verified] of Object.entries(em.verified)) db.prepare("UPDATE sources SET verified = ? WHERE dataset = ? AND generation = ?").run(verified, dataset, config.generation);
     const put = db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES (?, ?, ?)");
     for (const r of ready) put.run(r.check, r.ready ? 1 : 0, r.reason);
   }

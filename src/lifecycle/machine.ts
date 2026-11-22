@@ -96,8 +96,12 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
       return {
         to: "要再検証",
         // relates_to を持つ知識は元の知識の層の改定・改選も効く（v21。round-15 X-57）。元の層の判定は triggers.ts。④ 公的文書は自分の層で決める
+        // codePair を持つ知識には、組の差分（localRevision）と組の返戻（localReturn）が効く（design.md §14-4）
         guard: (m, e) =>
-          e.type === "TRIGGER" && (LAYER_TRIGGERS[m.layer][e.trigger] || (m.relates_to !== null && (e.trigger === "revision" || e.trigger === "reappointment")))
+          e.type === "TRIGGER" &&
+          (LAYER_TRIGGERS[m.layer][e.trigger] ||
+            (m.relates_to !== null && (e.trigger === "revision" || e.trigger === "reappointment")) ||
+            (m.match.codePair !== undefined && (e.trigger === "localRevision" || e.trigger === "localReturn")))
             ? null
             : `${m.layer}層に効かないトリガー`,
         actor: sys,
@@ -136,6 +140,14 @@ function lookup(status: KnowledgeStatus, event: LifecycleEvent): Rule | undefine
   }
 }
 
+
+/**
+ * 承認済みに入った回数（history の中で、ほかの状態から承認済みに入った遷移の数。作成で承認済みになったものも 1 回）。
+ * 承認済みに入り直すたびに 1 増え、時刻と違って、時計が進まなくても見分けられる（押した事実が効くかに使う。design.md §14-3。round-43 C-200）
+ */
+export function approvalRound(meta: Pick<KnowledgeMeta, "history">): number {
+  return meta.history.filter((h) => h.to === "承認済み" && h.from !== "承認済み").length;
+}
 
 /** history に残すイベント名（RECHECK_PASS{claim} のように枝分かれを含める） */
 export function eventLabel(event: LifecycleEvent): string {

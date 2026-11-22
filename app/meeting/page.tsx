@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
-import { payerLabel } from "../../src/messages";
+import { LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
 import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
@@ -52,7 +52,12 @@ function reasonText(e: DigestEntry): string {
     const same = (r.sameApplied as { claimId: string; result: string }[]).map((s) => `${s.claimId}：${s.result}`).join("、");
     return `査定・返戻：${misses}\n同じ知識を適用したほかの請求：${same || "なし"}`;
   }
-  if (e.kind === "recheck") return `きっかけ：${String(r.event)}${r.trigger ? `（${r.trigger === "official" ? "公的文書" : String(r.trigger)}）` : ""}`;
+  if (e.kind === "recheck") {
+    // 背反の組の知識（design.md §14-4）：返戻の請求と組・改定で差が出た項目
+    const trigger = r.trigger === "official" ? "公的文書" : r.trigger === "localReturn" ? "この組の返戻・査定" : r.trigger === "localRevision" ? "改定でこの組に差が出た" : String(r.trigger);
+    const extra = [r.claimId ? `請求 ${String(r.claimId)}` : "", Array.isArray(r.changes) ? `差が出た項目：${(r.changes as string[]).join("／")}` : ""].filter((x) => x !== "");
+    return `きっかけ：${String(r.event)}${r.trigger ? `（${trigger}）` : ""}${extra.length > 0 ? `\n${extra.join("\n")}` : ""}`;
+  }
   if (e.kind === "ignored") return `外した区分：${(r.removedKubun as string[]).join("・")}`;
   return `きっかけ：${String(r.event)}`;
 }
@@ -164,12 +169,17 @@ function NoticeReader({ onRegistered }: { onRegistered: () => void }) {
 export default function Meeting() {
   const [items, setItems] = useState<DigestEntry[]>([]);
   const [free, setFree] = useState<Record<string, string>>({});
+  /** 背反の組の知識を「直す必要がある」と答えるときの、修正版の扱いと条件の文（design.md §14-1。項目ごと。既定は今の値） */
+  const [fix, setFix] = useState<Record<string, { polarity: "allow" | "avoid"; conditionNote: string }>>({});
   const [msg, setMsg] = useState("");
   const load = () => fetch("/api/meeting").then((r) => r.json()).then((d) => setItems(d.items ?? []));
   useEffect(() => { load(); }, []);
 
-  async function answer(itemId: string, answer: number) {
-    const r = await fetch("/api/meeting/answer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId, answer, freeText: free[itemId] || undefined }) });
+  async function answer(e: DigestEntry, answer: number) {
+    const itemId = e.itemId;
+    const cur = e.pair ? (fix[itemId] ?? e.pair) : null;
+    const f = cur && answer === 2 && e.kind !== "disposal" ? { polarity: cur.polarity, conditionNote: cur.conditionNote } : null;
+    const r = await fetch("/api/meeting/answer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId, answer, freeText: free[itemId] || undefined, ...(f ?? {}) }) });
     const d = await r.json();
     setMsg(r.ok ? `反映：${d.status}` : d.error);
     load();
@@ -200,11 +210,21 @@ export default function Meeting() {
           <p><strong>{e.summary}</strong></p>
           <div className="bubble">{reasonText(e)}</div>
           <OfficialDocs e={e} />
+          {e.pair && e.kind !== "disposal" && (
+            <div className="muted" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span>「直す必要がある」と答えるときの、修正版の扱いと条件（{LOCAL_PAIR_TEXT.createNote}）</span>
+              <select value={(fix[e.itemId] ?? e.pair).polarity} onChange={(ev) => setFix({ ...fix, [e.itemId]: { conditionNote: (fix[e.itemId] ?? e.pair!).conditionNote, polarity: ev.target.value as "allow" | "avoid" } })}>
+                <option value="allow">{LOCAL_PAIR_TEXT.allowLabel}</option>
+                <option value="avoid">{LOCAL_PAIR_TEXT.avoidLabel}</option>
+              </select>
+              <input maxLength={200} value={(fix[e.itemId] ?? e.pair).conditionNote} onChange={(ev) => setFix({ ...fix, [e.itemId]: { polarity: (fix[e.itemId] ?? e.pair!).polarity, conditionNote: ev.target.value } })} style={{ width: "100%" }} />
+            </div>
+          )}
           <p>
             <input placeholder="自由記述（足りない条件など）" value={free[e.itemId] ?? ""} onChange={(ev) => setFree({ ...free, [e.itemId]: ev.target.value })} style={{ width: "100%" }} />
           </p>
           <div className="chips">
-            {e.choices.map((c) => <button key={c.no} onClick={() => answer(e.itemId, c.no)}>{c.label}</button>)}
+            {e.choices.map((c) => <button key={c.no} onClick={() => answer(e, c.no)}>{c.label}</button>)}
           </div>
           </div>
         </article>

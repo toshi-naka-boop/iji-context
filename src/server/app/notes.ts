@@ -22,6 +22,7 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import { genericOfLines } from "./generic";
+import type { LocalAbout } from "./local-pairs";
 import type { Uke } from "./uke";
 
 export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases) {
@@ -149,7 +150,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 手入力の行は、その版の点数表にある区分だけを通し、通さなかった区分を notInRevision に名前で返す。結果は試算の型（TrialResult）で、保存しない。
    * revisions は、試算で選べる版（画面の選択肢。own は、この請求の診療年月の版）
    */
-  function claimOfNote(id: number, choices: Record<string, string>, revId?: string) {
+  function claimOfNote(id: number, choices: Record<string, string>, revId?: string, local?: LocalAbout) {
     const r = noteRow(id);
     if (r.facts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
     const base = caseOf(r.claim_id);
@@ -171,11 +172,12 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     // 重なりの規則には、月の途中で外す前の手書きの結果を渡す（外した指摘と同じことを、データの側から出さない）
     if (revId === undefined) {
       const result = evaluate(ctx);
-      const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
+      // 背反の組の院内の知識（design.md §14-3）は、診療年月の版の算定プレビューにだけ渡す（試算には渡さない）。算定プレビューでは USED を出さない
+      const { localUsed: _used, ...generic } = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown, local);
       return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic };
     }
     const result = trial(ctx, rev);
-    const generic = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
+    const { localUsed: _unused, ...generic } = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown);
     const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
     return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
   }

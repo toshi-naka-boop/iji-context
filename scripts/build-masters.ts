@@ -5,7 +5,7 @@ import { mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { createSchema, ingestAll } from "../src/masters/build";
+import { carryOver, createSchema, ingestAll } from "../src/masters/build";
 import { MASTERS_CONFIG } from "../src/masters/config";
 import { mastersDbPath, mastersDir } from "../src/masters/db";
 import { readEm, verifyMasters } from "../src/masters/verify";
@@ -26,6 +26,8 @@ db.pragma("journal_mode = OFF");
 db.pragma("synchronous = OFF");
 createSchema(db);
 const rejected = ingestAll(db, raw, MASTERS_CONFIG, new Date().toISOString(), console.log);
+// 前の世代の 1 枚を、今ある masters.db から残す（改定の棚卸で比べる。design.md §14-4。X-125）
+const carried = carryOver(db, out, MASTERS_CONFIG.generation, console.log);
 const result = verifyMasters(db, readEm(root), { write: true });
 for (const line of result.lines) console.log(line);
 db.exec("ANALYZE");
@@ -42,4 +44,4 @@ if (result.failures > 0) {
   process.exit(1);
 }
 renameSync(tmp, out);
-console.log(`${out} を作った（${(statSync(out).size / 1024 / 1024).toFixed(1)} MB、${((Date.now() - started) / 1000).toFixed(1)} 秒）。取り込まなかったファイル ${rejected.length} 件、警告 ${result.warnings} 件`);
+console.log(`${out} を作った（${(statSync(out).size / 1024 / 1024).toFixed(1)} MB、${((Date.now() - started) / 1000).toFixed(1)} 秒）。取り込まなかったファイル ${rejected.length} 件、前の世代から残した 1 枚 ${carried} 個、警告 ${result.warnings} 件`);

@@ -63,6 +63,12 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
         if (s) s.count++;
         else result.silenced.push({ hx, count: 1 });
       }
+      for (const id of found.localSilenced ?? []) {
+        const s = (result.localSilenced ??= []).find((x) => x.id === id);
+        if (s) s.count++;
+        else result.localSilenced.push({ id, count: 1 });
+      }
+      if ((found.localUsed ?? []).length > 0) result.localUsed = [...new Set([...(result.localUsed ?? []), ...found.localUsed!])].sort();
     }
   }
   // G08 と G09 の重複は、ここでは消さない：手書きのルールとの重なり（src/generic/overlap.ts）で G08 が消えることがあるので、その後で消す（round-32 O-16）

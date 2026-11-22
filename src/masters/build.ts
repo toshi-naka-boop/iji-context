@@ -1,9 +1,10 @@
 // 落とした公開データから masters.db を作る（design.md §12-1）。呼ぶのは scripts/build-masters.ts と、小さな表で動かすテストだけ。
 // 置き方：<データ置き場>/masters/raw/<データ名>/<更新日 8 桁>/<ファイル>。更新日ごとの 1 枚を全部取り込む（表の snapshot の列）。
+// 前の世代（改定前）の 1 枚は、今ある masters.db から世代ごとにいちばん新しい 1 枚を写して残す（carryOver。design.md §14-4。X-125）。
 // 形式の検査：Shift_JIS・項目数・見出しの行・取り込む項目の型と値の区分（src/masters/layout.ts）。1 行でも合わなければ、そのファイルは取り込まず、理由を rejected に残す。件数 0 も取り込まない
-import { lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type Database from "better-sqlite3";
+import Database from "better-sqlite3";
 import type { MastersConfig } from "./config";
 import { MasterFormatError, readCsv } from "./csv";
 import { LAYOUTS, type TableLayout } from "./layout";
@@ -130,4 +131,58 @@ export function ingestAll(db: Database.Database, rawDir: string, config: Masters
     }
   }
   return rejected;
+}
+
+/**
+ * 前の世代の 1 枚を残す（design.md §14-4。X-125）：今ある masters.db（old）から、いまの世代（generation）でない世代ごとに、データごとのいちばん新しい 1 枚を、
+ * 作っている masters.db に写す（行と sources の行。verified もそのまま）。改定の棚卸で、改定前の世代の 1 枚と改定後の世代の 1 枚を比べるため。
+ * いまの世代の 1 枚は raw から作り直す（写さない）。old がない・読めない・表の形が違うときは何もしない。写した 1 枚の数を返す
+ */
+export function carryOver(db: Database.Database, oldFile: string, generation: string, log: (line: string) => void = () => {}): number {
+  if (!existsSync(oldFile)) return 0;
+  let old: Database.Database;
+  try {
+    old = new Database(oldFile, { readonly: true, fileMustExist: true });
+  } catch {
+    return 0;
+  }
+  try {
+    const rows = old.prepare("SELECT * FROM sources WHERE generation != ?").all(generation) as { dataset: string; snapshot: string; generation: string; tbl: string; file: string; sha256: string; rows: number; imported_at: string; verified: string | null }[];
+    // 世代・データごとの、いちばん新しい 1 枚
+    const latest = new Map<string, string>();
+    for (const r of rows) {
+      const k = `${r.generation}\0${r.dataset}`;
+      if ((latest.get(k) ?? "") < r.snapshot) latest.set(k, r.snapshot);
+    }
+    const keep = rows.filter((r) => latest.get(`${r.generation}\0${r.dataset}`) === r.snapshot);
+    const has = db.prepare("SELECT 1 FROM sources WHERE tbl = ? AND snapshot = ?");
+    const addSource = db.prepare("INSERT INTO sources (dataset, snapshot, generation, tbl, file, sha256, rows, imported_at, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    let n = 0;
+    for (const r of keep) {
+      // いまの世代の 1 枚と同じ日の 1 枚は写さない（表の 1 枚は更新日で引くので、世代の違う同じ日の 1 枚は区別できない）
+      if (has.get(r.tbl, r.snapshot)) {
+        log(`  前の世代の 1 枚を写さない：${r.dataset}/${r.snapshot}（${r.generation}）は、いまの世代の 1 枚と同じ日`);
+        continue;
+      }
+      const cols = (db.prepare(`PRAGMA table_info(${r.tbl})`).all() as { name: string }[]).map((c) => c.name);
+      const oldCols = new Set((old.prepare(`PRAGMA table_info(${r.tbl})`).all() as { name: string }[]).map((c) => c.name));
+      if (cols.some((c) => !oldCols.has(c))) {
+        log(`  前の世代の 1 枚を写さない：${r.dataset}/${r.snapshot}（${r.generation}）は、表の列が今と違う`);
+        continue;
+      }
+      const insert = db.prepare(`INSERT INTO ${r.tbl} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`);
+      db.transaction(() => {
+        for (const row of old.prepare(`SELECT ${cols.join(", ")} FROM ${r.tbl} WHERE snapshot = ?`).iterate(r.snapshot) as Iterable<Record<string, unknown>>) insert.run(cols.map((c) => row[c]));
+        addSource.run(r.dataset, r.snapshot, r.generation, r.tbl, r.file, r.sha256, r.rows, r.imported_at, r.verified);
+      })();
+      n++;
+      log(`  前の世代の 1 枚を残した：${r.dataset}/${r.snapshot}（${r.generation}）→ ${r.tbl}：${r.rows.toLocaleString("ja-JP")} 件`);
+    }
+    return n;
+  } catch (e) {
+    if (e instanceof Database.SqliteError) return 0;
+    throw e;
+  } finally {
+    old.close();
+  }
 }

@@ -80,7 +80,7 @@ const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: SheetNot
  * exceptions は、背反の特例条件の例外（G05。design.md §13-2・§13-3）に渡す、請求ごとの事実の答え（answers）とその請求の事実（facts）。
  * 取り込んだレセプトの点検だけが渡す（試算は渡さない：問いを出さない。L-76）
  */
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts">) {
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts" | "localKnowledge" | "level" | "pressed">) {
   // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
   // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
@@ -97,6 +97,8 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
       // カルテ側の記録がない請求として判定している（recordsKnown は偽）。検算（G02）の数と、G02・G03 がしていないことを、点検の範囲に足す
       generic: { ...genericOut(result, names, hand, rev, false, mapped), scope: genericScopeOf(claim, db, about, result) },
+      /** 指摘に添えた承認済みの院内の知識の id（design.md §14-3。USED を出す） */
+      localUsed: result.localUsed ?? [],
       rows: claim.units.map((u, i) => {
         const own = mapped.filter((m) => m.unit === i);
         const items = u.items.map(({ code }) => {
@@ -117,9 +119,13 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
   });
 }
 
-/** answersOf は、請求ごとの事実のうち、背反の特例条件の例外の問いの答えを読む関数（src/server/app/claim-facts.ts） */
-export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null) {
-  function ukeCheck(claimId: string) {
+/**
+ * answersOf は、請求ごとの事実のうち、背反の特例条件の例外の問いの答えを読む関数（src/server/app/claim-facts.ts）。
+ * localOf は、背反の組の院内の知識・本人のレベル・押した事実の時刻（design.md §14-3。取り込んだレセプトの点検だけが渡す。試算は渡さない）
+ */
+export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null, localOf?: (claimId: string, clerkId?: string) => Pick<GenericAboutMore, "localKnowledge" | "level" | "pressed">) {
+  /** clerkId は、見ている本人（レベルで院内の知識の出し方を分ける。design.md §14-3） */
+  function ukeCheck(claimId: string, clerkId?: string) {
     const { receipt: r, uploaded, claim } = uke.receiptOf(claimId);
     const head ={ claimId, yearMonth: r.yearMonth, patient: r.patient.name, patientNo: uploaded ? (r.patientNo ?? "") : null };
     // 読み直しで読めなかったレセプト（表が変わって点数が合わない）は、理由だけを返す
@@ -141,7 +147,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       declared: r.declared ?? { ho: null, ko: [] },
       ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], result.findings),
       // 背反の特例条件の例外の問いには、請求ごとの事実から作った答えと、その請求の事実を渡す（design.md §13-2 の入力。C-116）
-      ...mastersPartOf(parsed, rev, ctx, result, mappedLinesOf(mapped.lines, mapped.origins), { answers: answersOf(claimId), facts: ctx.facts }),
+      ...mastersPartOf(parsed, rev, ctx, result, mappedLinesOf(mapped.lines, mapped.origins), { answers: answersOf(claimId), facts: ctx.facts, ...localOf?.(claimId, clerkId) }),
       /** 点検した行の小計（請求の合計ではない） */
       subtotal: result.subtotal !== undefined ? result.subtotal : result.total,
       applied: result.applied,
@@ -198,7 +204,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       /** UKE に書いてある請求の合計（HO と、KO の並び。UKE の点数のまま） */
       declared: { ho: parsed.total?.points ?? null, ko: parsed.kohiTotals },
       ...bodyOf(r.yearMonth, rev, mapped.lines, mapped.others, findings),
-      ...mastersPartOf(parsed, rev, ctx, { findings }, mappedLinesOf(mapped.lines, mapped.origins)),
+      ...(({ localUsed: _unused, ...rest }) => rest)(mastersPartOf(parsed, rev, ctx, { findings }, mappedLinesOf(mapped.lines, mapped.origins))),
       /** 点検した行の小計（選んだ版の点数で数えたもの。請求の合計ではない） */
       subtotal: subtotal !== undefined ? subtotal : result.total,
       pointDiffs,

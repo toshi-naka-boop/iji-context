@@ -5,7 +5,9 @@
 // 適応・併用（G09）は、ほかの点検よりさらに控えめに出す：別の見出しの下にまとめ、既定で折りたたむ。見出しの下に、公開元の但し書きの趣旨と、見られないもの（院外処方の薬、表にない薬・診療行為の数）を、1 行の見出しの閉じた折りたたみで出す。
 // 取り込んだレセプトの点検（full）は、上から要約（動いた点検の数・指摘の数・何も出ないことは問題がない意味ではないこと）→ 指摘 → 点検していないこと・断り（閉じた折りたたみ）の順
 // 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）は、answer（請求 id と、答えを残したあとに読み直す関数）を渡した画面（取り込んだレセプトの点検）でだけ、指摘の下に選択肢を出す
+// 背反の組の院内の知識（design.md §14-3）は、どの画面でも添えた文を出す
 import { AskInput } from "./fact-input";
+import { LocalPairCreate, LocalPress } from "./local-pair";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
@@ -68,6 +70,10 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
           {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
           <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
+          {/* 院内の知識（design.md §14-3）：Lv.5 以上は条件とボタン、Lv.1〜4 はヒント。食い違い・前回の確かめ（未検証）は一言だけ */}
+          {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
+          {answer && f.local?.mode === "allow" && <LocalPress claimId={answer.claimId} press={f.local.press} onSaved={answer.onSaved} />}
+          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} onSaved={answer.onSaved} />}
           {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
           {more.length > 0 && (
             <div className="muted">

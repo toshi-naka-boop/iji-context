@@ -65,6 +65,9 @@ export const digestItems = sqliteTable("digest_items", {
   stale: integer("stale", { mode: "boolean" }).notNull().default(false),
   /** ignored の回答 1（取り忘れ）を新人のメンターに渡した日時。拾い直しでも通知を失わない（round-11 X-45） */
   notifiedAt: text("notified_at"),
+  /** 背反の組の知識（match.codePair）を回答 2 で直すとき、修正版が持つ向きと条件の文（design.md §14-1。X-118。マイグレーション 11） */
+  polarity: text("polarity", { enum: ["allow", "avoid"] }),
+  conditionNote: text("condition_note"),
 });
 
 /** 上の表を作る DDL（テストとデモの初期化で使う） */

@@ -12,6 +12,7 @@ import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility } from "./app/facility";
 import { createKnowledgeOps } from "./app/knowledge";
+import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
 import { createMeeting } from "./app/meeting";
 import { createNotes } from "./app/notes";
 import { createPatients, type CoverageInput } from "./app/patients";
@@ -44,6 +45,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase);
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, casesOf, questionCase, questions);
+  const localPairs = createLocalPairs(ctx, questions);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
   const erase = createErase(ctx, uke, patientFactsOf);
@@ -57,13 +59,17 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const { cases, caseOf, caseBurdenRatioOf } = casesOf;
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
-  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない） */
-  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf);
+  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }));
+  const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
+  // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
+  claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
   const { saveNote, noteOf, confirmNote, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
-  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string) => {
-    const claim = notes.claimOfNote(noteId, choices, revId);
+  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
+    // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
+    const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -116,7 +122,13 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     pick,
     draft,
     confirm: confirmQ,
-    questionGeneric: genericOf,
+    /** 月末の点検のデータで動く点検。背反の組の院内の知識は、問題の本人（自分の問題だけを開ける）のレベルで出し方を分ける（design.md §14-3） */
+    questionGeneric: (q: Parameters<typeof genericOf>[0]) => {
+      const { localUsed, ...generic } = genericOf(q, localPairs.aboutFor(q.clerkId));
+      // 指摘に添えた承認済みの院内の知識に USED を出す（月末の点検。1 日 1 回）
+      localPairOps.markUsed(q.claimId, localUsed);
+      return generic;
+    },
     explain,
     done,
     question: loadQ,
@@ -136,6 +148,16 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     ...clock,
     ...clerks,
     ...ukeCheck,
+    /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
+    ukeCheck: (claimId: string, clerkId?: string) => {
+      const r = ukeCheck.ukeCheck(claimId, clerkId);
+      localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
+      // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
+      return "rows" in r ? { ...r, localReturns: localPairOps.returnsOf(claimId, r) } : r;
+    },
+    /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
+    localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
+    createPair: localPairOps.createPair,
     ...erase,
     ...revision,
     ...doctorFacts,

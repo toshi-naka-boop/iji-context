@@ -103,7 +103,7 @@ export function knowledgeIdOf(store: StoreOptions, name: string): string | null 
 }
 
 /**
- * Skill を読む前後の Hooks。読む直前に知識の状態を確かめ、承認済み・院内以外でなければ読ませない
+ * Skill を読む前後の Hooks。読む直前に知識の状態を確かめ、承認済み・院内以外・背反の組の知識（match.codePair。design.md §14-1）以外でなければ読ませない
  * （同期の遅れで古い知識が残っていても、読む瞬間に止める）。読めたものは reads に知識 id で残す
  */
 export function skillGuard(store: StoreOptions): { hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>>; reads: string[] } {
@@ -117,7 +117,7 @@ export function skillGuard(store: StoreOptions): { hooks: Partial<Record<HookEve
     const cross = /^crosscheck-([a-z0-9]+)$/.exec(name);
     if (cross && MISMATCH_RULES.some((r) => r.id.toLowerCase() === cross[1])) return `crosscheck/${cross[1]}`;
     const m = listKnowledge(store).find((x) => `iji-${x.id.replace("/", "-")}` === name);
-    return m && m.status === "承認済み" && m.layer !== "院内" ? m.id : null;
+    return m && m.status === "承認済み" && m.layer !== "院内" && m.match.codePair === undefined ? m.id : null;
   };
   return {
     reads,
