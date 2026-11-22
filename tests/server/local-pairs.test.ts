@@ -67,6 +67,20 @@ describe("作る入口（design.md §14-2）", () => {
     const again = ops.createPair(input());
     expect([again.id, readKnowledge(ctx.store, first.id)?.status]).toEqual([`${first.id}-2`, "保管"]);
   });
+  it("takenPolarities（フォームが選ばせない向き）は、作る入口が 409 で断る向きと同じ。保管にしたら外れる。ほかの組は数えない", () => {
+    const ops = createLocalPairOps(ctx, clock, check);
+    const pair = { a: A, b: B, tani: 1 as const };
+    const refused = () => (["allow", "avoid"] as const).filter((p) => thrown(() => ops.createPair(input({ polarity: p, ...(p === "avoid" ? { basis: "その他" } : {}), condition: `${p} を作れるか` })))?.[0] === 409);
+    expect(ops.takenPolarities(pair)).toEqual([]);
+    const first = ops.createPair(input());
+    expect(ops.takenPolarities(pair)).toEqual(["allow"]);
+    expect(ops.takenPolarities({ ...pair, tani: 2 })).toEqual([]);
+    ops.createPair(input({ polarity: "avoid" }));
+    expect(ops.takenPolarities(pair)).toEqual(["allow", "avoid"]);
+    expect(refused()).toEqual(["allow", "avoid"]);
+    applyEvent(ctx.store, first.id, { type: "VERIFY_REJECT", reason: "テスト" }, T);
+    expect(ops.takenPolarities(pair)).toEqual(["avoid"]);
+  });
 });
 
 describe("USED（design.md §14-3。C-172・X-121）", () => {

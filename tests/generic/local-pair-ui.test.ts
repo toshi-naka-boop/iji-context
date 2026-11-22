@@ -1,6 +1,6 @@
 // 背反の組の院内の知識の、点検の画面の文と出し分け（app/local-pair.tsx・app/generic-findings.tsx が使う関数）
 import { describe, expect, it } from "vitest";
-import { returnsOutside } from "../../src/generic/local-pair";
+import { polarityChoices, returnsOutside } from "../../src/generic/local-pair";
 import { pressText } from "../../src/messages";
 import { C } from "./small-tensuhyo";
 
@@ -26,5 +26,14 @@ describe("返戻の入口をどこに出すか（returnsOutside）", () => {
   });
   it("指摘がなければ全部外", () => {
     expect(returnsOutside([r1, r2], [])).toEqual([r1, r2]);
+  });
+});
+
+describe("作る入口のフォームで選べる向き（polarityChoices）", () => {
+  it("すでにある向きは選ばせない。両方あれば空（フォームを出さない）", () => {
+    expect(polarityChoices([])).toEqual(["allow", "avoid"]);
+    expect(polarityChoices(["allow"])).toEqual(["avoid"]);
+    expect(polarityChoices(["avoid"])).toEqual(["allow"]);
+    expect(polarityChoices(["allow", "avoid"])).toEqual([]);
   });
 });

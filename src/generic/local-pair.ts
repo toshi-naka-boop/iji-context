@@ -42,3 +42,5 @@ export const samePair = (x: { a: string; b: string; tani: number }, y: { a: stri
 export function returnsOutside<T extends { a: string; b: string; tani: number }>(returns: T[], findingPairs: ({ a: string; b: string; tani: number } | undefined)[]): T[] {
   return returns.filter((r) => !findingPairs.some((p) => p !== undefined && samePair(p, r)));
 }
+/** 作る入口のフォームで選べる向き：作る入口が断る向き（taken。点検の応答の localPairTaken）を除く。空なら、フォームを出さない */
+export const polarityChoices = (taken: readonly Polarity[]): Polarity[] => (["allow", "avoid"] as const).filter((p) => !taken.includes(p));

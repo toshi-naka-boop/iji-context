@@ -52,6 +52,8 @@ type Check = {
   rows?: Row[];
   /** 「この請求のこの組が返戻・査定された」を出す組（承認済みの allow の院内の知識がある組。design.md §14-4） */
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
+  /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
+  localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
 };
 /** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
 type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
@@ -254,7 +256,7 @@ export default function UkeClaimCheck() {
                     scope="full"
                     rowHref={codeHref}
                     laterSheets={c.sheetNotes?.later ?? []}
-                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), localReturns: check?.localReturns ?? [], handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
+                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), localReturns: check?.localReturns ?? [], localPairTaken: check?.localPairTaken ?? [], handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
                     notes={[
                       "公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。",
                       ...((c.sheetNotes?.later ?? []).length > 0 ? [`診療年月より前の版のマスターを持っていないので、後の版で代えています：${c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。`] : []),

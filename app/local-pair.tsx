@@ -2,13 +2,20 @@
 // 背反の組の院内の知識（design.md §14-2〜§14-4）の入力：作る入口（対象の G05 の指摘の下）・「この請求も条件に当たる」のボタン。取り込んだレセプトの点検の画面だけが出す
 import { useState } from "react";
 import { CLAIM_FACT_SOURCES } from "../src/claim/facts";
+import { polarityChoices } from "../src/generic/local-pair";
+import type { Polarity } from "../src/lifecycle/types";
 import { LOCAL_PAIR_BASES, LOCAL_PAIR_TEXT, pressText } from "../src/messages";
 
 type Pair = { a: string; b: string; tani: number };
 
-/** 「この組の扱いを院内の知識として残す」：扱い（polarity）・根拠・条件の文。作ると未検証で、承認はベテラン */
-export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: () => void }) {
-  const [polarity, setPolarity] = useState<"allow" | "avoid">("allow");
+/**
+ * 「この組の扱いを院内の知識として残す」：扱い（polarity）・根拠・条件の文。作ると未検証で、承認はベテラン。
+ * taken は、その組で作る入口が断る向き（点検の応答の localPairTaken）。その向きは選ばせず、両方なら一文だけにする（サーバーも断る）
+ */
+export function LocalPairCreate(props: { claimId: string; pair: Pair; taken?: Polarity[]; onSaved: () => void }) {
+  const choices = polarityChoices(props.taken ?? []);
+  const [picked, setPolarity] = useState<Polarity>("allow");
+  const polarity = choices.includes(picked) ? picked : choices[0];
   const [basis, setBasis] = useState<string>(LOCAL_PAIR_BASES[0]);
   const [condition, setCondition] = useState("");
   const [msg, setMsg] = useState("");
@@ -23,6 +30,7 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
     setMsg(`残しました（${d?.id ?? ""}。未検証）`);
     props.onSaved();
   }
+  if (choices.length === 0) return <div className="muted" style={{ marginTop: 6 }}>{msg && `${msg}　`}{LOCAL_PAIR_TEXT.createFull}</div>;
   return (
     <details style={{ marginTop: 6 }}>
       <summary>{LOCAL_PAIR_TEXT.create}</summary>
@@ -30,9 +38,8 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
         <div className="muted">{LOCAL_PAIR_TEXT.createNote}</div>
         <label>
           扱い{" "}
-          <select value={polarity} onChange={(e) => setPolarity(e.target.value as "allow" | "avoid")}>
-            <option value="allow">{LOCAL_PAIR_TEXT.allowLabel}</option>
-            <option value="avoid">{LOCAL_PAIR_TEXT.avoidLabel}</option>
+          <select value={polarity} onChange={(e) => setPolarity(e.target.value as Polarity)}>
+            {choices.map((p) => <option key={p} value={p}>{p === "allow" ? LOCAL_PAIR_TEXT.allowLabel : LOCAL_PAIR_TEXT.avoidLabel}</option>)}
           </select>
         </label>
         <label>

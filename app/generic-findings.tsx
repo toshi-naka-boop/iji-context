@@ -9,6 +9,7 @@
 import { AskInput } from "./fact-input";
 import { LocalPairCreate, LocalPress, LocalReturn } from "./local-pair";
 import { samePair } from "../src/generic/local-pair";
+import type { Polarity } from "../src/lifecycle/types";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
@@ -25,7 +26,7 @@ const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.cod
  * skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば）。
  * full のときだけ：notes は、呼び出し側の断り（折りたたみの中に足す）、laterSheets は、診療年月より後の版で代えているデータの名前（要約に一言添える）
  */
-export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[]; localReturns?: { a: string; b: string; tani: number; ids: string[] }[] } }) {
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[]; localReturns?: { a: string; b: string; tani: number; ids: string[] }[]; localPairTaken?: { a: string; b: string; tani: number; polarities: Polarity[] }[] } }) {
   const rowLink = (c: { code: string; name: string | null }) => {
     const href = rowHref?.(c.code);
     return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
@@ -75,7 +76,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
           {answer && f.local?.mode === "allow" && <LocalPress claimId={answer.claimId} press={f.local.press} onSaved={answer.onSaved} />}
           {answer && f.check === "G05" && f.localPair && (answer.localReturns ?? []).filter((p) => samePair(p, f.localPair!)).map((p) => <LocalReturn key={`return-${p.a}:${p.b}:${p.tani}`} claimId={answer.claimId} pair={p} onSaved={answer.onSaved} />)}
-          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} onSaved={answer.onSaved} />}
+          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} taken={answer.localPairTaken?.find((p) => samePair(p, f.localPair!))?.polarities} onSaved={answer.onSaved} />}
           {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
           {more.length > 0 && (
             <div className="muted">

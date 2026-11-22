@@ -57,13 +57,17 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
     const r = check(claimId) as { generic?: GenericView };
     return (r.generic?.findings ?? []).some((f) => f.check === "G05" && f.localPair?.a === pair.a && f.localPair.b === pair.b && f.localPair.tani === pair.tani);
   }
+  /** 作る入口が 2 つ目を断る、その組の知識（relates_to なし・未検証／承認済み／contested。向きは問わない） */
+  const blocking = (pair: CodePair) => listKnowledge(store).filter((m) => m.relates_to === null && (m.status === "未検証" || m.status === "承認済み" || m.status === "contested") && m.match.codePair?.a === pair.a && m.match.codePair.b === pair.b && m.match.codePair.tani === pair.tani);
+  /** その組で、作る入口が断る向き（作る入口のフォームは、この向きを選ばせない。design.md §14-2） */
+  const takenPolarities = (pair: CodePair): Polarity[] => [...new Set(blocking(pair).map((m) => m.polarity))].sort();
   /** 作る（院内層・未検証）。G05 の対象でない組・allow と「返戻・査定された」の組は 400、同じ組・同じ向きの知識（relates_to なし・未検証／承認済み／contested）が既にあれば 409 */
   function createPair(input: PairInput) {
     if (!(input.a < input.b)) throw badRequest("コードは小さい順に 2 つ");
     if (input.polarity === "allow" && input.basis === "返戻・査定された") throw badRequest("返戻・査定された組を「条件に当たれば併せて算定できる」としては残せません");
     const pair: CodePair = { a: input.a, b: input.b, tani: input.tani };
     if (!isTarget(input.claimId, pair)) throw badRequest("この請求の点検に、院内の知識を残せる背反の指摘がない組です");
-    const same = listKnowledge(store).find((m) => m.relates_to === null && m.polarity === input.polarity && (m.status === "未検証" || m.status === "承認済み" || m.status === "contested") && m.match.codePair?.a === pair.a && m.match.codePair.b === pair.b && m.match.codePair.tani === pair.tani);
+    const same = blocking(pair).find((m) => m.polarity === input.polarity);
     if (same) throw conflict(`同じ組・同じ扱いの院内の知識が、すでにあります: ${same.id}`);
     const conditionNote = `${fillLocal(LOCAL_PAIR_TEXT.basisPrefix, { basis: input.basis })}${input.condition.trim()}`;
     if (input.condition.trim() === "" || conditionNote.length > PAIR_NOTE_MAX) throw badRequest(`条件は、根拠と合わせて 1〜${PAIR_NOTE_MAX} 字で書いてください`);
@@ -168,5 +172,5 @@ export function createLocalPairOps(ctx: AppContext, clock: Clock, check: (claimI
     }
     return { ids: target.ids, cleared };
   }
-  return { isTarget, createPair, admitPress, markUsed, returnsOf, localReturn };
+  return { isTarget, createPair, takenPolarities, admitPress, markUsed, returnsOf, localReturn };
 }
