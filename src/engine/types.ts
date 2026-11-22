@@ -10,8 +10,13 @@ export type Payer = "支払基金" | "国保連";
 export type FacilityGrade = "1B" | "1N" | "2" | "3";
 
 export type Facility = {
-  /** 施設の種別（施設の申告から決める。判定に使うのは段 17c から） */
+  /** 施設の種別（施設の申告から決める。管理料・在宅ターミナルケア加算・緊急往診加算の区分と R18 が読む。design.md §15-4） */
   grade: Fact<FacilityGrade>;
+  /**
+   * 種別の申告で選んだ選択肢の id（src/facility/codes.ts の GRADE_CHOICES。申告から来たときだけ持つ）。
+   * 連携型（(2)ア・(2)イ）の申告で R18 の指摘に経過措置の断りを添えるのに使う（design.md §15-2。docs M-8）
+   */
+  gradeChoice?: string | null;
   /** 在宅療養支援診療所か。null は施設の種別が分からない（申告がない・確かめ直す日を過ぎたなど。design.md §15-2） */
   zaishishin: boolean | null;
   /** 機能強化型か（null は種別が分からない） */
@@ -34,6 +39,9 @@ export type Facility = {
   /** 同じことを物価対応料について確かめたか（R15 だけが読む） */
   revisitPriceSameDay: Fact<boolean>;
 };
+
+/** 施設の設定の値の出どころ（ClaimContext.facilityBasis） */
+export type FacilityBasis = "declaration" | "case" | "config";
 
 /** 三値で持つ施設の設定のキー（不明なら、それに依存するルールは情報不足になる。design.md §2-7） */
 export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
@@ -157,6 +165,12 @@ export type ClaimContext = {
    * 持つ請求では、止めるかどうかをルールごとに決める（src/engine/index.ts の partialBy）。持たない請求は、対象外の単位が 1 つでもあれば、どのルールも止める（v23 のまま）
    */
   outside?: Outside;
+  /**
+   * 施設の設定の値ごとの出どころ（design.md §15-4。round-51 C-251）：declaration＝施設の申告／case＝症例ごとの上書き／config＝設定ファイル・設定の画面。
+   * 載っていない値は declaration でないとして扱う（エンジンの単体テストで facility を直接渡すときは省く）。
+   * 「申告だけを根拠に点数の高い区分へ直さない」決まりは、出どころが declaration の値にだけ掛ける
+   */
+  facilityBasis?: Partial<Record<FacilityFactKey, FacilityBasis>>;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
 };

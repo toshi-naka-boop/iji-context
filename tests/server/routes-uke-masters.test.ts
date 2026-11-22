@@ -117,7 +117,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(rows.filter((x) => x.kubun.length > 0).every((x) => x.checkedBy === "rules+generic")).toBe(true);
     // 止まるルール：往診料（C000）を読むルールだけ。止めた行と、その区分番号を返す
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.filter((r) => r.reads!(r2026).some((k) => k.startsWith("C000"))).map((r) => r.id));
-    expect(c.stopped.map((s) => s.ruleId)).toEqual(["R08", "R10", "R11", "R15", "R17"]);
+    // R18 は種別ごとの緊急往診加算（C000 注1）を読む（段 17d）。指摘は全部 soundWhenPartial なので、止めても捨てる指摘はない
+    expect(c.stopped.map((s) => s.ruleId)).toEqual(["R08", "R10", "R11", "R15", "R17", "R18"]);
     for (const s of c.stopped) {
       expect(s.all, s.ruleId).toBe(false);
       expect(s.codes, s.ruleId).toEqual([{ code: "114000110", known: true, name: r2026.points.C000.name, no: "C000" }, { code: "114704470", known: true, name: "手作りの加算（往診料）", no: "C000" }]);

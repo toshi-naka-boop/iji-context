@@ -1,5 +1,5 @@
 // 改定の版の型（design.md §2-4・§2-5・§2-3-2）。点数表・ルールの定数・ルール一式は版に属する
-import type { FacilityFactKey, Residence, Rule } from "../types";
+import type { FacilityFactKey, FacilityGrade, Residence, Rule } from "../types";
 
 /**
  * 区分の定義。points が null の区分は点数未収載（合計は null になる）。
@@ -9,8 +9,17 @@ export type KubunDef = { name: string; no: string; points: number | null; source
 
 /** 管理料の族 */
 export type KanriFamily = "在医総管" | "施設総管";
-/** 管理料の区分（2イ＝重症・月2回以上／2ロ＝月2回以上／2ニ＝月1回） */
+/** 管理料の区分（イ＝重症・月2回以上／ロ＝月2回以上／ニ＝月1回。種別によらず同じ 3 つ） */
 export type KanriTierKey = "イ" | "ロ" | "ニ";
+
+/**
+ * 管理料の区分の表の 1 行（design.md §15-4）：族×施設の種別×区分 → kubun。
+ * band は単一建物診療患者の数の区分（段 17f で E-1 の値が入ってから足す。省いた行は 1 人の区分）。R01・R02・R16 は band・grade を見ず、R18 は grade だけを見る（§0-12）
+ */
+export type KanriRow = { kubun: string; family: KanriFamily; grade: FacilityGrade; tier: KanriTierKey; band?: string };
+
+/** 施設の種別で分かれる加算の、種別 → kubun（その版に区分のない種別は持たない） */
+export type ByGrade = Partial<Record<FacilityGrade, string>>;
 
 /**
  * 版に属するルールの定数（§2-3-2）。ルール本体は区分・閾値を直書きせず、ここから受け取る。
@@ -20,11 +29,11 @@ export type RevisionConsts = {
   /** 訪問診療料。[同一建物居住者以外, 同一建物居住者] */
   visitKubun: string[];
   /**
-   * 管理料（R01・R02・R03・R16）。族×区分 → kubun、居住の場所 → 族、注16 で替わる区分（from → to。両方の族）。
-   * note16.enabled が偽の版（注16 のない版）では、施設の設定 note16Met を読まず、月 2 回以上は 2ロ のまま（design.md §11-2）
+   * 管理料（R01・R02・R03・R16・R18）。族×種別×区分の行の表（KanriRow）、居住の場所 → 族、注16 で替わる区分（from → to。どの族・種別も）。
+   * note16.enabled が偽の版（注16 のない版）では、施設の設定 note16Met を読まず、月 2 回以上は ロ のまま（design.md §11-2）
    */
   kanri: {
-    table: Record<KanriFamily, Record<KanriTierKey, string>>;
+    rows: KanriRow[];
     familyOf: Record<Residence, KanriFamily>;
     note16: { enabled: boolean; from: KanriTierKey; to: KanriTierKey };
   };
@@ -38,17 +47,20 @@ export type RevisionConsts = {
   tokutei: { kubun: string; excludedDiseases: string[]; minDays: number };
   /** 処方箋料（R07）。内服の種類数がこの数以上か、向精神薬の長期処方なら many（区分 2）、それ以外は other（区分 3） */
   rx: { oralKindsThreshold: number; many: string; other: string };
-  /** ベースアップ評価料(Ⅰ)（R08）。visit は [同一建物居住者以外, 同一建物居住者]。overlapKey は両方を算定した日の重ねを決める施設の設定 */
-  baseUp: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };
+  /**
+   * ベースアップ評価料(Ⅰ)（R08・R18）。visit は [同一建物居住者以外, 同一建物居住者]。overlapKey は両方を算定した日の重ねを決める施設の設定。
+   * note5 は、通常の区分 → 同じ区分（初診時・再診時等・訪問診療時イ・ロ）の注5 の区分（design.md §15-4。X-133）。持たない版では注5 を導出しない
+   */
+  baseUp: { visit: string[]; revisit: string; overlapKey: FacilityFactKey; note5?: Record<string, string> };
   /** 物価対応料（R15）。形は baseUp と同じ */
   price: { visit: string[]; revisit: string; overlapKey: FacilityFactKey };
   /**
-   * 看取り・死亡診断・ターミナルケア（R09）。死亡日前 days 日以内に minVisits 回以上。
+   * 看取り・死亡診断・ターミナルケア（R09・R18）。terminal は施設の種別 → 在宅ターミナルケア加算の区分（design.md §15-4。X-135）。死亡日前 days 日以内に minVisits 回以上。
    * 請求の判定に使う版（REVISIONS）は days・minVisits を必ず持つ。持たない版（比較用の版で、値を EM で確かめていないもの）では、ターミナルケア加算を導出しない
    */
-  terminal: { mitori: string; shibou: string; terminal: string; days?: number; minVisits?: number };
-  /** 往診料と緊急往診加算（R10）。revisit は往診料と併せて算定する再診料（導出の D02） */
-  oushin: { kubun: string; kinkyu: string; revisit: string };
+  terminal: { mitori: string; shibou: string; terminal: ByGrade; days?: number; minVisits?: number };
+  /** 往診料と緊急往診加算（R10・R18）。kinkyu は施設の種別 → 緊急往診加算の区分（design.md §15-4。X-139）。revisit は往診料と併せて算定する再診料（導出の D02） */
+  oushin: { kubun: string; kinkyu: ByGrade; revisit: string };
   /** 検体検査判断料・BNP・外来迅速検体検査加算（R11）。bloodDraw は血液採取（導出の D09） */
   tests: { judgement: string[]; bnp: string; bnpJudgement: string; rapid: string; bloodDraw: string };
   /** 検査の出来事の項目名 → 区分と判断料（導出の D09）。表にない項目名は導出しない */
@@ -60,6 +72,13 @@ export type RevisionConsts = {
   weekStartsOn: number;
   /** 在宅移行早期加算（R14）。算定開始月から months か月目まで、退院から daysFromDischarge 日以内 */
   ikou: { kubun: string; months: number; daysFromDischarge: number };
+  /** 在宅療養移行加算（R18。在支診以外〔種別 3〕に限る）。導出はしない。持たない版は空 */
+  ikouGrade3?: string[];
+  /**
+   * 算定の要件と取り忘れを見ていない区分（C〜I の手順に回した：在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算。design.md §15-4。L-92）。
+   * 点検の範囲に「見ていません」と数を出す。注8 の減算の対象になる管理料（種別 3 の管理料の行）も同じに数える
+   */
+  deferred?: string[];
 };
 
 /**

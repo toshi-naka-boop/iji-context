@@ -4,11 +4,13 @@
 import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
+  baseUpDayKubun,
   billedVisitDays,
   expectedKanri,
   hokatsuEligible,
   ikouEligible,
   kanriKubun,
+  kanriKubunOf,
   oushinOnlyBilledDays,
   rxKubunOn,
   sameDayOf,
@@ -58,7 +60,11 @@ export type Pending =
   | { kind: "事実不足"; id: string; need: NeedKey; target: "doctor" | "clerk"; blocks: string[]; date?: string }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
-export type Unsupported = { code: "kyokagata" | "single_building_multi" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
+/**
+ * 導出の未対応。grade_not_in_revision は、その版に施設の種別の区分がない（比較用の版）。baseup_note5 は、注5 の区分の表を持たない版（比較用の版）。
+ * single_building_multi は、単一建物の人数別の管理料（段 17f で E-1 のあとに外す）
+ */
+export type Unsupported = { code: "grade_not_in_revision" | "single_building_multi" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -78,30 +84,37 @@ export type DeriveResult = {
   comments: RequiredComment[];
 };
 
-/** 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す */
-export function derivedKubun(c: RevisionConsts): string[] {
+/**
+ * 導出する区分のうち、R ルールが担当する区分（design.md §15-8 の g11Owned の表。D01〜D08・D11・D12）。
+ * 算定プレビューでは G11 が見ない（導出がカルテの出来事から立てた行なので、2 回言わない。C-230）。版の定数（種別の表・注5 の表）から作り、手で並べない
+ */
+export function g11Owned(c: RevisionConsts): string[] {
+  const baseUp = baseUpDayKubun(c);
   return [
     ...c.visitKubun,
     c.oushin.kubun,
     c.oushin.revisit,
-    c.oushin.kinkyu,
+    ...Object.values(c.oushin.kinkyu),
     ...kanriKubun(c),
     c.hokatsu.kubun,
     c.ikou.kubun,
     ...Object.values(c.dx.tiers),
-    ...c.baseUp.visit,
-    c.baseUp.revisit,
+    ...baseUp.visit,
+    ...baseUp.revisit,
     ...c.price.visit,
     c.price.revisit,
-    c.tests.bloodDraw,
-    ...Object.values(c.testItems).map((t) => t.kubun),
-    ...c.tests.judgement,
-    c.rx.many,
-    c.rx.other,
     c.terminal.mitori,
     c.terminal.shibou,
-    c.terminal.terminal,
+    ...Object.values(c.terminal.terminal),
   ];
+}
+
+/**
+ * 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す。
+ * g11Owned と、行為の結果として要る区分（検体検査の項目・血液採取・判断料〔D09〕と処方箋料〔D10〕。どちらの経路でも G11 が見る）
+ */
+export function derivedKubun(c: RevisionConsts): string[] {
+  return [...g11Owned(c), c.tests.bloodDraw, ...Object.values(c.testItems).map((t) => t.kubun), ...c.tests.judgement, c.rx.many, c.rx.other];
 }
 
 /** 行のうち、導出しない区分のものだけ（deriveLines の manual に渡す） */
@@ -156,9 +169,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   /** 訪問診療料の回数に依存する区分（管理料と、それに付く加算。管理料が決まらない間は処方箋料も） */
   const kanriBlocks = [...kanriKubun(c), c.hokatsu.kubun, c.ikou.kubun, ...(rxs.length ? [c.rx.many, c.rx.other] : [])];
   /** その日の訪問診療料・往診料に付く区分 */
-  const dayBlocks = [...c.baseUp.visit, c.baseUp.revisit, ...c.price.visit, c.price.revisit].filter(has);
-
-  if (facility.kyokagata) unsupported.push({ code: "kyokagata", detail: "機能強化型の在宅療養支援診療所の点数は扱っていません" });
+  const baseUpDay = baseUpDayKubun(c);
+  const dayBlocks = [...baseUpDay.visit, ...baseUpDay.revisit, ...c.price.visit, c.price.revisit].filter(has);
+  const grade = facility.grade;
+  /** 施設の種別で引く加算の区分（種別が分からなければ undefined。その版にその種別の区分がなければ null） */
+  const byGradeOf = (t: Partial<Record<string, string>>): string | null | undefined => (!grade.known ? undefined : (t[grade.value] ?? null));
+  const noGradeKubun = (what: string) => unsupported.push({ code: "grade_not_in_revision", detail: `この版は、施設の種別（${grade.known ? grade.value : ""}）の${what}の区分を持っていないので、行にしていません` });
 
   // --- D01・D02：訪問診療料と往診料（§2-3-4・§11-5）。同じ日の両方は、出来事だけでは立てない。関係は R10 と同じ述語（sameDayOf）で決める
   const sameDay = new Map<string, { visit: Decision | "check"; oushin: Decision }>();
@@ -218,8 +234,15 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   add(c.oushin.revisit, revisitOushins.map((o) => o.date), { derive: "D02", events: revisitOushins });
   const emergencies = billedOushins.filter((o) => o.kind === "emergency");
   if (emergencies.length) {
-    if (!facts.emergencyEligible.known) lack(`D02-kinkyu:${input.yearMonth}`, "emergencyEligible", [c.oushin.kinkyu]);
-    else if (facts.emergencyEligible.value) add(c.oushin.kinkyu, emergencies.map((o) => o.date), { derive: "D02", events: emergencies, needs: ["emergencyEligible"] });
+    // 緊急往診加算は施設の種別で区分が分かれる（design.md §15-4）。「定める患者以外」の区分は版にないので、対象患者のときだけ立てる
+    const kinkyuAll = Object.values(c.oushin.kinkyu);
+    const kinkyu = byGradeOf(c.oushin.kinkyu);
+    if (!facts.emergencyEligible.known) lack(`D02-kinkyu:${input.yearMonth}`, "emergencyEligible", kinkyuAll);
+    else if (facts.emergencyEligible.value) {
+      if (kinkyu === undefined) lack(`D02-grade:${input.yearMonth}`, "facility.grade", kinkyuAll);
+      else if (kinkyu === null) noGradeKubun("緊急往診加算");
+      else add(kinkyu, emergencies.map((o) => o.date), { derive: "D02", events: emergencies, needs: ["emergencyEligible", "facility.grade"] });
+    }
   }
 
   // --- D03〜D05：管理料と、それに付く加算。回数は D01 で立てた訪問診療料の回数
@@ -237,12 +260,11 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const { family, tier, visits: count } = expectedKanri(ctx, c);
     if (tier.known === true && tier.value === "none") {
       // 訪問診療料が 0 回の月は立てない
-    } else if (facility.kyokagata === null) {
-      // 施設の種別が分からないと、管理料の区分（機能強化型か）が決まらない（design.md §15-2。種別ごとの区分は段 17d）
+    } else if (!grade.known) {
+      // 施設の種別が分からないと、管理料の区分（族×種別×区分）が決まらない（design.md §15-4）
       lack(`D03-grade:${input.yearMonth}`, "facility.grade", kanriBlocks);
       kanriOpen = true;
-    } else if (facility.kyokagata) kanriOpen = true;
-    else if (visits.some((v) => v.sameBuildingCount >= 2)) {
+    } else if (visits.some((v) => v.sameBuildingCount >= 2)) {
       unsupported.push({ code: "single_building_multi", detail: "同一建物に複数の患者がいる訪問があります。単一建物の人数別の管理料の点数は扱っていません" });
       kanriOpen = true;
     } else if (!family.known) {
@@ -252,11 +274,16 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       lack(`D03-tier:${input.yearMonth}`, tier.need, kanriBlocks);
       kanriOpen = true;
     } else if (tier.value !== "none") {
-      const kubun = c.kanri.table[family.value][tier.value];
-      // 使った入力：回数 2 以上なら重症か、重症でなければ注16
-      const needs: NeedKey[] = ["comprehensiveCare", "residence", ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
-      kanri = { kubun, tier: tier.value, date: visitDays[visitDays.length - 1] };
-      add(kubun, [kanri.date], { derive: "D03", events: billedVisits, needs, tentative });
+      const kubun = kanriKubunOf(c, family.value, grade.value, tier.value);
+      if (kubun === undefined) {
+        noGradeKubun("管理料");
+        kanriOpen = true;
+      } else {
+        // 使った入力：施設の種別と、回数 2 以上なら重症か、重症でなければ注16
+        const needs: NeedKey[] = ["comprehensiveCare", "residence", "facility.grade", ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
+        kanri = { kubun, tier: tier.value, date: visitDays[visitDays.length - 1] };
+        add(kubun, [kanri.date], { derive: "D03", events: billedVisits, needs, tentative });
+      }
     }
   }
   if (kanri) {
@@ -281,16 +308,19 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const oushinOnlyEvents = billedOushins.filter((o) => oushinOnly.includes(o.date));
   if (visitDays.length || oushinOnly.length) {
     const bu = facility.baseUp;
+    const note5 = c.baseUp.note5;
     if (![...c.baseUp.visit, c.baseUp.revisit].some(has)) {
       // この版にベースアップ評価料(Ⅰ)の区分がない：施設の設定を聞かない
-    } else if (!bu.known) lack(`D07-baseUp:${input.yearMonth}`, "facility.baseUp", [...c.baseUp.visit, c.baseUp.revisit]);
-    else if (bu.value === "注5") unsupported.push({ code: "baseup_note5", detail: "ベースアップ評価料(Ⅰ)の注5 の届出の区分は扱っていません" });
-    else if (bu.value === "通常") {
+    } else if (!bu.known) lack(`D07-baseUp:${input.yearMonth}`, "facility.baseUp", [...baseUpDay.visit, ...baseUpDay.revisit].filter(has));
+    else if (bu.value === "注5" && !note5) unsupported.push({ code: "baseup_note5", detail: "この版は、ベースアップ評価料(Ⅰ)の注5 の区分を持っていないので、行にしていません" });
+    else if (bu.value !== "なし") {
+      // 注5 の届出のある施設は、同じ区分の注5 の区分で立てる（design.md §15-4。X-133）
+      const kubunOf = (k: string) => (bu.value === "注5" ? note5![k] : k);
       c.visitKubun.forEach((vk, i) => {
         const days = visitDays.filter((d) => visitKubunOn(ctx, c, d).includes(vk));
-        add(c.baseUp.visit[i], days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
+        add(kubunOf(c.baseUp.visit[i]), days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
       });
-      add(c.baseUp.revisit, oushinOnly, { derive: "D07", events: oushinOnlyEvents, needs: ["facility.baseUp"] });
+      add(kubunOf(c.baseUp.revisit), oushinOnly, { derive: "D07", events: oushinOnlyEvents, needs: ["facility.baseUp"] });
     }
     const pr = facility.priceResponse;
     if (![...c.price.visit, c.price.revisit].some(has)) {
@@ -347,7 +377,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];
   if (death) {
-    const { mitori, shibou, terminal } = c.terminal;
+    const { mitori, shibou } = c.terminal;
+    // 在宅ターミナルケア加算は施設の種別で区分が分かれる（design.md §15-4）。保留が待たせるのは種別の区分で、種別が分からない間は全部の種別の区分
+    const terminalKubun = byGradeOf(c.terminal.terminal);
+    const terminalAll = terminalKubun ? [terminalKubun] : Object.values(c.terminal.terminal);
     const id = `D11-mitori:${death.date}`;
     const picked = ask(id, "看取り加算と死亡診断加算は併せて算定できません。どちらを算定しますか", [
       { id: "mitori", label: "看取り加算", kubun: [mitori] },
@@ -358,23 +391,26 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     // 回数の要件を持たない版では、ターミナルケア加算を導出しない（合計は出さない）
     const enough = c.terminal.days === undefined || c.terminal.minVisits === undefined ? null : terminalVisitsOk(ctx, c);
     if (enough === null) unsupported.push({ code: "terminal_requirement", detail: "この版は、在宅ターミナルケア加算の訪問の回数の要件を持っていないので、行にしていません" });
-    else if (!facts.deathPlace.known) lack(`D12-place:${death.date}`, "deathPlace", [terminal]);
+    else if (!facts.deathPlace.known) lack(`D12-place:${death.date}`, "deathPlace", terminalAll);
     else if (enough.ok === "unknown") {
       // 回数が、同じ日の訪問診療と往診が別々の診療かで変わる（X-73）。その日の事実不足（D01）に、ターミナルケア加算も待たせる
       for (const d of enough.ask) {
         const held = pending.find((p) => p.id === `D01-sameDay:${d}`);
-        if (held) held.blocks.push(terminal);
-        else lack(`D12-sameDay:${d}`, "sameDaySeparate", [terminal], d);
+        if (held) held.blocks.push(...terminalAll);
+        else lack(`D12-sameDay:${d}`, "sameDaySeparate", terminalAll, d);
       }
       // 回数が足りず、訪問診療はある：退院時共同指導料1 を算定していれば満たす（R09 と同じ述語）
-      if (enough.askGuidance) lack(`D12-guidance:${death.date}`, "dischargeJointGuidance", [terminal]);
-    } else if (enough.ok) {
+      if (enough.askGuidance) lack(`D12-guidance:${death.date}`, "dischargeJointGuidance", terminalAll);
+    } else if (enough.ok && terminalKubun === undefined) lack(`D12-grade:${death.date}`, "facility.grade", terminalAll);
+    else if (enough.ok && terminalKubun === null) noGradeKubun("在宅ターミナルケア加算");
+    else if (enough.ok && terminalKubun) {
+      const terminal = terminalKubun;
       const tid = `D12-terminal:${death.date}`;
       const yes = ask(tid, "在宅ターミナルケア加算を算定しますか（訪問の回数のほかの要件は、記録で確かめてください）", [
         { id: "yes", label: "算定する", kubun: [terminal] },
         { id: "no", label: "算定しない", kubun: [] },
       ], [terminal]);
-      if (yes === "yes") add(terminal, [death.date], { derive: "D12", events: [death, ...visits, ...oushins].filter((e) => e.date <= death.date), needs: ["deathPlace"], choice: tid });
+      if (yes === "yes") add(terminal, [death.date], { derive: "D12", events: [death, ...visits, ...oushins].filter((e) => e.date <= death.date), needs: ["deathPlace", "facility.grade"], choice: tid });
     }
   }
 

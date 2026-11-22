@@ -154,7 +154,8 @@ describe("段 12：実データの masters.db で", () => {
     }
     // 載っていない組が出たら、手書きの根拠（EM の行）かデータの読み方のどちらかが誤り。ここで落として、人が見る（どちらかを黙って直さない）
     expect(missing).toEqual([]);
-    expect(counts).toEqual({ R04: 1, R05: 54, R09: 1, R11: 3, R12: 2 });
+    // R05：管理料 24 区分（種別 4。段 17d）× 含まれる項目のコード 9
+    expect(counts).toEqual({ R04: 1, R05: 216, R09: 1, R11: 3, R12: 2 });
     note(`突き合わせ：申告した組（コードの組）${JSON.stringify(counts)}。電子点数表に載っていない組 0`);
     db.close();
   });

@@ -1,5 +1,5 @@
 // 令和8年度改定後の版（design.md §2-4・§2-5）。適用は 2026年6月〜2027年5月診療分
-// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-47）。採用値にない値は書かない。診療行為コードは r2026-codes.ts（EM §2-8）、摘要欄の記載は r2026-comments.ts（EM §2-10）、令和6年度から変わった点は r2026-changes.ts（EM §2-9）。
+// 点数・区分番号の出典は evidence-master（EM）§2-2 の採用値だけ（R8-1〜R8-93）。採用値にない値は書かない。診療行為コードは r2026-codes.ts（EM §2-8）、摘要欄の記載は r2026-comments.ts（EM §2-10）、令和6年度から変わった点は r2026-changes.ts（EM §2-9）。
 // このファイルは書き換えない。次の改定・値の変更は、新しいファイルを足す（docs/revision-howto.md）
 import { makeR01 } from "../rules/r01";
 import { makeR02 } from "../rules/r02";
@@ -18,9 +18,11 @@ import { makeR14 } from "../rules/r14";
 import { makeR15 } from "../rules/r15";
 import { makeR16 } from "../rules/r16";
 import { makeR17 } from "../rules/r17";
+import { makeR18 } from "../rules/r18";
 import { changes } from "./r2026-changes";
 import { bundles, codes, shikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
+import { kanriRows } from "./kanri";
 import type { KubunDef, Revision, RevisionConsts } from "./types";
 
 const em = (name: string, no: string, points: number): KubunDef => ({ name, no, points, source: "EM" });
@@ -87,17 +89,72 @@ const points: Record<string, KubunDef> = {
   // 管理料に包括される項目・DX 加算と併算定できない加算（R8-45・46）
   B000: em("特定疾患療養管理料", "B000 1", 225),
   A_DENSHI_RENKEI: em("電子的診療情報連携体制整備加算（再診時）", "A001 注19", 2),
+  // 実務の算定 A：施設の種別で分かれる区分（EM §2-2 R8-49〜R8-77。design.md §15-4）。単一建物 1 人の区分だけ
+  C001_N6_TERMINAL_1B: em("在宅ターミナルケア加算（機能強化型・病床あり）", "C001 注6", 6500),
+  C001_N6_TERMINAL_1N: em("在宅ターミナルケア加算（機能強化型・病床なし）", "C001 注6", 5500),
+  C001_N6_TERMINAL_3: em("在宅ターミナルケア加算（在支診以外）", "C001 注6", 3500),
+  C000_N1_KINKYU_1B: em("緊急往診加算（機能強化型・病床あり）", "C000 注1", 850),
+  C000_N1_KINKYU_1N: em("緊急往診加算（機能強化型・病床なし）", "C000 注1", 750),
+  C000_N1_KINKYU_3: em("緊急往診加算（在支診以外・定める患者）", "C000 注1", 325),
+  C002_1B_I1: em("在医総管 1イ(1)① 機能強化型・病床あり・重症・月2回以上", "C002 1 イ(1)", 5385),
+  C002_1B_RO1: em("在医総管 1イ(2)① 機能強化型・病床あり・月2回以上", "C002 1 イ(2)", 4485),
+  C002_1B_NI1: em("在医総管 1イ(4)① 機能強化型・病床あり・月1回", "C002 1 イ(4)", 2745),
+  C002_1N_I1: em("在医総管 1ロ(1)① 機能強化型・病床なし・重症・月2回以上", "C002 1 ロ(1)", 4985),
+  C002_1N_RO1: em("在医総管 1ロ(2)① 機能強化型・病床なし・月2回以上", "C002 1 ロ(2)", 4085),
+  C002_1N_NI1: em("在医総管 1ロ(4)① 機能強化型・病床なし・月1回", "C002 1 ロ(4)", 2505),
+  C002_3I1: em("在医総管 3イ(1) 在支診以外・重症・月2回以上", "C002 3 イ(1)", 3435),
+  C002_3RO1: em("在医総管 3ロ(1) 在支診以外・月2回以上", "C002 3 ロ(1)", 2735),
+  C002_3NI1: em("在医総管 3ニ(1) 在支診以外・月1回", "C002 3 ニ(1)", 1745),
+  "C002-2_1B_I1": em("施設入居時等医学総合管理料 1イ(1)① 機能強化型・病床あり・重症・月2回以上", "C002-2 1 イ(1)", 3885),
+  "C002-2_1B_RO1": em("施設入居時等医学総合管理料 1イ(2)① 機能強化型・病床あり・月2回以上", "C002-2 1 イ(2)", 3185),
+  "C002-2_1B_NI1": em("施設入居時等医学総合管理料 1イ(4)① 機能強化型・病床あり・月1回", "C002-2 1 イ(4)", 1965),
+  "C002-2_1N_I1": em("施設入居時等医学総合管理料 1ロ(1)① 機能強化型・病床なし・重症・月2回以上", "C002-2 1 ロ(1)", 3585),
+  "C002-2_1N_RO1": em("施設入居時等医学総合管理料 1ロ(2)① 機能強化型・病床なし・月2回以上", "C002-2 1 ロ(2)", 2885),
+  "C002-2_1N_NI1": em("施設入居時等医学総合管理料 1ロ(4)① 機能強化型・病床なし・月1回", "C002-2 1 ロ(4)", 1785),
+  "C002-2_3I1": em("施設入居時等医学総合管理料 3イ(1) 在支診以外・重症・月2回以上", "C002-2 3 イ(1)", 2435),
+  "C002-2_3RO1": em("施設入居時等医学総合管理料 3ロ(1) 在支診以外・月2回以上", "C002-2 3 ロ(1)", 1935),
+  "C002-2_3NI1": em("施設入居時等医学総合管理料 3ニ(1) 在支診以外・月1回", "C002-2 3 ニ(1)", 1265),
+  // 注8 の減算は所定点数の 100 分の 80（R8-73。マスターは点数識別 6）。決まった点数を持たないので未収載（合計は出さない）
+  C002_N8_GENSAN: { name: "在医総管・施設総管 注8（在支診以外の減算。所定点数の100分の80）", no: "C002 注8", points: null, source: "未収載" },
+  C002_N9_IKO1: em("在宅療養移行加算1（在支診以外）", "C002 注9 イ", 316),
+  C002_N9_IKO2: em("在宅療養移行加算2（在支診以外）", "C002 注9 ロ", 216),
+  C002_N9_IKO3: em("在宅療養移行加算3（在支診以外）", "C002 注9 ハ", 216),
+  C002_N9_IKO4: em("在宅療養移行加算4（在支診以外）", "C002 注9 ニ", 116),
+  // 在宅医療充実体制加算・在宅療養実績加算（R8-78〜89）。導出・要件の判定はしない（C〜I の手順に回した。L-92）
+  C001_N6_JUJITSU: em("在宅医療充実体制加算（在宅ターミナルケア加算に）", "C001 注6", 2000),
+  C001_N6_JISSEKI1: em("在宅療養実績加算1（在宅ターミナルケア加算に）", "C001 注6", 750),
+  C001_N6_JISSEKI2: em("在宅療養実績加算2（在宅ターミナルケア加算に）", "C001 注6", 500),
+  C000_N8_JUJITSU: em("在宅医療充実体制加算（往診料）", "C000 注8", 200),
+  C000_N8_JISSEKI1: em("在宅療養実績加算1（往診料）", "C000 注8", 75),
+  C000_N8_JISSEKI2: em("在宅療養実績加算2（往診料）", "C000 注8", 50),
+  C002_N7_JUJITSU1: em("在宅医療充実体制加算（在医総管・1人）", "C002 注7 イ(1)", 800),
+  C002_N7_JISSEKI1_1: em("在宅療養実績加算1（在医総管・1人）", "C002 注7 ロ(1)", 300),
+  C002_N7_JISSEKI2_1: em("在宅療養実績加算2（在医総管・1人）", "C002 注7 ハ(1)", 200),
+  "C002-2_N3_JUJITSU1": em("在宅医療充実体制加算（施設総管・1人）", "C002-2 注3 イ(1)", 600),
+  "C002-2_N3_JISSEKI1_1": em("在宅療養実績加算1（施設総管・1人）", "C002-2 注3 ロ(1)", 225),
+  "C002-2_N3_JISSEKI2_1": em("在宅療養実績加算2（施設総管・1人）", "C002-2 注3 ハ(1)", 150),
+  // O001 外来・在宅ベースアップ評価料(Ⅰ) の注5 の区分（R8-90〜93）
+  O001_1_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 初診時（注5）", "O001 1 注5", 23),
+  O001_2_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 再診時等（注5）", "O001 2 注5", 6),
+  O001_3I_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時イ（注5）", "O001 3 イ 注5", 107),
+  O001_3RO_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時ロ（注5）", "O001 3 ロ 注5", 26),
 };
 
 const consts: RevisionConsts = {
   visitKubun: ["C001_1I", "C001_1RO"],
   kanri: {
-    table: {
-      在医総管: { イ: "C002_2I1", ロ: "C002_2RO1", ニ: "C002_2NI1" },
-      施設総管: { イ: "C002-2_2I1", ロ: "C002-2_2RO1", ニ: "C002-2_2NI1" },
-    },
+    // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72。単一建物 1 人の区分だけ）
+    rows: kanriRows({
+      在医総管: { "1B": ["C002_1B_I1", "C002_1B_RO1", "C002_1B_NI1"], "1N": ["C002_1N_I1", "C002_1N_RO1", "C002_1N_NI1"], "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"], "3": ["C002_3I1", "C002_3RO1", "C002_3NI1"] },
+      施設総管: {
+        "1B": ["C002-2_1B_I1", "C002-2_1B_RO1", "C002-2_1B_NI1"],
+        "1N": ["C002-2_1N_I1", "C002-2_1N_RO1", "C002-2_1N_NI1"],
+        "2": ["C002-2_2I1", "C002-2_2RO1", "C002-2_2NI1"],
+        "3": ["C002-2_3I1", "C002-2_3RO1", "C002-2_3NI1"],
+      },
+    }),
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
-    // 注16：基準を満たさない施設は 2ロ に代えて 2ニ を算定する（R8-17。重症区分の 2イ は対象外）
+    // 注16：基準を満たさない施設は、月2回以上の区分に代えて月1回の区分を算定する（R8-17。どの種別も。重症区分は対象外）
     note16: { enabled: true, from: "ロ", to: "ニ" },
   },
   hokatsu: { kubun: "C002_N10_HOKATSU", careLevelMin: 3, disabilityLevelMin: 2, tiers: ["ロ", "ニ"] },
@@ -105,10 +162,12 @@ const consts: RevisionConsts = {
   bundled: { kubun: ["B000", "F400_3", "F400_2", "F400_N4", "F400_N6_1"], noRxAddition: "C002_N2" },
   tokutei: { kubun: "F400_N4", excludedDiseases: ["糖尿病", "高血圧", "脂質異常症"], minDays: 28 },
   rx: { oralKindsThreshold: 7, many: "F400_2", other: "F400_3" },
-  baseUp: { visit: ["O001_3I", "O001_3RO"], revisit: "O001_2", overlapKey: "revisitBaseUpSameDay" },
+  // 注5：同じ区分の通常 → 注5（EM R8-90〜93）
+  baseUp: { visit: ["O001_3I", "O001_3RO"], revisit: "O001_2", overlapKey: "revisitBaseUpSameDay", note5: { O001_1: "O001_1_N5", O001_2: "O001_2_N5", O001_3I: "O001_3I_N5", O001_3RO: "O001_3RO_N5" } },
   price: { visit: ["O100_1HA"], revisit: "O100_1RO", overlapKey: "revisitPriceSameDay" },
-  terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: "C001_N6_TERMINAL", days: 14, minVisits: 2 },
-  oushin: { kubun: "C000", kinkyu: "C000_N1_KINKYU", revisit: "A001" },
+  // 在宅ターミナルケア加算・緊急往診加算は種別ごとの区分（EM R8-5・8・49〜54）。R09・R10・R18 と導出 D02・D12 が同じ表を引く
+  terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: { "1B": "C001_N6_TERMINAL_1B", "1N": "C001_N6_TERMINAL_1N", "2": "C001_N6_TERMINAL", "3": "C001_N6_TERMINAL_3" }, days: 14, minVisits: 2 },
+  oushin: { kubun: "C000", kinkyu: { "1B": "C000_N1_KINKYU_1B", "1N": "C000_N1_KINKYU_1N", "2": "C000_N1_KINKYU", "3": "C000_N1_KINKYU_3" }, revisit: "A001" },
   tests: { judgement: ["D026_3", "D026_4", "D026_5"], bnp: "D008_19", bnpJudgement: "D026_5", rapid: "D_GAIRAI_JINSOKU", bloodDraw: "D400_1" },
   testItems: {
     末梢血液一般: { kubun: "D005_5", judgement: "D026_3" },
@@ -122,6 +181,28 @@ const consts: RevisionConsts = {
   weeklyVisitLimit: 3,
   weekStartsOn: 0,
   ikou: { kubun: "C002_N4_IKOU", months: 3, daysFromDischarge: 365 },
+  // 在宅療養移行加算1〜4（EM R8-74〜77。「3 を算定する患者」に限る）
+  ikouGrade3: ["C002_N9_IKO1", "C002_N9_IKO2", "C002_N9_IKO3", "C002_N9_IKO4"],
+  // C〜I の手順に回した区分（L-92。EM R8-73〜89）
+  deferred: [
+    "C001_N6_JUJITSU",
+    "C001_N6_JISSEKI1",
+    "C001_N6_JISSEKI2",
+    "C000_N8_JUJITSU",
+    "C000_N8_JISSEKI1",
+    "C000_N8_JISSEKI2",
+    "C002_N7_JUJITSU1",
+    "C002_N7_JISSEKI1_1",
+    "C002_N7_JISSEKI2_1",
+    "C002-2_N3_JUJITSU1",
+    "C002-2_N3_JISSEKI1_1",
+    "C002-2_N3_JISSEKI2_1",
+    "C002_N9_IKO1",
+    "C002_N9_IKO2",
+    "C002_N9_IKO3",
+    "C002_N9_IKO4",
+    "C002_N8_GENSAN",
+  ],
 };
 
 export const r2026: Revision = {
@@ -141,8 +222,10 @@ export const r2026: Revision = {
   comments,
   commentCodes,
   rules: [
-    ...[makeR01, makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
+    makeR01(consts, points),
+    ...[makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
     makeR17({ consts, comments, commentCodes }),
+    makeR18(consts, points),
   ],
   changes,
 };

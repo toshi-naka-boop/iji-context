@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { loadSources } from "../../scripts/gen-uke";
 import { evaluate, partialBy, rulesOf } from "../../src/engine";
+import { kanriKubun } from "../../src/engine/predicates";
 import { REVISIONS, resolveRevision } from "../../src/engine/revisions";
 import type { Revision } from "../../src/engine/revisions/types";
 import type { ClaimContext, Finding, Outside, Rule } from "../../src/engine/types";
@@ -104,9 +105,11 @@ describe("reads の申告を縛る（design.md §12-4。C-105）", () => {
       R08: [...c.visitKubun, c.oushin.kubun],
       R11: [...c.visitKubun, c.oushin.kubun],
       R15: [...c.visitKubun, c.oushin.kubun],
+      // R17 の kubun は摘要欄の記載の表（EM §2-10 表 1）の区分。管理料は在支診（強化型以外）の区分だけが表にあるので、ほかの種別の管理料は reads だけにある
+      R17: kanriKubun(c).filter((k) => !rev.rules.find((r) => r.id === "R17")!.kubun.includes(k)),
     });
     const r17 = readsOf(rev.rules.find((r) => r.id === "R17")!, rev);
-    expect([...c.visitKubun, c.oushin.kubun, ...Object.values(c.kanri.table).flatMap((t) => Object.values(t))].filter((k) => !r17.includes(k))).toEqual([]);
+    expect([...c.visitKubun, c.oushin.kubun, ...c.kanri.rows.map((r) => r.kubun)].filter((k) => !r17.includes(k))).toEqual([]);
   });
 });
 
@@ -145,7 +148,7 @@ describe("partial をルールごとに決める（design.md §12-4）", () => {
   });
 
   it("空振りしていない：R01 の reads から訪問診療料を外すと、訪問診療料を対象外に移した入力で「訪問診療料のない月」が新しく出る", () => {
-    const r01 = { ...rev.rules.find((r) => r.id === "R01")!, reads: () => Object.values(rev.consts.kanri.table).flatMap((t) => Object.values(t)) };
+    const r01 = { ...rev.rules.find((r) => r.id === "R01")!, reads: () => rev.consts.kanri.rows.map((r) => r.kubun) };
     const revs = REVISIONS.map((r) => (r.id === rev.id ? { ...r, rules: r.rules.map((x) => (x.id === "R01" ? r01 : x)) } : r));
     const moved: ClaimContext = { ...without(K1, "C001_1I"), partial: true, outside: outside({ code: codeOf("C001_1I"), no: noKey("C001_1I") }) };
     expect(evaluate(moved, revs).findings.filter((f) => f.ruleId === "R01").map(keyOf)).toEqual(["no_visit"]);

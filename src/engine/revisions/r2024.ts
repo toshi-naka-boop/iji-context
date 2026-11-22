@@ -2,6 +2,7 @@
 // 値・名称・区分番号の出典は evidence-master（EM）§2-9「令和6年度の値（比較用）」の表の行だけ。中身は令和6年度の最終状態（2026年5月時点。EM §2-9 の「採用（2026-11-20）」）。
 // 区分のキーは、令和8年度と同じ診療行為に同じキーを使う。EM §2-9 に行のない区分（令和8年度で新設の区分、点数が未確認の D007_5・D007_8）は持たない。
 // ルール・診療行為コード・摘要欄の記載は持たない（比べるのは導出だけ。ルールの違いは、次の版の changes の文で見せる）
+import { kanriRows } from "./kanri";
 import type { KubunDef, Revision, RevisionConsts } from "./types";
 
 const em = (name: string, no: string, points: number): KubunDef => ({ name, no, points, source: "EM" });
@@ -67,7 +68,7 @@ const points: Record<string, KubunDef> = {
  * 令和6年度の中身を EM で確かめていないので持たない（rules が空なので読まれない）
  */
 type DeriveConsts = Pick<RevisionConsts, "visitKubun" | "hokatsu" | "rx" | "oushin" | "testItems" | "ikou"> & {
-  kanri: Pick<RevisionConsts["kanri"], "table" | "familyOf"> & { note16: { enabled: false } };
+  kanri: Pick<RevisionConsts["kanri"], "rows" | "familyOf"> & { note16: { enabled: false } };
   baseUp: Pick<RevisionConsts["baseUp"], "visit" | "revisit">;
   price: Pick<RevisionConsts["price"], "visit" | "revisit">;
   terminal: Pick<RevisionConsts["terminal"], "mitori" | "shibou" | "terminal">;
@@ -78,10 +79,8 @@ type DeriveConsts = Pick<RevisionConsts, "visitKubun" | "hokatsu" | "rx" | "oush
 const consts: DeriveConsts = {
   visitKubun: ["C001_1I", "C001_1RO"],
   kanri: {
-    table: {
-      在医総管: { イ: "C002_2I1", ロ: "C002_2RO1", ニ: "C002_2NI1" },
-      施設総管: { イ: "C002-2_2I1", ロ: "C002-2_2RO1", ニ: "C002-2_2NI1" },
-    },
+    // EM §2-9 に行があるのは在支診（強化型以外）の区分だけ。ほかの種別の施設は、この版では管理料を導出しない（未対応）
+    rows: kanriRows({ 在医総管: { "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"] }, 施設総管: { "2": ["C002-2_2I1", "C002-2_2RO1", "C002-2_2NI1"] } }),
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16 は令和8年度で新設（EM §2-9 CH-14）。施設の設定 note16Met を読まず、月 2 回以上は 2ロ
     note16: { enabled: false },
@@ -94,8 +93,9 @@ const consts: DeriveConsts = {
   // 物価対応料は令和8年度で新設。キーは令和8年度と同じものを指すが、この版の点数表に区分がないので導出されない
   price: { visit: ["O100_1HA"], revisit: "O100_1RO" },
   // 死亡日前の日数・回数の要件は、令和6年度も同じかを EM で確かめていないので持たない（ターミナルケア加算は、この版では導出しない）
-  terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: "C001_N6_TERMINAL" },
-  oushin: { kubun: "C000", kinkyu: "C000_N1_KINKYU", revisit: "A001" },
+  terminal: { mitori: "C001_N7_MITORI", shibou: "C001_N8_SHIBOU", terminal: { "2": "C001_N6_TERMINAL" } },
+  // 緊急往診加算も在支診（強化型以外）の区分だけ
+  oushin: { kubun: "C000", kinkyu: { "2": "C000_N1_KINKYU" }, revisit: "A001" },
   tests: { judgement: ["D026_3", "D026_4", "D026_5"], bloodDraw: "D400_1" },
   // 点数が未確認の項目（血液化学 5〜7 項目・8〜9 項目）は表に入れない（その検査のある請求は、この版では未対応になり合計を出さない）
   testItems: {

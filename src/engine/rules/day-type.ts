@@ -9,8 +9,8 @@ export type DayTypeSpec = {
   id: string;
   /** 訪問診療時の区分 */
   visitKubun: string[];
-  /** 再診時等の区分 */
-  otherKubun: string;
+  /** 再診時等の区分（ベースアップ評価料(Ⅰ)は通常と注5 の 2 つ。通常か注5 かは R18 の担当で、ここは見ない） */
+  otherKubun: string[];
   /** 訪問診療料と往診料の両方を算定した日の重ねを決める施設の設定（加算ごとに別） */
   overlapKey: FacilityFactKey;
   reference: string;
@@ -18,14 +18,18 @@ export type DayTypeSpec = {
 
 export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
   const { visitKubun: VISIT, otherKubun: OTHER, overlapKey } = spec;
-  const ALL = [...VISIT, OTHER];
+  const ALL = [...VISIT, ...OTHER];
+  /** 再診時等の行の日（通常・注5 を合わせて） */
+  const otherDaysOf = (ctx: ClaimContext) => OTHER.flatMap((k) => lineOf(ctx, k)?.dates ?? []);
+  /** 再診時等の、算定している区分 */
+  const otherOf = (ctx: ClaimContext) => OTHER.filter((k) => lineOf(ctx, k));
   const visitTypeDays = (ctx: ClaimContext) => new Set(VISIT.flatMap((k) => lineOf(ctx, k)?.dates ?? []));
   /** 訪問診療料と往診料の両方を算定した日のうち、訪問診療時の区分と再診時等の区分が重なっている日 */
   function overlapDays(ctx: ClaimContext): string[] {
     const v = new Set(billedVisitDays(ctx, c));
     const o = new Set(billedOushinDays(ctx, c));
     const vt = visitTypeDays(ctx);
-    return (lineOf(ctx, OTHER)?.dates ?? []).filter((d) => v.has(d) && o.has(d) && vt.has(d));
+    return otherDaysOf(ctx).filter((d) => v.has(d) && o.has(d) && vt.has(d));
   }
   return {
     id: spec.id,
@@ -47,15 +51,15 @@ export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
       const o = new Set(billedOushinDays(ctx, c));
       const wrongVisit = VISIT.filter((k) => (lineOf(ctx, k)?.dates ?? []).some((d) => !v.has(d)));
       if (wrongVisit.length) out.push(finding(this, "区分誤り", wrongVisit, "oushin_only_day"));
-      const otherDays = lineOf(ctx, OTHER)?.dates ?? [];
+      const otherDays = otherDaysOf(ctx);
       // 訪問診療料だけの日の再診時等：その日に訪問診療時の区分がまだなければ置き換え、すでにあれば重複なので外す（置き換えると同じ日に 2 つ残る）
       const vt = visitTypeDays(ctx);
       const onVisitOnly = otherDays.filter((d) => v.has(d) && !o.has(d));
-      if (onVisitOnly.some((d) => !vt.has(d))) out.push(finding(this, "区分誤り", [OTHER], "use_visit"));
-      if (onVisitOnly.some((d) => vt.has(d))) out.push(finding(this, "背反", [OTHER], "duplicate_on_visit_day"));
+      if (onVisitOnly.some((d) => !vt.has(d))) out.push(finding(this, "区分誤り", otherOf(ctx), "use_visit"));
+      if (onVisitOnly.some((d) => vt.has(d))) out.push(finding(this, "背反", otherOf(ctx), "duplicate_on_visit_day"));
       // 両方を算定した日の重ね：設定が偽なら、再診時等の行は算定できないので外す（区分の置き換えにしない）
       const setting = ctx.facility[overlapKey];
-      if (overlapDays(ctx).length > 0 && setting.known && setting.value === false) out.push(finding(this, "背反", [OTHER], "no_revisit_on_both_day"));
+      if (overlapDays(ctx).length > 0 && setting.known && setting.value === false) out.push(finding(this, "背反", otherOf(ctx), "no_revisit_on_both_day"));
       return out;
     },
   };

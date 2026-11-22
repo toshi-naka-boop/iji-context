@@ -107,8 +107,11 @@ describe("段 13：実データの masters.db で", () => {
           else only.push(`${kubun} ${code} 項番${g.kouban} ${g.comments.join()}`);
         }
       }
-    // 食い違う組が出たら、関連テーブルの行が本当に「算定すれば必ず」かを、別表Ⅰ の原文で確かめる（黙って通さない）
-    expect(only).toEqual([]);
+    // 食い違う組が出たら、関連テーブルの行が本当に「算定すれば必ず」かを、別表Ⅰ の原文で確かめる（黙って通さない）。
+    // 段 17d で足した種別ごとの区分（管理料・在宅ターミナルケア加算）は、EM §2-10 表 1（T176-date・T169-death）の区分キーに入っていない。EM の追記を待つあいだは G07 だけが言う（この組だけを許し、ほかの組は今までどおり落とす）
+    const awaitingEm = (s: string) => /^(C002(-2)?_(1B_|1N_|3)(I1|RO1|NI1) \d{9} 項番0176 85010010[67]|C001_N6_TERMINAL_(1B|1N|3) \d{9} 項番0169 850100098)$/.test(s);
+    expect(only.filter((s) => !awaitingEm(s))).toEqual([]);
+    expect(only.filter(awaitingEm)).toHaveLength(24);
     expect(covered).toBeGreaterThanOrEqual(8);
     note(`R17 の表と関連テーブル：版の表のコードで G07 が使う組 ${covered}。どれも R17 の「算定すれば必ず」の行と同じ記載`);
     db.close();

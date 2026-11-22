@@ -20,7 +20,8 @@ function emSection(): string {
 const cells = (l: string) => l.split("|").slice(1, -1).map((c) => c.trim());
 const num = (s: string) => Number(s.replaceAll(",", ""));
 
-type EmRow = { primary: string; accept: string[]; points: number; shikibetsu: string };
+/** points は EM の「マスターの点数」。点数識別 3 でない行（注8 の減算の「20（点数識別 6）」）は null */
+type EmRow = { primary: string; accept: string[]; points: number | null; shikibetsu: string };
 /** 区分 → コードの表（コードが 9 桁の行だけ。包括の検査の行は下の表で読む） */
 const emCodes = new Map<string, EmRow>(
   emSection()
@@ -31,7 +32,7 @@ const emCodes = new Map<string, EmRow>(
       // 診療識別の列は「14（手引き p65）」か「未確認（集計先 140）」。後者は集計先の上 2 桁を使う
       const shikibetsu = /^(\d{2})（/.exec(c[5])?.[1] ?? /^未確認（集計先 (\d{2})\d）$/.exec(c[5])?.[1];
       if (!shikibetsu) throw new Error(`EM §2-8 の診療識別の列を読めない: ${c[0]}`);
-      return [c[0], { primary: c[1], accept: c[2] === "—" ? [] : c[2].split("・"), points: num(c[4]), shikibetsu }];
+      return [c[0], { primary: c[1], accept: c[2] === "—" ? [] : c[2].split("・"), points: /^[\d,]+$/.test(c[4]) ? num(c[4]) : null, shikibetsu }];
     }),
 );
 /** 包括の区分 → 点数（「生化学的検査(Ⅰ) の包括」の表） */
@@ -53,7 +54,7 @@ const emMembers = new Map(
 );
 
 describe("evidence-master §2-8 との対応（完了条件 1）", () => {
-  // コードの表は 93 行：版の表の 48 行と、実務の算定 A で採った施設基準の 45 行（2026-11-22。版にはまだ入れていない。spec FR-189）
+  // コードの表は 93 行：版の表の 48 行と、実務の算定 A で採った施設基準の 45 行（2026-11-22。段 17d で版に入れた。spec FR-189）
   it("EM の表が読めている（コードの表 93 行・包括の区分 3 行・包括の対象 66 コード）", () => {
     expect(emCodes.size).toBe(93);
     expect([...emTiers.keys()].sort()).toEqual(["D007_10", "D007_5", "D007_8"]);
