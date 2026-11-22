@@ -40,10 +40,15 @@ export type ReviewDeps = {
    * 議題の snapshot と理由に、矛盾の恐れになる公的文書を載せる（§4-3・§4-4）
    */
   official?: OfficialInput;
+  /**
+   * このクリニックでは使わない請求か（任意。2026-11-22 利用者の判断「印で除外する」）。真になる請求の提出は、版のない提出と同じく、
+   * 整理の最初に対象から外す（拾い直し・数え直し・議題のすべてで無いものとして扱う）。行は消さない
+   */
+  excludedClaim?: (claimId: string) => boolean;
 };
 
-/** 版のない提出の id（昇順）。hasRevision を渡されていなければ空 */
-function skippedSubmissions(deps: ReviewDeps): string[] {
+/** 版のない提出の id（昇順）。hasRevision を渡されていなければ空。整理の記録（reviews.skipped）と議題の件数に使う */
+function noRevisionSubmissions(deps: ReviewDeps): string[] {
   const has = deps.hasRevision;
   if (!has) return [];
   return deps.db
@@ -51,6 +56,20 @@ function skippedSubmissions(deps: ReviewDeps): string[] {
     .from(submissions)
     .all()
     .filter((s) => !has(s.yearMonth))
+    .map((s) => s.submissionId)
+    .sort();
+}
+
+/** 整理の対象から外す提出の id（昇順）：版のない提出と、このクリニックでは使わない請求（excludedClaim）の提出 */
+function skippedSubmissions(deps: ReviewDeps): string[] {
+  const has = deps.hasRevision;
+  const excluded = deps.excludedClaim;
+  if (!has && !excluded) return [];
+  return deps.db
+    .select()
+    .from(submissions)
+    .all()
+    .filter((s) => (has !== undefined && !has(s.yearMonth)) || (excluded !== undefined && excluded(s.claimId)))
     .map((s) => s.submissionId)
     .sort();
 }
@@ -202,8 +221,9 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
   const ranAt = canonicalTime(now);
   const reviewId = `review-${ranAt}`;
 
-  // 版のない提出を分ける（§4-4 手順 1）。この後の拾い直し・数え直し・議題は、どれも同じ判定（skippedSubmissions）で除く
-  const skipped = skippedSubmissions(deps);
+  // 版のない提出を分ける（§4-4 手順 1）。この後の拾い直し・数え直し・議題は、どれも同じ判定（skippedSubmissions。使わない請求の提出も含む）で除く。
+  // 整理の記録に残すのは、版のない提出だけ（議題の末尾の件数の文言が「版がない」なので）
+  const skipped = noRevisionSubmissions(deps);
 
   // 手順 0：答えの拾い直し（round-10 C-47）
   const pending = deps.db

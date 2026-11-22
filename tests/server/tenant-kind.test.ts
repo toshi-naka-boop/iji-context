@@ -267,6 +267,40 @@ describe("未定から real を選んだクリニックの、作り物の知識�
     expect(listKnowledge(a.store, { withExcluded: true }).filter((m) => m.id.includes("seed-")).map((m) => [m.id, m.status, m.history.length])).toEqual(before.filter(([id]) => String(id).includes("seed-")));
   });
 
+  it("見本の請求の提出と査定は、real を選ぶと制度の知識の外れの数と議題から外れる（行は消さない）。demo を選ぶとそのまま", async () => {
+    const make = async (login: string) => {
+      const u = auth().register(login, "まえから", "password123", "demo");
+      const a = appOf(u);
+      const k6 = a.caseOf(claimId("K6"));
+      const q = a.start("new1", k6.claimId);
+      a.confirm(q.id, k6.lines);
+      a.importClaimResult({ resultId: `r-${login}`, submissionId: q.id, kind: "原審査", outcome: "査定", kubun: ["D008_19"] });
+      a.advanceClock(at(17));
+      expect(a.agenda().items.some((i) => i.kind === "miss" && i.knowledgeId === "system/r11")).toBe(true);
+      expect(listKnowledge(a.store).find((m) => m.id === "system/r11")?.misses).toBe(1);
+      forget(u.tenantId);
+      return u;
+    };
+    const real = await make("sample_sub_real");
+    expect((await choose(real, "real")).status).toBe(200);
+    const a = appOf(real);
+    expect(listKnowledge(a.store).find((m) => m.id === "system/r11")?.misses).toBe(0);
+    expect(a.agenda().items.filter((i) => i.kind === "miss" && i.knowledgeId === "system/r11")).toEqual([]);
+    // 次の整理でも数えない・議題にしない
+    setNow("2027-06-01T10:00:00+09:00");
+    a.runMeeting();
+    expect(listKnowledge(appOf(real).store).find((m) => m.id === "system/r11")?.misses).toBe(0);
+    expect(appOf(real).agenda().items.filter((i) => i.knowledgeId === "system/r11")).toEqual([]);
+    const db = new Database(instance.tenantPaths(real.tenantId).dbFile, { readonly: true });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM submissions").get()).toEqual({ n: 1 });
+    db.close();
+
+    const demo = await make("sample_sub_demo");
+    expect((await choose(demo, "demo")).status).toBe(200);
+    expect(listKnowledge(appOf(demo).store).find((m) => m.id === "system/r11")?.misses).toBe(1);
+    expect(appOf(demo).agenda().items.some((i) => i.kind === "miss" && i.knowledgeId === "system/r11")).toBe(true);
+  });
+
   it("demo を選んだときと、新しい real のクリニックでは変わらない", async () => {
     const { u, k6 } = await oldDemoClinic("sample_k_demo");
     expect((await choose(u, "demo")).status).toBe(200);

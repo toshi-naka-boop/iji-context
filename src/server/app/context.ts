@@ -70,7 +70,8 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {})
   const facility = json<FacilityJson>(cfg("facility.json"));
   // 公的情報レジストリ（official/）。形の違う文書があれば起動を止める。会議の整理（トリガー④）とローカルルール欄が同じものを使う
   const official = officialInputOf(paths.root);
-  const deps = reviewDepsOf({ db, store, calendar, official });
+  // demo 以外（real・未定）は、見本の請求の提出を整理の対象から外す（数え直し・議題・拾い直し。行は消さない）
+  const deps = { ...reviewDepsOf({ db, store, calendar, official }), ...(kind === "demo" ? {} : { excludedClaim: isSampleClaim }) };
 
   const setting = (key: string): string | null =>
     (sqlite.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
