@@ -70,6 +70,8 @@ export type Basis = {
   codePair?: CodePair;
   /** localRevision のとき、改定の前後で差が出た項目（design.md §14-4） */
   changes?: string[];
+  /** localRevision のとき、どの改定日の棚卸か（結果を残す前に止まったときに、history から結果を戻す。round-45 codex #2） */
+  revisionDate?: string;
 };
 
 export type HistoryEntry = {

@@ -202,7 +202,8 @@ export function dueMeeting(lastRanAt: string | null, now: string, weekday: numbe
 
 export type ReviewHooks = {
   /** テスト用：各手順の途中で例外を投げて「止まった」状態を作る */
-  onStep?: (step: "recover" | "recount" | "trigger" | "digest", knowledgeId?: string) => void;
+  /** localRevision＝改定の棚卸で、要再検証にしたあと、結果（revision_checks）を残す前 */
+  onStep?: (step: "recover" | "recount" | "trigger" | "localRevision" | "digest", knowledgeId?: string) => void;
 };
 
 /** 会議の整理を回す。何度回しても同じ結果になる（途中で止まっても、もう一度回せばよい） */
@@ -250,9 +251,15 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
       const pair = meta.match.codePair;
       if (!pair || meta.status === "停止" || meta.status === "保管") continue;
       const checks = { ...meta.revision_checks };
+      // 前の整理が、要再検証にしたあと結果を残す前に止まったときは、history の TRIGGER{localRevision}（根拠の改定日）から結果を戻す（やり直しても同じ結果。round-45 codex #2）
+      let changed = false;
+      for (const h of meta.history)
+        if (h.event === "TRIGGER{localRevision}" && h.basis?.revisionDate && checks[h.basis.revisionDate] !== "changed") {
+          checks[h.basis.revisionDate] = "changed";
+          changed = true;
+        }
       // 見る改定日：直近の改定日（その日に承認済みだった知識だけ。改定の後に承認した知識は、承認した人が改定後のデータで見ている）と、保留のままの改定日
       const dates = [...new Set([...(d !== null && checks[d] === undefined && approvedAt(meta, d) ? [d] : []), ...Object.keys(checks).filter((k) => checks[k] === "pending")])].sort();
-      let changed = false;
       for (const date of dates) {
         hooks.onStep?.("trigger", meta.id);
         const r = deps.localRevision(pair, date);
@@ -263,12 +270,12 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
           changed = true;
         }
         if (next === "changed") {
-          writeRevisionChecks(deps.store, meta.id, checks);
-          changed = false;
-          applyEvent(deps.store, meta.id, { type: "TRIGGER", trigger: "localRevision" }, now, { trigger: "localRevision", codePair: pair, changes: r as string[] });
+          // 遷移を先にして、結果はあとで残す。間で止まっても、次の整理が history から結果を戻すので、二度要再検証にしない
+          applyEvent(deps.store, meta.id, { type: "TRIGGER", trigger: "localRevision" }, now, { trigger: "localRevision", codePair: pair, changes: r as string[], revisionDate: date });
           break;
         }
       }
+      hooks.onStep?.("localRevision", meta.id);
       if (changed) writeRevisionChecks(deps.store, meta.id, checks);
     }
   }
