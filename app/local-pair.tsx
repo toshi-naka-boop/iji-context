@@ -16,7 +16,7 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
   const bases = LOCAL_PAIR_BASES.filter((b) => polarity === "avoid" || b !== "返戻・査定された");
   async function save() {
     setMsg("");
-    const r = await fetch("/api/knowledge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "pair", claimId: props.claimId, ...props.pair, polarity, basis: bases.includes(basis as (typeof bases)[number]) ? basis : bases[0], condition }) });
+    const r = await fetch("/api/knowledge/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ claimId: props.claimId, ...props.pair, polarity, basis: bases.includes(basis as (typeof bases)[number]) ? basis : bases[0], condition }) });
     const d = await r.json().catch(() => null);
     if (!r.ok) return setMsg(d?.error ?? "エラー");
     setCondition("");

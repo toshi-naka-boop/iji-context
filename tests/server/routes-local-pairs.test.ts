@@ -65,7 +65,7 @@ const knowledgeRoutes = () => import("../../app/api/knowledge/route");
 const setRole = (role: Role) => instance.getAuth().switchRole(owner, role);
 const save = async (key: string, value: unknown, date: string | null) => (await factRoutes()).POST(post(`/api/claims/${ID}/facts`, { fact: { key, date, value, source: "カルテ" } }), params(ID));
 const facts = async () => ((await (await (await factRoutes()).GET(get(`/api/claims/${ID}/facts`), params(ID))).json()) as { facts: Record<string, unknown>[] }).facts;
-const createPair = async (over: Record<string, unknown> = {}) => (await knowledgeRoutes()).POST(post("/api/knowledge", { action: "pair", claimId: ID, a: A, b: B, tani: 1, polarity: "allow", basis: "審査で通った", condition: "急変の往診で、時間が分かれている", ...over }));
+const createPair = async (over: Record<string, unknown> = {}) => (await import("../../app/api/knowledge/pair/route")).POST(post("/api/knowledge/pair", { claimId: ID, a: A, b: B, tani: 1, polarity: "allow", basis: "審査で通った", condition: "急変の往診で、時間が分かれている", ...over }));
 const check = () => instance.runAs(owner, () => instance.getApp().ukeCheck(ID, instance.clerkIdOf(owner))) as { generic?: GenericView };
 const g05 = () => (check().generic?.findings ?? []).filter((f) => f.check === "G05" && f.codes.some((c) => c.code === OUSHIN_CODE) && f.codes.some((c) => c.code === VISIT_CODE));
 const meta = (id: string) => readKnowledge(instance.runAs(owner, () => instance.getApp().store), id) as KnowledgeMeta;
@@ -89,6 +89,15 @@ describe("作る入口と押した事実（マスターがなくても確かめ�
     expect((await save(`local:local/none@aaaaaaaaaaaa:${B}:${A}`, true, day(5))).status).toBe(400);
     setRole("doctor");
     expect((await save(`local:local/none@aaaaaaaaaaaa:${A}:${B}`, true, day(5))).status).toBe(403);
+    setRole("clerk");
+  });
+  it("作る入口は、請求の事実の入力と同じ役割（事務・ベテラン）で、注意書きへの同意が要る行。医師の役割は 403（round-43 C-201）", async () => {
+    const { POLICY } = await import("../../src/server/policy");
+    expect(POLICY["POST /api/knowledge/pair"]).toEqual({ rule: ["clerk", "veteran"], external: "none", patientData: true });
+    setRole("doctor");
+    expect((await createPair()).status).toBe(403);
+    setRole("manager");
+    expect((await createPair()).status).toBe(403);
     setRole("clerk");
   });
   it.skipIf(hasMasters)("（マスターがないとき）G05 が動かないので、どの組も作れない（400）", async () => {

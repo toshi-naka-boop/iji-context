@@ -121,6 +121,8 @@ export const POLICY = {
   // 知識の閲覧には同意のゲートも置かない（CLAUDE.md 固定条件「可視性にゲートを置かない」）
   "GET /api/knowledge": row(ALL, "none", false),
   "POST /api/knowledge": row(ALL, "none", false),
+  // 背反の組の院内の知識を作る（design.md §14-2）。取り込んだ請求を読んで G05 を計算し直すので、請求の事実の入力と同じ役割（医療事務あて）で、同意が要る（round-43 C-201）
+  "POST /api/knowledge/pair": row(WORK, "none", true),
   // 公的文書の条件に当たるかを確かめる（design.md §11-3）：「当たる」は全員（絞るときはこの行を変える）。「当たらない」は ④ を黙らせられるので責任者だけ
   "POST /api/knowledge/[id]/official-check/applies": row(ALL, "none", false),
   "POST /api/knowledge/[id]/official-check/not-applies": row(["veteran"], "none", false),
