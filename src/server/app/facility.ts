@@ -10,6 +10,7 @@ import type { FacilityFactKey } from "../../engine/types";
 import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES, HOSPITAL_SIDE_CODES } from "../../facility/codes";
 import {
   codeKey,
+  declarationView,
   DISPENSING_KEY,
   dispensingTri,
   effectiveRow,
@@ -27,6 +28,7 @@ import {
   selectableRows,
   TRI_REASON_LABEL,
   type DeclarationRow,
+  type DeclarationView,
   type On,
   type Requirement,
   type Tri,
@@ -69,6 +71,9 @@ export const facilityJsonOf = (ctx: Pick<AppContext, "facility" | "kind" | "sett
   ...savedOf(ctx),
   ...facilityFromDeclaration(readDeclarations(ctx.sqlite), today, yearMonth),
 });
+
+/** G10 に渡す施設の申告の三値（design.md §15-5）。今日は時計の日付 */
+export const declarationViewOf = (ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "now">): DeclarationView => declarationView(readDeclarations(ctx.sqlite), todayOf(clock));
 
 type KijunRow = { codes: string[]; name: string; abbrev: string };
 const abbrevOf = (code: string): string | null => (kijun as { rows: KijunRow[] }).rows.find((r) => r.codes.includes(code))?.abbrev ?? null;

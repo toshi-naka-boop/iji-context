@@ -9,6 +9,7 @@ import { g03NotDone } from "./g03";
 import { g07NotDone } from "./g07";
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
+import { g10NotDone } from "./g10";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
 /** recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す） */
@@ -32,16 +33,17 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
+  if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));
   return out;
 }
 
 /**
  * C〜I の手順に回した区分（在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算。版の定数 deferred）と、注8 の減算の対象になる管理料（在支診以外〔種別 3〕の管理料）の行の数を、
  * 点検の範囲に出す文（design.md §15-4。L-92）。算定の要件と取り忘れは見ていない（黙って通さない）。行がなければ null。
- * 届出の有無は G10（段 17e）が見るようになるまで、どの点検も見ていない
+ * 届出の有無は G10 が見ている（design.md §15-4）
  */
 export function deferredNote(lines: ClaimLine[], rev: Revision): string | null {
   const deferred = new Set([...(rev.consts.deferred ?? []), ...rev.consts.kanri.rows.filter((r) => r.grade === "3").map((r) => r.kubun)]);
   const n = lines.filter((l) => l.count > 0 && deferred.has(l.kubun)).length;
-  return n > 0 ? `在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません：${n} 行` : null;
+  return n > 0 ? `在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません（届出の有無だけ G10 が見ています）：${n} 行` : null;
 }

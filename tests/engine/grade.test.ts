@@ -302,7 +302,7 @@ describe("連携型の申告の断り（docs M-8）と C〜I に回した区分�
   });
   it("請求に充実体制・実績・在宅療養移行・注8 の減算の行があると、点検の範囲に「見ていません」と件数。R ルールの指摘は出ない（移行加算の種別のほか）", () => {
     const lines = [...K2.lines, line("C002_N7_JUJITSU1", 1, KANRI_DATE), line("C001_N6_JISSEKI1", 1, [day(14)]), line("C002_N8_GENSAN", 1, KANRI_DATE)];
-    expect(deferredNote(lines, REV)).toBe("在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません：3 行");
+    expect(deferredNote(lines, REV)).toBe("在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません（届出の有無だけ G10 が見ています）：3 行");
     const fs = evaluate({ ...K2, lines }).findings;
     expect(fs.filter((f) => f.lineRefs.some((k) => C.deferred!.includes(k)))).toEqual([]);
     expect(deferredNote(K2.lines, REV)).toBeNull();

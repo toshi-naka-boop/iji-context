@@ -1,12 +1,13 @@
 // データで動く点検（design.md §12-2・§12-3）の型。手書きのルール（src/engine/。区分キーで動く）とは別の道で、UKE の単位とコードのまま点検する
 import type { Facts } from "../engine/types";
+import type { DeclarationView } from "../facility/declaration";
 import type { CodePair } from "../lifecycle/types";
 import type { LocalPairKnowledge } from "./local-pair";
 import type { MastersDb } from "../masters/db";
 import type { UkeComment, UkeItem, UkeUnit } from "../uke/types";
 
-export type GenericCheckId = "G01" | "G02" | "G03" | "G04" | "G05" | "G06" | "G07" | "G08" | "G09";
-export type GenericKind = "コード" | "点数" | "行の属性" | "包括" | "背反" | "回数" | "記載もれ" | "傷病名" | "適応";
+export type GenericCheckId = "G01" | "G02" | "G03" | "G04" | "G05" | "G06" | "G07" | "G08" | "G09" | "G10";
+export type GenericKind = "コード" | "点数" | "行の属性" | "包括" | "背反" | "回数" | "記載もれ" | "傷病名" | "適応" | "施設基準";
 
 /** 点検の一覧（design.md §12-3 の表の順） */
 export const GENERIC_CHECKS: { id: GenericCheckId; kind: GenericKind }[] = [
@@ -19,6 +20,7 @@ export const GENERIC_CHECKS: { id: GenericCheckId; kind: GenericKind }[] = [
   { id: "G07", kind: "記載もれ" },
   { id: "G08", kind: "傷病名" },
   { id: "G09", kind: "適応" },
+  { id: "G10", kind: "施設基準" },
 ];
 
 export type GenericFinding = {
@@ -66,6 +68,12 @@ export type GenericAbout = {
   localKnowledge?: (pair: CodePair) => LocalPairKnowledge[];
   level?: number;
   pressed?: (key: string, date: string | null) => { round: number } | null;
+  /**
+   * 施設の申告の三値（G10。design.md §15-5）。取り込んだレセプトの点検・月末の点検・算定プレビューが渡す。渡さない呼び出し（試算・measure-generic の既定）では G10 は動かない。
+   * sideless＝「正しい側」を添えないコード（版の区分〔R18 の区分〕のコード。正しい側は手書きのルールが言う。L-91）
+   */
+  declaration?: DeclarationView;
+  sideless?: ReadonlySet<string>;
 };
 
 /**

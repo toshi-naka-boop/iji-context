@@ -13,6 +13,7 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Doctor } from "./doctor";
+import { declarationViewOf } from "./facility";
 import { genericOfLines } from "./generic";
 import type { LocalAbout } from "./local-pairs";
 import type { Notes } from "./notes";
@@ -119,7 +120,7 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛け、確定のときの手書きの結果との重なりの規則を通す。読むだけで、問題には保存しない */
   function genericOf(q: Question, local?: LocalAbout) {
     const { yearMonth, recordsKnown } = caseFor(q);
-    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth, q.confirmed?.result ?? { findings: [] }, recordsKnown, local);
+    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth, q.confirmed?.result ?? { findings: [] }, recordsKnown, local, declarationViewOf(ctx, clock));
   }
   function explain(id: string) {
     const cur = loadQ(id);

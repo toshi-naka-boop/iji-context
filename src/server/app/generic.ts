@@ -3,7 +3,9 @@
 // 指摘は、手書きのルールの結果との重なりの規則（src/generic/overlap.ts）を通してから出す
 import type { Revision } from "../../engine/revisions/types";
 import type { ClaimLine, EngineResult } from "../../engine/types";
+import type { DeclarationView } from "../../facility/declaration";
 import { evaluateGeneric } from "../../generic";
+import { g10MarksOf, sidelessOf } from "../../generic/g10";
 import { rowNamesOf, type RowNames } from "../../generic/lookup";
 import { claimOfLines, overlap, type MappedLine } from "../../generic/overlap";
 import { deferredNote, genericScopeOf } from "../../generic/scope";
@@ -25,18 +27,21 @@ export function genericOut(result: GenericResult, names: RowNames | null, hand: 
 
 /**
  * skippedLines は、コードに直せないので掛けなかった行の数（コードを持たない区分と、包括の検査の区分）。hand は、同じ行を手書きのルールで判定した結果。
- * local は、背反の組の院内の知識と本人のレベル（design.md §14-3。月末の点検・算定プレビューが渡す。試算は渡さない）。localUsed は、指摘に添えた承認済みの知識の id
+ * local は、背反の組の院内の知識と本人のレベル（design.md §14-3。月末の点検・算定プレビューが渡す。試算は渡さない）。localUsed は、指摘に添えた承認済みの知識の id。
+ * declaration は、施設の申告の三値（G10。design.md §15-5。月末の点検・算定プレビューが渡す。試算は渡さない＝G10 は動かない）
  */
-export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: string, hand: Hand, recordsKnown: boolean, local?: Pick<GenericAbout, "localKnowledge" | "level">): GenericOut & { skippedLines: number; localUsed: string[] } {
+export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: string, hand: Hand, recordsKnown: boolean, local?: Pick<GenericAbout, "localKnowledge" | "level">, declaration?: DeclarationView): GenericOut & { skippedLines: number; localUsed: string[] } {
   const { claim, mapped } = claimOfLines(lines, rev);
-  const about: GenericAbout = { yearMonth, generation: rev.generation, ...local };
+  const about: GenericAbout = { yearMonth, generation: rev.generation, ...local, ...(declaration ? { declaration, sideless: sidelessOf(rev) } : {}) };
   const view = withMasters((db) => {
     const result = evaluateGeneric(claim, db, about);
     // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
     const scope = genericScopeOf(claim, db, about, result);
     // C〜I に回した区分の「見ていない」（design.md §15-4。L-92）も、同じ点検の範囲に出す
     const deferred = deferredNote(lines, rev);
-    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: deferred ? { ...scope, notDone: [...scope.notDone, deferred] } : scope, localUsed: result.localUsed ?? [] };
+    // 施設基準の印は、G10 が動いたときだけ（動かなければ「届出が要ります」のまま。design.md §15-5）
+    const marks = db && result.ran.some((r) => r.check === "G10") ? g10MarksOf(claim, db, about) : null;
+    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }, marks) : null, hand, rev, recordsKnown, mapped), scope: deferred ? { ...scope, notDone: [...scope.notDone, deferred] } : scope, localUsed: result.localUsed ?? [] };
   });
   // 回数 0 の行は、算定していない行なので「掛けなかった行」に数えない
   return { ...view, skippedLines: lines.filter((l) => l.count > 0).length - claim.units.length };

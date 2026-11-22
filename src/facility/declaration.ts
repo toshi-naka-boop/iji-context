@@ -201,7 +201,9 @@ export function heldOf(rows: DeclarationRow[], code: string, on: On, today: stri
 }
 
 /** G10 に渡す形：コードごとの三値と名称（design.md §15-2） */
-export function declarationView(rows: DeclarationRow[], today: string): { held(code: string, on: On): Tri; nameOf(code: string): string | null } {
+export type DeclarationView = { held(code: string, on: On): Tri; nameOf(code: string): string | null };
+
+export function declarationView(rows: DeclarationRow[], today: string): DeclarationView {
   return { held: (code, on) => heldOf(rows, code, on, today), nameOf: kijunNameOf };
 }
 
