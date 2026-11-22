@@ -60,7 +60,8 @@ async function respond(call: SdkCall): Promise<{ structured: unknown }> {
   }
   if (props.includes("expression")) return { structured: { body: "見るとよい場所があります。", expression: "通常", citedKnowledge: [], topic: "算定" } };
   if (props.includes("answerable")) return { structured: { answerable: false, body: "", citedKnowledge: [] } };
-  if (props.includes("facts")) return { structured: { facts: [] } };
+  // カルテの読み取り：事実と行ったこと・処方の記載（同じ 1 回の呼び出し。design.md §15-6）
+  if (props.includes("facts")) return { structured: { facts: [], acts: [{ category: "投薬", written: "DOAC", lookup: ["DOAC"], quote: "DOAC 継続" }], rx: [{ quote: "DOAC" }] } };
   if (props.includes("missing")) return { structured: { text: "本日訪問。変わりなし。", missing: [] } };
   if (props.includes("reading")) return { structured: { reading: "やまだ" } };
   if (props.includes("documentType")) return { structured: { documentType: "", prefecture: "", items: [] } };
@@ -179,7 +180,9 @@ describe("AI に送る文脈から識別子を外す", () => {
     const { toHiragana } = await import("../../src/voice/kana");
     await toHiragana(user, "山田");
 
-    // 送ったもの：プロンプト・指示（システムプロンプト）・ツールの返事
+    // 行ったこと（acts）の取り出しも、この経路の 1 回の呼び出しに入っている（段 18a。§11-11 のテストに acts の呼び出しを足す）
+    expect(sdk.calls.some((c) => "acts" in (((c.options.outputFormat as { schema?: { properties?: object } } | undefined)?.schema?.properties ?? {}) as object))).toBe(true);
+        // 送ったもの：プロンプト・指示（システムプロンプト）・ツールの返事
     const roles = sdk.calls.map((c) => Object.keys(((c.options.outputFormat as { schema: { properties: object } }).schema.properties) as object).join(","));
     expect(new Set(roles).size).toBeGreaterThanOrEqual(7);
     expect(sdk.calls.length).toBeGreaterThanOrEqual(12);
