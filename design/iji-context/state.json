@@ -6,16 +6,16 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v29:e862b182fc3f",
+  "requiredApprovalFingerprint": "v29:698135e3c6f6",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 42,
+  "criticRound": 43,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§15・§12・§2-7）",
     "ledger.md",
     "spec.md（実務の算定 A〜I）"
   ],
-  "nextAction": "round-42 の批評（design-critic と codex）を振り分ける",
+  "nextAction": "round-43 の批評。前提 L-87・L-100 は利用者の答え待ち",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
