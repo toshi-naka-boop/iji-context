@@ -692,7 +692,11 @@ function findCandidate(deps: ReviewDeps, relatesTo: string, itemId: string): str
  */
 function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, freeText: string | null, now: string, fix: { polarity: Polarity | null; conditionNote: string | null } = { polarity: null, conditionNote: null }): string {
   const done = findCandidate(deps, orig.id, itemId);
-  if (done) return done;
+  // 候補がもうある（前の反映が、候補を作ったあと保留を写す前に止まった）ときも、元の未済の保留を写す。写す処理は何度呼んでも同じ結果（round-46 C-210）
+  if (done) {
+    inheritRevisionChecks(deps, orig, done, now);
+    return done;
+  }
   const over = orig.match.codePair !== undefined ? { polarity: fix.polarity, conditionNote: fix.conditionNote } : null;
   if (over && (over.polarity === null || !over.conditionNote)) throw new Error(`背反の組の知識の修正版に、回答の向きと条件の文がない: ${itemId}`);
   const pairOver = over ? { polarity: over.polarity!, conditionNote: over.conditionNote! } : undefined;

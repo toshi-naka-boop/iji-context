@@ -1,6 +1,22 @@
 // 段 16：背反の組の知識を、レセメン会議の修正版（ベテラン層）で直す（design.md §14-1・§14-5。X-118）。
 // 修正版は、回答の向き（polarity）と条件の文（conditionNote）を持つ（元からコピーしない）。承認すると、直した値で G05 に渡る
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// 保留を写す書き込み（writeRevisionChecks）を一度だけ止める（round-46 C-210 の場面）
+const flag = vi.hoisted(() => ({ crash: false }));
+vi.mock("../../src/lifecycle/store", async (orig) => {
+  const m = await orig<typeof import("../../src/lifecycle/store")>();
+  return {
+    ...m,
+    writeRevisionChecks: (...a: Parameters<typeof m.writeRevisionChecks>) => {
+      if (flag.crash) {
+        flag.crash = false;
+        throw new Error("ここで止める");
+      }
+      return m.writeRevisionChecks(...a);
+    },
+  };
+});
 import { answerItem, buildDigest } from "../../src/lifecycle/review";
 import { appendBody, applyEvent, createKnowledge, listKnowledge, readBody, readKnowledge } from "../../src/lifecycle/store";
 import { createLocalPairs } from "../../src/server/app/local-pairs";
@@ -96,5 +112,34 @@ describe("改定の棚卸の保留を、修正版に引き継ぐ（round-45 code
     h.review("2026-06-20T09:00:00+09:00");
     const after = readKnowledge(h.deps.store, cand.id)!;
     expect([seen, after.status, after.history.at(-1)?.event, after.revision_checks]).toEqual([[D], "要再検証", "TRIGGER{localRevision}", { [D]: "changed" }]);
+  });
+});
+
+describe("修正版を作ったあと、保留を写す前に止まっても、やり直すと写る（round-46 C-210）", () => {
+  it("回答の反映が止まる → 整理の手順 0 が拾い直す → 既にある候補にも保留を写す → 承認後、そろった整理で要再検証", () => {
+    h = harness();
+    const T = "2026-05-01T09:00:00+09:00";
+    const m = createKnowledge(h.deps.store, { layer: "院内", slug: "pair-crash", summary: "組", body: "組", source: { type: "手動", ref: "uke:A1" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：審査で通った。元の条件", match: { codePair: PAIR } }, T);
+    applyEvent(h.deps.store, m.id, { type: "VERIFY_APPROVE" }, T);
+    let ready = false;
+    h.deps.localRevision = () => (ready ? ["基本マスターの 114001110 の行（名称）"] : "pending");
+    const D = "2026-06-01T00:00:00+09:00";
+    h.review("2026-06-06T09:00:00+09:00");
+    applyEvent(h.deps.store, m.id, { type: "TRIGGER", trigger: "localReturn" }, "2026-06-08T09:00:00+09:00", { trigger: "localReturn", claimId: "U1-1", codePair: PAIR });
+    h.review("2026-06-13T09:00:00+09:00");
+    const item = buildDigest(h.deps).items.find((x) => x.knowledgeId === m.id && x.kind === "recheck")!;
+    flag.crash = true;
+    expect(() => answerItem(h.deps, { itemId: item.itemId, answer: 2, polarity: "allow", conditionNote: "根拠：その他。直した条件" }, "2026-06-13T09:00:00+09:00")).toThrow("ここで止める");
+    expect(listKnowledge(h.deps.store).find((x) => x.relates_to === m.id)?.revision_checks).toBeUndefined();
+    h.review("2026-06-13T10:00:00+09:00");
+    const cand = listKnowledge(h.deps.store).find((x) => x.relates_to === m.id)!;
+    expect([readKnowledge(h.deps.store, m.id)?.status, cand.status, cand.revision_checks]).toEqual(["停止", "未検証", { [D]: "pending" }]);
+    // もう一度やり直しても同じ
+    h.review("2026-06-13T11:00:00+09:00");
+    expect(readKnowledge(h.deps.store, cand.id)?.revision_checks).toEqual({ [D]: "pending" });
+    applyEvent(h.deps.store, cand.id, { type: "VERIFY_APPROVE" }, "2026-06-14T09:00:00+09:00");
+    ready = true;
+    h.review("2026-06-20T09:00:00+09:00");
+    expect([readKnowledge(h.deps.store, cand.id)?.status, readKnowledge(h.deps.store, cand.id)?.revision_checks]).toEqual(["要再検証", { [D]: "changed" }]);
   });
 });
