@@ -99,13 +99,19 @@ describe("招待制の登録", () => {
     expect(auth().login("walk_in", "password123")).toBeNull();
 
     process.env.RESEMEN_OPEN_SIGNUP = "1";
-    const open = await register({ login: "walk_in", name: "とびこみ", password: "password123" });
+    // クリニックの種類を選ばないと、開放していても登録できない
+    const unchosen = await register({ login: "walk_in", name: "とびこみ", password: "password123" });
+    expect(unchosen.status).toBe(400);
+    expect(auth().login("walk_in", "password123")).toBeNull();
+    const open = await register({ login: "walk_in", name: "とびこみ", password: "password123", kind: "real" });
     delete process.env.RESEMEN_OPEN_SIGNUP;
     expect(open.status).toBe(200);
+    expect((await open.json()).kind).toBe("real");
     expect(open.headers.get("set-cookie")).toContain("resemen_session=");
     const u = auth().login("walk_in", "password123")!;
     expect(u.tenantId).toBe(u.id);
     expect(u.role).toBe("clerk");
+    expect(auth().tenantKind(u.tenantId)).toBe("real");
   });
 
   it("招待コードは 1 回だけ使え、招待のクリニックとロールで登録される。DB にはコードそのものを置かない", async () => {

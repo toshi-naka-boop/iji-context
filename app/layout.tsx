@@ -1,5 +1,6 @@
 import "./globals.css";
 import { ConsentGate } from "./consent";
+import { TenantKindGate } from "./tenant-gate";
 
 export const metadata = { title: "レセメン" };
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <ConsentGate />
+        <TenantKindGate />
       </body>
     </html>
   );

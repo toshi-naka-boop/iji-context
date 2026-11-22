@@ -26,7 +26,7 @@ import type { LocalAbout } from "./local-pairs";
 import type { Uke } from "./uke";
 
 export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases) {
-  const { sqlite, paths } = ctx;
+  const { sqlite, paths, hiddenClaim } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
   const { patientOf } = uke;
@@ -85,7 +85,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       .prepare("SELECT n.id, n.claim_id, n.date, n.kind, n.clerk_id, n.facts IS NOT NULL AS confirmed, c.name FROM chart_notes n LEFT JOIN clerks c ON c.id = n.clerk_id ORDER BY n.id")
       .all() as { id: number; claim_id: string; date: string; kind: string; clerk_id: string; confirmed: number; name: string | null }[];
     return rows
-      .filter((r) => role === "manager" || r.clerk_id === clerkId)
+      .filter((r) => (role === "manager" || r.clerk_id === clerkId) && !hiddenClaim(r.claim_id))
       .map((r) => ({ id: r.id, claimId: r.claim_id, date: r.date, kind: r.kind, writer: r.name ?? "", mine: r.clerk_id === clerkId, confirmed: r.confirmed === 1 }));
   }
   /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */

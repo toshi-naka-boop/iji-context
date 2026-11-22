@@ -25,6 +25,15 @@ export class ConsentRequired extends UserError {
   }
 }
 
+/**
+ * 使い方（demo／real）が未定のクリニックでの操作（2026-11-22 利用者の判断）。共通のルートヘルパは 409 と、画面が選ぶ画面・待つ画面を出すための印（tenant: "undecided"）を返す
+ */
+export class TenantUndecided extends UserError {
+  constructor(canChoose: boolean) {
+    super(409, canChoose ? "先に、このクリニックの使い方（デモで試す／実在のデータで使う）を選んでください" : "事務長がこのクリニックの使い方を選ぶまでお待ちください");
+  }
+}
+
 export const badRequest = (message: string, fields?: string[]) => new UserError(400, message, fields);
 export const forbidden = (message: string) => new UserError(403, message);
 export const notFound = (message: string) => new UserError(404, message);

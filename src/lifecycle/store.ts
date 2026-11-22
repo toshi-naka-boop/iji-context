@@ -24,6 +24,11 @@ export type StoreOptions = {
   skillsDir: string;
   /** 区分のキーの検査（任意）。渡されたときだけ、match の区分をすべて確かめ、偽なら書き込みを拒否する。本番の配線が渡す（design.md §3） */
   knownKubun?: (kubun: string) => boolean;
+  /**
+   * このクリニックでは使わない知識（任意。2026-11-22 利用者の判断「印で除外する」）。真になる知識は、listKnowledge と Skill の同期から外れる
+   * （判断・会議・トリガーの対象にしない）。状態と history は変えない。一覧で見せるときは listKnowledge(opts, { withExcluded: true })
+   */
+  excluded?: (meta: KnowledgeMeta) => boolean;
 };
 
 export type CreateInput = {
@@ -188,8 +193,8 @@ export function readKnowledge(opts: StoreOptions, id: string): KnowledgeMeta | u
   return { ...meta, official_seen: meta.official_seen ?? [] };
 }
 
-/** 全知識の meta（id 昇順） */
-export function listKnowledge(opts: StoreOptions): KnowledgeMeta[] {
+/** 全知識の meta（id 昇順）。このクリニックでは使わない知識（opts.excluded）は、withExcluded を付けたときだけ入れる */
+export function listKnowledge(opts: StoreOptions, view: { withExcluded?: boolean } = {}): KnowledgeMeta[] {
   const out: KnowledgeMeta[] = [];
   if (!existsSync(opts.knowledgeDir)) return out;
   for (const layerSlug of readdirSync(opts.knowledgeDir).sort()) {
@@ -197,7 +202,7 @@ export function listKnowledge(opts: StoreOptions): KnowledgeMeta[] {
     for (const slug of readdirSync(path.join(opts.knowledgeDir, layerSlug)).sort()) {
       if (slug.includes(".tmp-")) continue; // 作成途中の一時ディレクトリは知識ではない（round-15 X-59）
       const meta = readKnowledge(opts, `${layerSlug}/${slug}`);
-      if (meta) out.push(meta);
+      if (meta && (view.withExcluded || !opts.excluded?.(meta))) out.push(meta);
     }
   }
   return out;

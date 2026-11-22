@@ -3,7 +3,11 @@
 import type Database from "better-sqlite3";
 import { CREATE_SQL } from "./schema";
 
-export type Migration = { version: number; sql: string };
+/** sql を流したあと、run があれば続けて呼ぶ（同じトランザクションの中。表の形で分かれる直しに使う） */
+export type Migration = { version: number; sql: string; run?: (sqlite: Database.Database) => void };
+
+/** クリニックの種類の書き換えを止めるトリガー（未定 → demo／real の 1 回だけを許す） */
+const TENANTS_KIND_TRIGGER = "CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants WHEN NOT (OLD.kind = 'undecided' AND NEW.kind IN ('demo', 'real')) BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;";
 
 /** tenant の app.db（data/resemen.db も同じ） */
 export const APP_MIGRATIONS: Migration[] = [
@@ -158,6 +162,42 @@ ALTER TABLE users ADD COLUMN accepted_notice_at TEXT;
 CREATE TABLE rate_daily (day TEXT NOT NULL, bucket TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, bucket, user_id));
 `,
   },
+  {
+    // クリニックの種類（2026-11-22 利用者の判断）：demo＝作り物のデータ入り・デモの時計／real＝実在のデータ・実際の日付／undecided＝未定。
+    // 新しいクリニックは作るときに決める。それまでのクリニック（利用者の tenant_id）は未定にし、事務長が次に入ったときに一度だけ選ぶ（decided_at）。
+    // 書き換えは「未定 → demo／real」の 1 回だけを許し、ほかはトリガーで止める
+    version: 5,
+    sql: `
+CREATE TABLE tenants (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('demo', 'real', 'undecided')), created_at TEXT NOT NULL, decided_at TEXT);
+INSERT INTO tenants (id, kind, created_at) SELECT tenant_id, 'undecided', MIN(created_at) FROM users WHERE tenant_id IS NOT NULL GROUP BY tenant_id;
+CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants WHEN NOT (OLD.kind = 'undecided' AND NEW.kind IN ('demo', 'real')) BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;
+`,
+  },
+  {
+    // 前の版の 5（fix/demo-real の 2e03207 まで）を当てた auth.db を、今の形にそろえる（反証 round-44 #1）。
+    // 前の版の 5 は、表に decided_at と未定がなく、それまでのクリニックを demo にし、書き換えを全部止めていた。
+    // その DB では表を作り直し、demo の行を未定にする（前の版で登録のときに demo を選んだクリニックも、区別できないので未定にする。安全側）。
+    // real の行は、登録のときに選んだもの（decided_at は作った日時）。トリガーは今の形に入れ替える。
+    // 今の 5 を当てた DB では、選んだ日時のない demo・real の行（登録のときに選んだもの）に、作った日時を選んだ日時として入れるだけ
+    version: 6,
+    sql: "",
+    run: (db) => {
+      const columns = (db.prepare("PRAGMA table_info(tenants)").all() as { name: string }[]).map((c) => c.name);
+      db.exec("DROP TRIGGER IF EXISTS tenants_kind_fixed;");
+      if (!columns.includes("decided_at")) {
+        db.exec(`
+CREATE TABLE tenants_v6 (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('demo', 'real', 'undecided')), created_at TEXT NOT NULL, decided_at TEXT);
+INSERT INTO tenants_v6 (id, kind, created_at, decided_at)
+  SELECT id, CASE kind WHEN 'real' THEN 'real' ELSE 'undecided' END, created_at, CASE kind WHEN 'real' THEN created_at ELSE NULL END FROM tenants;
+DROP TABLE tenants;
+ALTER TABLE tenants_v6 RENAME TO tenants;
+`);
+      } else {
+        db.exec("UPDATE tenants SET decided_at = created_at WHERE decided_at IS NULL AND kind IN ('demo', 'real');");
+      }
+      db.exec(TENANTS_KIND_TRIGGER);
+    },
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;
@@ -177,7 +217,8 @@ export function migrate(sqlite: Database.Database, migrations: Migration[]): num
     .transaction(() => {
       // ほかのプロセスが先に適用していることがあるので、書き込みのロックを取ってから読み直す
       for (const m of migrations.slice(versionOf(sqlite))) {
-        sqlite.exec(m.sql);
+        if (m.sql) sqlite.exec(m.sql);
+        m.run?.(sqlite);
         sqlite.pragma(`user_version = ${m.version}`);
       }
       return versionOf(sqlite);

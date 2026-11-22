@@ -1,5 +1,5 @@
 "use client";
-// 共通のメニュー：左の縦メニュー（2026-11-08 ユーザー判断で案 C+）。上から本人のステータス・メニュー・デモの日付。
+// 共通のメニュー：左の縦メニュー（2026-11-08 ユーザー判断で案 C+）。上から本人のステータス・メニュー・今日の日付（デモのクリニックはデモの日付）。
 // 名前は今までどおり TopBar（各画面はそのまま使う）。日付は日付だけ出す（時刻は出さない：2026-11-07 ユーザー判断）
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -34,18 +34,20 @@ function progress(s: Status): number {
  * 画面を移るたびにメニューが空から描き直されて崩れないよう、最後に取れた値をこのページの間だけ覚えておく
  * （ブラウザの中だけ。サーバーには何も残さない。2026-11-08）
  */
-const memo: { now: string; who: string; status: Status | null } = { now: "", who: "", status: null };
+const memo: { now: string; kind: "demo" | "real" | null; /* 未定は real と同じ表示（今日は実際の日付） */ canAdvance: boolean; who: string; status: Status | null } = { now: "", kind: null, canAdvance: false, who: "", status: null };
 
 /** status を渡す画面（算定）はその値を、渡さない画面は自分で取りにいく */
 export function TopBar({ status }: { status?: Status | null }) {
   const path = usePathname();
   const [now, setNow] = useState<string>(memo.now);
+  const [kind, setKind] = useState(memo.kind);
+  const [canAdvance, setCanAdvance] = useState(memo.canAdvance);
   const [input, setInput] = useState(memo.now.slice(0, 10));
   const [msg, setMsg] = useState("");
   const [who, setWho] = useState(memo.who);
   const [own, setOwn] = useState<Status | null>(memo.status);
   useEffect(() => {
-    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { memo.now = d.now; setNow(d.now); setInput(d.now.slice(0, 10)); } });
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { memo.now = d.now; memo.kind = d.kind === "demo" ? "demo" : "real"; memo.canAdvance = d.canAdvance === true; setNow(d.now); setKind(memo.kind); setCanAdvance(memo.canAdvance); setInput(d.now.slice(0, 10)); } });
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u) => { memo.who = u?.name ?? ""; setWho(memo.who); }).catch(() => {});
     fetch("/api/me").then((r) => (r.ok ? r.json() : null)).then((s) => { if (s) { memo.status = { level: s.level, count: s.count, streak: s.streak }; setOwn(memo.status); } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,10 +87,10 @@ export function TopBar({ status }: { status?: Status | null }) {
         ))}
       </nav>
       <div className="side-date">
-        <span>デモの日付</span>
+        {/* 実在のデータで使うクリニックは今日の日付だけ。デモのクリニックはデモの日付で、進められる人（事務長・開発）にだけ操作を出す */}
+        <span>{kind === "real" ? "今日" : kind === "demo" ? "デモの日付" : ""}</span>
         <span className="num">{now ? now.slice(0, 10).replaceAll("-", ".") : "----.--.--"}</span>
-        {/* 日付を進めるのは開発用（本番では API が 404 を返すので、操作も出さない） */}
-        {process.env.NODE_ENV !== "production" && (
+        {kind === "demo" && canAdvance && (
           <>
             <input type="date" value={input} onChange={(e) => setInput(e.target.value)} aria-label="デモの日付" />
             <button onClick={advance}>日付を進める</button>
