@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { r2024 } from "../../src/engine/revisions/r2024";
 import { r2026 } from "../../src/engine/revisions/r2026";
 import { r2027_06 } from "../../src/engine/revisions/r2027-06";
-import { HAIHAN, type HaihanConfig } from "../../src/generic/haihan";
+import { HAIHAN, HAIHAN_BY_GENERATION, type HaihanConfig } from "../../src/generic/haihan";
+import { MASTERS_CONFIG } from "../../src/masters/config";
 import { generationsAt, pairRevisionDiff } from "../../src/generic/local-revision";
 import { buildDigest } from "../../src/lifecycle/review";
 import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
@@ -29,6 +30,13 @@ function twoGenerations(): Database.Database {
 }
 const PAIR: CodePair = { a: C.oushin, b: C.houmon, tani: 1 };
 const EM: Record<string, HaihanConfig> = { R8: HAIHAN, R10: HAIHAN };
+
+describe("改定前の EM の行は、版ごとに写して持つ（round-43 codex #2）", () => {
+  it("R8 の行は、出荷の json そのものではない写し。今の世代（R8）の写しは、出荷の json と同じ（改定で出荷の json を書き換える前に、今の世代の写しを残す）", () => {
+    expect(HAIHAN_BY_GENERATION.R8).not.toBe(HAIHAN);
+    expect(HAIHAN_BY_GENERATION[MASTERS_CONFIG.generation]).toEqual(HAIHAN);
+  });
+});
 
 describe("改定の前後でその組に差が出たか（pairRevisionDiff）", () => {
   it("差がなければ空。背反の行（特例条件）・コードの行（名称）・EM の組のどれかが変わると、その項目を返す", () => {
@@ -86,9 +94,35 @@ describe("会議の整理で、差が出た知識だけを要再検証にする�
     expect([readKnowledge(h.deps.store, changed)?.status, readKnowledge(h.deps.store, same)?.status, readKnowledge(h.deps.store, pending)?.status]).toEqual(["要再検証", "承認済み", "承認済み"]);
     expect(readKnowledge(h.deps.store, changed)?.history.at(-1)).toEqual(expect.objectContaining({ event: "TRIGGER{localRevision}", basis: { trigger: "localRevision", codePair: { a: "112007410", b: "114001110", tani: 1 }, changes: ["背反の表のこの組の行（あるか・表・算定する側・特例条件）"] } }));
     expect(buildDigest(h.deps).items.find((x) => x.knowledgeId === changed)?.reason).toEqual(expect.objectContaining({ trigger: "localRevision", changes: ["背反の表のこの組の行（あるか・表・算定する側・特例条件）"] }));
-    // 改定日より後に承認済みに入った知識は見ない
+    // 棚卸の記録は知識ごとに残る：差のなかった知識は見直さず、保留の知識だけ次の会議で比べ直す
+    expect([readKnowledge(h.deps.store, changed)?.revision_checks, readKnowledge(h.deps.store, same)?.revision_checks, readKnowledge(h.deps.store, pending)?.revision_checks]).toEqual([{ "2026-06-01T00:00:00+09:00": "changed" }, { "2026-06-01T00:00:00+09:00": "same" }, { "2026-06-01T00:00:00+09:00": "pending" }]);
     seen.length = 0;
     h.review("2026-06-13T09:00:00+09:00");
-    expect(seen.sort()).toEqual(["114001210@2026-06-01", "114001310@2026-06-01"]);
+    expect(seen).toEqual(["114001310@2026-06-01"]);
+  });
+
+  it("保留は、別の理由で承認し直しても残り、比べる 1 枚がそろったら比べる（round-43 codex #2）。改定の後に承認済みに入った知識は見ない", () => {
+    h = harness();
+    const T = "2026-05-01T09:00:00+09:00";
+    const m = createKnowledge(h.deps.store, { layer: "院内", slug: "p-hold", summary: "p", body: "p", source: { type: "手動", ref: "t" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：その他。条件", match: { codePair: { a: "112007410", b: "114001110", tani: 1 } } }, T);
+    applyEvent(h.deps.store, m.id, { type: "VERIFY_APPROVE" }, T);
+    const late = createKnowledge(h.deps.store, { layer: "院内", slug: "p-late", summary: "p", body: "p", source: { type: "手動", ref: "t" }, polarity: "allow", matchApprox: true, conditionNote: "根拠：その他。条件", match: { codePair: { a: "112007410", b: "114001210", tani: 1 } } }, "2026-06-03T09:00:00+09:00");
+    applyEvent(h.deps.store, late.id, { type: "VERIFY_APPROVE" }, "2026-06-03T09:00:00+09:00");
+    let ready = false;
+    const seen: string[] = [];
+    h.deps.localRevision = (pair) => {
+      seen.push(pair.b);
+      return ready ? ["基本マスターの 114001110 の行（名称）"] : "pending";
+    };
+    h.review("2026-06-06T09:00:00+09:00");
+    expect([seen, readKnowledge(h.deps.store, m.id)?.status]).toEqual([["114001110"], "承認済み"]);
+    // 返戻で要再検証 → 会議で承認し直す（status_since は改定日より後になる）。保留は残る
+    applyEvent(h.deps.store, m.id, { type: "TRIGGER", trigger: "localReturn" }, "2026-06-08T09:00:00+09:00", { trigger: "localReturn" });
+    applyEvent(h.deps.store, m.id, { type: "RECHECK_PASS", via: "veteran" }, "2026-06-09T09:00:00+09:00");
+    expect(readKnowledge(h.deps.store, m.id)?.revision_checks).toEqual({ "2026-06-01T00:00:00+09:00": "pending" });
+    ready = true;
+    h.review("2026-06-13T09:00:00+09:00");
+    expect([readKnowledge(h.deps.store, m.id)?.status, readKnowledge(h.deps.store, m.id)?.history.at(-1)?.event, readKnowledge(h.deps.store, m.id)?.revision_checks]).toEqual(["要再検証", "TRIGGER{localRevision}", { "2026-06-01T00:00:00+09:00": "changed" }]);
+    expect(seen).not.toContain("114001210");
   });
 });

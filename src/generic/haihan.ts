@@ -1,6 +1,7 @@
 // 背反の特例条件の例外の決まり（design.md §13-1）。config/haihan-exceptions.json は EM §2-12 の HX（例外）・HP（組）の行と 1 対 1（テストで縛る）。
 // 例外の決まりは EM の行だけを使う。調べ（tokurei-*.md）は採用値ではない
 import raw from "../../config/haihan-exceptions.json";
+import rawR8 from "../../config/haihan-exceptions-generations/R8.json";
 
 /** 診療行為の選び方：コードを並べるか、医科診療行為マスターの章・部・区分番号（枝番・項）で選ぶ。通則の加算は区分番号の列で表せないので codes で並べる */
 export type CodeSel = { codes?: string[]; section?: { sho: number; bu: number; kubun: number; eda?: number; kou?: number } };
@@ -61,10 +62,11 @@ export type HaihanConfig = { patterns: HaihanPattern[]; exceptions: HaihanExcept
 
 export const HAIHAN: HaihanConfig = raw as HaihanConfig;
 /**
- * 改定の世代ごとの EM §2-12 の行（design.md §14-4：改定のときに版ごとの行を残し、改定の棚卸で前後を比べる）。今あるのは令和 8 年度の告示から作った 1 つだけ。
- * 改定で決まりを変えるときは、前の世代の行を残したまま、新しい世代の行を足す
+ * 改定の世代ごとに写して持つ EM §2-12 の行（design.md §14-4：改定の棚卸で、改定前の版の行と比べる。round-43 codex #2）。
+ * config/haihan-exceptions-generations/<世代>.json は、その世代のときの config/haihan-exceptions.json の写し（出荷の json を指さない）。
+ * 今あるのは令和 8 年度の告示から作った R8 の 1 つ。改定で出荷の json を書き換える前に、今の世代の写しがあることを確かめる（テストで縛る）
  */
-export const HAIHAN_BY_GENERATION: Record<string, HaihanConfig> = { R8: HAIHAN };
+export const HAIHAN_BY_GENERATION: Record<string, HaihanConfig> = { R8: rawR8 as HaihanConfig };
 
 /** 例外の id → 例外 */
 export const exceptionOf = (id: string, config: HaihanConfig = HAIHAN): HaihanException | undefined => config.exceptions.find((x) => x.id === id);

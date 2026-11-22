@@ -15,6 +15,7 @@ import {
   readKnowledge,
   fitSummary,
   writeCounts,
+  writeRevisionChecks,
   type StoreOptions,
 } from "./store";
 import { assertTime, canonicalTime, ms } from "./time";
@@ -238,17 +239,34 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
     applyEvent(deps.store, fired.knowledgeId, fired.event, now, basis);
   }
 
-  // 手順 2 の続き：背反の組の院内の知識の改定の棚卸（design.md §14-4）。改定日を過ぎた承認済みのうち、改定の前後でその組に差が出た知識だけを要再検証にする（TRIGGER{localRevision}）。
-  // 差がない・比べる 1 枚がまだない（保留）ときは何もしない（改定日が status_since より後のあいだは、会議のたびに見直す）
+  // 手順 2 の続き：背反の組の院内の知識の改定の棚卸（design.md §14-4）。改定日に承認済みだった知識ごとに、改定の前後でその組に差が出たかを見て、差が出た知識だけを要再検証にする（TRIGGER{localRevision}）。
+  // 棚卸の記録（revision_checks）は知識の状態と別に持つ：保留（pending）は、別の理由で承認し直しても残り、比べる 1 枚がそろったら比べる（round-43 codex #2）
   if (deps.localRevision) {
     const d = latestRevision(deps.calendar, now);
     for (const meta of listKnowledge(deps.store)) {
       const pair = meta.match.codePair;
-      if (!pair || meta.status !== "承認済み" || d === null || ms(d) <= ms(meta.status_since)) continue;
-      hooks.onStep?.("trigger", meta.id);
-      const changes = deps.localRevision(pair, d);
-      if (changes === "pending" || changes.length === 0) continue;
-      applyEvent(deps.store, meta.id, { type: "TRIGGER", trigger: "localRevision" }, now, { trigger: "localRevision", codePair: pair, changes });
+      if (!pair || meta.status === "停止" || meta.status === "保管") continue;
+      const checks = { ...meta.revision_checks };
+      // 見る改定日：直近の改定日（その日に承認済みだった知識だけ。改定の後に承認した知識は、承認した人が改定後のデータで見ている）と、保留のままの改定日
+      const dates = [...new Set([...(d !== null && checks[d] === undefined && approvedAt(meta, d) ? [d] : []), ...Object.keys(checks).filter((k) => checks[k] === "pending")])].sort();
+      let changed = false;
+      for (const date of dates) {
+        hooks.onStep?.("trigger", meta.id);
+        const r = deps.localRevision(pair, date);
+        // 承認済みでないあいだ（要再検証・未検証・contested）は、決めずに保留のまま残す（承認し直したあとで比べる）
+        const next = r === "pending" || (r.length > 0 && meta.status !== "承認済み") ? "pending" : r.length === 0 ? "same" : "changed";
+        if (checks[date] !== next) {
+          checks[date] = next;
+          changed = true;
+        }
+        if (next === "changed") {
+          writeRevisionChecks(deps.store, meta.id, checks);
+          changed = false;
+          applyEvent(deps.store, meta.id, { type: "TRIGGER", trigger: "localRevision" }, now, { trigger: "localRevision", codePair: pair, changes: r as string[] });
+          break;
+        }
+      }
+      if (changed) writeRevisionChecks(deps.store, meta.id, checks);
     }
   }
 
@@ -269,6 +287,12 @@ export function meetingReview(deps: ReviewDeps, now: string, hooks: ReviewHooks 
     buildItems(deps, reviewId, now);
   }
   return { reviewId };
+}
+
+/** その時刻に承認済みだったか（history で、その時刻までの最後の遷移の行き先） */
+function approvedAt(meta: KnowledgeMeta, at: string): boolean {
+  const last = meta.history.filter((h) => ms(h.at) <= ms(at)).at(-1);
+  return last?.to === "承認済み";
 }
 
 function triggerOf(e: LifecycleEvent): TriggerKind {

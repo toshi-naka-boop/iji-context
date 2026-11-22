@@ -236,6 +236,15 @@ export function writeCounts(
   return next;
 }
 
+/** 改定の棚卸の記録を書く（状態・history は変えない。design.md §14-4） */
+export function writeRevisionChecks(opts: StoreOptions, id: string, checks: NonNullable<KnowledgeMeta["revision_checks"]>): KnowledgeMeta {
+  const meta = readKnowledge(opts, id);
+  if (!meta) throw new Error(`知識が見つからない: ${id}`);
+  const next = { ...meta, revision_checks: checks };
+  writeAtomic(path.join(dirOf(opts, id), "meta.json"), `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
 /** SKILL.md の本文 */
 export function readBody(opts: StoreOptions, id: string): string {
   return readFileSync(path.join(dirOf(opts, id), "SKILL.md"), "utf8").replace(/\s+$/, "");
