@@ -209,8 +209,9 @@ function withLocal(about: GenericAbout, ym: string, row: Row, days: (number | un
     const unverified = list.filter((k) => k.status === "未検証");
     return [unverified.length > 0 ? make(days, undefined, attach("unverified", unverified)) : make(days, undefined, tag)];
   }
-  if (allow.length > 0 && avoid.length > 0) return [make(days, undefined, attach("conflict", approved))];
+  // 承認済みの知識を指摘に添えたら、食い違って使わないときも USED を出す（§14-3「どちらの polarity でも」。round-43 C-204）
   out.used.push(...approved.map((k) => k.id));
+  if (allow.length > 0 && avoid.length > 0) return [make(days, undefined, attach("conflict", approved))];
   const lv = about.level ?? 0;
   if (lv < LOCAL_PAIR_MIN_LEVEL) return [make(days, undefined, attach("hint", approved))];
   if (avoid.length > 0) return [make(days, "G05.local_avoid", { ...attach("avoid", avoid), localNote: avoid.map((k) => k.conditionNote).join("／"), localIds: avoid.map((k) => k.id).join("・") })];

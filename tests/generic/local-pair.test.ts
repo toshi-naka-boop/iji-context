@@ -105,9 +105,9 @@ describe("承認済みの avoid・判断の軸にしない状態・食い違い"
     const u = run(twoDays, { localKnowledge: know([K({ status: "未検証" })]), level: 9 });
     expect([u.view[0].local?.mode, u.view[0].local?.texts, u.result.localUsed]).toEqual(["unverified", ["前回の確かめ（未検証）があります：local/pair-a"], undefined]);
   });
-  it("承認済みに allow と avoid が両方ある → 使わない（食い違っていると添える）", () => {
+  it("承認済みに allow と avoid が両方ある → 使わない（食い違っていると id を添える）。添えたので、両方に USED を出す（round-43 C-204）", () => {
     const r = run(twoDays, { localKnowledge: know([K(), K({ id: "local/pair-b", polarity: "avoid" })]), level: 9, pressed: pressed({ [`${KEY}|${day(6)}`]: LATER }) });
-    expect([r.findings.map((f) => [f.messageKey, f.params.days]), r.view[0].local?.mode, r.result.localUsed]).toEqual([[["G05.day_cond", "6・9"]], "conflict", undefined]);
+    expect([r.findings.map((f) => [f.messageKey, f.params.days]), r.view[0].local?.mode, r.result.localUsed]).toEqual([[["G05.day_cond", "6・9"]], "conflict", ["local/pair-a", "local/pair-b"]]);
   });
 });
 
