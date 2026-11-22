@@ -55,7 +55,9 @@ function sameAsV28(app: ReturnType<typeof openApp>) {
     const ctx = app.caseOf(claimId(k));
     const fixture = JSON.parse(readFileSync(path.join(repo, "fixtures", "cases", `${k}.json`), "utf8")) as { facility?: Partial<FacilityJson> };
     const v28 = facilityOf(CONFIG as unknown as FacilityJson, fixture.facility);
-    expect([k, ctx.facility]).toEqual([k, v28]);
+    // 申告から来る種別の選択肢（R18 の断りに使う。段 17d）のほかは v28 と同じ
+    const { gradeChoice, ...facility } = ctx.facility;
+    expect([k, gradeChoice, facility]).toEqual([k, "zaishishin3", v28]);
     const now = evaluate(ctx);
     const before = evaluate({ ...ctx, facility: v28 });
     expect([k, now.total, now.findings]).toEqual([k, before.total, before.findings]);
@@ -173,7 +175,7 @@ describe("種と移し替えの決まり", () => {
     expect(db.prepare("SELECT value FROM app_settings WHERE key = 'facility'").get()).toEqual({ value: JSON.stringify({ priceResponse: false }) });
     // 移した行は from_month が空なので効く行に選ばれない（推し量って埋めない）
     expect(rows.every((r) => r.fromMonth === null)).toBe(true);
-    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
+    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, gradeChoice: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
     db.close();
   });
 

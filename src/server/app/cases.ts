@@ -1,8 +1,9 @@
 // 症例（合成 UKE ＋ 合成カルテ側の事実）。アップロードで受け取った、同梱の症例にないレセプトは、カルテ側の事実を持たない
 import { evaluate } from "../../engine";
-import { facilityOf, type FacilityJson } from "../../engine/facility";
+import { FACT_KEYS, facilityOf, type FacilityJson } from "../../engine/facility";
 import { resolveRevision } from "../../engine/revisions";
-import type { ClaimContext, EngineResult, Facts } from "../../engine/types";
+import type { ClaimContext, EngineResult, FacilityFactKey, Facts } from "../../engine/types";
+import { DECLARED_KEYS } from "../../facility/declaration";
 import { outsideOf } from "../../generic/lookup";
 import { withMasters } from "../../masters/db";
 import { applyPatientFacts } from "../../patient/facts";
@@ -54,9 +55,15 @@ const caseFixtureOf = (root: string, claimId: string): Fixture | null => {
  * 請求の土台：同梱の症例の事実・出来事・記録の有無・過去の月と、症例ごとの上書きを重ねた施設の設定。症例のないレセプトは、事実をどれも「不明」、出来事の記録なし、施設は標準の設定。
  * 取り込んだレセプトの点検（contextOf）と、scripts/measure-generic.ts が同じ作り方で使う（round-32 O-17）。患者マスタ・利用者が確かめた事実は、contextOf がこの上に重ねる
  */
-export function caseBaseOf(root: string, facility: FacilityJson, claimId: string): Pick<ClaimContext, "facts" | "events" | "recordsKnown" | "facility" | "history"> {
+/**
+ * declared は、facility のうち施設の申告から来た値のキー（facilityBasis を declaration にする。症例ごとの上書きがあれば case）。
+ * 渡さなければ facilityBasis は症例ごとの上書きだけを持つ（design.md §15-4 の「出どころの見分け」）
+ */
+export function caseBaseOf(root: string, facility: FacilityJson, claimId: string, declared: readonly FacilityFactKey[] = []): Pick<ClaimContext, "facts" | "events" | "recordsKnown" | "facility" | "history" | "facilityBasis"> {
   const c = caseFixtureOf(root, claimId) ?? { facts: UNKNOWN_FACTS, events: [], recordsKnown: false, facility: undefined, history: undefined };
-  return { facts: c.facts, events: c.events, recordsKnown: c.recordsKnown, facility: facilityOf(facility, c.facility), history: c.history };
+  const overridden = Object.keys(c.facility ?? {});
+  const facilityBasis: ClaimContext["facilityBasis"] = Object.fromEntries([...declared.map((k) => [k, "declaration"]), ...overridden.filter((k) => (FACT_KEYS as string[]).includes(k)).map((k) => [k, "case"])]);
+  return { facts: c.facts, events: c.events, recordsKnown: c.recordsKnown, facility: facilityOf(facility, c.facility), history: c.history, facilityBasis };
 }
 
 export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">) {
@@ -77,7 +84,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   function contextOf(file: UkeFile, r: UkeReceipt): ClaimContext {
     // 症例（カルテ側の事実）のないレセプトは、事実をどれも「不明」、出来事の記録なし（recordsKnown が偽）、施設は標準の設定として並べる。
     // 施設の設定は、config の既定値にクリニックで残した設定と、その診療年月の施設の申告を重ねたもの（FR-148・FR-188。src/server/app/facility.ts）。症例ごとの上書きはその上に重なる
-    const c = caseBaseOf(paths.root, facilityJsonOf(ctx, todayOf(clock), r.yearMonth), r.claimId);
+    const c = caseBaseOf(paths.root, facilityJsonOf(ctx, todayOf(clock), r.yearMonth), r.claimId, DECLARED_KEYS);
     // 年齢・保険種別は、症例の JSON の値ではなく患者マスタから出す（design.md §6）。
     // 負担割合は UKE に載っていないので、患者マスタに入っているときだけ上書きする（「分からない」で症例側の値を消さない）
     const patientId = ingest(r.patient);
@@ -85,7 +92,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
     // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
     const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
-    const claim = toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history });
+    const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis };
     // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
     // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）
     if (!r.others?.length) return claim;

@@ -209,8 +209,11 @@ export function declarationView(rows: DeclarationRow[], today: string): { held(c
 export const gradeOf = (rows: DeclarationRow[], on: On, today: string) => gradeTri(rows, on, today);
 export const note16Of = (rows: DeclarationRow[], on: On, today: string) => note16Tri(rows, on, today);
 
+/** 施設の申告から判定に渡す値（facilityFromDeclaration が必ず入れる。出どころ facilityBasis の declaration に当たる。design.md §15-4） */
+export const DECLARED_KEYS = ["grade", "note16Met", "dxTier", "baseUp"] as const;
+
 /**
- * 判定に渡す施設の設定（月で決まる値）。grade・note16Met・dxTier・baseUp は必ず入れ、分からないときは null。
+ * 判定に渡す施設の設定（月で決まる値）。grade・note16Met・dxTier・baseUp は必ず入れ、分からないときは null。gradeChoice は種別の選択肢の id（連携型の断りに使う。R18）。
  * 種別が分からないときは zaishishin・kyokagata・hasBeds も null（config の値を残さない。X-134 の三値の前提）
  */
 export function facilityFromDeclaration(rows: DeclarationRow[], today: string, yearMonth: string): Partial<FacilityJson> {
@@ -226,6 +229,7 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
   const baseUp = b5.v === "unknown" || b.v === "unknown" ? null : b5.v === "held" ? "注5" : b.v === "held" ? "通常" : "なし";
   return {
     grade,
+    gradeChoice: tri.v === "held" ? choice!.id : null,
     note16Met: n16.v === "held" ? true : n16.v === "not" ? false : null,
     dxTier,
     baseUp,
