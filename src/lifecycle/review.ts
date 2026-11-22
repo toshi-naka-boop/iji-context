@@ -707,7 +707,8 @@ function ensureCandidate(deps: ReviewDeps, orig: KnowledgeMeta, itemId: string, 
   const text = `ベテランの回答（レセメン会議）：${freeText?.trim() || "（記述なし）"}\n\n${pairLine}${marker(itemId)}`;
   const open = listKnowledge(deps.store).find((m) => m.relates_to === orig.id && m.status === "未検証");
   if (open) {
-    appendBody(deps.store, open.id, text, pairOver && pairSummary ? { ...pairOver, summary: pairSummary } : undefined);
+    // 前の回答の「修正版の扱い」の行は置き換える（向きの食い違う 2 行を並べない。round-46 C-212）
+    appendBody(deps.store, open.id, text, pairOver && pairSummary ? { ...pairOver, summary: pairSummary, dropLinePrefix: LOCAL_PAIR_TEXT.fixLine.split("{")[0] } : undefined);
     inheritRevisionChecks(deps, orig, open.id, now);
     return open.id;
   }

@@ -22,6 +22,7 @@ import { appendBody, applyEvent, createKnowledge, listKnowledge, readBody, readK
 import { createLocalPairs } from "../../src/server/app/local-pairs";
 import type { AppContext } from "../../src/server/app/context";
 import { harness } from "./review-helpers";
+import { fillLocal, LOCAL_PAIR_TEXT } from "../../src/messages";
 
 const T1 = "2026-10-10T09:00:00+09:00";
 const T2 = "2026-10-17T09:00:00+09:00";
@@ -80,6 +81,18 @@ describe("会議の修正版で polarity・conditionNote を直す（X-118）", 
     const cand = listKnowledge(h.deps.store).find((m) => m.relates_to === id)!;
     const next = appendBody(h.deps.store, cand.id, "二つ目の回答", { polarity: "allow", conditionNote: "根拠：その他。二つ目", summary: "二つ目の要約" });
     expect([next.polarity, next.conditionNote, next.summary, next.rev === cand.rev]).toEqual(["allow", "根拠：その他。二つ目", "二つ目の要約", false]);
+  });
+  it("書き足すときは、前の回答の「修正版の扱い」の行を置き換え、向きの食い違う 2 行を並べない（round-46 C-212）", () => {
+    const { id, item } = recheckItem();
+    answerItem(h.deps, { itemId: item.itemId, answer: 2, polarity: "avoid", conditionNote: "根拠：その他。一つ目" }, T2);
+    const cand = listKnowledge(h.deps.store).find((m) => m.relates_to === id)!;
+    expect(readBody(h.deps.store, cand.id)).toContain("修正版の扱い：併せて算定できない。条件：根拠：その他。一つ目");
+    const line = fillLocal(LOCAL_PAIR_TEXT.fixLine, { label: LOCAL_PAIR_TEXT.allowLabel, note: "根拠：その他。二つ目" });
+    appendBody(h.deps.store, cand.id, `ベテランの回答（レセメン会議）：二つ目\n\n${line}`, { polarity: "allow", conditionNote: "根拠：その他。二つ目", summary: "二つ目の要約", dropLinePrefix: LOCAL_PAIR_TEXT.fixLine.split("{")[0] });
+    const body = readBody(h.deps.store, cand.id);
+    expect(body.split("\n").filter((l) => l.startsWith("修正版の扱い："))).toEqual([line]);
+    // 回答の記録（前の回答の自由記述と印）は残す
+    expect(body).toContain("ベテランの回答（レセメン会議）：（記述なし）");
   });
 });
 
