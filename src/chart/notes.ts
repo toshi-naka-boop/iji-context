@@ -2,11 +2,12 @@
 import { resolveRevision } from "../engine/revisions";
 import type { ClaimContext, ClaimEvent, Facts } from "../engine/types";
 import type { Chart } from "../uke/crosscheck";
+import type { StoredActs } from "./acts";
 import type { ChartNote, ExtractedFact } from "./extract";
 
 export type VisitKind = "訪問診療" | "往診";
 /** 本人が確かめた事実まで済んだカルテ */
-export type ConfirmedNote = { date: string; kind: VisitKind; note: ChartNote; facts: ExtractedFact[] };
+export type ConfirmedNote = { date: string; kind: VisitKind; note: ChartNote; facts: ExtractedFact[]; acts?: StoredActs | null };
 
 /**
  * カルテ→出来事（1 か所。訪問の記録と算定行の導出で共有する。design.md §2-8）。
