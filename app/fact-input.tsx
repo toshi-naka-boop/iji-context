@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { CLAIM_FACT_SOURCES, DEATH_PLACES, MAX_MAIN_DISEASE, inputKindOf, isClaimFactKey, type ClaimFact, type ClaimFactKey, type HaihanFactKey } from "../src/claim/facts";
 import type { Finding } from "../src/engine/types";
 import { exceptionOf, parseHaihanKey, sharedExceptionOf, sharedFactOf } from "../src/generic/haihan";
-import type { GenericAsk } from "../src/generic/view";
+import type { GenericAsk, GenericDeclaration } from "../src/generic/view";
 import { FACT_LABEL, fillLocal, LOCAL_PAIR_TEXT } from "../src/messages";
 import { parseLocalKey } from "../src/generic/local-pair";
 import { ROLE_LABELS } from "../src/server/roles";
@@ -191,6 +191,28 @@ export function FactInput(props: { claimId: string; finding: Finding; patientHre
   if (!isClaimFactKey(m.field) || role === null) return null;
   if (!canSave(role, m.target)) return m.target === "doctor" ? <div className="muted">医師に確認が要ります。医師確認の画面の「確かめてほしい項目」に出ています。医師の役割の利用者が、確かめた答えを残します。</div> : null;
   return <div style={{ marginTop: 6 }}><FactForm claimId={props.claimId} factKey={m.field} date={m.date ?? null} onSaved={props.onSaved} /></div>;
+}
+
+/**
+ * 施設基準（G10）の指摘から施設の申告の画面へつなぐ入口（design.md §15-9）。申告を残せるのは事務長と責任者（ベテラン）で、ほかの役割には頼む先を出す。
+ * 確かめ直す日を過ぎた項目は、その診療月で効く行を選んだ「変わりなし」を開ける（round-53 C-274）
+ */
+export function DeclarationLink(props: { declaration: GenericDeclaration }) {
+  const role = useRole();
+  const { month, items } = props.declaration;
+  if (role === null || items.length === 0) return null;
+  const canEdit = role === "manager" || role === "veteran";
+  return (
+    <div className="muted">
+      {items.map(({ item, reconfirm }) => (
+        <span key={item} style={{ marginRight: 12 }}>
+          <a href={`/settings#declaration-${item}`}>施設の申告を見る</a>
+          {canEdit && reconfirm && <>　<a href={`/settings?confirmMonth=${encodeURIComponent(month)}&item=${encodeURIComponent(item)}#declaration-confirm`}>変わりなしとして確かめ直す</a></>}
+        </span>
+      ))}
+      {!canEdit && "事務長に施設の申告を頼んでください"}
+    </div>
+  );
 }
 
 /** この請求について残した答えの一覧（誰が・いつ・どう確かめたか）。直すときは、同じ入力でもう一度残す。tick が変わると読み直す */

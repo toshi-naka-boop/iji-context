@@ -6,7 +6,7 @@
 // 取り込んだレセプトの点検（full）は、上から要約（動いた点検の数・指摘の数・何も出ないことは問題がない意味ではないこと）→ 指摘 → 点検していないこと・断り（閉じた折りたたみ）の順
 // 背反の特例条件の例外の問い（G05.exception_ask。design.md §13-3）は、answer（請求 id と、答えを残したあとに読み直す関数）を渡した画面（取り込んだレセプトの点検）でだけ、指摘の下に選択肢を出す
 // 背反の組の院内の知識（design.md §14-3）は、どの画面でも添えた文を出す。返戻の入口（§14-4）は、answer に localReturns を渡した画面で、その組の G05 の指摘の中に出す
-import { AskInput } from "./fact-input";
+import { AskInput, DeclarationLink } from "./fact-input";
 import { LocalPairCreate, LocalPress, LocalReturn } from "./local-pair";
 import { samePair } from "../src/generic/local-pair";
 import type { Polarity } from "../src/lifecycle/types";
@@ -41,6 +41,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
   const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
   const notDone = generic.scope?.notDone ?? [];
   const g09 = generic.findings.filter((f) => f.check === "G09");
+  const g10 = generic.findings.filter((f) => f.check === "G10");
   const g09Notes = generic.scope?.g09 ?? [];
   // 傷病名を持たない行（月末の点検・算定プレビュー）には掛けていない：見出しは出さず、掛けていないことだけを点検の範囲に出す
   const g09Open = g09.length > 0 || g09Notes.length > 1;
@@ -56,6 +57,28 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
     ...notDone,
     ...(!g09Open ? g09Notes : []),
   ];
+  type Shown = GenericView["findings"][number];
+  const card = ([f, ...more]: Shown[], i: number) => (
+      <div key={i} className={`notice ${f.certainty === "確定" ? "warn" : ""}`}>
+        <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
+        {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
+        <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
+        {/* 院内の知識（design.md §14-3）：Lv.5 以上は条件とボタン、Lv.1〜4 はヒント。食い違い・前回の確かめ（未検証）は一言だけ */}
+        {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
+        {answer && f.local?.mode === "allow" && <LocalPress claimId={answer.claimId} press={f.local.press} onSaved={answer.onSaved} />}
+        {answer && f.check === "G05" && f.localPair && (answer.localReturns ?? []).filter((p) => samePair(p, f.localPair!)).map((p) => <LocalReturn key={`return-${p.a}:${p.b}:${p.tani}`} claimId={answer.claimId} pair={p} onSaved={answer.onSaved} />)}
+        {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} taken={answer.localPairTaken?.find((p) => samePair(p, f.localPair!))?.polarities} onSaved={answer.onSaved} />}
+        {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
+        {/* 施設基準（G10）は、施設の申告の画面への入口を添える（design.md §15-9） */}
+        {f.declaration && <DeclarationLink declaration={f.declaration} />}
+        {more.length > 0 && (
+          <div className="muted">
+            同じ行は、ほかに {more.length} 個の行為にも含まれる項目として載っています：
+            {more.map((m, n) => <div key={n}>{rowText(m.codes[0])}（出どころ：{m.source.ref}）</div>)}
+          </div>
+        )}
+      </div>
+  );
   const conditional = generic.findings.filter((f) => f.certainty === "条件つき").length;
   const certain = generic.findings.length - conditional;
   return (
@@ -67,25 +90,10 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
           <span className="muted">何も出ないことは、問題がないという意味ではありません（点検していないことは、下の折りたたみに並べています）。</span>
         </p>
       )}
-      {groupSameChild(generic.findings.filter((f) => f.check !== "G09")).map(([f, ...more], i) => (
-        <div key={i} className={`notice ${f.certainty === "確定" ? "warn" : ""}`}>
-          <span className={`badge ${f.certainty === "確定" ? "warn" : ""}`}>{f.certainty}</span> <span className="badge">{f.kind}</span> {f.text}
-          {f.codes.some((c) => c.name) && <div className="muted">対象の行：{f.codes.map((c, n) => <span key={n}>{n > 0 && "、"}{rowLink(c)}</span>)}</div>}
-          <div className="muted">{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
-          {/* 院内の知識（design.md §14-3）：Lv.5 以上は条件とボタン、Lv.1〜4 はヒント。食い違い・前回の確かめ（未検証）は一言だけ */}
-          {(f.local?.texts ?? []).map((t, n) => <div key={`local-${n}`} className={f.local?.mode === "conflict" || f.local?.mode === "unverified" ? "muted" : ""}>{t}</div>)}
-          {answer && f.local?.mode === "allow" && <LocalPress claimId={answer.claimId} press={f.local.press} onSaved={answer.onSaved} />}
-          {answer && f.check === "G05" && f.localPair && (answer.localReturns ?? []).filter((p) => samePair(p, f.localPair!)).map((p) => <LocalReturn key={`return-${p.a}:${p.b}:${p.tani}`} claimId={answer.claimId} pair={p} onSaved={answer.onSaved} />)}
-          {answer && f.localPair && <LocalPairCreate claimId={answer.claimId} pair={f.localPair} taken={answer.localPairTaken?.find((p) => samePair(p, f.localPair!))?.polarities} onSaved={answer.onSaved} />}
-          {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
-          {more.length > 0 && (
-            <div className="muted">
-              同じ行は、ほかに {more.length} 個の行為にも含まれる項目として載っています：
-              {more.map((m, n) => <div key={n}>{rowText(m.codes[0])}（出どころ：{m.source.ref}）</div>)}
-            </div>
-          )}
-        </div>
-      ))}
+      {groupSameChild(generic.findings.filter((f) => f.check !== "G09" && f.check !== "G10")).map(card)}
+      {/* 施設基準（G10）は 1 つの欄にまとめる（design.md §15-9）。文の後ろの「施設の申告による」と、申告への入口を添える */}
+      {g10.length > 0 && <div style={{ marginTop: 4 }}><strong>施設基準（{g10.length} 件）</strong></div>}
+      {groupSameChild(g10).map(card)}
       {(generic.omitted ?? []).map((o) => (
         <div key={`omitted-${o.check}`} className="muted">
           {o.check}（{o.kind}）：ほか {o.count} 件（1 回の点検で出す指摘は、点検ごとに {FINDING_LIMIT} 件までです）

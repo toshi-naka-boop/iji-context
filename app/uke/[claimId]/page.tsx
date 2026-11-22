@@ -19,6 +19,10 @@ import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
 
+/** 施設基準の印（design.md §15-5）。G10 が動いたときは申告の三値、動かないときは「届出が要ります」 */
+const KIJUN_MARK = { held: "申告あり", not: "申告では持たない", unknown: "申告が分からない" } as const;
+const kijunMark = (n: { todokede?: true; kijun?: keyof typeof KIJUN_MARK } | undefined): string => (n?.kijun ? `　施設基準：${KIJUN_MARK[n.kijun]}` : n?.todokede ? "　届出が要ります" : "");
+
 type Line = { kubun: string; no: string; name: string; count: number; dates: string[]; points: number | null };
 type Check = {
   claimId: string;
@@ -160,10 +164,13 @@ export default function UkeClaimCheck() {
     if (same) same.ruleIds.push(s.ruleId);
     else stoppedGroups.push({ ruleIds: [s.ruleId], all: s.all, codes: s.codes });
   }
-  /** コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ。施設基準のある行には「届出が要ります」と添える（指摘ではない） */
+  /**
+   * コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ。
+   * 施設基準のある行には、G10 が動いたときは申告の印（申告あり／申告では持たない／申告が分からない）、動かないときは「届出が要ります」と添える（指摘ではない。design.md §15-5）
+   */
   const coded = (code: string) => {
     const n = c?.names?.items[code];
-    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}${n.todokede ? "　届出が要ります" : ""}` : code;
+    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}${kijunMark(n)}` : code;
   };
   return (
     <main className="shell">
@@ -305,7 +312,7 @@ export default function UkeClaimCheck() {
                     return (
                       <tr key={r.unit} id={`uke-unit-${r.unit}`}>
                         <td>{r.items.map((it, n) => <div key={n}>{it.no ?? "—"}</div>)}</td>
-                        <td>{r.deduction && <span className="badge warn">減点</span>}{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{c.names?.items[it.code]?.todokede ? "　届出が要ります" : ""}</div>)}</td>
+                        <td>{r.deduction && <span className="badge warn">減点</span>}{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{kijunMark(c.names?.items[it.code])}</div>)}</td>
                         <td>{r.count}</td>
                         <td>{days(r.dates)}</td>
                         <td>{r.deduction ? `−${num(r.points)}` : num(r.points)}</td>
