@@ -545,6 +545,34 @@ describe("real で、日付が変わったときに回る処理と、実際の�
     }
   });
 
+  it("real でも、取り込んだ請求の患者で通知の項目を対応づけ、項目名で決まらない区分は本人が選んで知識の候補にできる（作り物の名簿には当てない）", async () => {
+    const real = auth().register("notice_own", "じつ", "password123", "real");
+    const cookie = cookieOf(real);
+    expect((await (await import("../../app/api/uke/upload/route")).POST(upload(cookie, OWN))).status).toBe(200);
+    const a = appOf(real);
+    const [claim] = a.cases();
+    const p = readUke(OWN).receipts[0].patient;
+    const notice = { documentType: "増減点連絡書", prefecture: claim.prefecture, items: [
+      { yearMonth: claim.yearMonth, patientName: "架空桐子", insurerNumber: p.insurer.number, itemName: "通知に書かれた名前", outcome: "査定" as const, reason: "" },
+      // 見本の名簿にある患者は、取り込んでいなければ当たらない
+      { yearMonth: claim.yearMonth, patientName: "架空 六郎", insurerNumber: "01139997", itemName: "BNP", outcome: "査定" as const, reason: "" },
+    ] };
+    const [own, sample] = a.resolveNoticeItems(notice);
+    expect(own).toMatchObject({ claimId: claim.claimId, kubun: null, problems: ["項目名に当たる区分が見つからない"] });
+    expect(own.choices.map((c) => c.kubun)).toEqual([...new Set(claim.lines.map((l) => l.kubun))]);
+    expect(sample.problems).toContain("患者（氏名と保険者番号）が見つからない");
+
+    const register = (await import("../../app/api/notice/register/route")).POST;
+    await switchTo(cookie, "veteran");
+    const body = { notice, index: 0, fileName: "n.pdf" };
+    expect((await register(post("/api/notice/register", cookie, body))).status).toBe(400);
+    expect((await register(post("/api/notice/register", cookie, { ...body, kubun: "D008_19x" }))).status).toBe(400);
+    const kubun = own.choices[0].kubun;
+    const made = await register(post("/api/notice/register", cookie, { ...body, kubun }));
+    expect(made.status).toBe(200);
+    expect(await made.json()).toMatchObject({ layer: "地域", status: "未検証", match: { kubunAll: [kubun], prefecture: claim.prefecture } });
+  });
+
   it("demo では、リクエストで何も回らない（時計を進めたときだけ）", () => {
     const u = auth().register("tick_demo", "でも", "password123", "demo");
     setNow("2026-12-01T10:00:00+09:00");

@@ -10,26 +10,24 @@ import { seedLocalRules as seedInHouse } from "../../lifecycle/seed-local";
 import { acceptRevisionDiffs, applyEvent, createKnowledge, listKnowledge, pendingRevisionDiffs, readBody, readKnowledge } from "../../lifecycle/store";
 import { jstYearMonth } from "../../lifecycle/time";
 import type { Actor, KnowledgeMeta } from "../../lifecycle/types";
-import { candidateOf, resolveNotice, type Notice } from "../../notice/notice";
+import { candidateOf, chooseKubun, normName, resolveNotice, type MasterNames, type Notice, type NoticeClaim } from "../../notice/notice";
 import { SAMPLE_NOTICE_BASE, SAMPLE_NOTICE_PDF } from "../../notice/sample";
 import { checkable, docKey, judge, judgeAll, related } from "../../official/match";
 import { selectorOf } from "../../generic/g05";
 import { pairHasPattern } from "../../generic/haihan";
 import { TABLE } from "../../generic/tensuhyo";
-import { withMasters } from "../../masters/db";
+import { pickSnapshot, type MastersDb, withMasters } from "../../masters/db";
 import type { OfficialDoc } from "../../official/types";
-import type { UkeSources } from "../../uke/cases";
 import { badRequest, conflict, notFound } from "../errors";
-import type { Cases } from "./cases";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import type { QuestionCase } from "./question-case";
 import type { Questions } from "./questions";
+import type { Uke } from "./uke";
 
-export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases, questionCase: QuestionCase, questions: Questions) {
+export function createKnowledgeOps(ctx: AppContext, clock: Clock, uke: Pick<Uke, "ukeFiles">, questionCase: QuestionCase, questions: Questions) {
   const { paths, store, official, sqlite } = ctx;
   const { now } = clock;
-  const { cases } = casesOf;
   const { caseFor } = questionCase;
   const { loadQ, checkLines } = questions;
 
@@ -75,16 +73,45 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, casesOf: Cases
     );
   }
   // 査定・返戻の通知（FR-42・FR-43）：対応づけは決まった規則。知識の候補にするのは本人が確かめた項目だけ
-  // 患者は同梱の見本の患者（fixtures/uke/patients.json）から照らす。実在のデータで使うクリニック（real）と未定のクリニックは見本の請求を持たないので、請求にある患者だけに絞る（作り物の患者に当てない）
-  const resolveNoticeItems = (notice: Notice) => {
-    const known = cases();
-    const src = json<UkeSources>(path.join(paths.root, "fixtures", "uke", "patients.json"));
-    const patients = ctx.kind !== "demo" ? Object.fromEntries(Object.entries(src.patients).filter(([id]) => known.some((c) => c.claimId === id))) : src.patients;
-    return resolveNotice(notice, { ...src, patients }, known);
-  };
-  function registerNotice(notice: Notice, index: number, opts: { reexamFiled: boolean; fileName: string }) {
-    const item = resolveNoticeItems(notice)[index];
-    if (!item) throw badRequest(`通知に ${index + 1} 件目の項目がない`);
+  // 患者は、このクリニックが取り込んだ請求（デモのクリニックは見本の UKE も）の氏名と保険者番号で照らす。作り物の名簿には当てない
+  const noticeClaims = (): NoticeClaim[] =>
+    uke.ukeFiles().flatMap((f) => f.receipts.map((r) => ({ claimId: r.claimId, yearMonth: r.yearMonth, prefecture: f.prefecture, patientName: r.patient.name, insurerNumber: r.patient.insurer.number, kubuns: r.lines.map((l) => l.kubun) })));
+  /** 基本マスターの名称 → 区分・表にないコード（診療年月ごとに 1 度だけ表を読む）。マスターの 1 枚がない表は引かない */
+  function masterNamesOf(db: MastersDb): MasterNames {
+    const byMonth = new Map<string, Map<string, { kubuns: string[]; outside: string[] }>>();
+    return (yearMonth, itemName) => {
+      let idx = byMonth.get(yearMonth);
+      if (!idx) {
+        idx = new Map();
+        const rev = resolveRevision(yearMonth);
+        const kubunOf = new Map<string, string>();
+        for (const [k, d] of Object.entries(rev.codes)) for (const c of [d.primary, ...d.accept]) kubunOf.set(c, k);
+        // 包括の検査の項目のコードは、項目数で区分が決まるので名称からは決めない（見つからないとして本人が選ぶ）
+        const members = new Set(rev.bundles.flatMap((b) => b.members));
+        for (const table of ["shinryo", "iyakuhin", "tokutei"] as const) {
+          const snap = pickSnapshot(db, table, yearMonth, rev.generation);
+          if (!snap) continue;
+          for (const r of db.prepare(`SELECT code, name FROM ${table} WHERE snapshot = ?`).iterate(snap.snapshot) as Iterable<{ code: string; name: string }>) {
+            if (members.has(r.code)) continue;
+            const key = normName(r.name);
+            const e = idx.get(key) ?? { kubuns: [], outside: [] };
+            const k = kubunOf.get(r.code);
+            if (k) e.kubuns.includes(k) || e.kubuns.push(k);
+            else e.outside.push(r.code);
+            idx.set(key, e);
+          }
+        }
+        byMonth.set(yearMonth, idx);
+      }
+      return idx.get(normName(itemName)) ?? { kubuns: [], outside: [] };
+    };
+  }
+  const resolveNoticeItems = (notice: Notice) => withMasters((db) => resolveNotice(notice, noticeClaims(), db ? masterNamesOf(db) : undefined));
+  /** kubun は、項目名から区分が決まらなかったときに本人が選んだ区分（choices にあるものだけ。design.md §3） */
+  function registerNotice(notice: Notice, index: number, opts: { reexamFiled: boolean; fileName: string; kubun?: string }) {
+    const found = resolveNoticeItems(notice)[index];
+    if (!found) throw badRequest(`通知に ${index + 1} 件目の項目がない`);
+    const item = opts.kubun && !found.kubun ? chooseKubun(found, opts.kubun) : found;
     const cand = candidateOf(item, opts);
     // 同じ項目をもう一度登録したときは、利用者向けの誤りとして先に断る（文言は lifecycle の createKnowledge のものと同じ）
     const id = `${LAYER_SLUG[cand.layer]}/${cand.slug}`;

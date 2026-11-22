@@ -53,7 +53,8 @@ const notice = z.strictObject({
     )
     .max(200),
 });
-export const noticeRegisterBody = z.strictObject({ notice, index: z.number().int().min(0).max(199), reexamFiled: z.boolean().optional(), fileName });
+/** kubun は、項目名から区分が決まらなかったときに本人が選んだ区分（選べる区分かは処理が確かめる） */
+export const noticeRegisterBody = z.strictObject({ notice, index: z.number().int().min(0).max(199), reexamFiled: z.boolean().optional(), fileName, kubun: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional() });
 
 /** 「この請求のこの組が返戻・査定された」（design.md §14-4）の組。コードは小さい順 */
 export const localReturnBody = z.strictObject({ a: z.string().regex(/^\d{9}$/), b: z.string().regex(/^\d{9}$/), tani: z.literal([1, 2, 3]) });
