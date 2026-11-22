@@ -106,6 +106,8 @@ export function openAuth(dbFile: string) {
     const k = (db.prepare("SELECT kind FROM tenants WHERE id = ?").get(tenantId) as { kind: string } | undefined)?.kind;
     return isTenantKind(k) ? k : "undecided";
   };
+  /** クリニックの使い方を選んだ日時（未定・行のないものは null）。登録のときに選んだクリニックは、作った日時 */
+  const tenantDecidedAt = (tenantId: string): string | null => (db.prepare("SELECT decided_at FROM tenants WHERE id = ?").get(tenantId) as { decided_at: string | null } | undefined)?.decided_at ?? null;
   /** 未定のクリニックの種類を選べるか：事務長と、1 人で使っているクリニックの持ち主 */
   const canChooseKind = (user: User): boolean => tenantKind(user.tenantId) === "undecided" && (user.role === "manager" || isSolo(user));
   /**
@@ -265,6 +267,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

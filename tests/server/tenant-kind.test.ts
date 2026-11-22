@@ -318,6 +318,29 @@ describe("未定から real を選んだクリニックの、作り物の知識�
     expect(appOf(demo).agenda().items.some((i) => i.kind === "miss" && i.knowledgeId === "system/r11")).toBe(true);
   });
 
+  it("デモで未来の日付まで進めて整理したクリニックが real を選んでも、その整理を前回とみなさず、実際の日付で毎週の整理が回る", async () => {
+    setNow("2026-12-01T10:00:00+09:00");
+    const u = auth().register("sample_future", "まえから", "password123", "demo");
+    appOf(u).advanceClock("2027-06-05T09:00:00+09:00");
+    forget(u.tenantId);
+    expect((await choose(u, "real")).status).toBe(200);
+    const ranAts = () => {
+      const db = new Database(instance.tenantPaths(u.tenantId).dbFile, { readonly: true });
+      const rows = (db.prepare("SELECT ran_at FROM reviews ORDER BY ran_at").all() as { ran_at: string }[]).map((r) => r.ran_at);
+      db.close();
+      return rows;
+    };
+    appOf(u); // 選んだ日の最初の操作で、まだ一度も回していないので回る
+    expect(ranAts()).toContain(new Date("2026-12-01T10:00:00+09:00").toISOString());
+    // 翌週（会議の曜日を過ぎた日）にも回る。議題は実際の日付の整理のもの
+    setNow("2026-12-08T10:00:00+09:00");
+    appOf(u);
+    expect(ranAts()).toContain(new Date("2026-12-08T10:00:00+09:00").toISOString());
+    expect(appOf(u).agenda().reviewId).toBe(`review-${new Date("2026-12-08T10:00:00+09:00").toISOString()}`);
+    // デモのときの未来の整理の行は残る
+    expect(ranAts()).toContain(new Date("2027-06-05T09:00:00+09:00").toISOString());
+  });
+
   it("demo を選んだときと、新しい real のクリニックでは変わらない", async () => {
     const { u, k6 } = await oldDemoClinic("sample_k_demo");
     expect((await choose(u, "demo")).status).toBe(200);

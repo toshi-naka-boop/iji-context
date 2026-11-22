@@ -1,6 +1,6 @@
 // 時計。デモのクリニックは「時計を進める」で動く。実在のデータで使うクリニック（real）と未定のクリニックは実際の日付（日本時間）で動き、進められない
 import { period } from "../../demo/period";
-import { dueMeeting, meetingReview } from "../../lifecycle/review";
+import { dueMeeting, latestReview, meetingReview } from "../../lifecycle/review";
 import { assertTime } from "../../lifecycle/time";
 import { tickQueries } from "../../query/doctor-query";
 import { forbidden } from "../errors";
@@ -22,7 +22,7 @@ const RETRY_BASE_MS = 60_000;
 const RETRY_MAX_MS = 30 * 60_000;
 
 export function createClock(ctx: AppContext) {
-  const { kind, sqlite, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
+  const { kind, queryLog, businessDays, reviewCfg, deps, setting, setSetting } = ctx;
 
   /** 今日。demo はデモの時計（設定がなければ基準月の初期値）。real と未定は実際の時刻（デモの時計の設定を読まない） */
   function now(): string {
@@ -36,7 +36,8 @@ export function createClock(ctx: AppContext) {
    */
   function tick(to: string) {
     const queries = tickQueries(queryLog, to, businessDays);
-    const last = (sqlite.prepare("SELECT ran_at FROM reviews ORDER BY ran_at DESC LIMIT 1").get() as { ran_at: string } | undefined)?.ran_at ?? null;
+    // 前回の整理（real・未定では、選んだ日時より後で今より前のものだけ。context.ts の validReview）
+    const last = latestReview(deps)?.ranAt ?? null;
     const meeting = dueMeeting(last, to, reviewCfg.meetingWeekday) ? meetingReview(deps, to) : null;
     return { queries, meeting };
   }

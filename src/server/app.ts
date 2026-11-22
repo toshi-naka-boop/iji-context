@@ -29,7 +29,7 @@ export { cleanName } from "./app/clerks";
 export { DEFAULT_NOW } from "./app/clock";
 export { defaultPaths, reviewDepsOf, storeOptionsOf, type AppPaths } from "./app/context";
 
-export function openApp(paths: AppPaths, opts: { kind?: TenantStatus } = {}) {
+export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?: string | null } = {}) {
   const ctx = openContext(paths, opts);
   const { sqlite, deps, store, queryLog, dataset, setting, setSetting } = ctx;
   const clock = createClock(ctx);

@@ -117,7 +117,7 @@ function openTenant(tenantId: string): App {
   if (fresh) seed(store);
   // demo 以外は、開くたびに同期し直す（demo のときに Skill になった作り物の知識を外す。内容が変わらなければ世代も変わらない）
   if (fresh || kind !== "demo") syncSkills(store);
-  const a = openApp(paths, { kind });
+  const a = openApp(paths, { kind, decidedAt: getAuth().tenantDecidedAt(tenantId) });
   // デモのクリニックだけ：院内ルールの種と、根拠のある地域ルール（K6 の合成の査定通知から）を入れておく（FR-79・FR-80）。すでにあれば（保管済みでも）入れ直さない
   if (kind === "demo") a.seedLocalRules();
   a.upsertClerk(DEMO_CLERKS[1]);

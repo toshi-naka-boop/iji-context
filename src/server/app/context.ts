@@ -49,7 +49,7 @@ export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8"
  * kind はクリニックの種類（src/server/tenant-kind.ts）。ログインなしの既定のアプリと、種類を渡さない呼び出し（テスト）は demo。
  * 未定（undecided）は、作り物と時計について real と同じ側に倒す（demo のときだけ作り物とデモの時計を使う）
  */
-export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {}) {
+export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?: string | null } = {}) {
   const kind: TenantStatus = opts.kind ?? "demo";
   const fresh = !existsSync(paths.dbFile);
   const sqlite = new Database(paths.dbFile);
@@ -71,7 +71,10 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus } = {})
   // 公的情報レジストリ（official/）。形の違う文書があれば起動を止める。会議の整理（トリガー④）とローカルルール欄が同じものを使う
   const official = officialInputOf(paths.root);
   // demo 以外（real・未定）は、見本の請求の提出を整理の対象から外す（数え直し・議題・拾い直し。行は消さない）
-  const deps = { ...reviewDepsOf({ db, store, calendar, official }), ...(kind === "demo" ? {} : { excludedClaim: isSampleClaim }) };
+  // 前回の整理として数えるのは、使い方を選んだ日時（decidedAt）以後で、今（実際の時刻）より前のものだけ。デモのときに未来の日付で回した整理を使わない
+  const decidedAt = opts.decidedAt ? new Date(opts.decidedAt).toISOString() : null;
+  const validReview = (ranAt: string) => (decidedAt === null || ranAt >= decidedAt) && ranAt <= new Date().toISOString();
+  const deps = { ...reviewDepsOf({ db, store, calendar, official }), ...(kind === "demo" ? {} : { excludedClaim: isSampleClaim, validReview }) };
 
   const setting = (key: string): string | null =>
     (sqlite.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;

@@ -45,7 +45,19 @@ export type ReviewDeps = {
    * 整理の最初に対象から外す（拾い直し・数え直し・議題のすべてで無いものとして扱う）。行は消さない
    */
   excludedClaim?: (claimId: string) => boolean;
+  /**
+   * 前回の整理として数えてよい整理か（任意。ranAt は正規形の時刻）。渡されなければ、どの整理も数える。
+   * 未定から real を選んだクリニックで、デモのときに未来の日付で回した整理を、前回の整理・最新の議題として使わないために渡す（反証 round-44 #5）
+   */
+  validReview?: (ranAt: string) => boolean;
 };
+
+/** 前回（最新）の整理。validReview に当たらない整理は飛ばす。会議の日の判定・議題・回答の新しさの判定が使う */
+export function latestReview(deps: Pick<ReviewDeps, "db" | "validReview">) {
+  const valid = deps.validReview;
+  if (!valid) return deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+  return deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).all().find((r) => valid(r.ranAt));
+}
 
 /** 版のない提出の id（昇順）。hasRevision を渡されていなければ空。整理の記録（reviews.skipped）と議題の件数に使う */
 function noRevisionSubmissions(deps: ReviewDeps): string[] {
@@ -550,7 +562,7 @@ export type DigestEntry = {
 
 /** 最新の整理のまとめ（未回答の項目だけ）。ベテラン本人のメンター（F6）が言い換えて届ける */
 export function buildDigest(deps: ReviewDeps): { reviewId: string | null; items: DigestEntry[]; skippedCount?: number } {
-  const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+  const latest = latestReview(deps);
   if (!latest) return { reviewId: null, items: [] };
   const skippedCount = (JSON.parse(latest.skipped) as string[]).length;
   const rows = deps.db
@@ -621,7 +633,7 @@ export function answerItem(
   if (row.answer !== null) return { status: "duplicate" }; // round-4 X-19
   // 最新の会議に載っていない古い項目への回答は記録だけ（round-15 X-58）。回答が届いた時点で確かめ、
   // 回答と stale の印を同じ書き込みで残す（途中で止まっても拾い直しで反映されない。round-16 X-62）
-  const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+  const latest = latestReview(deps);
   const old = latest !== undefined && row.reviewId !== latest.reviewId;
   deps.db
     .update(digestItems)
@@ -711,7 +723,7 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
         .filter((m) => (JSON.parse(m.snapshot) as { status_since: string }).status_since === since);
       if (misses.some((m) => m.answer === 2 && m.applied)) return markStale();
       // 待たせるのは、最新の会議に載っている未回答の miss と、回答済みで未反映の miss だけ（v21 補足。round-16 C-61・X-61）
-      const latest = deps.db.select().from(reviews).orderBy(desc(reviews.ranAt)).limit(1).get();
+      const latest = latestReview(deps);
       const blocking = misses.filter((m) => !m.applied && (m.answer !== null || m.reviewId === latest?.reviewId));
       if (blocking.length > 0) return { status: "held" };
     }
