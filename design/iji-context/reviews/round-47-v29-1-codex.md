@@ -1,4 +1,4 @@
-codex: gpt-6.1-sol（reasoning effort xhigh）。codex exec --sandbox read-only。§15 を対象に round-42
+codex: gpt-6.1-sol（reasoning effort xhigh）。codex exec --sandbox read-only。§15 を対象に round-47（v29 の 1 巡目）
 
 解決済みの論点を除き、以下の5件です。
 

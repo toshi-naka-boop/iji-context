@@ -1,21 +1,21 @@
 {
-  "currentNode": "批評",
+  "currentNode": "改訂",
   "status": "in_progress",
   "designVersion": "v29",
   "approvedDesignVersion": null,
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v29:698135e3c6f6",
+  "requiredApprovalFingerprint": "v29:391908e19b83",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 43,
+  "criticRound": 48,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§15・§12・§2-7）",
     "ledger.md",
     "spec.md（実務の算定 A〜I）"
   ],
-  "nextAction": "round-43 の批評。前提 L-87・L-100 は利用者の答え待ち",
+  "nextAction": "round-48 の 9 件で §15 を改訂 → round-49（上限の 3 巡目）。前提 L-87・L-100 は利用者の答え待ち",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
