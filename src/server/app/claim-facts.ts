@@ -148,6 +148,12 @@ export function createClaimFacts(ctx: AppContext, clock: Clock, clerks: Clerks, 
     if (isHaihanFactKey(f.key)) fitsClaim(claimId, yearMonth, parseHaihanKey(f.key)!);
     // 院内の知識で押した事実（design.md §14-3。C-173）：サーバーが照らしてから書く。値には、押した人の役割（名前・レベルは残さない）と、押したときの知識が承認済みに入った回数を残す（round-43 C-200）
     if (isLocalFactKey(f.key)) {
+      // 取り消し（値が偽。round-43 codex #4）：押した事実があるときだけ、取り消しの行を足す（行は消さない）。知識は要再検証にしない。照らし（レベル・知識の状態）は掛けない（出さない側に戻すだけ）
+      if (f.value === false) {
+        if (!latestClaimFacts(claimId).some((x) => x.key === f.key && x.date === f.date)) throw badRequest("取り消す「条件に当たる」がありません");
+        sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(CLEARED), f.source, clerkId, now());
+        return claimFacts(claimId);
+      }
       if (!localGuard) throw badRequest("この請求では残せません");
       const round = localGuard(claimId, clerkId, f);
       sqlite.prepare("INSERT INTO claim_facts (claim_id, key, date, value, source, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(claimId, f.key, f.date ?? "", JSON.stringify(`${role}|r${round}`), f.source, clerkId, now());

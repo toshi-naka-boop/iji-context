@@ -157,6 +157,23 @@ describe.skipIf(!hasMasters)("（マスターがあるとき）design.md §14-5 
     expect(g05().map((f) => f.local?.press)).toEqual([[{ key, date: day(15) }]]);
   });
 
+  it("押した「条件に当たる」は取り消せる（取り消しの行を足し、監査ログに残す。知識は要再検証にしない。round-43 codex #4）", async () => {
+    const key = localKey(K, meta(K).rev, A, B);
+    expect((await save(key, false, day(5))).status).toBe(200);
+    expect(g05().map((f) => f.local?.press)).toEqual([[{ key, date: day(5) }, { key, date: day(15) }]]);
+    expect(meta(K).status).toBe("承認済み");
+    expect((await facts()).filter((x) => x.key === key)).toEqual([]);
+    // 押していない日の取り消しは 400。医師の役割は 403
+    expect((await save(key, false, day(5))).status).toBe(400);
+    setRole("doctor");
+    expect((await save(key, false, day(5))).status).toBe(403);
+    setRole("clerk");
+    const audit = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((r) => r.action === "POST /api/claims/[claimId]/facts" && r.result === "ok" && r.target === `${ID} local:${K}@${meta(K).rev}`);
+    expect(audit.length).toBeGreaterThanOrEqual(3);
+    // 押し直す（次のテストが使う）
+    expect((await save(key, true, day(5))).status).toBe(200);
+  });
+
   it("添えた知識に USED が出る（同じ請求・同じ知識は 1 日 1 回）。算定プレビューでは出さない", () => {
     check();
     const now = instance.runAs(owner, () => instance.getApp().now());

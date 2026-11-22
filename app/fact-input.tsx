@@ -204,6 +204,11 @@ export function CheckedFacts(props: { claimId: string; tick: number; onSaved: ()
       .then((d: { facts?: Saved[] } | null) => setFacts(d?.facts ?? []))
       .catch(() => setFacts([]));
   }, [props.claimId, props.tick]);
+  /** 院内の知識で押した「条件に当たる」を取り消す（値を偽で送る。サーバーが取り消しの行を足す） */
+  async function unpress(f: Saved) {
+    const r = await fetch(`/api/claims/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact: { key: f.key, date: f.date, value: false, source: f.source } }) });
+    if (r.ok) props.onSaved();
+  }
   if (facts.length === 0) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -215,6 +220,8 @@ export function CheckedFacts(props: { claimId: string; tick: number; onSaved: ()
           <div key={id} className="notice ok">
             確かめた：{fillLocal(LOCAL_PAIR_TEXT.pressedFact, { id: local.id, a: local.codes[0], b: local.codes[1] })}{dayText(f.date)}
             <span className="muted">（{ROLE_LABELS[f.checkedByRole as Role] ?? ""}・{f.checkedAt.slice(0, 10)}・{how(f.source)}）</span>
+            {/* 押し間違いを取り消す（round-43 codex #4）。知識は要再検証にしない */}
+            {canSave(role, "clerk") && <> <button onClick={() => void unpress(f)}>{LOCAL_PAIR_TEXT.unpress}</button></>}
           </div>
         );
         // 例外の問いの答え（haihan:*）は、問いの文と、どの組（コード）の答えかを出す。直すときは同じ選択肢から（答えを変えれば問い直す）

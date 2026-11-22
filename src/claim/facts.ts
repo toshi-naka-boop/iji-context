@@ -27,7 +27,7 @@ export type HaihanFactKey = `haihan:${string}`;
 /**
  * 背反の組の院内の知識で「この請求も条件に当たる」と押した事実（design.md §14-3）：local:<知識の id>@<rev>:<コード①>:<コード②>（コードは小さい順）。
  * 日付は、1 日・同時の表は算定日、同一月の表は持たない（知識の表で決まるので、照らすのはサーバーの処理。src/server/app/local-pairs.ts）。
- * 入力の値は「はい」（真）だけで、残すのは押した人の役割（名前・レベルは画面に出さない）
+ * 入力の値は「はい」（真）＝押す、「いいえ」（偽）＝取り消す（round-43 codex #4）。残すのは押した人の役割（名前・レベルは画面に出さない）
  */
 export type LocalFactKey = `local:${string}`;
 export const isLocalFactKey = (key: string): key is LocalFactKey => isLocalKey(key);
@@ -63,7 +63,7 @@ export function validateClaimFact(f: ClaimFactInput, yearMonth: string): void {
   if (!CLAIM_FACT_SOURCES.includes(f.source)) throw new Error(`確かめ方が選べない値: ${f.source}`);
   if (isLocalFactKey(f.key)) {
     if (f.date !== null && !inMonth(f.date, yearMonth)) throw new Error("この請求の診療年月の日付を選ぶ");
-    if (f.value !== true) throw new Error("「条件に当たる」は、はいだけを残せます");
+    if (typeof f.value !== "boolean") throw new Error("「条件に当たる」は、押すか取り消すかを選ぶ");
     return;
   }
   if (isHaihanFactKey(f.key)) {
