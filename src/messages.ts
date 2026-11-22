@@ -2,6 +2,7 @@
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
 import type { GenericFinding, GenericNotRun } from "./generic/types";
+import type { TriggerKind } from "./lifecycle/types";
 import type { PatientFinding } from "./patient/checks";
 
 export const FINDING_TEXT: Record<string, string> = {
@@ -368,3 +369,31 @@ export const LOCAL_PAIR_TEXT = {
 } as const;
 /** 文言の {名前} を値で埋める */
 export const fillLocal = (t: string, v: Record<string, string>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
+
+/** 会議の議題の「きっかけ」に出す、見直しのトリガーの名前（design.md §4-3・§14-4） */
+export const TRIGGER_LABEL: Record<TriggerKind, string> = {
+  revision: "改定",
+  reappointment: "改選",
+  idle: "長く使われていない",
+  official: "公的文書",
+  localRevision: "改定でこの組に差が出た",
+  localReturn: "この組の返戻・査定",
+};
+/** 会議の議題の「きっかけ」に出す、トリガー以外のイベントの名前（要再検証・停止に入ったイベント。design.md §4-2） */
+export const EVENT_LABEL: Record<string, string> = {
+  COUNTER_EXAMPLE: "外れの確認で「直す必要がある」と答えた",
+  RECHECK_FAIL: "確かめ直しで「直す必要がある」と答えた",
+  IDLE_EXPIRED: "要再検証のまま長く使われていない",
+};
+const triggerLabel = (t: string): string => TRIGGER_LABEL[t as TriggerKind] ?? t;
+/**
+ * 議題の「きっかけ」の文。event は history のイベント名（TRIGGER{idle} などの形）、trigger は根拠に残したトリガー。
+ * トリガーのイベントはその名前だけにし、根拠のトリガーが別の名前のときだけ括弧で添える。表にない名前はそのまま出す
+ */
+export function eventText(event: string, trigger?: string): string {
+  const m = /^TRIGGER\{(\w+)\}$/.exec(event);
+  const base = m ? triggerLabel(m[1]) : (EVENT_LABEL[event] ?? event);
+  const extra = trigger ? triggerLabel(trigger) : "";
+  if (base === "") return extra;
+  return extra !== "" && extra !== base ? `${base}（${extra}）` : base;
+}
