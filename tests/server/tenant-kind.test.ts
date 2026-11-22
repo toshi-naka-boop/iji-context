@@ -241,6 +241,32 @@ describe("未定から real を選んだクリニックの、作り物の知識�
     expect(shown(demo)).toEqual({ questions: 1, doctor: 1, peer: 1 });
   });
 
+  it("デモのときに回答して反映されずに残った作り物の議題は、real を選んだあとの整理で反映しない（状態・history は変わらず、修正の候補もできない）", async () => {
+    const { u, before } = await oldDemoClinic("sample_k_recover");
+    // 回答を保存したあと、反映の前に止まった状態にする（回答 2 ＝ 外す・直す側）
+    const dbFile = instance.tenantPaths(u.tenantId).dbFile;
+    const db = new Database(dbFile);
+    const item = db.prepare("SELECT item_id, knowledge_id FROM digest_items WHERE knowledge_id LIKE '%seed-%' AND answer IS NULL LIMIT 1").get() as { item_id: string; knowledge_id: string };
+    expect(item).toBeDefined();
+    db.prepare("UPDATE digest_items SET answer = 2, free_text = '直す', answered_at = ? WHERE item_id = ?").run(at(20), item.item_id);
+    db.close();
+    expect((await choose(u, "real")).status).toBe(200);
+    // 日付が変わって会議の整理が回る（答えの拾い直しを含む）
+    setNow("2027-06-01T10:00:00+09:00");
+    appOf(u);
+    const a = appOf(u);
+    a.runMeeting();
+    const all = listKnowledge(a.store, { withExcluded: true });
+    expect(all.filter((m) => m.id.includes("seed-")).map((m) => [m.id, m.status, m.history.length])).toEqual(before.filter(([id]) => String(id).includes("seed-")));
+    expect(all.some((m) => m.relates_to === item.knowledge_id)).toBe(false);
+    // 直接回答しても反映しない
+    const fresh = new Database(dbFile, { readonly: true });
+    const other = fresh.prepare("SELECT item_id FROM digest_items WHERE knowledge_id LIKE '%seed-%' AND answer IS NULL LIMIT 1").get() as { item_id: string } | undefined;
+    fresh.close();
+    if (other) expect(a.answerAgenda(other.item_id, 2, "直す")).toEqual({ status: "stale" });
+    expect(listKnowledge(a.store, { withExcluded: true }).filter((m) => m.id.includes("seed-")).map((m) => [m.id, m.status, m.history.length])).toEqual(before.filter(([id]) => String(id).includes("seed-")));
+  });
+
   it("demo を選んだときと、新しい real のクリニックでは変わらない", async () => {
     const { u, k6 } = await oldDemoClinic("sample_k_demo");
     expect((await choose(u, "demo")).status).toBe(200);

@@ -664,6 +664,8 @@ function reflect(deps: ReviewDeps, itemId: string, now: string): AnswerOutcome {
     return { status: "stale" };
   };
   if (!meta) return markStale();
+  // このクリニックでは使わない知識（store.excluded）は、回答があっても反映しない：状態・history を変えず、修正の候補も作らない（行も書き換えない。反証 round-44 #2）
+  if (deps.store.excluded?.(meta)) return { status: "stale" };
 
   // 途中まで反映済みか（history に項目 id があれば遷移は済んでいる。round-10 C-47）
   const transitioned = meta.history.some((h) => h.basis?.itemId === itemId);
