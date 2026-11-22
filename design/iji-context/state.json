@@ -1,5 +1,5 @@
 {
-  "currentNode": "批評",
+  "currentNode": "改訂",
   "status": "in_progress",
   "designVersion": "v30",
   "approvedDesignVersion": null,
@@ -13,7 +13,7 @@
   "requiredReads": [
     "design.md（§15）"
   ],
-  "nextAction": "round-53（§15-8 に絞った 4 巡目）",
+  "nextAction": "§15-8 の単純化と round-53 の残り（C-271・C-272・C-274）を反映 → 別の目で例を回す → 承認",
   "lastUpdated": "2026-11-22",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
