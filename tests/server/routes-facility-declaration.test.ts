@@ -1,4 +1,5 @@
-// 施設の申告のルート（GET・POST /api/facility/declaration、GET /api/facility/declaration/history。design.md §15-2・§15-9 の段 17b）。実際のルートを呼ぶ。AI は呼ばない
+// 施設の申告のルート（GET・POST /api/facility/declaration、GET /api/facility/declaration/history、GET・POST /api/facility/declaration/confirm。
+// design.md §15-2・§15-9 の段 17b・17c）。実際のルートを呼ぶ。AI は呼ばない
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,7 +10,7 @@ import type { Role } from "../../src/server/roles";
 import type { UkeFile } from "../../src/uke/types";
 import { readUke, writeUke } from "../../src/uke/uke";
 import { autoConsent } from "../helpers/consent";
-import { day } from "../helpers/period";
+import { day, month, YM } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -17,8 +18,10 @@ let instance: typeof import("../../src/server/instance");
 let owner: User;
 let cookie: string;
 
-type Item = { key: string; row: { id: number; checkedBy: string; source: string; recheckOn: string | null } | null; status: { v: string; reason: string | null } };
-type Decl = { today: string; items: Item[]; recheck: { soon: string[]; overdue: string[]; none: string[] }; mismatches: string[] };
+type Row = { id: number; itemKey: string; fromMonth: string | null; checkedBy: string; checkedOn: string | null; source: string; recheckOn: string | null; requirement: string; choice: string | null };
+type Item = { key: string; row: Row | null; status: { v: string; reason: string | null } };
+type Notice = { key: string; id: number; fromMonth: string; untilMonth: string | null; state: string };
+type Decl = { today: string; items: Item[]; recheck: { rows: Notice[]; noFromMonth: string[] }; selectable: Row[]; initialSelection: number[]; mismatches: string[] };
 
 beforeAll(async () => {
   tmp = mkdtempSync(path.join(tmpdir(), "iji-routes-declaration-"));
@@ -44,7 +47,11 @@ const historyRoute = () => import("../../app/api/facility/declaration/history/ro
 const setRole = (u: User, role: Role) => instance.getAuth().switchRole(u, role);
 const list = async (c = cookie) => (await (await (await routes()).GET(get(c))).json()) as Decl;
 const save = async (body: unknown, c = cookie) => (await routes()).POST(post(c, body));
-const code = (c: string, over: Record<string, unknown> = {}) => ({ item: `code:${c}`, notified: "yes", requirement: "met", startOn: "2026-09-01", notifiedOn: null, choice: null, checkedOn: day(13), recheckOn: "2027-01-13", ...over });
+const code = (c: string, over: Record<string, unknown> = {}) => ({ item: `code:${c}`, fromMonth: YM, notified: "yes", requirement: "met", startOn: "2026-09-01", notifiedOn: null, choice: null, checkedOn: day(13), recheckOn: "2027-01-13", ...over });
+const confirmRoute = () => import("../../app/api/facility/declaration/confirm/route");
+const confirm = async (ids: number[], c = cookie) => (await confirmRoute()).POST(new Request(`${URL_}/confirm`, { method: "POST", headers: { cookie: c, "content-type": "application/json" }, body: JSON.stringify({ ids }) }));
+const selection = async (q: string) => ((await (await (await confirmRoute()).GET(new Request(`${URL_}/confirm?${q}`, { headers: { cookie } }))).json()) as { ids: number[] }).ids;
+const historyOf = async (item: string) => ((await (await (await historyRoute()).GET(new Request(`${URL_}/history?item=${item}`, { headers: { cookie } }))).json()) as { rows: Row[] }).rows;
 const itemOf = (d: Decl, key: string) => d.items.find((i) => i.key === key);
 
 describe("施設の申告のルート", () => {
@@ -70,13 +77,22 @@ describe("施設の申告のルート", () => {
       { ...code("4102"), item: "code:12345" },
       { ...code("4102"), item: "kyokagata" },
       code("3057"),
+      code("4249"),
+      code("3341"),
+      code("3474"),
       code("3168"),
+      // いつの診療月から（from_month）は、どの項目のどの行にも必須（P-2）
+      code("4102", { fromMonth: undefined }),
+      code("4102", { fromMonth: "" }),
+      code("4102", { fromMonth: "2026-13" }),
+      { item: "note16", requirement: "met", checkedOn: null, recheckOn: null },
+      { item: "dispensing", choice: "inside", checkedOn: null, recheckOn: null },
       code("4100"),
       code("4102", { choice: "1" }),
       code("4102", { startOn: "2026-02-30" }),
       { ...code("4102"), claimId: "K1" },
-      { item: "note16", requirement: "yes", checkedOn: null, recheckOn: null },
-      { item: "grade", choice: "kyokagata", requirement: "met", startOn: null, notifiedOn: null, checkedOn: null, recheckOn: null },
+      { item: "note16", fromMonth: YM, requirement: "yes", checkedOn: null, recheckOn: null },
+      { item: "grade", fromMonth: YM, choice: "kyokagata", requirement: "met", startOn: null, notifiedOn: null, checkedOn: null, recheckOn: null },
     ]) expect([JSON.stringify(body), (await save(body)).status]).toEqual([JSON.stringify(body), 400]);
   });
 
@@ -94,17 +110,21 @@ describe("施設の申告のルート", () => {
     expect(log.map((l) => l.target)).toEqual(["code:4102"]);
   });
 
-  it("確かめ直す日が近い（30 日以内）・過ぎた・ない申告の一覧", async () => {
+  it("確かめ直す日が近い（30 日以内）・過ぎた・ない申告の一覧（行ごと。項目と from_month）", async () => {
     setRole(owner, "manager");
     expect((await save(code("4307", { recheckOn: day(20) }))).status).toBe(200);
     expect((await save(code("721", { recheckOn: day(1) }))).status).toBe(200);
-    expect((await save({ item: "note16", requirement: "met", checkedOn: day(13), recheckOn: null })).status).toBe(200);
+    expect((await save({ item: "note16", fromMonth: YM, requirement: "met", checkedOn: day(13), recheckOn: null })).status).toBe(200);
     // 30 日後ちょうどは「近い」、31 日後は入らない
-    expect((await save({ item: "dispensing", choice: "inside", checkedOn: day(13), recheckOn: "2026-11-12" })).status).toBe(200);
-    expect((await save({ item: "grade", choice: "zaishishin3", requirement: "met", startOn: "2026-09-01", notifiedOn: null, checkedOn: day(13), recheckOn: "2026-11-13" })).status).toBe(200);
+    expect((await save({ item: "dispensing", fromMonth: YM, choice: "inside", checkedOn: day(13), recheckOn: "2026-11-12" })).status).toBe(200);
+    expect((await save({ item: "grade", fromMonth: YM, choice: "zaishishin3", requirement: "met", startOn: "2026-09-01", notifiedOn: null, checkedOn: day(13), recheckOn: "2026-11-13" })).status).toBe(200);
     const d = await list();
     expect(d.today).toBe(day(13));
-    expect(d.recheck).toEqual({ soon: ["dispensing", "code:4307"], overdue: ["code:721"], none: ["note16"] });
+    // 種の行（from_month は最も早い版の開始月）は、10 月からの行が直後の組になり、その行を確かめた日（今日）より確かめ直す日が後なので出ない
+    expect(d.recheck.rows.map((n) => [n.key, n.state, n.fromMonth, n.untilMonth]).sort()).toEqual(
+      [["code:4307", "soon", YM, null], ["code:721", "overdue", YM, null], ["dispensing", "soon", YM, null], ["note16", "none", YM, null]].sort(),
+    );
+    expect(d.recheck.noFromMonth).toEqual([]);
     // 過ぎた申告と日付のない申告は「分からない」
     expect([itemOf(d, "code:721")?.status.v, itemOf(d, "note16")?.status.v, itemOf(d, "code:4307")?.status.v]).toEqual(["unknown", "unknown", "held"]);
   });
@@ -114,6 +134,63 @@ describe("施設の申告のルート", () => {
     expect((await list()).mismatches).toEqual([]);
     expect((await save(code("4248"))).status).toBe(200);
     expect((await list()).mismatches).toEqual(["在宅医療充実体制加算を持つと申告されていますが、種別が在支診（(3)）か在支診以外です"]);
+  });
+});
+
+describe("まとめて「変わりなし」（docs M-5・round-52 X-150・round-53 C-274）", () => {
+  it("知らせの行を選んだ状態で開き、確かめると同じ from_month の行が 1 行増え、確かめ直す日は項目ごとの既定（注16 は 3 か月後）。その月の判定が申告の値に戻る", async () => {
+    setRole(owner, "manager");
+    // 注16 に、前月からの行（確かめ直す日はずっと先）と、今月からの行（確かめ直す日を過ぎた）
+    expect((await save({ item: "note16", fromMonth: month(-1), requirement: "met", checkedOn: day(1), recheckOn: "2027-01-31" })).status).toBe(200);
+    expect((await save({ item: "note16", fromMonth: YM, requirement: "met", checkedOn: day(2), recheckOn: day(12) })).status).toBe(200);
+    let d = await list();
+    const notice = d.recheck.rows.find((n) => n.key === "note16")!;
+    expect([notice.fromMonth, notice.state]).toEqual([YM, "overdue"]);
+    expect(itemOf(d, "note16")?.status.reason).toBe("確かめ直す日を過ぎています");
+    expect(await selection(`notice=${notice.id}`)).toEqual([notice.id]);
+    const before = (await historyOf("note16")).length;
+    const res = await confirm([notice.id]);
+    expect(res.status).toBe(200);
+    d = (await res.json()) as Decl;
+    const rows = await historyOf("note16");
+    expect(rows.length).toBe(before + 1);
+    expect(rows[0]).toMatchObject({ fromMonth: YM, requirement: "met", checkedOn: day(13), recheckOn: "2027-01-13", checkedBy: "やまだ", source: "input" });
+    expect(itemOf(d, "note16")?.status.v).toBe("held");
+    // 前月の行は増えない。前月の請求の比べる日は今月の組で最初に残した行の確かめた日（day(2)）のまま
+    expect(rows.filter((r) => r.fromMonth === month(-1)).length).toBe(1);
+  });
+
+  it("選んだ行ごとに 1 行ずつ増え、from_month と値は選んだ行と同じ。種別・4100 でも同じ。確かめ直す日の既定は 1 年後", async () => {
+    setRole(owner, "manager");
+    const d = await list();
+    const g = itemOf(d, "grade")!.row!;
+    const dx = itemOf(d, "code:4100")!.row!;
+    const res = await confirm([g.id, dx.id]);
+    expect(res.status).toBe(200);
+    const [g2] = await historyOf("grade");
+    const [dx2] = await historyOf("code:4100");
+    expect([g2.fromMonth, g2.choice, g2.recheckOn, dx2.fromMonth, dx2.choice, dx2.recheckOn]).toEqual([g.fromMonth, g.choice, "2027-10-13", dx.fromMonth, dx.choice, "2027-10-13"]);
+  });
+
+  it("同じ from_month の中で最新でない行の id は 409、ない id は 400、from_month が空の行は選べない。事務・医師は 403", async () => {
+    setRole(owner, "manager");
+    // 今月の組の、確かめ直しで写す前の行（その後に写した行がある）
+    const old = (await historyOf("grade")).filter((r) => r.fromMonth === YM)[1];
+    expect((await confirm([old.id])).status).toBe(409);
+    expect((await confirm([999999])).status).toBe(400);
+    expect((await confirm([])).status).toBe(400);
+    setRole(owner, "clerk");
+    expect((await confirm([(await historyOf("grade"))[0].id])).status).toBe(403);
+    setRole(owner, "manager");
+  });
+
+  it("申告の画面の初期の選択は今日の前の月で効く行。判定の画面の理由からは、その診療月で効く行", async () => {
+    setRole(owner, "manager");
+    const d = await list();
+    const prevNote16 = (await historyOf("note16")).find((r) => r.fromMonth === month(-1))!;
+    expect(d.initialSelection).toContain(prevNote16.id);
+    expect(d.selectable.map((r) => r.id)).toContain(prevNote16.id);
+    expect(await selection(`month=${month(-1)}&item=note16`)).toEqual([prevNote16.id]);
   });
 });
 
@@ -128,8 +205,17 @@ describe("実在用のクリニック", () => {
     const id = instance.runAs(real, () => instance.getApp().uploadUke(instance.clerkIdOf(real), writeUke(file)).flatMap((u) => u.receipts.map((x) => x.claimId)))[0];
     const f = instance.runAs(real, () => instance.getApp().caseOf(id).facility);
     expect([f.grade, f.note16Met, f.dxTier, f.baseUp]).toEqual([{ known: false }, { known: false }, { known: false }, { known: false }]);
+    // 種別の申告がないので、在支診か・機能強化型か・病床も分からない（config の値が残らない）
+    expect([f.zaishishin, f.kyokagata, f.hasBeds]).toEqual([null, null, null]);
     const d = await list(realCookie);
     expect(d.items.every((i) => i.row === null && i.status.v === "unknown")).toBe(true);
     expect(itemOf(d, "grade")?.status.reason).toBe("申告がありません");
+    // 申告に移さない設定（物価対応料・同じ日の重ね）も、設定の画面で残すまで分からない（config の既定値を使わない。code H-1）
+    expect([f.priceResponse, f.revisitBaseUpSameDay, f.revisitPriceSameDay]).toEqual([{ known: false }, { known: false }, { known: false }]);
+    setRole(real, "manager");
+    const fr = await import("../../app/api/facility/route");
+    const saved = await fr.POST(new Request("http://localhost/api/facility", { method: "POST", headers: { cookie: realCookie, "content-type": "application/json" }, body: JSON.stringify({ key: "priceResponse", value: true }) }));
+    expect(saved.status).toBe(200);
+    expect(instance.runAs(real, () => instance.getApp().caseOf(id).facility).priceResponse).toEqual({ known: true, value: true });
   });
 });

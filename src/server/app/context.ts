@@ -87,8 +87,8 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decide
   const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
   // 既定の施設の設定（JSON の形のまま持つ。症例ごとの上書きを重ねて三値に変えるのは src/server/app/cases.ts の 1 か所）
-  // デモの種（demoDeclaration）と知らせの日数は、施設の設定の項目ではないので外す
-  const { demoDeclaration: _seed, recheckNoticeDays, ...facility } = json<FacilityJson & { demoDeclaration: unknown; recheckNoticeDays: number }>(cfg("facility.json"));
+  // デモの種（demoDeclaration）と知らせの日数・確かめ直す日の既定（か月。項目ごと）は、施設の設定の項目ではないので外す
+  const { demoDeclaration: _seed, recheckNoticeDays, recheckDefaultMonths, ...facility } = json<FacilityJson & { demoDeclaration: unknown; recheckNoticeDays: number; recheckDefaultMonths: Record<string, number> }>(cfg("facility.json"));
   // 公的情報レジストリ（official/）。形の違う文書があれば起動を止める。会議の整理（トリガー④）とローカルルール欄が同じものを使う
   const official = officialInputOf(paths.root);
   // demo 以外（real・未定）は、見本の請求の提出を整理の対象から外す（数え直し・議題・拾い直し。行は消さない）
@@ -108,7 +108,7 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decide
    */
   const hiddenClaim = (claimId: string | null | undefined): boolean => kind !== "demo" && !!claimId && isSampleClaim(claimId);
 
-  return { kind, hiddenClaim, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, recheckNoticeDays, official, deps, dataset, setting, setSetting };
+  return { kind, hiddenClaim, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, recheckNoticeDays, recheckDefaultMonths, official, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;

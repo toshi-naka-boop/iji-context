@@ -15,9 +15,9 @@ const TODAY = day(13);
 const LATER = "2099-12-31";
 
 let nextId = 1;
-/** 申告の 1 行。既定は「届出あり・要件を満たす・算定開始は前月の初日・確かめた日は今日・確かめ直す日はずっと先」 */
+/** 申告の 1 行。既定は「前月から・届出あり・要件を満たす・算定開始は前月の初日・確かめた日は今日・確かめ直す日はずっと先」 */
 function row(itemKey: string, over: Partial<DeclarationRow> = {}): DeclarationRow {
-  return { id: nextId++, itemKey, notified: "yes", notifiedOn: null, startOn: `${PREV}-01`, requirement: "met", choice: null, checkedBy: "事務長", checkedRole: "manager", checkedOn: TODAY, recheckOn: LATER, source: "input", createdAt: "", ...over };
+  return { id: nextId++, itemKey, fromMonth: PREV, notified: "yes", notifiedOn: null, startOn: `${PREV}-01`, requirement: "met", choice: null, checkedBy: "事務長", checkedRole: "manager", checkedOn: TODAY, recheckOn: LATER, source: "input", createdAt: "", ...over };
 }
 const tri = (rows: DeclarationRow[], code: string, on: { yearMonth: string; day?: string }, today = TODAY) => heldOf(rows, code, on, today);
 const M = { yearMonth: YM };
@@ -44,6 +44,17 @@ describe("三値の各理由", () => {
   });
   it("在支病のコードは、一覧になくても申告によらず「持たない」", () => {
     for (const c of ["3057", "3058", "3169"]) expect(tri([], c, M)).toEqual({ v: "not", reason: "hospital" });
+  });
+  it("表 4 の病院の側のコード（4249・3341・3474）は、申告によらず「持たない」", () => {
+    for (const c of ["4249", "3341", "3474"]) {
+      expect(tri([], c, M)).toEqual({ v: "not", reason: "hospital" });
+      expect(tri([row(`code:${c}`)], c, M)).toEqual({ v: "not", reason: "hospital" });
+    }
+  });
+  it("種別が分からないときは zaishishin・kyokagata・hasBeds も null（config の値を残さない）", () => {
+    for (const rows of [[], [row("grade", { choice: "unknown" })], [row("grade", { choice: "zaishishin3", recheckOn: day(1) })]]) {
+      expect(facilityFromDeclaration(rows, TODAY, YM)).toMatchObject({ grade: null, zaishishin: null, kyokagata: null, hasBeds: null });
+    }
   });
   it("種別から決まるコード：種別が持たないコードは「持たない」、種別の要件を満たさないと申告されたら「分からない」（種別を直す）", () => {
     const g = (over: Partial<DeclarationRow>) => [row("grade", { choice: "zaishishin3", ...over })];
@@ -72,7 +83,7 @@ describe("決める順（X-141）", () => {
     expect(facilityFromDeclaration(expired, TODAY, YM).dxTier).toBeNull();
     // 期限内の「届出なし」なら「なし」（R12 の dx_not_notified）
     expect(facilityFromDeclaration([row("code:4100", { notified: "no", startOn: null })], TODAY, YM).dxTier).toBe("なし");
-    const { demoDeclaration: _d, recheckNoticeDays: _n, ...config } = facilityConfig;
+    const { demoDeclaration: _d, recheckNoticeDays: _n, recheckDefaultMonths: _m, ...config } = facilityConfig;
     const k1 = loadCase("K1");
     const r12 = (decl: DeclarationRow[]) =>
       evaluate({ ...k1, facility: facilityOf({ ...(config as unknown as FacilityJson), ...facilityFromDeclaration(decl, TODAY, YM) }) })
@@ -96,9 +107,9 @@ describe("算定開始年月日と算定日（C-217・C-223）", () => {
     const days = [day(5), day(19)];
     expect(days.map((d) => view(day(15)).held("4102", { yearMonth: YM, day: d }).v)).toEqual(["not", "held"]);
     expect(days.map((d) => view(day(1)).held("4102", { yearMonth: YM, day: d }).v)).toEqual(["held", "held"]);
-    // 片方の日（5 日）では先の日付の行が効く行から外れ、前の行（届出が分からない）が効く
+    // 効く行は診療年月で選び、算定日は効く行の算定開始年月日と比べるだけ（月の途中で行が替わらない。v30 P-2）
     const rows = [row("code:4102", { notified: "unknown", startOn: null }), row("code:4102", { startOn: day(10) })];
-    expect(days.map((d) => heldOf(rows, "4102", { yearMonth: YM, day: d }, TODAY).v)).toEqual(["unknown", "held"]);
+    expect(days.map((d) => heldOf(rows, "4102", { yearMonth: YM, day: d }, TODAY).v)).toEqual(["not", "held"]);
   });
   it("算定日の分からない単位（月で比べる）で算定開始が月の途中なら「分からない」。初日以前なら「持つ」、末日より後なら「持たない」", () => {
     expect(tri([row("code:4102", { startOn: day(15) })], "4102", M)).toEqual({ v: "unknown", reason: "mid_month_start" });
@@ -113,10 +124,10 @@ describe("算定開始年月日と算定日（C-217・C-223）", () => {
   });
 });
 
-describe("算定開始年月日つきの履歴から効く行を選ぶ（C-215）", () => {
-  it("種別を (3) から単独型へ、算定開始 翌月 1 日で月末前に入れても、今月は (3)、翌月は単独型で判定される", () => {
-    const rows = [row("grade", { choice: "zaishishin3" }), row("grade", { choice: "solo_nobeds", startOn: `${NEXT}-01` })];
-    expect(effectiveRow(rows, "grade", M)?.row.choice).toBe("zaishishin3");
+describe("いつの診療月からつきの履歴から効く行を選ぶ（C-215 を v30 で改める。P-2）", () => {
+  it("種別を (3) から単独型へ、翌月から・算定開始 翌月 1 日で月末前に入れても、今月は (3)、翌月は単独型で判定される", () => {
+    const rows = [row("grade", { choice: "zaishishin3" }), row("grade", { choice: "solo_nobeds", fromMonth: NEXT, startOn: `${NEXT}-01` })];
+    expect(effectiveRow(rows, "grade", YM)?.row.choice).toBe("zaishishin3");
     expect(facilityFromDeclaration(rows, TODAY, YM)).toMatchObject({ grade: "2", zaishishin: true, kyokagata: false });
     expect(facilityFromDeclaration(rows, TODAY, NEXT)).toMatchObject({ grade: "1N", zaishishin: true, kyokagata: true, hasBeds: false });
     expect([tri(rows, "3168", M).v, tri(rows, "3055", M).v]).toEqual(["held", "not"]);
@@ -125,25 +136,30 @@ describe("算定開始年月日つきの履歴から効く行を選ぶ（C-215�
   it("前の行の確かめ直す日が今日より前でも、後の行を残した日より後なら、前の月は「持つ」", () => {
     // 前の行の確かめ直す日は 20 日。後の行は 18 日に残した。今日は翌月の 3 日
     const today = `${NEXT}-03`;
-    const rows = [row("grade", { choice: "zaishishin3", recheckOn: day(20) }), row("grade", { choice: "solo_nobeds", startOn: `${NEXT}-01`, checkedOn: day(18) })];
+    const rows = [row("grade", { choice: "zaishishin3", recheckOn: day(20) }), row("grade", { choice: "solo_nobeds", fromMonth: NEXT, startOn: `${NEXT}-01`, checkedOn: day(18) })];
     expect(facilityFromDeclaration(rows, today, YM).grade).toBe("2");
     expect(facilityFromDeclaration(rows, today, NEXT).grade).toBe("1N");
     // 後の行を残した日が前の行の確かめ直す日より後なら、前の月は期限切れ（分からない）
-    const late = [row("grade", { choice: "zaishishin3", recheckOn: day(20) }), row("grade", { choice: "solo_nobeds", startOn: `${NEXT}-01`, checkedOn: day(25) })];
+    const late = [row("grade", { choice: "zaishishin3", recheckOn: day(20) }), row("grade", { choice: "solo_nobeds", fromMonth: NEXT, startOn: `${NEXT}-01`, checkedOn: day(25) })];
     expect(facilityFromDeclaration(late, today, YM).grade).toBeNull();
   });
   it("DX の加算2 → 加算1 でも同じ", () => {
-    const rows = [row("code:4100", { choice: "2" }), row("code:4100", { choice: "1", startOn: `${NEXT}-01` })];
+    const rows = [row("code:4100", { choice: "2" }), row("code:4100", { choice: "1", fromMonth: NEXT, startOn: `${NEXT}-01` })];
     expect([facilityFromDeclaration(rows, TODAY, YM).dxTier, facilityFromDeclaration(rows, TODAY, NEXT).dxTier]).toEqual(["2", "1"]);
   });
-  it("算定開始年月日を持たない「届出なし」の行は、入れた時点から前の月にも効く（L-89）", () => {
-    const rows = [row("code:4100", { choice: "1" }), row("code:4100", { notified: "no", startOn: null })];
-    expect([facilityFromDeclaration(rows, TODAY, PREV).dxTier, facilityFromDeclaration(rows, TODAY, YM).dxTier]).toEqual(["なし", "なし"]);
+  // v29（段 17b）は「算定開始年月日を持たない『届出なし』の行は、入れた時点から前の月にも効く（L-89）」を縛っていた。
+  // v30 では、どの行も from_month より前の診療月には効かない（P-2・docs H-1）ので、期待を改めた
+  it("算定開始年月日を持たない「届出なし」の行も、from_month より前の診療月には効かない（v30。L-89 の期待を改めた）", () => {
+    const rows = [row("code:4100", { choice: "1" }), row("code:4100", { fromMonth: YM, notified: "no", startOn: null })];
+    expect([facilityFromDeclaration(rows, TODAY, PREV).dxTier, facilityFromDeclaration(rows, TODAY, YM).dxTier]).toEqual(["1", "なし"]);
   });
-  it("除いた結果、行が残らなければ、最新の行で決める（算定日が算定開始年月日より前で持たない）", () => {
-    const rows = [row("code:4102", { startOn: `${NEXT}-01` })];
-    expect(effectiveRow(rows, "code:4102", M)?.row.id).toBe(rows[0].id);
-    expect(tri(rows, "4102", M).v).toBe("not");
+  it("from_month が診療年月より後の行しかない項目は「分からない（その診療月の申告がない）」。算定開始年月日が先でも同じ月なら「持たない」", () => {
+    expect(tri([row("code:4102", { fromMonth: NEXT, startOn: `${NEXT}-01` })], "4102", M)).toEqual({ v: "unknown", reason: "no_month_row" });
+    expect(tri([row("code:4102", { fromMonth: YM, startOn: `${NEXT}-01` })], "4102", M)).toEqual({ v: "not", reason: "before_start", startOn: `${NEXT}-01` });
+  });
+  it("from_month が空の行（マイグレーション 13 の前に残した行）は効く行に選ばれず「分からない」", () => {
+    expect(tri([row("code:4102", { fromMonth: null })], "4102", M)).toEqual({ v: "unknown", reason: "no_from_month" });
+    expect(facilityFromDeclaration([row("note16", { fromMonth: null, notified: "na", startOn: null })], TODAY, YM).note16Met).toBeNull();
   });
 });
 
@@ -158,14 +174,18 @@ describe("判定に渡す形", () => {
     expect([n({}), n({ requirement: "not_met" }), n({ requirement: "unknown" }), n({ recheckOn: day(1) })]).toEqual([true, false, null, null]);
   });
   it("申告がなければ、種別・注16・DX・ベースアップはどれも分からない（config の既定値を使わない）", () => {
-    expect(facilityFromDeclaration([], TODAY, YM)).toEqual({ grade: null, note16Met: null, dxTier: null, baseUp: null });
-    const { demoDeclaration: _d, recheckNoticeDays: _n, ...config } = facilityConfig;
+    expect(facilityFromDeclaration([], TODAY, YM)).toEqual({ grade: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
+    const { demoDeclaration: _d, recheckNoticeDays: _n, recheckDefaultMonths: _m, ...config } = facilityConfig;
     const f = facilityOf({ ...(config as unknown as FacilityJson), ...facilityFromDeclaration([], TODAY, YM) });
     expect([f.grade, f.note16Met, f.dxTier, f.baseUp]).toEqual([{ known: false }, { known: false }, { known: false }, { known: false }]);
   });
   it("dispensing の三値：院外処方だけ・院内処方もある・分からない（選んだ値か、期限切れ・日付なし・行なし）", () => {
-    const d = (o: Partial<DeclarationRow>) => dispensingOf([row("dispensing", { notified: "na", startOn: null, ...o })], TODAY);
-    expect([d({ choice: "outside" }), d({ choice: "inside" }), d({ choice: "unknown" }), d({ choice: "inside", recheckOn: day(1) }), d({ choice: "inside", checkedOn: null }), dispensingOf([], TODAY)]).toEqual(["outside", "inside", "unknown", "unknown", "unknown", "unknown"]);
+    const d = (o: Partial<DeclarationRow>) => dispensingOf([row("dispensing", { notified: "na", startOn: null, ...o })], TODAY, YM);
+    expect([d({ choice: "outside" }), d({ choice: "inside" }), d({ choice: "unknown" }), d({ choice: "inside", recheckOn: day(1) }), d({ choice: "inside", checkedOn: null }), dispensingOf([], TODAY, YM)]).toEqual(["outside", "inside", "unknown", "unknown", "unknown", "unknown"]);
+  });
+  it("dispensingOf は診療年月で効く行を選ぶ（今日の日では選ばない）", () => {
+    const rows = [row("dispensing", { notified: "na", startOn: null, choice: "inside" }), row("dispensing", { notified: "na", startOn: null, fromMonth: NEXT, choice: "outside" })];
+    expect([dispensingOf(rows, TODAY, PREV), dispensingOf(rows, TODAY, YM), dispensingOf(rows, TODAY, NEXT)]).toEqual(["inside", "inside", "outside"]);
   });
   it("名称：表 4 にあるコードは別紙7-8 の名称、ないコードは null（推測で名前を付けない）", () => {
     const v = declarationView([], TODAY);

@@ -5,6 +5,9 @@ import type { FacilityGrade } from "../engine/types";
 /** 在宅療養支援病院のコード。診療所は持たない（J-2）。申告によらず「持たない」 */
 export const HOSPITAL_CODES = ["3057", "3058", "3169"] as const;
 
+/** EM §2-11 表 4 の 1 行に診療所と並ぶ、病院の側のコード（在宅医療充実体制加算・在宅療養実績加算1・2 の病院）。診療所は持たない。申告によらず「持たない」 */
+export const HOSPITAL_SIDE_CODES = ["4249", "3341", "3474"] as const;
+
 /** 施設の種別の選択肢（申告の `grade` の choice）。code は持つ施設基準コード、grade は判定に渡す種別 */
 export const GRADE_CHOICES = [
   { id: "solo_beds", label: "機能強化型 単独型・病床あり", code: "3055", grade: "1B" },

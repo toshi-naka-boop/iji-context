@@ -124,13 +124,18 @@ export function hokatsuEligible(
 
 /**
  * 往診料を算定した日・その翌日の訪問診療料を算定できるか（§2-3-4 の「制限の判定」）。
- * 在支診で文書提供済みなら真、文書提供が不明なら "unknown"、それ以外は偽
+ * 在支診で文書提供済みなら真、文書提供が不明なら "unknown"、それ以外は偽。施設の種別が分からない（zaishishin が null）ときも "unknown"
+ * （聞く事実は facility.grade。visitBillableNeed）
  */
 export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
+  if (ctx.facility.zaishishin === null) return "unknown";
   if (!ctx.facility.zaishishin) return false;
   const doc = ctx.facts.contactDocProvided;
   return doc.known ? doc.value : "unknown";
 }
+
+/** visitBillable が "unknown" のとき、聞く事実（種別が分からなければ施設の種別、分かれば連携先への文書提供） */
+export const visitBillableNeed = (ctx: ClaimContext): "facility.grade" | "contactDocProvided" => (ctx.facility.zaishishin === null ? "facility.grade" : "contactDocProvided");
 
 /** 日付ごとの事実の、その日の答え（載っていない日・事実が丸ごと不明なら undefined） */
 const answerOn = (f: Fact<Record<string, boolean>>, day: string): boolean | undefined => (f.known ? f.value[day] : undefined);

@@ -53,6 +53,9 @@ export const POLICY = {
   "GET /api/facility/declaration": row(ALL, "none", false),
   "POST /api/facility/declaration": row(["manager", "veteran"], "none", false),
   "GET /api/facility/declaration/history": row(ALL, "none", false),
+  // まとめて「変わりなし」（design.md §15-2）：残すのは事務長と責任者。初期の選択を読むのも同じ
+  "GET /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
+  "POST /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),

@@ -151,7 +151,7 @@ describe("施設の設定のルート", () => {
     setRole("manager");
     const decl = await import("../../app/api/facility/declaration/route");
     const note16 = (requirement: string) =>
-      decl.POST(new Request("http://localhost/api/facility/declaration", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ item: "note16", requirement, checkedOn: day(13), recheckOn: "2027-01-13" }) }));
+      decl.POST(new Request("http://localhost/api/facility/declaration", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ item: "note16", fromMonth: YM, requirement, checkedOn: day(13), recheckOn: "2027-01-13" }) }));
     expect((await note16("unknown")).status).toBe(200);
     const facility = (id: string) => instance.runAs(owner, () => instance.getApp().caseOf(id).facility);
     expect(facility(claimId("K7")).note16Met).toEqual({ known: true, value: false });

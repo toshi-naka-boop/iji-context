@@ -15,7 +15,7 @@ import { openApp, type AppPaths } from "../../src/server/app";
 import { claimId, YM } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
-const { demoDeclaration: _seed, recheckNoticeDays: _days, ...CONFIG } = facilityConfig;
+const { demoDeclaration: _seed, recheckNoticeDays: _days, recheckDefaultMonths: _months, ...CONFIG } = facilityConfig;
 const CASES = ["K1", "K2", "K3", "K4", "K5", "K6", "K7"];
 
 let tmp: string;
@@ -43,8 +43,8 @@ function seedIsEffective(file: string) {
   const rows = readDeclarations(db);
   db.close();
   for (const s of demoSeedRows()) {
-    const e = effectiveRow(rows, s.itemKey, { yearMonth: YM });
-    expect([s.itemKey, e?.row.source, e?.row.choice, e?.row.notified, e?.row.requirement, e?.row.startOn]).toEqual([s.itemKey, "seed", s.choice, s.notified, s.requirement, s.startOn]);
+    const e = effectiveRow(rows, s.itemKey, YM);
+    expect([s.itemKey, e?.row.source, e?.row.fromMonth, e?.row.choice, e?.row.notified, e?.row.requirement, e?.row.startOn]).toEqual([s.itemKey, "seed", s.fromMonth, s.choice, s.notified, s.requirement, s.startOn]);
   }
   return rows.length;
 }
@@ -135,12 +135,16 @@ describe("種と移し替えの決まり", () => {
     expect(becomeDemo(db, "t")).toBe(0);
     expect(becomeDemo(db, "t")).toBe(0);
     expect(count()).toBe(first);
-    db.prepare("INSERT INTO facility_declarations (item_key, notified, requirement, choice, checked_by, checked_role, checked_on, recheck_on, source, created_at) VALUES ('note16', 'na', 'not_met', NULL, 'a', 'manager', '2026-10-13', '2027-01-13', 'input', 't')").run();
+    // 利用者が残した行が 1 つでもある項目には足さない（その行の from_month が種より後でも）
+    db.prepare("INSERT INTO facility_declarations (item_key, from_month, notified, requirement, choice, checked_by, checked_role, checked_on, recheck_on, source, created_at) VALUES ('note16', ?, 'na', 'not_met', NULL, 'a', 'manager', '2026-10-13', '2027-01-13', 'input', 't')").run(YM);
     db.prepare("INSERT INTO facility_declarations (item_key, notified, requirement, choice, checked_by, checked_role, source, created_at) VALUES ('dispensing', 'na', 'met', 'outside', 'system', 'system', 'migrated', 't')").run();
+    expect(becomeDemo(db, "t")).toBe(0);
+    // 同じ from_month の最新の行が種でなくなった項目（migrated で上書きした）には、種を足し直す
+    db.prepare("INSERT INTO facility_declarations (item_key, from_month, notified, requirement, choice, checked_by, checked_role, source, created_at) VALUES ('dispensing', ?, 'na', 'met', 'outside', 'system', 'system', 'migrated', 't')").run(demoSeedRows()[0].fromMonth);
     expect(becomeDemo(db, "t")).toBe(1);
     const rows = readDeclarations(db);
-    expect(effectiveRow(rows, "note16", { yearMonth: YM })?.row.source).toBe("input");
-    expect(effectiveRow(rows, "dispensing", { yearMonth: YM })?.row.source).toBe("seed");
+    expect(effectiveRow(rows, "note16", YM)?.row.source).toBe("input");
+    expect(effectiveRow(rows, "dispensing", YM)?.row.source).toBe("seed");
     db.close();
     // 開き直しても増えない
     const before = readDeclarations(dbOf(p.dbFile)).length;
@@ -167,16 +171,64 @@ describe("種と移し替えの決まり", () => {
       ["code:4303", "yes", "met", null, "migrated", null, null],
     ]);
     expect(db.prepare("SELECT value FROM app_settings WHERE key = 'facility'").get()).toEqual({ value: JSON.stringify({ priceResponse: false }) });
-    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, note16Met: null, dxTier: null, baseUp: null });
+    // 移した行は from_month が空なので効く行に選ばれない（推し量って埋めない）
+    expect(rows.every((r) => r.fromMonth === null)).toBe(true);
+    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
     db.close();
   });
 
-  it("src/ の中で、クリニックの種類を demo にする SQL を直書きしていない。種の行を足すのは src/facility/seed.ts だけ", () => {
+  it("kind を auth.db に書いたあと applyKind の前で止めた状態から開き直すと、種（demo）か移し替え（real）が入り、印が kind と同じ。2 回開いても行が増えない", () => {
+    for (const kind of ["demo", "real"] as const) {
+      const p = pathsOf();
+      // 未定で開いた app.db（印なし・申告なし）に、kind だけが auth.db に書かれた状態
+      openApp(p, { kind: "undecided" }).close();
+      let db = dbOf(p.dbFile);
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('facility', ?)").run(JSON.stringify({ note16Met: true }));
+      expect(db.prepare("SELECT value FROM app_settings WHERE key = ?").get(APPLIED_KEY)).toBeUndefined();
+      db.close();
+      openApp(p, { kind }).close();
+      db = dbOf(p.dbFile);
+      const n = readDeclarations(db).length;
+      expect([kind, (db.prepare("SELECT value FROM app_settings WHERE key = ?").get(APPLIED_KEY) as { value: string }).value]).toEqual([kind, kind]);
+      expect([kind, readDeclarations(db).map((r) => r.source)[0]]).toEqual([kind, kind === "demo" ? "seed" : "migrated"]);
+      db.close();
+      openApp(p, { kind }).close();
+      openApp(p, { kind }).close();
+      expect([kind, readDeclarations(dbOf(p.dbFile)).length]).toEqual([kind, n]);
+    }
+  });
+
+  it("マイグレーション 13：from_month のない種の行（12 で入れた）は、種の from_month で追記して直り K1〜K7 が v28 と同じ。input・migrated の行は空のまま残る", () => {
+    const p = pathsOf();
+    mkdirSync(path.dirname(p.dbFile), { recursive: true });
+    const old = dbOf(p.dbFile);
+    migrate(old, APP_MIGRATIONS.slice(0, 12));
+    // v29（段 17b）の種：from_month の列がなく、算定開始年月日は前月の初日
+    for (const s of demoSeedRows()) {
+      old.prepare("INSERT INTO facility_declarations (item_key, notified, notified_on, start_on, requirement, choice, checked_by, checked_role, checked_on, recheck_on, source, created_at) VALUES (?, ?, NULL, ?, ?, ?, 'system', 'system', ?, ?, 'seed', 't')").run(s.itemKey, s.notified, s.startOn ? "2026-09-01" : null, s.requirement, s.choice, s.checkedOn, s.recheckOn);
+    }
+    old.prepare("INSERT INTO facility_declarations (item_key, notified, requirement, choice, checked_by, checked_role, checked_on, recheck_on, source, created_at) VALUES ('code:9999', 'yes', 'met', NULL, 'a', 'manager', '2026-10-01', '2027-10-01', 'input', 't')").run();
+    old.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'demo')").run(APPLIED_KEY);
+    old.close();
+    const app = openApp(p, { kind: "demo" });
+    expect(seedIsEffective(p.dbFile)).toBe(demoSeedRows().length * 2 + 1);
+    sameAsV28(app);
+    app.close();
+    const rows = readDeclarations(dbOf(p.dbFile));
+    expect(rows.filter((r) => r.source === "input").map((r) => r.fromMonth)).toEqual([null]);
+  });
+
+  it("src/ の中で、クリニックの種類を demo にする SQL を直書きしていない。種の行を足すのは src/facility/seed.ts の becomeDemo だけ", () => {
     const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(path.join(dir, f)).isDirectory() ? files(path.join(dir, f)) : /\.tsx?$/.test(f) ? [path.join(dir, f)] : []));
     const src = files(path.join(repo, "src"));
     const demoKind = /tenants[^;`"]*kind\s*=\s*'demo'|INSERT INTO tenants[^;`"]*'demo'/;
     expect(src.filter((f) => demoKind.test(readFileSync(f, "utf8"))).map((f) => path.relative(repo, f))).toEqual([]);
     const seeds = src.filter((f) => /source:\s*"seed"|'seed'\)/.test(readFileSync(f, "utf8"))).map((f) => path.relative(repo, f));
     expect(seeds).toEqual([path.join("src", "facility", "seed.ts")]);
+    // seed.ts の中でも、種の中身（source: "seed"）を作るのは demoSeedRows だけで、それを呼ぶのは becomeDemo だけ
+    const seedTs = readFileSync(path.join(repo, "src", "facility", "seed.ts"), "utf8");
+    const fnOf = (i: number) => [...seedTs.slice(0, i).matchAll(/export function (\w+)/g)].at(-1)?.[1];
+    expect([...seedTs.matchAll(/source:\s*"seed"/g)].map((m) => fnOf(m.index))).toEqual(["demoSeedRows"]);
+    expect([...seedTs.matchAll(/(?<!function )demoSeedRows\(\)/g)].map((m) => fnOf(m.index))).toEqual(["becomeDemo"]);
   });
 });

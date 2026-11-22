@@ -3,7 +3,7 @@
 // 今日の日付は呼び出し側が時計（§11-7）から渡す。ここでは時計を読まない
 import kijun from "../../config/shisetsu-kijun.json";
 import type { FacilityJson } from "../engine/facility";
-import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES } from "./codes";
+import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES, HOSPITAL_SIDE_CODES } from "./codes";
 
 export type Notified = "yes" | "no" | "unknown" | "na";
 export type Requirement = "met" | "not_met" | "unknown";
@@ -13,6 +13,8 @@ export type DeclarationSource = "input" | "seed" | "migrated";
 export type DeclarationRow = {
   id: number;
   itemKey: string;
+  /** いつの診療月からの値か（"YYYY-MM"。P-2。マイグレーション 13 より前に残した行は null で、効く行に選ばない） */
+  fromMonth: string | null;
   notified: Notified;
   notifiedOn: string | null;
   /** 算定開始年月日（地方厚生局の名簿にある日。C-223） */
@@ -29,6 +31,8 @@ export type DeclarationRow = {
 
 export type UnknownReason =
   | "no_row"
+  | "no_month_row"
+  | "no_from_month"
   | "no_check_date"
   | "expired"
   | "notified_unknown"
@@ -48,6 +52,8 @@ export type On = { yearMonth: string; day?: string };
 /** 画面に出す、三値の理由 */
 export const TRI_REASON_LABEL: Record<UnknownReason | NotReason, string> = {
   no_row: "申告がありません",
+  no_month_row: "その診療月の申告がありません",
+  no_from_month: "その診療月の申告がありません（いつの診療月からを入れてください）",
   no_check_date: "確かめた日か確かめ直す日が入っていません",
   expired: "確かめ直す日を過ぎています",
   notified_unknown: "届出が分からない",
@@ -56,7 +62,7 @@ export const TRI_REASON_LABEL: Record<UnknownReason | NotReason, string> = {
   mid_month_start: "月の途中から算定開始です",
   grade_unknown: "施設の種別が分からない",
   grade_requirement_not_met: "種別の要件を満たさないと申告されています。種別を直してください",
-  hospital: "在宅療養支援病院のコードです（診療所は持ちません）",
+  hospital: "病院の施設基準のコードです（診療所は持ちません）",
   notified_no: "届出なし",
   requirement_not_met: "要件を満たさない",
   before_start: "算定日が算定開始年月日より前です",
@@ -84,34 +90,48 @@ function lastDayOf(ym: string): string {
   return `${ym}-${pad(new Date(Date.UTC(y, m, 0)).getUTCDate())}`;
 }
 
-/** 比べる日：算定日、なければ診療年月の末日 */
-const compareDayOf = (on: On): string => on.day ?? lastDayOf(on.yearMonth);
+/** 同じ項目の、from_month のある行を、有効月（from_month）ごとの組にする（組の中は id の順。組は有効月の順） */
+export function monthGroups(rows: DeclarationRow[], itemKey: string): { fromMonth: string; rows: DeclarationRow[] }[] {
+  const by = new Map<string, DeclarationRow[]>();
+  for (const r of rows.filter((x) => x.itemKey === itemKey && x.fromMonth !== null).sort((a, b) => a.id - b.id)) by.set(r.fromMonth!, [...(by.get(r.fromMonth!) ?? []), r]);
+  return [...by].sort(([a], [b]) => a.localeCompare(b)).map(([fromMonth, rs]) => ({ fromMonth, rows: rs }));
+}
 
 /**
- * 効く行（C-215）：比べる日より後の算定開始年月日を持つ行を除いたうち、最新の行。残らなければ最新の行。
- * later は、効く行より後にあり、算定開始年月日が比べる日より後の行（先の日付の変更）。効く行の「確かめ直す日」を、その行を残した日で比べるのに使う
+ * 効く行（design.md §15-2。P-2・round-50 C-240）：from_month がその診療年月以前の行のうち、from_month が最大の組の最新（MAX(id)）の行。
+ * 行を入れた順は結果に効かない（id は同じ from_month の中の直しにだけ使う）。from_month が空の行は選ばない。
+ * nextFirst は直後の組（from_month が診療年月より後で最小の組）で最初に残した行（MIN(id)。round-53 C-271）。効く行の「確かめ直す日」を、その行を確かめた日で比べるのに使う
  */
-export function effectiveRow(rows: DeclarationRow[], itemKey: string, on: On): { row: DeclarationRow; later: DeclarationRow | null } | null {
-  const mine = rows.filter((r) => r.itemKey === itemKey).sort((a, b) => a.id - b.id);
-  if (!mine.length) return null;
-  const cmp = compareDayOf(on);
-  const eligible = mine.filter((r) => !(r.startOn !== null && r.startOn > cmp));
-  const row = eligible.at(-1) ?? mine.at(-1)!;
-  const later = mine.find((r) => r.id > row.id && r.startOn !== null && r.startOn > cmp) ?? null;
-  return { row, later };
+export function effectiveRow(rows: DeclarationRow[], itemKey: string, yearMonth: string): { row: DeclarationRow; nextFirst: DeclarationRow | null } | null {
+  const groups = monthGroups(rows, itemKey);
+  const cur = groups.filter((g) => g.fromMonth <= yearMonth).at(-1);
+  if (!cur) return null;
+  const next = groups.find((g) => g.fromMonth > yearMonth);
+  return { row: cur.rows.at(-1)!, nextFirst: next?.rows[0] ?? null };
+}
+
+/** 年月を n か月ずらす（"YYYY-MM"） */
+export function addMonths(ym: string, n: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
 }
 
 const unknown = (reason: UnknownReason): Tri => ({ v: "unknown", reason });
 const not = (reason: NotReason, startOn?: string): Tri => (startOn ? { v: "not", reason, startOn } : { v: "not", reason });
 const HELD: Tri = { v: "held" };
 
-/** 決める順の 2 の前半（行がない・日付がない・確かめ直す日を過ぎた） */
-function gate(e: ReturnType<typeof effectiveRow>, today: string): Tri | null {
-  if (!e) return unknown("no_row");
-  const { row, later } = e;
+/** 決める順の 2 の前半（行がない・その診療月の行がない・日付がない・確かめ直す日を過ぎた） */
+function gate(rows: DeclarationRow[], itemKey: string, e: ReturnType<typeof effectiveRow>, today: string): Tri | null {
+  if (!e) {
+    const mine = rows.filter((r) => r.itemKey === itemKey);
+    if (!mine.length) return unknown("no_row");
+    return unknown(mine.every((r) => r.fromMonth === null) ? "no_from_month" : "no_month_row");
+  }
+  const { row, nextFirst } = e;
   if (!row.checkedOn || !row.recheckOn) return unknown("no_check_date");
-  // 先の日付の変更を入れたときは、前の行の確かめ直す日を、後の行を残した日で比べる（前の月が期限切れで「分からない」に落ちないように）
-  const ref = later?.checkedOn ?? today;
+  // 先の月からの変更を入れたときは、前の行の確かめ直す日を、その変更を入れた日（直後の組の最初の行を確かめた日）で比べる（前の月が期限切れで「分からない」に落ちないように）
+  const ref = nextFirst?.checkedOn ?? today;
   if (row.recheckOn < ref) return unknown("expired");
   return null;
 }
@@ -124,8 +144,8 @@ function startCheck(startOn: string, on: On): { mid: boolean; before: boolean } 
 
 /** 施設基準コードの行（`code:<4 桁>`）の三値 */
 function codeTri(rows: DeclarationRow[], code: string, on: On, today: string): Tri {
-  const e = effectiveRow(rows, codeKey(code), on);
-  const g = gate(e, today);
+  const e = effectiveRow(rows, codeKey(code), on.yearMonth);
+  const g = gate(rows, codeKey(code), e, today);
   if (g) return g;
   const row = e!.row;
   if (row.notified === "unknown") return unknown("notified_unknown");
@@ -141,8 +161,8 @@ function codeTri(rows: DeclarationRow[], code: string, on: On, today: string): T
 
 /** 種別の行の三値。持つとき、選んだ種別を返す */
 function gradeTri(rows: DeclarationRow[], on: On, today: string): { tri: Tri; choice: (typeof GRADE_CHOICES)[number] | null } {
-  const e = effectiveRow(rows, GRADE_KEY, on);
-  const g = gate(e, today);
+  const e = effectiveRow(rows, GRADE_KEY, on.yearMonth);
+  const g = gate(rows, GRADE_KEY, e, today);
   if (g) return { tri: g, choice: null };
   const row = e!.row;
   const choice = GRADE_CHOICES.find((c) => c.id === row.choice) ?? null;
@@ -161,17 +181,17 @@ function gradeTri(rows: DeclarationRow[], on: On, today: string): { tri: Tri; ch
 
 /** 注16 の行の三値（届出のコードがないので、算定開始年月日を見ない） */
 function note16Tri(rows: DeclarationRow[], on: On, today: string): Tri {
-  const e = effectiveRow(rows, NOTE16_KEY, on);
-  const g = gate(e, today);
+  const e = effectiveRow(rows, NOTE16_KEY, on.yearMonth);
+  const g = gate(rows, NOTE16_KEY, e, today);
   if (g) return g;
   if (e!.row.requirement === "unknown") return unknown("requirement_unknown");
   if (e!.row.requirement === "not_met") return not("requirement_not_met");
   return HELD;
 }
 
-/** 施設基準コード c を、その日（またはその月）に持つか。決める順は X-141 のとおり（在支病 → 分からない → 持たない → 持つ） */
+/** 施設基準コード c を、その日（またはその月）に持つか。決める順は X-141 のとおり（在支病・病院の側 → 分からない → 持たない → 持つ） */
 export function heldOf(rows: DeclarationRow[], code: string, on: On, today: string): Tri {
-  if ((HOSPITAL_CODES as readonly string[]).includes(code)) return not("hospital");
+  if ((HOSPITAL_CODES as readonly string[]).includes(code) || (HOSPITAL_SIDE_CODES as readonly string[]).includes(code)) return not("hospital");
   if (GRADE_CODES.includes(code)) {
     const { tri, choice } = gradeTri(rows, on, today);
     if (tri.v !== "held") return tri;
@@ -191,7 +211,7 @@ export const note16Of = (rows: DeclarationRow[], on: On, today: string) => note1
 
 /**
  * 判定に渡す施設の設定（月で決まる値）。grade・note16Met・dxTier・baseUp は必ず入れ、分からないときは null。
- * zaishishin・kyokagata・hasBeds は種別が分かるときだけ入れる（分からないときは呼び出し側の値のまま。種別が分からないときの判定は段 17c）
+ * 種別が分からないときは zaishishin・kyokagata・hasBeds も null（config の値を残さない。X-134 の三値の前提）
  */
 export function facilityFromDeclaration(rows: DeclarationRow[], today: string, yearMonth: string): Partial<FacilityJson> {
   const on: On = { yearMonth };
@@ -199,7 +219,7 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
   const grade = tri.v === "held" ? choice!.grade : null;
   const n16 = note16Tri(rows, on, today);
   const dx = codeTri(rows, "4100", on, today);
-  const dxChoice = effectiveRow(rows, codeKey("4100"), on)?.row.choice;
+  const dxChoice = effectiveRow(rows, codeKey("4100"), yearMonth)?.row.choice;
   const dxTier = dx.v === "held" ? (dxChoice === "1" || dxChoice === "2" ? dxChoice : null) : dx.v === "not" ? "なし" : null;
   const b5 = codeTri(rows, "4303", on, today);
   const b = codeTri(rows, "4307", on, today);
@@ -209,21 +229,107 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
     note16Met: n16.v === "held" ? true : n16.v === "not" ? false : null,
     dxTier,
     baseUp,
-    ...(grade === null ? {} : { zaishishin: grade !== "3", kyokagata: grade === "1B" || grade === "1N", hasBeds: grade === "1B" }),
+    ...(grade === null ? { zaishishin: null, kyokagata: null, hasBeds: null } : { zaishishin: grade !== "3", kyokagata: grade === "1B" || grade === "1N", hasBeds: grade === "1B" }),
   };
 }
 
-/** 院内処方か院外処方かの行の三値（決める順の 2 の前半と、選んだ値が「分からない」） */
-export function dispensingTri(rows: DeclarationRow[], today: string): Tri {
-  const e = effectiveRow(rows, DISPENSING_KEY, { yearMonth: today.slice(0, 7), day: today });
-  const g = gate(e, today);
+/** 院内処方か院外処方かの行の三値（月で決まる値。その診療年月で効く行。決める順の 2 の前半と、選んだ値が「分からない」） */
+export function dispensingTri(rows: DeclarationRow[], today: string, yearMonth: string): Tri {
+  const e = effectiveRow(rows, DISPENSING_KEY, yearMonth);
+  const g = gate(rows, DISPENSING_KEY, e, today);
   if (g) return g;
   const c = e!.row.choice;
   return c === "outside" || c === "inside" ? HELD : unknown("requirement_unknown");
 }
 
-/** 院内処方か院外処方か（G11 だけに渡す。段 18） */
-export function dispensingOf(rows: DeclarationRow[], today: string): "outside" | "inside" | "unknown" {
-  if (dispensingTri(rows, today).v !== "held") return "unknown";
-  return effectiveRow(rows, DISPENSING_KEY, { yearMonth: today.slice(0, 7), day: today })!.row.choice as "outside" | "inside";
+/** 院内処方か院外処方か（G11 だけに渡す。段 18）。その請求の診療年月で効く行で決める */
+export function dispensingOf(rows: DeclarationRow[], today: string, yearMonth: string): "outside" | "inside" | "unknown" {
+  if (dispensingTri(rows, today, yearMonth).v !== "held") return "unknown";
+  return effectiveRow(rows, DISPENSING_KEY, yearMonth)!.row.choice as "outside" | "inside";
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 画面に出す確かめの文・確かめ直す日の知らせ・まとめて「変わりなし」の選べる行（design.md §15-2。純関数）
+
+const REQUIREMENT_LABEL: Record<Requirement, string> = { met: "満たす", not_met: "満たさない", unknown: "分からない" };
+const NOTIFIED_LABEL: Record<Notified, string> = { yes: "届出あり", no: "届出なし", unknown: "届出が分からない", na: "" };
+const DISPENSING_LABEL: Record<string, string> = { outside: "院外処方だけ", inside: "院内処方もある", unknown: "分からない" };
+
+/** 申告の 1 行の値を短く（確かめの文と画面に使う） */
+export function valueLabel(row: DeclarationRow): string {
+  if (row.itemKey === GRADE_KEY) return GRADE_CHOICES.find((c) => c.id === row.choice)?.label ?? "分からない";
+  if (row.itemKey === NOTE16_KEY) return REQUIREMENT_LABEL[row.requirement];
+  if (row.itemKey === DISPENSING_KEY) return DISPENSING_LABEL[row.choice ?? "unknown"] ?? "分からない";
+  return `${NOTIFIED_LABEL[row.notified]}${row.choice ? `・加算${row.choice}` : ""}`;
+}
+
+/** 今日の前の月（入力欄の初期値と、さかのぼる直しの境目。設計の値） */
+export const prevMonthOf = (today: string): string => addMonths(today.slice(0, 7), -1);
+
+/**
+ * いつの診療月から（fromMonth）の行を残す前に見せる確かめの文（design.md §15-2 の 1。C-240）。
+ * 前の行があれば、その前の月は前の申告で判定すること。今日の前の月より前を選んだら（さかのぼる直し）、判定が変わる月の範囲と、先の月からの変更が残ること
+ */
+export function changeNotices(rows: DeclarationRow[], itemKey: string, fromMonth: string, today: string): string[] {
+  const out: string[] = [];
+  const before = effectiveRow(rows, itemKey, addMonths(fromMonth, -1));
+  if (before) out.push(`${fromMonth} より前の診療月の請求は、前の申告（${valueLabel(before.row)}）で判定します`);
+  const prev = prevMonthOf(today);
+  if (fromMonth < prev) {
+    const later = monthGroups(rows, itemKey).find((g) => g.fromMonth > fromMonth);
+    // 終わりの月：選んだ年月より後の行のうち最も早い from_month の前の月（そういう行がなければ今日の前の月）
+    const end = later ? addMonths(later.fromMonth, -1) : prev;
+    out.push(`${fromMonth} から ${end} までの請求の判定が変わります`);
+    if (later) out.push(`${later.fromMonth} からの請求は、「${valueLabel(later.rows.at(-1)!)}」のままです`);
+  }
+  return out;
+}
+
+/** 確かめ直す日の知らせの 1 行（項目と from_month の組の最新の行）。untilMonth は、この行が効く最後の診療月（null は今もこの先も効く） */
+export type RecheckNotice = { key: string; id: number; fromMonth: string; untilMonth: string | null; recheckOn: string | null; state: "overdue" | "soon" | "none" };
+
+/**
+ * 確かめ直す日の知らせ（FR-190。design.md §15-2。round-52 X-150・round-53 C-274）：組ごとに、その行が効く診療月で
+ * 「分からない」になるもの（確かめ直す日が空・比べる日より前）と、まだ効いていて確かめ直す日が近いもの。
+ * 比べる日は、直後の組があればその組で最初に残した行の確かめた日、なければ今日。noFromMonth は、from_month のある行が 1 つもない項目（from_month を入れてもらう）
+ */
+export function recheckNotices(rows: DeclarationRow[], today: string, soonUntil: string): { rows: RecheckNotice[]; noFromMonth: string[] } {
+  const keys = [...new Set(rows.map((r) => r.itemKey))];
+  const out: RecheckNotice[] = [];
+  const noFromMonth: string[] = [];
+  for (const key of keys) {
+    const groups = monthGroups(rows, key);
+    if (!groups.length) {
+      noFromMonth.push(key);
+      continue;
+    }
+    groups.forEach((g, i) => {
+      const row = g.rows.at(-1)!;
+      const nextFirst = groups[i + 1]?.rows[0] ?? null;
+      const base = { key, id: row.id, fromMonth: g.fromMonth, untilMonth: groups[i + 1] ? addMonths(groups[i + 1].fromMonth, -1) : null, recheckOn: row.recheckOn };
+      if (!row.checkedOn || !row.recheckOn) out.push({ ...base, state: "none" });
+      else if (row.recheckOn < (nextFirst?.checkedOn ?? today)) out.push({ ...base, state: "overdue" });
+      else if (!nextFirst && row.recheckOn <= soonUntil) out.push({ ...base, state: "soon" });
+    });
+  }
+  return { rows: out, noFromMonth };
+}
+
+/** まとめて「変わりなし」で選べる行（round-53 C-274）：項目ごとに、from_month のある組の最新の行の全部 */
+export const selectableRows = (rows: DeclarationRow[]): DeclarationRow[] =>
+  [...new Set(rows.map((r) => r.itemKey))].flatMap((key) => monthGroups(rows, key).map((g) => g.rows.at(-1)!));
+
+/**
+ * まとめて「変わりなし」の選ぶ画面の初期の選択（round-52 X-150・round-53 C-274）：申告の画面からは今日の前の月で効く行、
+ * 知らせからは知らせの行、判定の画面の理由からはその診療月で効く行（itemKey を渡せばその項目だけ）。from_month が空の行は選ばない
+ */
+export function initialSelection(rows: DeclarationRow[], from: { screen: string } | { notice: number } | { month: string; itemKey?: string }): number[] {
+  const selectable = new Set(selectableRows(rows).map((r) => r.id));
+  if ("notice" in from) return selectable.has(from.notice) ? [from.notice] : [];
+  const ym = "screen" in from ? prevMonthOf(from.screen) : from.month;
+  const keys = "month" in from && from.itemKey ? [from.itemKey] : [...new Set(rows.map((r) => r.itemKey))];
+  return keys.flatMap((k) => {
+    const e = effectiveRow(rows, k, ym);
+    return e ? [e.row.id] : [];
+  });
 }

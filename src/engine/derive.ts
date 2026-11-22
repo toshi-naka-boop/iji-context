@@ -14,6 +14,7 @@ import {
   sameDayOf,
   terminalVisitsOk,
   visitBillable,
+  visitBillableNeed,
   visitKubunOn,
 } from "./predicates";
 import { resolveRevision } from "./revisions";
@@ -196,7 +197,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const ok = visitBillable(ctx);
     if (ok === true) return "bill";
     if (ok === "unknown") {
-      lack(`D01-doc:${v.date}`, "contactDocProvided", [visitKubunOf(v), ...dayBlocks, ...kanriBlocks], v.date);
+      lack(`D01-doc:${v.date}`, visitBillableNeed(ctx), [visitKubunOf(v), ...dayBlocks, ...kanriBlocks], v.date);
       return "hold";
     }
     notBilled.push({ event: ref(v), reason: "after_oushin" });
@@ -236,6 +237,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const { family, tier, visits: count } = expectedKanri(ctx, c);
     if (tier.known === true && tier.value === "none") {
       // 訪問診療料が 0 回の月は立てない
+    } else if (facility.kyokagata === null) {
+      // 施設の種別が分からないと、管理料の区分（機能強化型か）が決まらない（design.md §15-2。種別ごとの区分は段 17d）
+      lack(`D03-grade:${input.yearMonth}`, "facility.grade", kanriBlocks);
+      kanriOpen = true;
     } else if (facility.kyokagata) kanriOpen = true;
     else if (visits.some((v) => v.sameBuildingCount >= 2)) {
       unsupported.push({ code: "single_building_multi", detail: "同一建物に複数の患者がいる訪問があります。単一建物の人数別の管理料の点数は扱っていません" });

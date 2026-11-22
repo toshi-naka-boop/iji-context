@@ -23,5 +23,6 @@
       "4303": "no"
     }
   },
-  "recheckNoticeDays": 30
+  "recheckNoticeDays": 30,
+  "recheckDefaultMonths": { "note16": 3, "default": 12 }
 }

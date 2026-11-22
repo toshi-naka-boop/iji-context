@@ -1,7 +1,7 @@
 // 表の作成と変更（マイグレーション）。どこまで適用したかは SQLite の PRAGMA user_version に持つ。
 // 表を変えるときは、下の列の末尾に次の番号を足す。適用済みの番号の SQL は書き換えない
 import type Database from "better-sqlite3";
-import { applyKind } from "../facility/seed";
+import { applyKind, becomeDemo } from "../facility/seed";
 import { CREATE_SQL } from "./schema";
 
 /** マイグレーションに渡す、開くクリニックのこと（run が種類で分かれるときに使う）。渡さなければ未定（何も入れない側） */
@@ -132,7 +132,20 @@ ALTER TABLE digest_items ADD COLUMN condition_note TEXT;
 CREATE TABLE facility_declarations (id INTEGER PRIMARY KEY AUTOINCREMENT, item_key TEXT NOT NULL, notified TEXT NOT NULL, notified_on TEXT, start_on TEXT, requirement TEXT NOT NULL, choice TEXT, checked_by TEXT NOT NULL, checked_role TEXT NOT NULL, checked_on TEXT, recheck_on TEXT, source TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX facility_declarations_item ON facility_declarations (item_key, id);
 `,
-    run: (sqlite, env) => applyKind(sqlite, env.kind, env.at),
+    // 種と移し替えは、行に from_month が要るので 13 の run で行う（12 の SQL は書き換えない。12 と 13 は同じ migrate の中で続けて当たる）
+  },
+  {
+    // 施設の申告に「いつの診療月から」（from_month）を足す（design.md §15-2。P-2・docs H-1）。効く行は、その診療年月以前で from_month が最大の組の最新の行。
+    // run：種（source: seed）の行は、種の from_month と算定開始年月日で新しい行を追記して直す（becomeDemo）。input・migrated の行は空のまま残す（推し量って埋めない。
+    // 空の行は効く行に選ばれず「分からない」）。続けて、クリニックの種類が決まっていれば申告をその種類に合わせる（12 の run だったもの）
+    version: 13,
+    sql: `
+ALTER TABLE facility_declarations ADD COLUMN from_month TEXT;
+`,
+    run: (sqlite, env) => {
+      if (sqlite.prepare("SELECT 1 FROM facility_declarations WHERE source = 'seed' LIMIT 1").get()) becomeDemo(sqlite, env.at);
+      applyKind(sqlite, env.kind, env.at);
+    },
   },
 ];
 

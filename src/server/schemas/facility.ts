@@ -18,7 +18,9 @@ const day = z
   .refine((s) => new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s)
   .nullable();
 const requirement = z.enum(["met", "not_met", "unknown"]);
-const checked = { checkedOn: day, recheckOn: day };
+/** いつの診療月から（"YYYY-MM"。どの項目のどの行にも必須。P-2）。空・ない値は 400 */
+const fromMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+const checked = { fromMonth, checkedOn: day, recheckOn: day };
 
 /** 施設の申告の 1 項目（POST /api/facility/declaration）。項目の鍵で形が分かれる */
 export const declarationBody = z.union([
@@ -26,6 +28,15 @@ export const declarationBody = z.union([
   z.strictObject({ item: z.literal("note16"), requirement, ...checked }),
   z.strictObject({ item: z.literal("dispensing"), choice: z.enum(["outside", "inside", "unknown"]), ...checked }),
   z.strictObject({ item: z.string().regex(/^code:\d{1,4}$/), notified: z.enum(["yes", "no", "unknown"]), requirement, startOn: day, notifiedOn: day, choice: z.enum(["1", "2"]).nullable(), ...checked }),
+]);
+
+/** まとめて「変わりなし」（POST /api/facility/declaration/confirm）：選んだ申告の行の id */
+export const confirmBody = z.strictObject({ ids: z.array(z.number().int().positive()).min(1).max(200) });
+
+/** まとめて「変わりなし」の初期の選択の問い（GET /api/facility/declaration/confirm）：知らせの行（notice）か、判定の画面の理由（month・item） */
+export const confirmQuery = z.union([
+  z.strictObject({ notice: z.coerce.number().int().positive() }),
+  z.strictObject({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), item: z.string().regex(/^(grade|note16|dispensing|code:\d{1,4})$/).optional() }),
 ]);
 
 /** 変更の記録の問い（GET /api/facility/declaration/history?item=） */

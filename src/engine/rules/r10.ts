@@ -1,6 +1,6 @@
 // R10 往診と訪問診療の同日・翌日（design.md §2-3-4・§11-5）と、緊急往診加算の対象患者。
 // 算定した行だけで判定し、出来事は見ない。同じ日の 2 つの行の関係は、医療事務が確かめた 2 つの事実（sameDaySeparate・sameDayOushinAfterVisit）で決める（述語 sameDayOf）
-import { billedOushinDays, billedVisitDays, sameDayOf, sameDayPairs, visitBillable, visitKubunOn } from "../predicates";
+import { billedOushinDays, billedVisitDays, sameDayOf, sameDayPairs, visitBillable, visitBillableNeed, visitKubunOn } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { ClaimContext, Finding, NeedKey, Rule } from "../types";
 import { addDays, finding, has } from "./util";
@@ -58,7 +58,7 @@ export function makeR10(c: RevisionConsts): Rule {
       const billable = visitBillable(ctx);
       // 文書提供を聞くのは、在支診で、往診料を立てられる同じ日（訪問診療のあとの往診）か翌日の組があるときだけ
       if (billable === "unknown") {
-        if (c1.length || d1.length) out.push(ask("contactDocProvided", refs([...c1, ...d1])));
+        if (c1.length || d1.length) out.push(ask(visitBillableNeed(ctx), refs([...c1, ...d1])));
       } else if (billable === false) {
         if (c1.length) out.push(finding(this, "要件不足", refs(c1), "same_day_as_visit"));
         if (d1.length) out.push(finding(this, "要件不足", refs(d1), "visit_day_after_oushin"));

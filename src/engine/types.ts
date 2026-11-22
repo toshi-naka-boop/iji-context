@@ -12,11 +12,12 @@ export type FacilityGrade = "1B" | "1N" | "2" | "3";
 export type Facility = {
   /** 施設の種別（施設の申告から決める。判定に使うのは段 17c から） */
   grade: Fact<FacilityGrade>;
-  /** 在宅療養支援診療所か */
-  zaishishin: boolean;
-  /** 機能強化型か */
-  kyokagata: boolean;
-  hasBeds: boolean;
+  /** 在宅療養支援診療所か。null は施設の種別が分からない（申告がない・確かめ直す日を過ぎたなど。design.md §15-2） */
+  zaishishin: boolean | null;
+  /** 機能強化型か（null は種別が分からない） */
+  kyokagata: boolean | null;
+  /** 病床があるか（null は種別が分からない） */
+  hasBeds: boolean | null;
   prefecture: string;
   /** 届出の有無（区分番号→届出済みか） */
   notifications: Record<string, boolean>;
