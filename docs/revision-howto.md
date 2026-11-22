@@ -50,7 +50,7 @@ npm run check:masters   # 今ある masters.db で確かめ直す
 - `config/demo.json`（診療年月・請求月・時計の初期値・データの版の印）、`config/business-days.json`（祝日）、`config/facility.json`（施設の設定）を直します
 - `fixtures/cases/`・`fixtures/charts/`・`fixtures/uke/patients.json`・`fixtures/notices/` を直し、`npx tsx scripts/gen-uke.ts`・`npx tsx scripts/gen-connect.ts`（連携の模擬データ。gen-uke のあと）・`npx tsx scripts/gen-notice.ts`・`npx tsx scripts/seed-knowledge.ts` で作り直します
 - 練習問題（`src/practice/`）が、新しいルールでも「違反を探す」題材になっているかを確かめます
-- すでに動いている環境のデータは、印が違う置き場の一覧を出して承認を取ってから退避します（`npx tsx scripts/reset-demo.ts --retire-stale`。消しません）
+- すでに動いている環境のデータは、印が違う置き場の一覧を出して承認を取ってから退避します（`npx tsx scripts/reset-demo.ts --retire-stale`。消しません。退避するのはデモで試すクリニックだけで、実在のデータで使うクリニック・未定のクリニック・種類を確かめられないものは退避しません。サーバーと同じ `RESEMEN_DATA` を付けて実行します）
 
 ## 5. 公的情報レジストリの適用版を見直す
 

@@ -221,7 +221,7 @@ describe("区分のキーの検査（knownKubun）", () => {
     app.close();
     // クリニックを開く処理（src/server/instance.ts）も、同じ関数で StoreOptions を作る
     const src = readFileSync(path.join(__dirname, "..", "..", "src", "server", "instance.ts"), "utf8");
-    expect(src).toContain("const store = storeOptionsOf(paths);");
+    expect(src).toContain("const store = storeOptionsOf(paths, kind);");
     expect(src).not.toMatch(/const store = \{ knowledgeDir/);
   });
 });

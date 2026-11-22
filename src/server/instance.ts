@@ -87,6 +87,16 @@ function touchTenant(id: string, a: App) {
     t.close();
   }
 }
+/**
+ * クリニックを開き直す（未定のクリニックの使い方を選んだあと。種類で作り物・時計の振る舞いが変わるので、今の種類で開き直す）。
+ * 次に getApp() を呼んだときに開く。ほかに実行中の呼び出しがあれば、そのハンドルは閉じずに手放す（使い終わったら捨てられる）
+ */
+export function reopenTenant(id: string) {
+  const t = tenants.get(id);
+  if (!t) return;
+  tenants.delete(id);
+  if ((active.get(id) ?? 0) <= 1) t.close();
+}
 /** 開いているクリニックの数（テスト用） */
 export const openTenantCount = () => tenants.size;
 export function tenantPaths(id: string): AppPaths {
@@ -94,19 +104,22 @@ export function tenantPaths(id: string): AppPaths {
   const dir = path.join(dataDir(), "tenants", id);
   return { root: process.cwd(), dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: path.join(dir, "query-log") };
 }
-/** クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く */
+/**
+ * クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く。
+ * 種類（demo／real／未定）は auth.db のクリニックの行で決まる。demo のクリニックにだけ、作り物の種（院内ルール・K6 の地域ルール）を入れる
+ */
 function openTenant(tenantId: string): App {
   const paths = tenantPaths(tenantId);
+  const kind = getAuth().tenantKind(tenantId);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
-  const store = storeOptionsOf(paths);
+  const store = storeOptionsOf(paths, kind);
   const fresh = !existsSync(paths.knowledgeDir);
-  if (fresh) {
-    seed(store);
-    syncSkills(store);
-  }
-  const a = openApp(paths);
-  // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
-  a.seedLocalRules();
+  if (fresh) seed(store);
+  // demo 以外は、開くたびに同期し直す（demo のときに Skill になった作り物の知識を外す。内容が変わらなければ世代も変わらない）
+  if (fresh || kind !== "demo") syncSkills(store);
+  const a = openApp(paths, { kind, decidedAt: getAuth().tenantDecidedAt(tenantId) });
+  // デモのクリニックだけ：院内ルールの種と、根拠のある地域ルール（K6 の合成の査定通知から）を入れておく（FR-79・FR-80）。すでにあれば（保管済みでも）入れ直さない
+  if (kind === "demo") a.seedLocalRules();
   a.upsertClerk(DEMO_CLERKS[1]);
   return a;
 }
@@ -116,6 +129,18 @@ function ensureClerk(a: App, user: User) {
   if (ensured.has(user.id)) return;
   a.upsertClerk({ id: clerkIdOf(user), name: user.name, callName: "さん", characterId: "a", role: user.id !== user.tenantId && user.role === "veteran" ? "veteran" : "clerk" });
   ensured.add(user.id);
+}
+
+/**
+ * 実在のクリニックで、日付が変わっていれば医師確認のリマインド・保留と会議の整理を回す（src/server/app/clock.ts の catchUp。同じ日のうちは何もしない）。
+ * 失敗しても、呼び出し（画面の操作）は止めない。サーバーログに残し、次のリクエストで回し直す（続けて失敗するときは間隔を空ける。clock.ts）
+ */
+function catchUp(a: App) {
+  try {
+    a.catchUp();
+  } catch (e) {
+    console.error(`[clock] 日付が変わったときの処理に失敗: ${e instanceof Error ? `${e.name}: ${e.message.slice(0, 300)}` : "error"}`);
+  }
 }
 
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
@@ -130,6 +155,7 @@ export function getApp(): App {
     const t = tenants.get(u.tenantId) ?? openTenant(u.tenantId);
     touchTenant(u.tenantId, t);
     ensureClerk(t, u);
+    catchUp(t);
     return t;
   }
   if (app) return app;

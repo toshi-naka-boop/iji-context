@@ -90,7 +90,7 @@ mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen/dep
 
 登録は招待制で、既定では招待コードのない登録を受け付けません。最初の 1 人は、次の手順で作ります。
 
-1. `sudo RESEMEN_DOMAIN=… RESEMEN_OPEN_SIGNUP=1 ./start.sh` で起動し、ログイン画面の「はじめて使う」で登録する
+1. `sudo RESEMEN_DOMAIN=… RESEMEN_OPEN_SIGNUP=1 ./start.sh` で起動し、ログイン画面の「はじめて使う」で登録する。このとき「デモで試す」か「実在のデータで使う」かを選ぶ（後から変えられない）
 2. `RESEMEN_OPEN_SIGNUP` を付けずに `start.sh` をもう一度実行する（招待なしの登録が閉じる）
 3. 2 人目からは、「設定」で役割を選んで招待コードを出し、渡す
 

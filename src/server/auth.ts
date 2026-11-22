@@ -9,9 +9,12 @@ import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { isRole, type Role } from "./roles";
+import { isTenantKind, type TenantKind, type TenantStatus } from "./tenant-kind";
 
 export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
+/** 使い方が未定のクリニックで、選ぶまで待ってもらうときの文言（src/server/errors.ts の TenantUndecided と同じ） */
+const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
 /** 招待コードの期限（日） */
 const INVITE_DAYS = 7;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -78,16 +81,52 @@ export function openAuth(dbFile: string) {
   type Row = { id: string; login: string; name: string; tenant_id: string | null; role: string };
   const toUser = (r: Row): User => ({ id: r.id, login: r.login, name: r.name, tenantId: r.tenant_id ?? r.id, role: isRole(r.role) ? r.role : "clerk" });
 
-  function insertUser(login: string, name: string, password: string, into: { tenantId: string; role: Role } | null): User {
+  /** into が null なら新しいクリニックを作る（種類は kind）。クリニックの行と利用者の行は同じトランザクションで入れる */
+  function insertUser(login: string, name: string, password: string, into: { tenantId: string; role: Role } | null, kind: TenantKind = "demo"): User {
     validateRegistration(login, name, password);
+    if (into === null && !isTenantKind(kind)) throw badRequest("クリニックの種類を選んでください", ["kind"]);
     if (db.prepare("SELECT 1 FROM users WHERE login = ?").get(login)) throw conflict("そのログイン ID は使われています");
     const id = `t${randomBytes(6).toString("hex")}`;
     const user: User = { id, login, name: name.trim(), tenantId: into?.tenantId ?? id, role: into?.role ?? "clerk" };
-    db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, login, user.name, hashPassword(password), new Date().toISOString(), user.tenantId, user.role);
+    const at = new Date().toISOString();
+    db.transaction(() => {
+      // 登録のときに選んだので、選んだ日時は作った日時
+      if (into === null) db.prepare("INSERT INTO tenants (id, kind, created_at, decided_at) VALUES (?, ?, ?, ?)").run(id, kind, at, at);
+      db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, login, user.name, hashPassword(password), at, user.tenantId, user.role);
+    })();
     return user;
   }
-  /** 新しい 1 人クリニックを作って登録する（招待なし）。API からは、開放登録を明示したときだけ呼ぶ（openSignup） */
-  const register = (login: string, name: string, password: string): User => insertUser(login, name, password, null);
+  /**
+   * 新しい 1 人クリニックを作って登録する（招待なし）。API からは、開放登録を明示したときだけ呼ぶ（openSignup）。
+   * kind はクリニックの種類（作るときに決め、変えない）。API は利用者が選んだ値を必ず渡す。省くのはテスト・スクリプトだけ（demo）
+   */
+  const register = (login: string, name: string, password: string, kind: TenantKind = "demo"): User => insertUser(login, name, password, null, kind);
+  /** クリニックの種類。行のないクリニック・読めない値は未定（安全側。demo とはみなさない） */
+  const tenantKind = (tenantId: string): TenantStatus => {
+    const k = (db.prepare("SELECT kind FROM tenants WHERE id = ?").get(tenantId) as { kind: string } | undefined)?.kind;
+    return isTenantKind(k) ? k : "undecided";
+  };
+  /** クリニックの使い方を選んだ日時（未定・行のないものは null）。登録のときに選んだクリニックは、作った日時 */
+  const tenantDecidedAt = (tenantId: string): string | null => (db.prepare("SELECT decided_at FROM tenants WHERE id = ?").get(tenantId) as { decided_at: string | null } | undefined)?.decided_at ?? null;
+  /** 未定のクリニックの種類を選べるか：事務長と、1 人で使っているクリニックの持ち主 */
+  const canChooseKind = (user: User): boolean => tenantKind(user.tenantId) === "undecided" && (user.role === "manager" || isSolo(user));
+  /**
+   * 未定のクリニックの種類を、一度だけ選ぶ（2026-11-22 利用者の判断）。選んだあとは変えられない（DB のトリガーでも止める）。
+   * 行がない未定のクリニックには、行を作る
+   */
+  function chooseKind(user: User, kind: TenantKind, now = new Date()): TenantKind {
+    if (!isTenantKind(kind)) throw badRequest("「デモで試す」か「実在のデータで使う」かを選んでください", ["kind"]);
+    return db
+      .transaction(() => {
+        if (tenantKind(user.tenantId) !== "undecided") throw conflict("このクリニックの使い方は、すでに決まっています（変えられません）");
+        if (!(user.role === "manager" || isSolo(user))) throw forbidden("クリニックの使い方を選べるのは事務長だけです");
+        const at = now.toISOString();
+        const r = db.prepare("UPDATE tenants SET kind = ?, decided_at = ? WHERE id = ? AND kind = 'undecided'").run(kind, at, user.tenantId);
+        if (r.changes === 0) db.prepare("INSERT INTO tenants (id, kind, created_at, decided_at) VALUES (?, ?, ?, ?)").run(user.tenantId, kind, at, at);
+        return kind;
+      })
+      .immediate();
+  }
 
   /** クリニックの利用者の人数 */
   const tenantSize = (tenantId: string) => (db.prepare("SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?").get(tenantId) as { n: number }).n;
@@ -102,6 +141,8 @@ export function openAuth(dbFile: string) {
    */
   function createInvite(by: User, role: Role, now = new Date()): { code: string; role: Role; expiresAt: string } {
     if (!canInvite(by)) throw forbidden("招待を作れるのは事務長だけです");
+    // 使い方が未定のあいだは招待を作らない（人が増えると、1 人のクリニックの持ち主が使い方を選べなくなる。反証 round-44 #4）
+    if (tenantKind(by.tenantId) === "undecided") throw conflict(UNDECIDED_WAIT);
     const code = randomBytes(16).toString("base64url");
     const expiresAt = new Date(now.getTime() + INVITE_DAYS * 86_400_000).toISOString();
     db.prepare("INSERT INTO invites (code_hash, tenant_id, role, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").run(sha256(code), by.tenantId, role, by.id, now.toISOString(), expiresAt);
@@ -145,6 +186,8 @@ export function openAuth(dbFile: string) {
         // 照合は長さの決まったハッシュどうしを、時間差の出ない比較で行う（見つからないときも同じだけ比べる）
         const same = timingSafeEqual(Buffer.from(inv?.code_hash ?? sha256(""), "hex"), Buffer.from(hash, "hex"));
         if (!inv || !same || inv.used_at !== null || inv.expires_at <= now.toISOString() || !isRole(inv.role)) throw refuse();
+        // 招待したクリニックの使い方が未定のあいだは受けない（招待は使わずに残す。選んだあとに使える）
+        if (tenantKind(inv.tenant_id) === "undecided") throw conflict(UNDECIDED_WAIT);
         const user = insertUser(login, name, password, { tenantId: inv.tenant_id, role: inv.role });
         db.prepare("UPDATE invites SET used_at = ?, used_by = ? WHERE code_hash = ? AND used_at IS NULL").run(now.toISOString(), user.id, hash);
         return user;
@@ -224,6 +267,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { dailyAll, acceptNotice, acceptedNotice, register, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

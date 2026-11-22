@@ -1,6 +1,7 @@
 "use client";
 // UKE の取り込み（月末。レセコンが書き出した提出用のファイルを読み込み、提出前の点検にかける）
-// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）
+// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）。
+// 実在のデータで使うクリニック（と未定のクリニック）では、見本を一覧に出さず、ダウンロードも出さない。同梱の見本と同じ内容のアップロードはサーバーが断る（2026-11-22 利用者の判断）
 import { useEffect, useState } from "react";
 import { payerLabel } from "../../src/messages";
 import { UKE_LIMITS } from "../../src/uke/limits";
@@ -32,8 +33,11 @@ export default function UkeImport() {
   const [done, setDone] = useState("");
   /** 消せるのは事務長とベテラン（サーバーでも確かめる） */
   const [canDelete, setCanDelete] = useState(false);
+  /** 実在のデータで使うクリニックか */
+  const [real, setReal] = useState(false);
   useEffect(() => {
     if (!user) return;
+    getJson<{ kind: string }>("/api/clock").then((c) => setReal(c.kind !== "demo")).catch(() => {});
     getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
     getJson<{ role: string }>("/api/auth/me").then((me) => setCanDelete(me.role === "veteran" || me.role === "manager")).catch(() => {});
   }, [user]);
@@ -82,8 +86,9 @@ export default function UkeImport() {
     <main className="shell">
       <TopBar />
       <PageGuide who="yusti" title="UKE 取り込み" tag="RULE ENGINE">
-        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。
+        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。{real ? "ファイルを選んでアップロードします。" : "見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。"}
       </PageGuide>
+      {real && <div className="notice">このクリニックは実在のデータで使う設定です。見本の UKE（合成データ）は出しません。同梱の見本と同じ内容のファイルは取り込めません。</div>}
       {err && <div className="notice warn">{err}</div>}
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {list.map((u) => u.unreadable || u.payer === null ? (

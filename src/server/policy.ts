@@ -11,9 +11,10 @@ const ALL: Role[] = ["clerk", "veteran", "manager", "doctor"];
 
 /**
  * public＝ログインなしで呼べる（ログイン・登録・ログアウト）／dev＝開発用（本番では 404。本番でなくてもログインが要る。ロールは問わない）／
- * ロールの配列＝そのロールだけ／{ roles, solo: true }＝そのロールに加えて、1 人で使っているクリニックの持ち主にも許す
+ * ロールの配列＝そのロールだけ／{ roles, solo: true }＝そのロールに加えて、1 人で使っているクリニックの持ち主にも許す／
+ * { roles, dev: true }＝そのロールに加えて、本番でなければ（開発では）どのロールにも許す（本番でも 404 にしない）
  */
-export type Rule = "public" | "dev" | Role[] | { roles: Role[]; solo: true };
+export type Rule = "public" | "dev" | Role[] | { roles: Role[]; solo: true } | { roles: Role[]; dev: true };
 
 /** その処理が外部のサービスに送るか：ai＝AI のサービス（Anthropic）／voice＝音声のサービス（ElevenLabs）／none＝送らない */
 export type External = "ai" | "voice" | "none";
@@ -33,6 +34,8 @@ export const POLICY = {
   // 注意書きへの同意（design.md §11-11）。本人だけ（誰の同意かはセッションで決める）
   "POST /api/consent": row(ALL, "none", false),
   "GET /api/auth/me": row(ALL, "none", false),
+  // 未定のクリニックの使い方（demo／real）を一度だけ選ぶ（2026-11-22 利用者の判断）：事務長と、1 人で使っているクリニックの持ち主
+  "POST /api/tenant/kind": row({ roles: ["manager"], solo: true }, "none", false),
   // 役割の切替（FR-144）：1 人で使っているクリニックの持ち主だけ。ロールでは許さない
   "POST /api/auth/role": row({ roles: [], solo: true }, "none", false),
   // 招待の発行・一覧・取り消し（FR-137）：事務長と、1 人で使っているクリニックの持ち主
@@ -137,8 +140,9 @@ export const POLICY = {
   "POST /api/character": row(ALL, "none", false),
   "POST /api/clerk/name": row(ALL, "none", false),
   "GET /api/clock": row(ALL, "none", false),
-  // 時計を進めるのは開発用（本番では 404）。進めると会議の整理と医師確認の期限がクリニック全体で動くため、利用者の操作にしない
-  "POST /api/clock": row("dev", "none", false),
+  // 時計を進める：デモのクリニックの事務長（公開版でも）と、開発ではどのロールでも。進めると会議の整理と医師確認の期限がクリニック全体で動くため、事務長に絞る。
+  // 実在のデータで使うクリニックでは、どのロールでも断る（ハンドラの中。src/server/app/clock.ts の advanceClock）
+  "POST /api/clock": row({ roles: ["manager"], dev: true }, "none", false),
   "GET /api/master": row(ALL, "none", false),
   // 声で答えた名前の聞き取り。音声のサービスに送り、漢字が混じっていれば AI のサービスにも送る（読みをひらがなにする）。申告は 1 つなので voice と書く
   "POST /api/voice/listen": row(ALL, "voice", false),
@@ -152,6 +156,12 @@ export const POLICY = {
 } as const satisfies Record<string, Row>;
 
 export type PolicyKey = keyof typeof POLICY;
+
+/**
+ * 使い方が未定のクリニックでも通す操作（ログインしている人の、選ぶ・待つための操作だけ）。ほかは src/server/http.ts の route が 409 で断る。
+ * 点検などの操作は、使い方が決まるまでさせない（2026-11-22 利用者の判断）
+ */
+export const UNDECIDED_ALLOWED: ReadonlySet<PolicyKey> = new Set<PolicyKey>(["GET /api/auth/me", "POST /api/auth/role", "POST /api/consent", "GET /api/clock", "POST /api/tenant/kind"]);
 /** ルートヘルパに渡す形（表のキーと、その行） */
 export type Allowed = { key: PolicyKey } & Row;
 
@@ -166,6 +176,7 @@ export function allow(key: PolicyKey): Allowed {
 export function permits(rule: Rule, user: Pick<User, "role">, solo: () => boolean): boolean {
   if (rule === "public" || rule === "dev") return true;
   if (Array.isArray(rule)) return rule.includes(user.role);
+  if ("dev" in rule) return rule.roles.includes(user.role) || process.env.NODE_ENV !== "production";
   return rule.roles.includes(user.role) || solo();
 }
 
