@@ -49,6 +49,10 @@ export const POLICY = {
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
   "GET /api/facility": row(["manager", "veteran"], "none", false),
   "POST /api/facility": row(["manager", "veteran"], "none", false),
+  // 施設の申告（design.md §15-9）：読むのはどのロールも（指摘の根拠を見られるように）、残すのは事務長と責任者
+  "GET /api/facility/declaration": row(ALL, "none", false),
+  "POST /api/facility/declaration": row(["manager", "veteran"], "none", false),
+  "GET /api/facility/declaration/history": row(ALL, "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),

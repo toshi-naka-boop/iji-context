@@ -6,7 +6,12 @@ export type Fact<T> = { known: true; value: T } | { known: false };
 
 export type Payer = "支払基金" | "国保連";
 
+/** 施設の種別（design.md §15-2）：1B＝機能強化型・病床あり／1N＝機能強化型・病床なし／2＝在支診（(2)イ・(3)）／3＝在支診以外 */
+export type FacilityGrade = "1B" | "1N" | "2" | "3";
+
 export type Facility = {
+  /** 施設の種別（施設の申告から決める。判定に使うのは段 17c から） */
+  grade: Fact<FacilityGrade>;
   /** 在宅療養支援診療所か */
   zaishishin: boolean;
   /** 機能強化型か */
@@ -30,7 +35,7 @@ export type Facility = {
 };
 
 /** 三値で持つ施設の設定のキー（不明なら、それに依存するルールは情報不足になる。design.md §2-7） */
-export type FacilityFactKey = "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
+export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
 
 /** 患者の居住の場所。管理料の族（在医総管／施設総管）を決める */
 export type Residence = "居宅" | "施設入居等";

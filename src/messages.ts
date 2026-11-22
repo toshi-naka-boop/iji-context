@@ -227,6 +227,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
 export const FACILITY_LABEL: Record<FacilityFactKey, string> = {
+  grade: "施設の種別（在宅療養支援診療所の区分）",
   dxTier: "在宅医療DX情報活用加算の届出の区分",
   baseUp: "ベースアップ評価料の届出の区分",
   priceResponse: "物価対応料を算定するか",

@@ -109,8 +109,15 @@ describe("施設の設定のルート", () => {
       { key: "zaishishin", value: false },
       { key: "note16Met", value: true, claimId: claimId("K1") },
       { key: "note16Met" },
+      // 施設の種別・注16・DX・ベースアップは施設の申告に移した（design.md §15-2）。設定の入口では受け取らない
+      { key: "dxTier", value: "1" },
+      { key: "baseUp", value: "通常" },
+      { key: "note16Met", value: true },
+      { key: "grade", value: "2" },
+      { key: "priceResponse", value: "はい" },
     ]) expect([JSON.stringify(body), (await (await routes()).POST(post(cookie, body))).status]).toEqual([JSON.stringify(body), 400]);
-    expect((await itemOf("note16Met"))?.saved).toBe(false);
+    expect((await itemOf("priceResponse"))?.saved).toBe(false);
+    expect(await itemOf("note16Met")).toBeUndefined();
   });
 
   it("残すと、その項目の情報不足が消えて判定が変わる。「分からない」に戻すと情報不足に戻る。監査ログには項目の名前だけ", async () => {
@@ -131,22 +138,25 @@ describe("施設の設定のルート", () => {
     expect(((await back.json()) as { items: { key: string; value: unknown; saved: boolean }[] }).items.find((i) => i.key === "revisitBaseUpSameDay")).toEqual({ key: "revisitBaseUpSameDay", value: null, saved: true });
     expect(r08()).toEqual({ missing: ["facility.revisitBaseUpSameDay:clerk"], findings: [] });
     // 既定値が分かっている項目も「分からない」にできる（ほかの項目は既定値のまま）
-    expect((await save("dxTier", null)).status).toBe(200);
-    expect(await itemOf("dxTier")).toEqual({ key: "dxTier", value: null, saved: true });
-    expect(await itemOf("note16Met")).toEqual({ key: "note16Met", value: true, saved: false });
-    expect((await save("dxTier", "1")).status).toBe(200);
+    expect((await save("priceResponse", null)).status).toBe(200);
+    expect(await itemOf("priceResponse")).toEqual({ key: "priceResponse", value: null, saved: true });
+    expect(await itemOf("revisitPriceSameDay")).toEqual({ key: "revisitPriceSameDay", value: null, saved: false });
+    expect((await save("priceResponse", true)).status).toBe(200);
 
     const log = instance.runAs(owner, () => instance.getApp().audit.list(500)).filter((l) => l.action === "POST /api/facility" && l.result === "ok");
-    expect(log.map((l) => l.target).reverse()).toEqual(["revisitBaseUpSameDay", "revisitBaseUpSameDay", "revisitBaseUpSameDay", "dxTier", "dxTier"]);
+    expect(log.map((l) => l.target).reverse()).toEqual(["revisitBaseUpSameDay", "revisitBaseUpSameDay", "revisitBaseUpSameDay", "priceResponse", "priceResponse"]);
   });
 
-  it("症例ごとの上書きは、クリニックで残した値より優先する（K7 は note16Met を偽に上書きしている）", async () => {
+  it("症例ごとの上書きは、クリニックの申告より優先する（K7 は note16Met を偽に上書きしている）", async () => {
     setRole("manager");
-    expect((await save("note16Met", null)).status).toBe(200);
+    const decl = await import("../../app/api/facility/declaration/route");
+    const note16 = (requirement: string) =>
+      decl.POST(new Request("http://localhost/api/facility/declaration", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ item: "note16", requirement, checkedOn: day(13), recheckOn: "2027-01-13" }) }));
+    expect((await note16("unknown")).status).toBe(200);
     const facility = (id: string) => instance.runAs(owner, () => instance.getApp().caseOf(id).facility);
     expect(facility(claimId("K7")).note16Met).toEqual({ known: true, value: false });
     expect(facility(claimId("K1")).note16Met).toEqual({ known: false });
-    expect((await save("note16Met", true)).status).toBe(200);
+    expect((await note16("met")).status).toBe(200);
     expect(facility(claimId("K1")).note16Met).toEqual({ known: true, value: true });
   });
 });

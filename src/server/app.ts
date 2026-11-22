@@ -53,7 +53,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const erase = createErase(ctx, uke, patientFactsOf);
   const revision = createRevision(uke, casesOf, notes);
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
-  const facility = createFacility(ctx);
+  const facility = createFacility(ctx, clock, uke);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;

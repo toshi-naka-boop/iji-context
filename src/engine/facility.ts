@@ -2,12 +2,13 @@
 // JSON では null を「不明」とし、ここで三値（Fact）に変える。重ねるのはこの 1 か所
 import type { Facility, FacilityFactKey, Fact } from "./types";
 
-export const FACT_KEYS: FacilityFactKey[] = ["dxTier", "baseUp", "priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"];
+export const FACT_KEYS: FacilityFactKey[] = ["grade", "dxTier", "baseUp", "priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"];
 
 type ValueOf<F> = F extends Fact<infer T> ? T : never;
 /** 設定ファイルと症例の JSON での形。三値の項目は値そのものか null（不明） */
 export type FacilityJson = Omit<Facility, FacilityFactKey> & { [K in FacilityFactKey]: ValueOf<Facility[K]> | null };
 
+export const GRADES = ["1B", "1N", "2", "3"] as const;
 export const DX_TIERS = ["1", "2", "なし"] as const;
 export const BASE_UPS = ["通常", "注5", "なし"] as const;
 
@@ -19,6 +20,7 @@ export function facilityOf(config: FacilityJson, override: Partial<FacilityJson>
     const v = raw[k];
     (out as Record<FacilityFactKey, Fact<unknown>>)[k] = v === null || v === undefined ? { known: false } : { known: true, value: v };
   }
+  if (out.grade.known && !GRADES.includes(out.grade.value)) throw new Error(`施設の設定 grade の値が違う: ${String(out.grade.value)}`);
   if (out.dxTier.known && !DX_TIERS.includes(out.dxTier.value)) throw new Error(`施設の設定 dxTier の値が違う: ${String(out.dxTier.value)}`);
   if (out.baseUp.known && !BASE_UPS.includes(out.baseUp.value)) throw new Error(`施設の設定 baseUp の値が違う: ${String(out.baseUp.value)}`);
   for (const k of ["priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"] as const) {

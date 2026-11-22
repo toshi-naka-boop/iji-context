@@ -1,10 +1,14 @@
 // 表の作成と変更（マイグレーション）。どこまで適用したかは SQLite の PRAGMA user_version に持つ。
 // 表を変えるときは、下の列の末尾に次の番号を足す。適用済みの番号の SQL は書き換えない
 import type Database from "better-sqlite3";
+import { applyKind } from "../facility/seed";
 import { CREATE_SQL } from "./schema";
 
+/** マイグレーションに渡す、開くクリニックのこと（run が種類で分かれるときに使う）。渡さなければ未定（何も入れない側） */
+export type MigrationEnv = { kind: "demo" | "real" | "undecided"; at: string };
+
 /** sql を流したあと、run があれば続けて呼ぶ（同じトランザクションの中。表の形で分かれる直しに使う） */
-export type Migration = { version: number; sql: string; run?: (sqlite: Database.Database) => void };
+export type Migration = { version: number; sql: string; run?: (sqlite: Database.Database, env: MigrationEnv) => void };
 
 /** クリニックの種類の書き換えを止めるトリガー（未定 → demo／real の 1 回だけを許す） */
 const TENANTS_KIND_TRIGGER = "CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants WHEN NOT (OLD.kind = 'undecided' AND NEW.kind IN ('demo', 'real')) BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;";
@@ -120,6 +124,16 @@ ALTER TABLE digest_items ADD COLUMN polarity TEXT;
 ALTER TABLE digest_items ADD COLUMN condition_note TEXT;
 `,
   },
+  {
+    // 施設の申告（design.md §15-2。FR-188）：追記だけの表。項目ごとに、算定開始年月日つきの履歴から効く行を選ぶ（C-215）。前の行が変更の記録になる。
+    // run はクリニックの種類で分ける（C-214）：real は v28 の施設の設定を申告に移し、demo は種を入れる（C-222）、未定は何もしない（選んだときに開き直して入れる）
+    version: 12,
+    sql: `
+CREATE TABLE facility_declarations (id INTEGER PRIMARY KEY AUTOINCREMENT, item_key TEXT NOT NULL, notified TEXT NOT NULL, notified_on TEXT, start_on TEXT, requirement TEXT NOT NULL, choice TEXT, checked_by TEXT NOT NULL, checked_role TEXT NOT NULL, checked_on TEXT, recheck_on TEXT, source TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX facility_declarations_item ON facility_declarations (item_key, id);
+`,
+    run: (sqlite, env) => applyKind(sqlite, env.kind, env.at),
+  },
 ];
 
 /** ログインの auth.db */
@@ -206,7 +220,7 @@ const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", {
  * まだ適用していない番号を、1 つのトランザクションの中で順に適用する。適用後のバージョンを返す。
  * 途中で失敗したら全部を巻き戻し、バージョンも進めない。DB のほうが新しいとき（古いコードで開いたとき）は、知らない表を壊さないよう止める
  */
-export function migrate(sqlite: Database.Database, migrations: Migration[]): number {
+export function migrate(sqlite: Database.Database, migrations: Migration[], env: MigrationEnv = { kind: "undecided", at: new Date().toISOString() }): number {
   migrations.forEach((m, i) => {
     if (m.version !== i + 1) throw new Error(`マイグレーションの番号が連番でない: ${i + 1} 番目が ${m.version}`);
   });
@@ -218,7 +232,7 @@ export function migrate(sqlite: Database.Database, migrations: Migration[]): num
       // ほかのプロセスが先に適用していることがあるので、書き込みのロックを取ってから読み直す
       for (const m of migrations.slice(versionOf(sqlite))) {
         if (m.sql) sqlite.exec(m.sql);
-        m.run?.(sqlite);
+        m.run?.(sqlite, env);
         sqlite.pragma(`user_version = ${m.version}`);
       }
       return versionOf(sqlite);

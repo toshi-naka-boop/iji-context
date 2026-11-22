@@ -67,6 +67,7 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
     claimId: "claim-1",
     yearMonth: "2025-03",
     facility: {
+      grade: known("2" as const),
       zaishishin: true,
       kyokagata: false,
       hasBeds: false,
