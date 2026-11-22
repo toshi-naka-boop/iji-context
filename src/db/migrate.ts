@@ -155,6 +155,16 @@ ALTER TABLE facility_declarations ADD COLUMN from_month TEXT;
 CREATE TABLE claim_reviews (claim_id TEXT NOT NULL, clerk_id TEXT NOT NULL, reviewed_at TEXT NOT NULL, PRIMARY KEY (claim_id, clerk_id));
 `,
   },
+  {
+    // カルテの「行ったこと」（design.md §15-6・15-7。段 18a。設計の「マイグレーション 14」を、段 17g が 14 を使ったので 15 にした）。
+    // acts：本人が確かめた行為と処方の記載の JSON（当てた結果・その日の院内・院外を含む）。NULL＝行ったことを確かめていない。本文と同じく、ログ・監査ログ・AI に送る文脈には出さない。
+    // chart_act_aliases：本人が選んだ「書かれた名前 → コード」（クリニックごと。前に選んだ対応。L-95）。区分誤りの出た対応は点検を呼んだ側が行を消す（C-250）
+    version: 15,
+    sql: `
+ALTER TABLE chart_notes ADD COLUMN acts TEXT;
+CREATE TABLE chart_act_aliases (written_norm TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (written_norm, tbl));
+`,
+  },
 ];
 
 /** ログインの auth.db */

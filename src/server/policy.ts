@@ -92,6 +92,12 @@ export const POLICY = {
   // 訪問カルテの一覧（消す相手を選ぶため）。消せる人と同じ役割。見えるのは、事務長には全部、ほかの人には自分が書いた分（src/server/app/notes.ts の listNotes）。本文は返さない
   "GET /api/chart": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/chart/[id]": row(WORK, "none", true),
+  // 事実と行ったことを、確かめた 1 回の操作で保存する（design.md §15-6）。カルテの保存と同じ
+  "POST /api/chart/acts": row(WORK, "none", true),
+  // 行ったことの候補（design.md §15-7）。読むだけ。書かれた名前（カルテの語）を受け取るので、患者の情報として扱う
+  "GET /api/chart/acts/candidates": row(WORK, "none", true),
+  // 基本マスターを名前で探す（design.md §15-7）。読むだけ。返すのは公開データの表・コード・名称だけ
+  "GET /api/masters/search": row(WORK, "none", false),
   // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
   "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ

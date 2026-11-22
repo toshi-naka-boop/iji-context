@@ -364,12 +364,15 @@ export async function talkToMentor(input: { user: User; clerkId: string; questio
   return r;
 }
 
-/** 訪問カルテを残し、AI が算定に要る事実を取り出す（FR-69）。取り出した事実は本人が確かめてから使う */
+/**
+ * 訪問カルテを残し、AI が算定に要る事実と行ったこと・処方の記載を取り出す（FR-69・FR-192。1 回の呼び出し）。取り出したものは本人が確かめてから使う。
+ * 行ったことは手元でマスターに当て（AI に送らない。design.md §15-7）、確かめる画面の当て方（review）を添えて返す
+ */
 export async function writeChart(input: { user: User; claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
-  return { ...saved, ...r };
+  return { ...saved, ...r, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
 }
 
 /** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */

@@ -1,5 +1,12 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
-import { validateFacts, type ChartNote, type ExtractedFact } from "../../chart/extract";
+import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
+import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
+import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
+import { rxDefault } from "../../chart/rx-default";
+import { dispensingOf } from "../../facility/declaration";
+import { readDeclarations } from "../../facility/seed";
+import { withMasters } from "../../masters/db";
+import { normName } from "../../notice/notice";
 import { claimPreviewOf } from "../../chart/claim";
 import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
 import { evaluate } from "../../engine";
@@ -21,7 +28,7 @@ import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
-import { declarationViewOf } from "./facility";
+import { declarationViewOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import type { LocalAbout } from "./local-pairs";
 import type { Uke } from "./uke";
@@ -48,7 +55,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
     return { id: Number(r.lastInsertRowid), date };
   }
-  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null; clerk_id: string };
+  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null; acts: string | null; clerk_id: string };
   function noteRow(id: number): NoteRow {
     const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
     if (!r) throw notFound(`カルテがない: ${id}`);
@@ -64,6 +71,117 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
+  // ───────────────────────────────────────────────────────────────────────
+  // 行ったこと（design.md §15-6・15-7。段 18a）：マスターに当てる・候補・確かめて保存する。請求は見ない（C-233）
+
+  /** その診療年月で効く申告の院内・院外（院外処方だけ・院内処方もある・分からない） */
+  const dispensingFor = (yearMonth: string): RxChoice => dispensingOf(readDeclarations(sqlite), todayOf(clock), yearMonth);
+  const tablesOfKey = (key: TableKey): Tbl[] => (key === "toyaku" ? ["iyakuhin", "shinryo"] : [key]);
+  /** 前に選んだ対応（引く表のうち、いちばん新しく選んだもの） */
+  function aliasOf(written: string, key: TableKey): Alias | null {
+    const t = tablesOfKey(key);
+    const r = sqlite
+      .prepare(`SELECT tbl, code FROM chart_act_aliases WHERE written_norm = ? AND tbl IN (${t.map(() => "?").join(", ")}) ORDER BY chosen_at DESC LIMIT 1`)
+      .get(normName(written), ...t) as Alias | undefined;
+    return r ?? null;
+  }
+  type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[] };
+  /**
+   * 確かめる画面に並べる当て方（行為ごと・with の子ごと）と、その診療年月の申告の院内・院外、処方の文から決めた院内・院外の初期値（C-243）。
+   * 前に選んだ対応は選んだ状態の初期値で出す（保存は本人の確かめのあと。L-95）。引数に請求を持たない（C-233）
+   */
+  function actsReview(yearMonth: string, acts: ChartAct[], rx: RxNote[]): ActsReview {
+    return withMasters((db) => {
+      const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
+      const rowsOf = (k: TableKey) => {
+        if (!rows.has(k)) rows.set(k, rowsFor(db, k, yearMonth));
+        return rows.get(k)!;
+      };
+      const one = (k: TableKey, written: string, lookup: string[]) => matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k));
+      const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.lookup)) }));
+      const aliasCount = matches.flatMap((m) => [m.act, ...m.with]).filter((m) => m.initial?.by === "alias").length;
+      return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
+    });
+  }
+  /** カルテの id から、確かめる画面の当て方 */
+  function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview {
+    return actsReview(caseOf(noteRow(id).claim_id).yearMonth, acts, rx);
+  }
+  /** 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで */
+  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[]): ItemMatch {
+    return withMasters((db) => matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key)));
+  }
+  /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
+  function searchMasters(key: TableKey, yearMonth: string, q: string) {
+    return withMasters((db) => searchRows(rowsFor(db, key, yearMonth), q).map(({ tbl, code, name }) => ({ tbl, code, name })));
+  }
+  /**
+   * 事実と行ったことを、本人が確かめた 1 回の操作で保存する（FR-95・FR-192）。どれもカルテに書かれた言葉（quote）を持っていなければならない。
+   * 当てたコードは、診療年月の 1 枚の、category で決めた表に実在するものだけ（名称はマスターの値に置き換える）。
+   * 本人が候補・探す・前に選んだものから選んだ対応は、クリニックごとに残す（L-95）。院内・院外は、院内処方もある施設で処方の記載がある日だけ残し、規則の初期値のままかを印にする（C-243）
+   */
+  function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }) {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
+    const note = JSON.parse(r.note) as ChartNote;
+    const v = validateFacts({ facts: input.facts }, note);
+    if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
+    const a = validateActs({ acts: input.acts, rx: input.rx }, noteText(note), true);
+    if (a.dropped.length) throw badRequest(`カルテにない言葉の行ったことがある: ${[...new Set(a.dropped.map((d) => d.why))].join("、")}`);
+    const yearMonth = caseOf(r.claim_id).yearMonth;
+    const chosen: { written: string; key: TableKey; m: ActMatch }[] = [];
+    const acts = withMasters((db) => {
+      const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
+      const check = (key: TableKey, written: string, m: ActMatch | null | undefined): ActMatch | null => {
+        if (!m) return null;
+        if (!rows.has(key)) rows.set(key, rowsFor(db, key, yearMonth));
+        const row = rowIn(rows.get(key)!, m.tbl, m.code);
+        if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${m.code}`, ["acts"]);
+        const out = { tbl: row.tbl, code: row.code, name: row.name, by: m.by };
+        if (m.by !== "name") chosen.push({ written, key, m: out });
+        return out;
+      };
+      return a.acts.map((x, i) => {
+        const src = input.acts[i];
+        const act: ChartAct = { ...x, match: check(tableKeyOfAct(x.category), x.written, src.match) };
+        if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, src.with?.[j]?.match) }));
+        return act;
+      });
+    });
+    const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
+    const rule = rxDefault(a.rx);
+    const choice = inside ? (input.rxChoice ?? rule) : null;
+    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person" };
+    const at = now();
+    sqlite.transaction(() => {
+      sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(v.facts), JSON.stringify(stored), id);
+      for (const c of chosen) {
+        const wn = normName(c.written);
+        // 投薬は医薬品と第5部の両方を引くので、別の表に残した対応は外す（同じ書き方の対応は 1 つ）
+        for (const t of tablesOfKey(c.key)) if (t !== c.m.tbl) sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ?").run(wn, t);
+        sqlite
+          .prepare("INSERT INTO chart_act_aliases (written_norm, tbl, code, chosen_by, chosen_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(written_norm, tbl) DO UPDATE SET code = excluded.code, chosen_by = excluded.chosen_by, chosen_at = excluded.chosen_at")
+          .run(wn, c.m.tbl, c.m.code, clerkId, at);
+      }
+    })();
+    return { claimId: r.claim_id, date: r.date };
+  }
+  /** 保存した行ったこと（確かめていなければ null） */
+  const savedActs = (id: number): StoredActs | null => {
+    const r = noteRow(id);
+    return r.acts === null ? null : (JSON.parse(r.acts) as StoredActs);
+  };
+  /**
+   * 区分誤りの出た対応を覚えない（C-250・C-263）：点検（G11）が返した kubunDoubts の行を消す。点検は書き込まないので、点検を呼んだ側がこれを呼ぶ。
+   * 消すのは R18 の区分誤りの対応だけ（どの対応を渡すかは呼んだ側が決める）。消したあとも、そのコードは候補の 2〜5 に出てくる
+   */
+  function forgetAliases(doubts: { writtenNorm: string; tbl: string; code: string }[]): { forgotten: number } {
+    let n = 0;
+    for (const d of doubts) n += sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ? AND code = ?").run(d.writtenNorm, d.tbl, d.code).changes;
+    return { forgotten: n };
+  }
+
   /**
    * 訪問カルテを消す（design.md §11-11「消す」）。消せるのは、書いた本人と事務長だけ（ロールは権限表が先に絞る。ここでは本人かどうかを照合する）。
    * 消えるのは、そのカルテの行（本文と、そこから確かめた事実）と、そのカルテの算定プレビューで入れた摘要欄の記載。訪問の出来事と算定行は保存しておらず、残りのカルテから毎回作り直すので、消したカルテの分は次の計算から外れる。
@@ -99,6 +217,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       kind: r.kind as VisitKind,
       note: JSON.parse(r.note) as ChartNote,
       facts: JSON.parse(r.facts!) as ExtractedFact[],
+      acts: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs),
     }));
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
@@ -233,7 +352,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { saveNote, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

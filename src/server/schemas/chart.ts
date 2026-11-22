@@ -1,6 +1,8 @@
 // 訪問カルテの入力。書いた人は受け取らない（セッションの本人から決める）
 import { z } from "zod";
 import { FACT_KINDS } from "../../chart/extract";
+import { ACT_CATEGORIES, CHILD_KINDS, MASTER_TABLES, MAX_LOOKUP, TABLE_KEYS } from "../../chart/acts";
+import { YEAR_MONTH } from "../../demo/period";
 import { SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { MAX_IMAGE_BYTES } from "../../chart/image";
 import { MAX_CHART_TEXT } from "../../chart/limits";
@@ -22,6 +24,26 @@ export const noteParams = z.strictObject({ id: z.string().regex(/^[1-9][0-9]{0,9
 export const confirmBody = z.strictObject({
   facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
 });
+
+/** 行ったこと（design.md §15-6・15-7）。当てたコードは処理の中で、診療年月の 1 枚に実在するかを確かめる */
+const name200 = z.string().max(200);
+const lookup = z.array(z.string().max(100)).max(MAX_LOOKUP);
+const actMatch = z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["name", "alias", "candidate", "search"]) }).nullable().optional();
+const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch });
+const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch });
+/** 事実と行ったことを、確かめた 1 回の操作で保存する本文（POST /api/chart/acts） */
+export const actsBody = z.strictObject({
+  noteId: noteParams.shape.id,
+  facts: confirmBody.shape.facts,
+  acts: z.array(act).max(100),
+  rx: z.array(z.strictObject({ quote: z.string().max(MAX_CHART_TEXT) })).max(20),
+  rxChoice: z.enum(["outside", "inside", "unknown"]).nullable().optional(),
+});
+const ym = z.string().regex(YEAR_MONTH);
+/** 候補（GET /api/chart/acts/candidates）。lookup は「|」で区切った語（5 個まで） */
+export const candidatesQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, written: z.string().min(1).max(200), lookup: z.string().max(600).optional() });
+/** マスターを名前で探す（GET /api/masters/search） */
+export const mastersSearchQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, q: z.string().min(1).max(100) });
 
 /** 選べる版の id（比較と試算。請求の判定に使う版と、比較用の版） */
 export const revisionId = z.enum(SELECTABLE_REVISIONS.map((r) => r.id));
