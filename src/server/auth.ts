@@ -88,7 +88,8 @@ export function openAuth(dbFile: string) {
     const user: User = { id, login, name: name.trim(), tenantId: into?.tenantId ?? id, role: into?.role ?? "clerk" };
     const at = new Date().toISOString();
     db.transaction(() => {
-      if (into === null) db.prepare("INSERT INTO tenants (id, kind, created_at) VALUES (?, ?, ?)").run(id, kind, at);
+      // 登録のときに選んだので、選んだ日時は作った日時
+      if (into === null) db.prepare("INSERT INTO tenants (id, kind, created_at, decided_at) VALUES (?, ?, ?, ?)").run(id, kind, at, at);
       db.prepare("INSERT INTO users (id, login, name, password_hash, created_at, tenant_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, login, user.name, hashPassword(password), at, user.tenantId, user.role);
     })();
     return user;
