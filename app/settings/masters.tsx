@@ -74,7 +74,7 @@ export function Masters() {
           <p className="muted">要るデータがそろい、読み方を原文で確かめてある点検だけが動きます。</p>
           <ul>
             {status.checks.map((c) => (
-              <li key={c.check}>{c.check} {CHECK_LABELS[c.check] ?? ""}：{c.ready ? "準備できています" : `動かしません（${c.reason}）`}</li>
+              <li key={c.check}>{c.check} {CHECK_LABELS[c.check] ?? ""}：{c.ready ? `準備できています${c.reason ? `（${c.reason}）` : ""}` : `動かしません（${c.reason}）`}</li>
             ))}
           </ul>
           {howTo}

@@ -1,6 +1,6 @@
 // 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02〜G09 が点検していないこと（G04〜G06 は src/messages.ts の GENERIC_SCOPE_NOTE）。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
-import type { MastersDb } from "../masters/db";
+import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, type MastersDb } from "../masters/db";
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
@@ -20,7 +20,7 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
     if (Array.isArray(list) && list.length > 0) out.recalc = recalcSummary(list);
     else out.notDone.push("点数の検算は、点数の書いてある単位（取り込んだレセプトの単位）にだけ掛けます。ここの行には点数が書いていないので、検算していません");
   }
-  if (ran("G03")) out.notDone.push(...g03NotDone(about));
+  if (ran("G03")) out.notDone.push(...g03NotDone(about), ...(masters !== null && !hasShisetsuGroups(masters) ? [OLD_SHISETSU_G03_REASON] : []));
   // 背反の特例条件の例外に当たるので出していない組（design.md §13-2 の 2。消えたことが分かるように、数と例外の id を出す）
   if ((result.silenced ?? []).length > 0) out.notDone.push(`特例の例外に当たるので出していない：${result.silenced!.reduce((s, x) => s + x.count, 0)} 件（${result.silenced!.map((x) => x.hx).join("・")}）`);
   // 院内の知識で「この請求も条件に当たる」と押したので出していない組と日（design.md §14-3。数と知識の id）

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { period } from "../../src/demo/period";
 import { r2026 } from "../../src/engine/revisions/r2026";
 import { MASTERS_CONFIG } from "../../src/masters/config";
-import { iyakuhinOf, openMasters, pickSnapshot, shinryoOf, sourcesOf, tokuteiOf } from "../../src/masters/db";
+import { iyakuhinOf, openMasters, pickSnapshot, shinryoOf, sourcesOf, tokuteiOf, unitCaseCollisions } from "../../src/masters/db";
 import { readEm, verifyMasters } from "../../src/masters/verify";
 
 const dir = process.env.RESEMEN_MASTER_DIR;
@@ -71,9 +71,25 @@ describe("実データの masters.db", () => {
     db.close();
   });
 
+  withData("単位の列（design.md §15-3。round-52 C-262）：錨の案 A117〜A119（EM の追記 E-8 の承認待ち）の値が入り、大文字・小文字の衝突の組を数える（L-98）", () => {
+    const db = openMasters(file)!;
+    const one = (t: string, code: string) => db.prepare(`SELECT unit_code, unit_name FROM ${t} WHERE snapshot = ? AND code = ?`).get(em.verified[t], code);
+    expect([one("shinryo", "114001470"), one("iyakuhin", "620008991"), one("tokutei", "739210000")]).toEqual([
+      { unit_code: 1, unit_name: "分" },
+      { unit_code: 33, unit_name: "ｇ" },
+      { unit_code: 37, unit_name: "Ｌ" },
+    ]);
+    // 20261102 の医科診療行為マスターで、量の単位のある行（データ規格コードが 0 でない）は 616 行（design.md §15-3 で原本の CSV から数えた）
+    expect((db.prepare("SELECT count(*) AS n FROM shinryo WHERE snapshot = ? AND unit_code != 0").get(em.verified.shinryo) as { n: number }).n).toBe(616);
+    const collisions = unitCaseCollisions(db);
+    process.stderr.write(`単位の名前の大文字・小文字の衝突：${collisions.length} 組${collisions.length ? `（${collisions.map((g) => g.join("／")).join("、")}）` : ""}\n`);
+    expect(Array.isArray(collisions)).toBe(true);
+    db.close();
+  });
+
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     // console は、通ったテストの分を vitest が表示しないことがあるので、標準エラーに直接書く
     if (!has) process.stderr.write(`実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 4);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 5);
   });
 });

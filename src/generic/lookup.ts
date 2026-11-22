@@ -2,7 +2,7 @@
 // 引くのは、診療年月に使う 1 枚（pickSnapshot）。世代の 1 枚がないマスターの分は、空のまま返す（近い世代で代用しない）
 import type { Revision } from "../engine/revisions/types";
 import type { Outside } from "../engine/types";
-import { checkReady, hasShisetsu, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
+import { checkReady, hasShisetsu, hasShisetsuGroups, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
 import type { GenericAbout } from "./types";
 
 const snapshotOf = (db: MastersDb, table: NamedMaster, about: GenericAbout): string | null => pickSnapshot(db, table, about.yearMonth, about.generation)?.snapshot ?? null;
@@ -20,7 +20,8 @@ export type RowNames = { items: Record<string, { name: string; no: string | null
 export function rowNamesOf(db: MastersDb, about: GenericAbout, codes: { items: { kind: "SI" | "IY" | "TO"; code: string }[]; comments: string[]; diseases: string[] }): RowNames {
   const out: RowNames = { items: {}, comments: {}, diseases: {} };
   const snap = { SI: snapshotOf(db, "shinryo", about), IY: snapshotOf(db, "iyakuhin", about), TO: snapshotOf(db, "tokutei", about), comment: snapshotOf(db, "comment", about), shobyo: snapshotOf(db, "shobyo", about) };
-  const todokede = checkReady(db, "G03")?.ready === true;
+  // 組ごとの列のない古い masters.db では印を付けず、G03 の点検の範囲と設定の画面に理由を出す（design.md §15-3。code M-8）
+  const todokede = checkReady(db, "G03")?.ready === true && hasShisetsuGroups(db);
   for (const { kind, code } of codes.items) {
     const s = snap[kind];
     if (s === null) continue;

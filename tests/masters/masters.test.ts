@@ -10,8 +10,10 @@ import type { Revision } from "../../src/engine/revisions/types";
 import { carryOver, createSchema, ingestAll } from "../../src/masters/build";
 import { MASTERS_CONFIG, snapshotOf } from "../../src/masters/config";
 import { MasterFormatError, readCsv } from "../../src/masters/csv";
-import { checkReady, mastersStatus, OLD_SHISETSU_REASON, openMasters, pickSnapshot, shinryoOf } from "../../src/masters/db";
+import { checkReady, hasUnitColumns, mastersStatus, OLD_SHISETSU_G03_REASON, OLD_SHISETSU_REASON, openMasters, pickSnapshot, shinryoOf, unitCaseCollisions } from "../../src/masters/db";
 import { LAYOUTS } from "../../src/masters/layout";
+import { genericScopeOf } from "../../src/generic/scope";
+import type { GenericAbout, GenericClaim, GenericResult } from "../../src/generic/types";
 import { parseEm, readEm, verifyMasters, type Em } from "../../src/masters/verify";
 
 const OUSHIN = r2026.codes.C000.primary; // 往診料（EM §2-8）
@@ -391,7 +393,9 @@ describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
     expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114717810'").get()).toEqual({ shisetsu_g1: "3055/4247/3057/3058", shisetsu_g2: "721", shisetsu_g3: "4101" });
     expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114018470'").get()).toEqual({ shisetsu_g1: "0", shisetsu_g2: "0", shisetsu_g3: "0" });
     expect([result.failures, failed(result.lines)]).toEqual([0, []]);
-    for (const id of ["G10", "G11"]) expect(result.ready.find((r) => r.check === id)).toMatchObject({ ready: true });
+    expect(result.ready.find((r) => r.check === "G11")).toMatchObject({ ready: true });
+    // G10 は区分番号の列の錨（A70・A72・A73）も要る（下の「区分番号の列」）。施設基準の列の錨は足りている
+    expect(result.ready.find((r) => r.check === "G10")!.missing).toEqual(["shinryo:sho", "shinryo:bu", "shinryo:kubun_no", "shinryo:eda", "shinryo:kou"]);
     expect(result.ready.find((r) => r.check === "G03")!.missing.filter((m) => m.includes("shisetsu"))).toEqual([]);
   });
 
@@ -422,6 +426,9 @@ describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
     db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G03', 1, '')").run();
     for (const id of ["G10", "G11"]) expect(checkReady(db, id)).toEqual({ ready: false, reason: OLD_SHISETSU_REASON });
     expect(checkReady(db, "G03")).toEqual({ ready: true, reason: "" });
+    // 古い形では「届出が要ります」の印を付けず、理由を G03 の点検の範囲の文と設定の画面の G03 の行に出す（黙って消さない。code M-8）
+    const scope = genericScopeOf({ units: [] } as unknown as GenericClaim, db, { yearMonth: "2026-10", generation: "R8" } as GenericAbout, { ran: [{ check: "G03", kind: "行の属性" }], findings: [] } as unknown as GenericResult);
+    expect(scope.notDone).toContain(OLD_SHISETSU_G03_REASON);
     // 設定の画面（mastersStatus）にも、行がなくても G10・G11 を出す
     const dir = path.join(tmp, "old-app");
     mkdirSync(dir, { recursive: true });
@@ -430,7 +437,8 @@ describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
     const before = process.env.RESEMEN_MASTER_DIR;
     process.env.RESEMEN_MASTER_DIR = dir;
     try {
-      expect(mastersStatus().checks.filter((c) => ["G10", "G11"].includes(c.check))).toEqual([
+      expect(mastersStatus().checks.filter((c) => ["G03", "G10", "G11"].includes(c.check))).toEqual([
+        { check: "G03", ready: true, reason: OLD_SHISETSU_G03_REASON },
         { check: "G10", ready: false, reason: OLD_SHISETSU_REASON },
         { check: "G11", ready: false, reason: OLD_SHISETSU_REASON },
       ]);
@@ -438,5 +446,95 @@ describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
       if (before === undefined) delete process.env.RESEMEN_MASTER_DIR;
       else process.env.RESEMEN_MASTER_DIR = before;
     }
+  });
+});
+
+describe("区分番号の列（design.md §15-3。code M-1）", () => {
+  const root = path.join(__dirname, "..", "..");
+  const real = readEm(root);
+  const ids = ["A70", "A72", "A73"];
+  const em: Em = { ...real, anchors: real.anchors.filter((a) => ids.includes(a.id)), formulas: [], counts: [] };
+  /** 錨の確かめる値の列 → 医科診療行為マスターの項番 */
+  const ITEM: Record<string, number> = { time_kasan: 43, kensa_kind: 50, kensa_group: 51, alpha: 85, sho: 90, bu: 91, kubun_no: 92, eda: 93, kou: 94, kokuji1: 68 };
+  const rowsOf = (kou?: string) =>
+    em.anchors.map((a) => {
+      const set: Record<number, string> = {};
+      for (const [col, v] of Object.entries(a.expect)) if (ITEM[col]) set[ITEM[col]] = v;
+      if (kou !== undefined) set[94] = kou;
+      return shinryoRow(a.where.code, `手作りの行 ${a.where.code}`, 0, set);
+    });
+  it("EM の A70・A72・A73 が区分番号の 5 列を縛り、G05・G10 の準備に入る", () => {
+    expect(em.anchors.map((a) => a.id)).toEqual(ids);
+    const raw = path.join(tmp, "kubun-ok");
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(rowsOf()));
+    const { db, rejected } = build(raw);
+    expect(rejected).toEqual([]);
+    const r = verifyMasters(db, em, { write: false, revisions: [] });
+    expect(r.failures).toBe(0);
+    for (const id of ["G05", "G10"]) expect([id, r.ready.find((x) => x.check === id)!.missing.filter((m) => /:(sho|bu|kubun_no|eda|kou)$/.test(m))]).toEqual([id, []]);
+  });
+  it("項番（kou）は形を見る列になった：数字でない値の行があれば、その表を作らない", () => {
+    const raw = path.join(tmp, "kubun-bad");
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis(rowsOf("X")));
+    expect(build(raw).rejected.map((r) => r.reason)).toEqual([expect.stringContaining("項番 94")]);
+  });
+});
+
+describe("単位の列（design.md §15-3。round-52 C-262。錨の案 A117〜A119 は EM の追記 E-8 の承認待ち）", () => {
+  // E-8 の錨の案（design.md §15-3）。EM に写すまでは、ここで作り物の EM の表として照らす
+  const ANCHORS = [
+    "| A117 | `shinryo` | `code=114001470` | `unit_code=1, unit_name=分` | 患家診療時間加算の数量の単位は分 | 原本の CSV |",
+    "| A118 | `iyakuhin` | `code=620008991` | `unit_code=33, unit_name=ｇ` | ゲーベンクリーム１％の単位は ｇ | 原本の CSV |",
+    "| A119 | `tokutei` | `code=739210000` | `unit_code=37, unit_name=Ｌ` | 液体酸素・可搬式液化酸素容器の単位は Ｌ | 原本の CSV |",
+  ];
+  const em = parseEm(EM(ANCHORS, []));
+  const iyakuhinRow = (code: string, unitCode: string, unitName: string, set: Record<number, string> = {}) => {
+    const c = Array.from({ length: 42 }, () => "0");
+    for (const [n, v] of Object.entries({ 3: code, 5: `手作りの薬 ${code}`, 8: unitCode, 10: unitName, 11: "1", 12: "10.00", 28: "6", 30: "20260601", 31: "99999999", ...set })) c[Number(n) - 1] = v;
+    return c;
+  };
+  const tokuteiRow = (code: string, unitCode: string, unitName: string) => {
+    const c = Array.from({ length: 38 }, () => "0");
+    for (const [n, v] of Object.entries({ 3: code, 5: `手作りの器材 ${code}`, 8: unitCode, 10: unitName, 11: "1", 12: "0.32", 21: "3", 28: "20260601", 29: "00000000", 30: "99999999" })) c[Number(n) - 1] = v;
+    return c;
+  };
+  /** at は単位の名前を置く項番（10 が仕様。ずらした作り物は 9 か 11） */
+  const run = (name: string, at = 10, units: { shinryo?: string; iyakuhin?: string } = {}) => {
+    const raw = path.join(tmp, `units-${name}`);
+    const unitSet = (code: string, unitName: string): Record<number, string> => (at === 10 ? { 8: code, 10: unitName } : { 8: code, [at]: unitName, 10: "" });
+    put(raw, "shinryo", "20261102", "s_20261102.csv", sjis([shinryoRow("114001470", "患家診療時間加算", 100, unitSet("1", units.shinryo ?? "分"))]));
+    put(raw, "iyakuhin", "20261112", "y_20261112.csv", sjis([iyakuhinRow("620008991", "33", units.iyakuhin ?? "ｇ")]));
+    put(raw, "tokutei", "20261001", "t_20261001.csv", sjis([tokuteiRow("739210000", "37", "Ｌ")]));
+    const { db, rejected } = build(raw);
+    return { db, rejected, result: verifyMasters(db, em, { write: false, revisions: [] }) };
+  };
+  it("医科診療行為の unit_code・unit_name、医薬品・特定器材の unit_name を読み、錨の案 A117〜A119 が通る", () => {
+    const { db, rejected, result } = run("ok");
+    expect(rejected).toEqual([]);
+    expect(db.prepare("SELECT unit_code, unit_name FROM shinryo WHERE code = '114001470'").get()).toEqual({ unit_code: 1, unit_name: "分" });
+    expect(db.prepare("SELECT unit_code, unit_name FROM iyakuhin WHERE code = '620008991'").get()).toEqual({ unit_code: 33, unit_name: "ｇ" });
+    expect(db.prepare("SELECT unit_code, unit_name FROM tokutei WHERE code = '739210000'").get()).toEqual({ unit_code: 37, unit_name: "Ｌ" });
+    expect([result.failures, result.lines.filter((l) => l.startsWith("錨："))]).toEqual([0, ["錨：3 個のうち 3 個が通った（データがなくて確かめていない 0 個）。確かめた回数 3"]]);
+  });
+  it("単位の列を 1 つずらした作り物の CSV では、錨が外れるか表を作らない", () => {
+    const before = run("before", 9);
+    expect(before.result.failures).toBeGreaterThan(0);
+    expect(before.result.lines.some((l) => l.startsWith("錨 A117 が外れた"))).toBe(true);
+    // 後ろへ 1 つ：項番11（点数識別）に単位の名前が入り、医科診療行為マスターを作らない
+    const after = run("after", 11);
+    expect(after.rejected.map((r) => r.reason)).toEqual([expect.stringContaining("項番 11")]);
+  });
+  it("大文字・小文字の衝突：3 表の単位の名前を小文字にそろえて同じになる、元の字の違う名前の組を求める", () => {
+    expect(unitCaseCollisions(run("same").db)).toEqual([]);
+    expect(unitCaseCollisions(run("collide", 10, { shinryo: "mL", iyakuhin: "ml" }).db)).toEqual([["mL", "ml"]]);
+    expect(unitCaseCollisions(run("collide-wide", 10, { shinryo: "ｍＬ", iyakuhin: "ｍｌ" }).db)).toEqual([["ｍＬ", "ｍｌ"]]);
+  });
+  it("単位の列のない古い masters.db：G11 の準備は止めず（checks_ready のまま）、単位の列が古い形であることだけが分かる", () => {
+    const { db } = run("old");
+    expect(hasUnitColumns(db)).toBe(true);
+    db.exec("ALTER TABLE iyakuhin DROP COLUMN unit_name");
+    db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G11', 1, '')").run();
+    expect(hasUnitColumns(db)).toBe(false);
+    expect(checkReady(db, "G11")).toEqual({ ready: true, reason: "" });
   });
 });

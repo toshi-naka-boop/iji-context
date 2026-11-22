@@ -61,15 +61,15 @@ export function pickSnapshot(db: MastersDb, dataset: string, yearMonth: string, 
 
 /** 医科診療行為マスターの 1 行（列の意味は src/masters/layout.ts） */
 export type ShinryoRow = {
-  code: string; name: string; change: string; point_kind: string; points: number; nyugai: string; kouki: string; shukei_gai: number; houkatsu_kensa: string;
+  code: string; name: string; change: string; unit_code: number; unit_name: string; point_kind: string; points: number; nyugai: string; kouki: string; shukei_gai: number; houkatsu_kensa: string;
   hospital_clinic: string; shobyo_kanren: string; jitsunissu: string; nissu_kaisu: string;
   kizami_kind: string; kizami_lower: number; kizami_upper: number; kizami_step: number; kizami_points: number; kizami_error: string;
   limit_count: number; limit_error: string; chu_code: number; chu_seq: string; tsusoku_age: string; age_lower: string; age_upper: string; time_kasan: string;
   kensa_kind: string; kensa_group: number; kokuji1: string; kokuji2: string; shisetsu_g1: string; shisetsu_g2: string; shisetsu_g3: string; alpha: string; changed_on: string; abolished_on: string;
   sho: number; bu: number; kubun_no: number; eda: number; kou: number;
 };
-export type IyakuhinRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; zaikei: string; changed_on: string; abolished_on: string; keika_until: number };
-export type TokuteiRow = { code: string; name: string; change: string; unit_code: number; price_kind: string; price: number; sanso: string; changed_on: string; keika_until: string; abolished_on: string };
+export type IyakuhinRow = { code: string; name: string; change: string; unit_code: number; unit_name: string; price_kind: string; price: number; zaikei: string; changed_on: string; abolished_on: string; keika_until: number };
+export type TokuteiRow = { code: string; name: string; change: string; unit_code: number; unit_name: string; price_kind: string; price: number; sanso: string; changed_on: string; keika_until: string; abolished_on: string };
 
 /** コードごとに引く文は、接続ごとに 1 回だけ用意する（コードの数だけ prepare すると、5,000 行のレセプトでは引く時間の多くが prepare になる。round-32 S-9） */
 const statements = new WeakMap<MastersDb, Map<string, Database.Statement>>();
@@ -110,6 +110,30 @@ export const hasShisetsuGroups = (db: MastersDb): boolean => (db.prepare("PRAGMA
 /** 施設基準のある行か（組ごとの 3 列のどれかが 0 でない）。組ごとの列のない古い masters.db の行は、ない側にする */
 export const hasShisetsu = (r: ShinryoRow): boolean => [r.shisetsu_g1, r.shisetsu_g2, r.shisetsu_g3].some((v) => v !== undefined && v !== "0");
 
+/** G03 の「届出が要ります」の印を付けられない理由（組ごとの列のない古い masters.db。印を黙って消さない。design.md §15-3。code M-8） */
+export const OLD_SHISETSU_G03_REASON = `施設基準のある行に「届出が要ります」を添えていません（${OLD_SHISETSU_REASON}）`;
+
+/** 単位の列（医科診療行為のデータ規格、医薬品・特定器材の単位の名前）のない古い masters.db で、量の比較だけを止める理由（design.md §15-3。round-52 C-262） */
+export const OLD_UNIT_REASON = "量は見ていません（単位の列が古い形です。masters:build で作り直してください）";
+
+/** 3 表に単位の名前の列があるか（ない＝単位の列を足す前に作った masters.db。G11 は止めず、量の比較だけを止める） */
+export const hasUnitColumns = (db: MastersDb): boolean =>
+  (["shinryo", "iyakuhin", "tokutei"] as const).every((t) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).some((c) => c.name === "unit_name"));
+
+/**
+ * 単位の名前の、大文字・小文字の違いだけの衝突（design.md §15-8。L-98）：3 表の単位の名前を小文字にそろえて同じになる、元の字の違う名前の組。
+ * 衝突のない名前は大文字・小文字の違いを同じとみなし、衝突した名前は字のまま比べる。全角の英字も小文字にそろえる（String.prototype.toLowerCase）
+ */
+export function unitCaseCollisions(db: MastersDb): string[][] {
+  const names = new Set<string>();
+  for (const t of ["shinryo", "iyakuhin", "tokutei"] as const) {
+    for (const r of db.prepare(`SELECT DISTINCT unit_name FROM ${t} WHERE unit_name != ''`).all() as { unit_name: string }[]) names.add(r.unit_name);
+  }
+  const by = new Map<string, string[]>();
+  for (const n of [...names].sort()) by.set(n.toLowerCase(), [...(by.get(n.toLowerCase()) ?? []), n]);
+  return [...by.values()].filter((g) => g.length > 1);
+}
+
 /**
  * 点検（G01〜G11）の準備ができているか（要る表がそろい、錨が通ったか。作るのは src/masters/verify.ts）。行がなければ null。
  * G10・G11 は、施設基準の組ごとの列のない古い masters.db では、行の有無によらず準備ができていない（design.md §15-3）
@@ -136,7 +160,9 @@ function checksOf(db: MastersDb): MastersStatus["checks"] {
   const rows = (db.prepare("SELECT check_id, ready, reason FROM checks_ready ORDER BY check_id").all() as { check_id: string; ready: number; reason: string }[]).map((c) => ({ check: c.check_id, ready: c.ready === 1, reason: c.reason }));
   if (hasShisetsuGroups(db)) return rows;
   const old = [...SHISETSU_CHECKS].map((check) => ({ check, ready: false, reason: OLD_SHISETSU_REASON }));
-  return [...rows.filter((c) => !SHISETSU_CHECKS.has(c.check)), ...old].sort((a, b) => a.check.localeCompare(b.check));
+  // G03 は動かすが、「届出が要ります」の印を付けられないことを出す（黙って消さない。code M-8）
+  const g03 = rows.filter((c) => c.check === "G03").map((c) => ({ ...c, reason: [c.reason, OLD_SHISETSU_G03_REASON].filter(Boolean).join("／") }));
+  return [...rows.filter((c) => !SHISETSU_CHECKS.has(c.check) && c.check !== "G03"), ...g03, ...old].sort((a, b) => a.check.localeCompare(b.check));
 }
 
 export function mastersStatus(): MastersStatus {

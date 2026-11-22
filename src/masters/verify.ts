@@ -111,6 +111,8 @@ const need = (table: string, pairs: Record<string, string | null>): Need => ({ t
 const each = (table: string, col: string, values: string[], more: Record<string, string> = {}): Need[] => values.map((v) => need(table, { ...more, [col]: v }));
 /** 施設基準の組ごとの 3 列（design.md §15-3。錨 A109〜A116） */
 const SHISETSU_NEEDS: Need[] = ["shisetsu_g1", "shisetsu_g2", "shisetsu_g3"].map((col) => need("shinryo", { [col]: null }));
+/** 医科診療行為マスターの区分番号の列（章・部・区分番号・枝番・項番。design.md §15-3。code M-1。錨 A70・A72・A73） */
+const KUBUN_NO_NEEDS: Need[] = ["sho", "bu", "kubun_no", "eda", "kou"].map((col) => need("shinryo", { [col]: null }));
 
 export const CHECK_IDS = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11"] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
@@ -146,7 +148,7 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
   },
   G05: {
     label: "背反",
-    needs: ["1", "2", "3", "4"].flatMap((tani) => [...each("haihan", "tokurei", ["0", "1"], { tani }), ...each("haihan", "kubun", ["1", "2", "3"], { tani })]),
+    needs: [...["1", "2", "3", "4"].flatMap((tani) => [...each("haihan", "tokurei", ["0", "1"], { tani }), ...each("haihan", "kubun", ["1", "2", "3"], { tani })]), ...KUBUN_NO_NEEDS],
   },
   G06: {
     label: "算定回数",
@@ -182,8 +184,8 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
   },
   G10: {
     label: "施設基準",
-    // 組ごとの 3 列（グループの中は「どれか」、グループのあいだは「どれも」。design.md §15-3）。点検そのものは段 17d で入る
-    needs: SHISETSU_NEEDS,
+    // 組ごとの 3 列（グループの中は「どれか」、グループのあいだは「どれも」。design.md §15-3）と、同じ区分番号の行を引く区分番号の列（15-5 の正しい側。L-91）。点検そのものは段 17e で入る
+    needs: [...SHISETSU_NEEDS, ...KUBUN_NO_NEEDS],
   },
   G11: {
     label: "取り忘れ",
