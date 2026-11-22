@@ -2,7 +2,7 @@
 // 背反の組の院内の知識（design.md §14-2〜§14-4）の入力：作る入口（対象の G05 の指摘の下）・「この請求も条件に当たる」のボタン。取り込んだレセプトの点検の画面だけが出す
 import { useState } from "react";
 import { CLAIM_FACT_SOURCES } from "../src/claim/facts";
-import { LOCAL_PAIR_BASES, LOCAL_PAIR_TEXT } from "../src/messages";
+import { LOCAL_PAIR_BASES, LOCAL_PAIR_TEXT, pressText } from "../src/messages";
 
 type Pair = { a: string; b: string; tani: number };
 
@@ -48,8 +48,6 @@ export function LocalPairCreate(props: { claimId: string; pair: Pair; onSaved: (
   );
 }
 
-const dayText = (date: string | null) => (date ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日：` : "");
-
 /**
  * 「この請求も条件に当たる」（Lv.5 以上・承認済みの allow。design.md §14-3）：押すと、その請求のその組（その日）は算定できる扱いになり、G05 は出ない。
  * 書くのは請求ごとの事実の入口（POST /api/claims/[claimId]/facts）。照らすのはサーバー
@@ -72,7 +70,7 @@ export function LocalPress(props: { claimId: string; press: { key: string; date:
       </select>
       {props.press.map((p) => (
         <button key={`${p.key}|${p.date ?? ""}`} onClick={() => void press(p)}>
-          {dayText(p.date)}{p.date ? LOCAL_PAIR_TEXT.pressDay : LOCAL_PAIR_TEXT.press}
+          {pressText(p.date)}
         </button>
       ))}
       {err && <span className="notice warn">{err}</span>}

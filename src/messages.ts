@@ -334,8 +334,9 @@ export type LocalPairBasis = (typeof LOCAL_PAIR_BASES)[number];
 export const LOCAL_PAIR_TEXT = {
   /** Lv.5 以上・承認済みの allow（ボタンを添える） */
   allow: "院内の知識（承認済み）：条件に当たれば併せて算定できます。条件：{note}",
-  press: "この請求も条件に当たる",
-  pressDay: "この日も条件に当たる",
+  /** 押すボタン（同一月の表は請求ごと、ほかは日ごと）。1 日目から付くので「も」は付けない */
+  press: "この請求は条件に当たる",
+  pressDay: "{day}：条件に当たる",
   /** Lv.1〜4 のヒント */
   hintAllow: "院内の知識：条件に当たれば併せて算定できます。条件：{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
   hintAvoid: "院内の知識：併せて算定できません。{note}（ご自身で確かめ、必要ならベテランに聞いてください）",
@@ -369,6 +370,9 @@ export const LOCAL_PAIR_TEXT = {
 } as const;
 /** 文言の {名前} を値で埋める */
 export const fillLocal = (t: string, v: Record<string, string>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
+/** 「条件に当たる」のボタンの文。date は押す日（"YYYY-MM-DD"。同一月の表は null） */
+export const pressText = (date: string | null): string =>
+  date ? fillLocal(LOCAL_PAIR_TEXT.pressDay, { day: `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日` }) : LOCAL_PAIR_TEXT.press;
 
 /** 会議の議題の「きっかけ」に出す、見直しのトリガーの名前（design.md §4-3・§14-4） */
 export const TRIGGER_LABEL: Record<TriggerKind, string> = {
