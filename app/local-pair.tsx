@@ -78,8 +78,13 @@ export function LocalPress(props: { claimId: string; press: { key: string; date:
   );
 }
 
-/** 「この請求のこの組が返戻・査定された」（design.md §14-4）：その組の承認済みの allow の院内の知識を要再検証にし、この請求で押した事実を取り消す */
-export function LocalReturn(props: { claimId: string; pair: { a: string; b: string; tani: number; ids: string[] }; onSaved: () => void }) {
+const named = (code: string, name: string | null) => (name ? `${code} ${name}` : code);
+
+/**
+ * 「この請求のこの組が返戻・査定された」（design.md §14-4）：その組の承認済みの allow の院内の知識を要再検証にし、この請求で押した事実を取り消す。
+ * その組の G05 の指摘のカードの中に出す。指摘がない組（カードの外）は、names に 2 つの行の名称を渡す（コードに添える）
+ */
+export function LocalReturn(props: { claimId: string; pair: { a: string; b: string; tani: number; ids: string[] }; names?: { a: string | null; b: string | null }; onSaved: () => void }) {
   const [msg, setMsg] = useState("");
   async function send() {
     setMsg("");
@@ -90,8 +95,8 @@ export function LocalReturn(props: { claimId: string; pair: { a: string; b: stri
     props.onSaved();
   }
   return (
-    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div>院内の知識 {props.pair.ids.join("・")}（コード {props.pair.a} と {props.pair.b}）</div>
+    <div className={props.names ? "notice" : ""} style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+      <div>院内の知識 {props.pair.ids.join("・")}{props.names ? `（${named(props.pair.a, props.names.a)} と ${named(props.pair.b, props.names.b)}）` : ""}</div>
       <div className="muted">{LOCAL_PAIR_TEXT.returnedNote}</div>
       <span><button onClick={() => void send()}>{LOCAL_PAIR_TEXT.returned}</button> {msg && <span className="notice warn">{msg}</span>}</span>
     </div>
