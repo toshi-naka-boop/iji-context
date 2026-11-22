@@ -53,8 +53,9 @@ const emMembers = new Map(
 );
 
 describe("evidence-master §2-8 との対応（完了条件 1）", () => {
-  it("EM の表が読めている（コードの表 48 行・包括の区分 3 行・包括の対象 66 コード）", () => {
-    expect(emCodes.size).toBe(48);
+  // コードの表は 93 行：版の表の 48 行と、実務の算定 A で採った施設基準の 45 行（2026-11-22。版にはまだ入れていない。spec FR-189）
+  it("EM の表が読めている（コードの表 93 行・包括の区分 3 行・包括の対象 66 コード）", () => {
+    expect(emCodes.size).toBe(93);
     expect([...emTiers.keys()].sort()).toEqual(["D007_10", "D007_5", "D007_8"]);
     expect(emMembers.size).toBe(66);
   });
