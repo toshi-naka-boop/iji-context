@@ -10,7 +10,7 @@ import { fillLocal, LOCAL_PAIR_TEXT } from "../../src/messages";
 
 const STATUS_COLOR: Record<string, string> = { 承認済み: "var(--accent)", 未検証: "var(--sky)", 要再検証: "var(--warn-mark)", 停止: "#5a4632", 保管: "var(--muted)" };
 
-type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null; sample?: boolean; match?: { codePair?: { a: string; b: string; tani: number } }; polarity?: string; conditionNote?: string | null; pair?: { a: string; b: string; tani: number; table: string; conditionNote: string; polarity: string; emDecided: boolean } };
+type K = { id: string; layer: string; status: string; summary: string; empathy: number; body?: string; hits?: number; misses?: number; official?: OfficialMatch | null; sample?: boolean; match?: { codePair?: { a: string; b: string; tani: number } }; polarity?: string; conditionNote?: string | null; pair?: { a: string; b: string; tani: number; table: string; conditionNote: string; polarity: string; emDecided: boolean }; revisionDiffs?: Record<string, string[]> };
 type Peer = { id: string; question: string; status: string; answer: string | null; answered_by: string | null; knowledge_id: string | null };
 
 async function post(url: string, body: unknown) {
@@ -81,11 +81,13 @@ export default function Knowledge() {
             <div className="card-body">
             <div className="chips" style={{ alignItems: "center" }}><span className="badge sky">{k.layer === "ベテラン" ? "医事責任者" : k.layer}</span><span className="badge">共感 {k.empathy}</span><strong>{k.summary}</strong></div>
             {/* 背反の組の知識：承認すると実際に使われる扱いと条件（meta の値。round-43 codex #3） */}
+            {/* 承認済みでないあいだに出た改定の差（承認の前に見せる。design.md §14-4 v28） */}
+            {Object.entries(k.revisionDiffs ?? {}).map(([d, c]) => <div key={d} className="notice warn">{fillLocal(LOCAL_PAIR_TEXT.revisionDiff, { changes: c.join("／"), date: d.slice(0, 10) })}</div>)}
             {k.match?.codePair && <div className="notice">{fillLocal(LOCAL_PAIR_TEXT.usedAs, { label: k.polarity === "allow" ? LOCAL_PAIR_TEXT.allowLabel : LOCAL_PAIR_TEXT.avoidLabel, note: k.conditionNote ?? "" })}</div>}
             <div className="bubble" style={{ margin: "10px 0" }}>{k.body}</div>
             <div className="chips">
               <button onClick={() => run(post("/api/knowledge", { action: "empathy", id: k.id }))}>共感する</button>
-              <button className="primary" onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: true }))}>承認する（医事責任者）</button>
+              <button className="primary" onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: true, ...(k.revisionDiffs ? { revisionSeen: Object.keys(k.revisionDiffs) } : {}) }))}>承認する（医事責任者）</button>
               <button onClick={() => run(post("/api/knowledge", { action: "verify", id: k.id, approve: false }))}>却下する（医事責任者）</button>
             </div>
             </div>

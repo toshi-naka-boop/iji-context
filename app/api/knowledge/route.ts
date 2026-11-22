@@ -15,7 +15,7 @@ export const POST = route({ roles: allow("POST /api/knowledge"), body: knowledge
   if (body.action === "verify") {
     // 検証する人の名前は受け取らない。誰が検証したかは、セッションの本人として監査ログに残る
     if (user.role !== "veteran") throw forbidden(`この操作は「${ROLE_LABELS.veteran}」の役割で行います（いまの役割：${ROLE_LABELS[user.role]}）`);
-    return a.verify(body.id, body.approve, body.reason);
+    return a.verify(body.id, body.approve, body.reason, body.revisionSeen);
   }
   if (body.action === "empathy") return a.empathize(body.id);
   return a.propose(body);
