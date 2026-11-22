@@ -9,7 +9,9 @@ export const FINDING_TEXT: Record<string, string> = {
   "R01.no_visit": "訪問診療料のない月に、管理料が入っています",
   "R01.use_twice_or_more": "訪問診療料が月 2 回以上なのに、月 1 回の区分になっています",
   "R01.use_once": "訪問診療料が月 1 回なのに、月 2 回以上の区分になっています",
-  "R01.note16_once_rate": "この施設は注16 の基準を満たしていないので、月 2 回以上でも月 1 回の区分（2ニ）で算定します",
+  "R01.note16_once_rate": "この施設は注16 の基準を満たしていないので、月 2 回以上でも月 1 回の区分で算定します",
+  // 申告だけを根拠に点数の高い区分へ直さない（design.md §15-4。round-51 C-251）。情報不足として出す
+  "R01.declaration_conflict": "申告（注16 の基準を満たす）と請求が食い違っています。申告を確かめてください",
   "R02.use_severe": "別表第八の二に当たる患者なのに、重症区分になっていません",
   "R02.not_severe": "別表第八の二に当たらないのに、重症区分になっています",
   "R02.severe_with_hokatsu": "重症区分で算定する月に、包括的支援加算が入っています。加算の行を外してください",
@@ -57,7 +59,35 @@ export const FINDING_TEXT: Record<string, string> = {
   "R17.comment_mismatch_deathDate": "摘要欄の死亡年月日が、死亡の記録の日と合いません",
   "R17.comment_mismatch_hokatsuState": "摘要欄の包括的支援加算の状態の記載が、確かめた要介護度・障害支援区分と合いません",
   "R17.comment_mismatch_ikouStart": "摘要欄の初回の管理料を算定した年月日が、管理料の算定開始月と合いません",
+  // R18 施設の種別（design.md §15-4）。{fixName} は正しい側の区分の名前、{note} は連携型の申告のときの経過措置の断り（docs M-8）
+  "R18.use_grade": "施設の種別と行の区分の種別が違います。施設の種別に合う区分は「{fixName}」です{note}",
+  "R18.iko_grade3_only": "在宅療養移行加算は、在宅療養支援診療所以外の診療所（管理料の 3 の区分を算定する患者）に限ります{note}",
+  "R18.use_baseup_note5": "ベースアップ評価料(Ⅰ)の注5 の届出があるので、「{fixName}」で算定します{note}",
+  "R18.use_baseup_normal": "ベースアップ評価料(Ⅰ)の注5 の届出がないので、「{fixName}」で算定します{note}",
 };
+
+/**
+ * 施設の申告から来る値（施設の種別・在支診か・注16・DX の届出の区分・ベースアップ評価料の届出の区分）で結論が変わる指摘の種類（design.md §15-4 の「施設の申告による」。FR-191）。
+ * 画面は、文の後ろに BY_DECLARATION_NOTE を添える。漏れは tests/engine/by-declaration.test.ts が縛る（同梱の症例と練習問題の入力で、申告の値を 1 つずつ変えて出る種類が変わるなら、ここに載っていなければならない）
+ */
+export const BY_DECLARATION = new Set<string>([
+  "R01.use_twice_or_more",
+  "R01.note16_once_rate",
+  "R01.declaration_conflict",
+  "R10.same_day_as_visit",
+  "R10.visit_day_after_oushin",
+  "R12.dx_tier",
+  "R12.dx_not_notified",
+  "R18.use_grade",
+  "R18.iko_grade3_only",
+  "R18.use_baseup_note5",
+  "R18.use_baseup_normal",
+]);
+export const BY_DECLARATION_NOTE = "（施設の申告による）";
+/** 施設の申告で決まる施設の設定（情報不足のとき、施設の申告の画面へ案内する。design.md §15-4） */
+export const DECLARED_FACILITY_KEYS: FacilityFactKey[] = ["grade", "note16Met", "dxTier", "baseUp"];
+/** 施設の申告の画面への案内（宛先の値は増やさない。§6-1 の L-44） */
+const DECLARATION_GUIDE = "施設の申告の画面で確かめてください（事務長でなければ、事務長に施設の申告を頼んでください）";
 
 /**
  * データで動く点検（G01〜。design.md §12-2）の指摘の文。定型文と値だけ（{code} はコード、{what} は行の種類）。公開元の文章は写さない。
@@ -259,8 +289,13 @@ export const DERIVE_TEXT: Record<string, string> = {
 /** 確認してほしい点の文。情報不足は「どこを確かめるか」を添える（医療事務あては本人、医師あては医師確認） */
 export function findingText(f: Finding): string {
   if (f.kind === "情報不足" && f.missing) {
-    if (f.missing.field.startsWith("facility.")) {
-      const label = FACILITY_LABEL[f.missing.field.slice("facility.".length) as FacilityFactKey] ?? f.missing.field;
+    const facilityKey = f.missing.field.startsWith("facility.") ? (f.missing.field.slice("facility.".length) as FacilityFactKey) : null;
+    const declared = facilityKey !== null && DECLARED_FACILITY_KEYS.includes(facilityKey);
+    // 文を持つ情報不足（申告と請求の食い違い。design.md §15-4）
+    if (!f.messageKey.endsWith(".missing_fact") && FINDING_TEXT[f.messageKey]) return `${FINDING_TEXT[f.messageKey]}${declared ? `。${DECLARATION_GUIDE}` : ""}${BY_DECLARATION.has(f.messageKey) ? BY_DECLARATION_NOTE : ""}`;
+    if (declared) return `施設の申告「${FACILITY_LABEL[facilityKey]}」が分かりません（申告がない・確かめ直す日を過ぎたなど）。${DECLARATION_GUIDE}`;
+    if (facilityKey !== null) {
+      const label = FACILITY_LABEL[facilityKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
@@ -275,7 +310,7 @@ export function findingText(f: Finding): string {
       ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
       : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
-  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
+  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "") + (BY_DECLARATION.has(f.messageKey) ? BY_DECLARATION_NOTE : "");
   // 日付の食い違い（R17）：足りない日・多い日を添える
   const days = (v: string | undefined) => (v ? v.split(",").map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、") : "");
   const detail = [f.params?.lacking ? `記載のない日：${days(f.params.lacking)}` : "", f.params?.extra ? `算定のない日：${days(f.params.extra)}` : ""].filter(Boolean).join("。");

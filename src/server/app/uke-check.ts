@@ -14,7 +14,7 @@ import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
 import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
 import { commentKanrenNotesOf } from "../../generic/g07";
 import { checkmasterNotesOf } from "../../generic/g09";
-import { genericScopeOf } from "../../generic/scope";
+import { deferredNote, genericScopeOf } from "../../generic/scope";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
 import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
@@ -80,7 +80,7 @@ const sheetNotesWith = (notes: { later: string[]; newer: string[] }, t: SheetNot
  * exceptions は、背反の特例条件の例外（G05。design.md §13-2・§13-3）に渡す、請求ごとの事実の答え（answers）とその請求の事実（facts）。
  * 取り込んだレセプトの点検だけが渡す（試算は渡さない：問いを出さない。L-76）
  */
-function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts" | "localKnowledge" | "level" | "pressed">) {
+function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "partial" | "outside" | "facility" | "lines">, hand: Hand, mapped: MappedLine[], exceptions?: Pick<GenericAboutMore, "answers" | "facts" | "localKnowledge" | "level" | "pressed">) {
   // 行の属性（G03）が読むもの：読めたレセプトは入院外だけ（入院のレセプトは parseUke が「読めない」にする）。生年月日は UKE のもの。
   // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
@@ -91,12 +91,15 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
     const result = evaluateGeneric(claim, db, about);
     // データで動く点検は、動いた点検があれば全部の単位を見ている（マスターがなければ、どれも動かない）
     const genericRan = result.ran.length > 0;
+    const scope = genericScopeOf(claim, db, about, result);
+    // C〜I に回した区分の「見ていない」（design.md §15-4。L-92）も、同じ点検の範囲に出す（マスターがなくても出す）
+    const deferred = deferredNote(ctx.lines, rev);
     return {
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about), checkmasterNotesOf(db, about)) } : {}),
       diseases: claim.patient.diseases.map((d, i) => ({ code: diseaseCodes[i], name: d.name !== "" ? d.name : (names?.diseases[diseaseCodes[i]] ?? null), main: d.main === true })),
       // カルテ側の記録がない請求として判定している（recordsKnown は偽）。検算（G02）の数と、G02・G03 がしていないことを、点検の範囲に足す
-      generic: { ...genericOut(result, names, hand, rev, false, mapped), scope: genericScopeOf(claim, db, about, result) },
+      generic: { ...genericOut(result, names, hand, rev, false, mapped), scope: deferred ? { ...scope, notDone: [...scope.notDone, deferred] } : scope },
       /** 指摘に添えた承認済みの院内の知識の id（design.md §14-3。USED を出す） */
       localUsed: result.localUsed ?? [],
       rows: claim.units.map((u, i) => {

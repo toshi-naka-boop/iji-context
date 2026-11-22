@@ -1,5 +1,7 @@
 // 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02〜G09 が点検していないこと（G04〜G06 は src/messages.ts の GENERIC_SCOPE_NOTE）。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
+import type { Revision } from "../engine/revisions/types";
+import type { ClaimLine } from "../engine/types";
 import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, type MastersDb } from "../masters/db";
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
@@ -31,4 +33,15 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   return out;
+}
+
+/**
+ * C〜I の手順に回した区分（在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算。版の定数 deferred）と、注8 の減算の対象になる管理料（在支診以外〔種別 3〕の管理料）の行の数を、
+ * 点検の範囲に出す文（design.md §15-4。L-92）。算定の要件と取り忘れは見ていない（黙って通さない）。行がなければ null。
+ * 届出の有無は G10（段 17e）が見るようになるまで、どの点検も見ていない
+ */
+export function deferredNote(lines: ClaimLine[], rev: Revision): string | null {
+  const deferred = new Set([...(rev.consts.deferred ?? []), ...rev.consts.kanri.rows.filter((r) => r.grade === "3").map((r) => r.kubun)]);
+  const n = lines.filter((l) => l.count > 0 && deferred.has(l.kubun)).length;
+  return n > 0 ? `在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません：${n} 行` : null;
 }

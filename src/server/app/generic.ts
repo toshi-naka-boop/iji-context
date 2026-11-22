@@ -6,7 +6,7 @@ import type { ClaimLine, EngineResult } from "../../engine/types";
 import { evaluateGeneric } from "../../generic";
 import { rowNamesOf, type RowNames } from "../../generic/lookup";
 import { claimOfLines, overlap, type MappedLine } from "../../generic/overlap";
-import { genericScopeOf } from "../../generic/scope";
+import { deferredNote, genericScopeOf } from "../../generic/scope";
 import type { GenericAbout, GenericResult } from "../../generic/types";
 import { genericView, type GenericView } from "../../generic/view";
 import { withMasters } from "../../masters/db";
@@ -33,7 +33,10 @@ export function genericOfLines(lines: ClaimLine[], rev: Revision, yearMonth: str
   const view = withMasters((db) => {
     const result = evaluateGeneric(claim, db, about);
     // 入力した行には、点数も、患者・施設の情報もない。検算（G02）と行の属性（G03）のうち、していないことを点検の範囲に出す
-    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: genericScopeOf(claim, db, about, result), localUsed: result.localUsed ?? [] };
+    const scope = genericScopeOf(claim, db, about, result);
+    // C〜I に回した区分の「見ていない」（design.md §15-4。L-92）も、同じ点検の範囲に出す
+    const deferred = deferredNote(lines, rev);
+    return { ...genericOut(result, db ? rowNamesOf(db, about, { items: claim.units.flatMap((u) => u.items), comments: [], diseases: [] }) : null, hand, rev, recordsKnown, mapped), scope: deferred ? { ...scope, notDone: [...scope.notDone, deferred] } : scope, localUsed: result.localUsed ?? [] };
   });
   // 回数 0 の行は、算定していない行なので「掛けなかった行」に数えない
   return { ...view, skippedLines: lines.filter((l) => l.count > 0).length - claim.units.length };
