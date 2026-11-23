@@ -72,6 +72,8 @@ export const TRI_REASON_LABEL: Record<UnknownReason | NotReason, string> = {
 export const GRADE_KEY = "grade";
 export const NOTE16_KEY = "note16";
 export const DISPENSING_KEY = "dispensing";
+/** 同じ建物で同じ月に 2 人以上を診ている建物があるか（C-242。段 17f。choice は none・some・unknown） */
+export const BUILDING_KEY = "building";
 export const codeKey = (code: string) => `code:${code}`;
 
 type KijunRow = { codes: string[]; name: string; listed: string[] };
@@ -212,7 +214,7 @@ export const gradeOf = (rows: DeclarationRow[], on: On, today: string) => gradeT
 export const note16Of = (rows: DeclarationRow[], on: On, today: string) => note16Tri(rows, on, today);
 
 /** 施設の申告から判定に渡す値（facilityFromDeclaration が必ず入れる。出どころ facilityBasis の declaration に当たる。design.md §15-4） */
-export const DECLARED_KEYS = ["grade", "note16Met", "dxTier", "baseUp"] as const;
+export const DECLARED_KEYS = ["grade", "note16Met", "dxTier", "baseUp", "building", "note14"] as const;
 
 /**
  * 判定に渡す施設の設定（月で決まる値）。grade・note16Met・dxTier・baseUp は必ず入れ、分からないときは null。gradeChoice は種別の選択肢の id（連携型の断りに使う。R18）。
@@ -229,12 +231,16 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
   const b5 = codeTri(rows, "4303", on, today);
   const b = codeTri(rows, "4307", on, today);
   const baseUp = b5.v === "unknown" || b.v === "unknown" ? null : b5.v === "held" ? "注5" : b.v === "held" ? "通常" : "なし";
+  const building = buildingTri(rows, today, yearMonth).v === "held" ? (effectiveRow(rows, BUILDING_KEY, yearMonth)!.row.choice as "none" | "some") : null;
   return {
     grade,
     gradeChoice: tri.v === "held" ? choice!.id : null,
     note16Met: n16.v === "held" ? true : n16.v === "not" ? false : null,
     dxTier,
     baseUp,
+    building,
+    // 注14 の申告は段 17h で読む（それまでは分からない。10 人以上の区分の患者は導出を保留する。design.md §15-4）
+    note14: null,
     ...(grade === null ? { zaishishin: null, kyokagata: null, hasBeds: null } : { zaishishin: grade !== "3", kyokagata: grade === "1B" || grade === "1N", hasBeds: grade === "1B" }),
   };
 }
@@ -246,6 +252,15 @@ export function dispensingTri(rows: DeclarationRow[], today: string, yearMonth: 
   if (g) return g;
   const c = e!.row.choice;
   return c === "outside" || c === "inside" ? HELD : unknown("requirement_unknown");
+}
+
+/** 同じ建物で 2 人以上を診ている建物があるかの行の三値（月で決まる値。dispensing と同じ決め方） */
+export function buildingTri(rows: DeclarationRow[], today: string, yearMonth: string): Tri {
+  const e = effectiveRow(rows, BUILDING_KEY, yearMonth);
+  const g = gate(rows, BUILDING_KEY, e, today);
+  if (g) return g;
+  const c = e!.row.choice;
+  return c === "none" || c === "some" ? HELD : unknown("requirement_unknown");
 }
 
 /** 院内処方か院外処方か（G11 だけに渡す。段 18）。その請求の診療年月で効く行で決める */
@@ -260,12 +275,14 @@ export function dispensingOf(rows: DeclarationRow[], today: string, yearMonth: s
 const REQUIREMENT_LABEL: Record<Requirement, string> = { met: "満たす", not_met: "満たさない", unknown: "分からない" };
 const NOTIFIED_LABEL: Record<Notified, string> = { yes: "届出あり", no: "届出なし", unknown: "届出が分からない", na: "" };
 const DISPENSING_LABEL: Record<string, string> = { outside: "院外処方だけ", inside: "院内処方もある", unknown: "分からない" };
+const BUILDING_LABEL: Record<string, string> = { none: "ない", some: "ある", unknown: "分からない" };
 
 /** 申告の 1 行の値を短く（確かめの文と画面に使う） */
 export function valueLabel(row: DeclarationRow): string {
   if (row.itemKey === GRADE_KEY) return GRADE_CHOICES.find((c) => c.id === row.choice)?.label ?? "分からない";
   if (row.itemKey === NOTE16_KEY) return REQUIREMENT_LABEL[row.requirement];
   if (row.itemKey === DISPENSING_KEY) return DISPENSING_LABEL[row.choice ?? "unknown"] ?? "分からない";
+  if (row.itemKey === BUILDING_KEY) return BUILDING_LABEL[row.choice ?? "unknown"] ?? "分からない";
   return `${NOTIFIED_LABEL[row.notified]}${row.choice ? `・加算${row.choice}` : ""}`;
 }
 

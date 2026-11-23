@@ -88,6 +88,7 @@ const STATUS_LABEL = { held: "持つ", not: "持たない", unknown: "分から�
 const NOTIFIED: [string, string][] = [["yes", "届出あり"], ["no", "届出なし"], ["unknown", "分からない"]];
 const REQUIREMENT: [string, string][] = [["met", "満たす"], ["not_met", "満たさない"], ["unknown", "分からない"]];
 const DISPENSING: [string, string][] = [["outside", "院外処方だけ"], ["inside", "院内処方もある"], ["unknown", "分からない"]];
+const BUILDING: [string, string][] = [["none", "ない"], ["some", "ある"], ["unknown", "分からない"]];
 const SOURCE: Record<string, string> = { input: "入力", seed: "デモの初期値", migrated: "前の設定から移した値" };
 
 /** 申告の項目の名前（画面の見出し） */
@@ -95,6 +96,7 @@ export function itemLabel(it: Pick<Item, "key" | "code" | "name" | "abbrev">): s
   if (it.key === "grade") return "施設の種別";
   if (it.key === "note16") return "在医総管 注16 の基準";
   if (it.key === "dispensing") return "院内処方か院外処方か";
+  if (it.key === "building") return "同じ建物で同じ月に 2 人以上を診ている建物があるか";
   const name = it.name ?? "（名称は別紙7-8 の一覧で確かめてください）";
   return `コード ${it.code} ${name}${it.abbrev ? `　厚生局の略称 ${it.abbrev}（推測）` : ""}`;
 }
@@ -153,7 +155,7 @@ function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "rec
   const { item, data, mode } = props;
   const history = useHistory(item.key);
   const r = item.row;
-  const kind = item.key === "grade" || item.key === "note16" || item.key === "dispensing" ? item.key : "code";
+  const kind = item.key === "grade" || item.key === "note16" || item.key === "dispensing" || item.key === "building" ? item.key : "code";
   const [fromMonth, setFromMonth] = useState(mode === "recheck" ? (r?.fromMonth ?? "") : r || item.noFromMonth ? "" : prevMonthOf(data.today));
   const [choice, setChoice] = useState(r?.choice ?? (kind === "code" ? "" : UNKNOWN));
   const [notified, setNotified] = useState<string>(r?.notified && r.notified !== "na" ? r.notified : UNKNOWN);
@@ -179,8 +181,8 @@ function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "rec
         ? { item: "grade", choice, requirement, startOn: orNull(startOn), notifiedOn: orNull(notifiedOn), ...dates }
         : kind === "note16"
           ? { item: "note16", requirement, ...dates }
-          : kind === "dispensing"
-            ? { item: "dispensing", choice, ...dates }
+          : kind === "dispensing" || kind === "building"
+            ? { item: kind, choice, ...dates }
             : { item: item.key, notified, requirement, startOn: orNull(startOn), notifiedOn: orNull(notifiedOn), choice: item.code === "4100" && choice !== "" ? choice : null, ...dates };
     try {
       props.onSaved(await postJson<Declarations>("/api/facility/declaration", body));
@@ -193,14 +195,16 @@ function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "rec
       <MonthInput label="いつの診療月から" value={fromMonth} onChange={setFromMonth} />
       {kind === "grade" && <Select label="種別" value={choice} options={[...data.gradeChoices.map((c): [string, string] => [c.id, c.label]), [UNKNOWN, "分からない"]]} onChange={setChoice} />}
       {kind === "dispensing" && <Select label="処方" value={choice} options={DISPENSING} onChange={setChoice} />}
+      {kind === "building" && <Select label="2 人以上の建物" value={choice} options={BUILDING} onChange={setChoice} />}
       {kind === "code" && <Select label="届出" value={notified} options={NOTIFIED} onChange={setNotified} />}
       {kind === "code" && item.code === "4100" && <Select label="区分" value={choice} options={[["", "選ぶ"], ["1", "加算1"], ["2", "加算2"]]} onChange={setChoice} />}
-      {kind !== "dispensing" && <Select label="要件" value={requirement} options={REQUIREMENT} onChange={setRequirement} />}
+      {kind !== "dispensing" && kind !== "building" && <Select label="要件" value={requirement} options={REQUIREMENT} onChange={setRequirement} />}
       {(kind === "grade" || kind === "code") && <DayInput label="算定開始年月日" value={startOn} onChange={changeStartOn} />}
       {(kind === "grade" || kind === "code") && <DayInput label="届出日" value={notifiedOn} onChange={setNotifiedOn} />}
       <DayInput label="確かめた日" value={checkedOn} onChange={setCheckedOn} />
       <DayInput label="次に確かめ直す日" value={recheckOn} onChange={setRecheckOn} />
       {fromMonth === "" && <div className="notice warn">いつの診療月からの値かを選んでください。</div>}
+      {kind === "building" && <div className="muted">「ない」なら、どの患者も単一建物 1 人の区分として点検し、患者ごとには聞きません。「ある」「分からない」なら、医療事務が患者ごとの人数の区分を、変わったときに入れます（施設基準ではないので、届出の欄は対象外）。</div>}
       {kind === "note16" && <div className="muted">注16 の基準を変更したときは様式 19 で届け出ます（マスターにコードがないので、届出の欄は対象外）。いつの診療月から効くかは、通知で確かめてください。</div>}
       {notices.map((n) => <div key={n} className="notice">{n}</div>)}
       <button className="primary" disabled={fromMonth === ""} onClick={() => void save()}>{retro || notices.length > 0 ? "確かめて残す" : "残す"}</button>

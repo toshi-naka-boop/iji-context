@@ -1,8 +1,9 @@
 // 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02〜G09 が点検していないこと（G04〜G06 は src/messages.ts の GENERIC_SCOPE_NOTE）。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
 import type { Revision } from "../engine/revisions/types";
-import type { ClaimLine } from "../engine/types";
-import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, type MastersDb } from "../masters/db";
+import { minashiOneLines } from "../engine/rules/r19";
+import type { ClaimContext, ClaimLine } from "../engine/types";
+import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, pickSnapshot, shinryoOf, type MastersDb } from "../masters/db";
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
@@ -46,4 +47,30 @@ export function deferredNote(lines: ClaimLine[], rev: Revision): string | null {
   const deferred = new Set([...(rev.consts.deferred ?? []), ...rev.consts.kanri.rows.filter((r) => r.grade === "3").map((r) => r.kubun)]);
   const n = lines.filter((l) => l.count > 0 && deferred.has(l.kubun)).length;
   return n > 0 ? `在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません（届出の有無だけ G10 が見ています）：${n} 行` : null;
+}
+
+/** 情報通信機器を用いた診療に係る基準（EM §2-11 表 4。3825） */
+const ICT_KIJUN = "3825";
+
+/**
+ * 単一建物の人数の次元で、点検の範囲に出す文（design.md §15-4。段 17f）：
+ * 戸数によるみなしのコメントで 1 人と読んだ在医総管の行（R19 が何も言わない行。V-3）と、情報通信機器の区分（ハ・ホ）の管理料の行（対象外の単位のまま見ていない。L-110）。
+ * 情報通信機器の区分は版の区分になく EM にコードを持たないので、基本マスターの行（在医総管・施医総管の区分番号で、施設基準の組に 3825 を持つもの）で数える。マスターがなければ数えない
+ */
+export function buildingScopeNotes(ctx: ClaimContext, rev: Revision, claim: GenericClaim | null, db: MastersDb | null, about: GenericAbout | null): string[] {
+  const out: string[] = [];
+  const minashi = minashiOneLines(ctx, rev.consts).length;
+  if (minashi > 0) out.push(`みなしのコメントで 1 人と読んだ行：${minashi} 行`);
+  if (claim && db && about) {
+    const snap = pickSnapshot(db, "shinryo", about.yearMonth, about.generation)?.snapshot;
+    if (snap) {
+      const ict = (code: string) => {
+        const r = shinryoOf(db, snap, code);
+        return !!r && r.sho === 2 && r.bu === 2 && r.kubun_no === 2 && (r.eda === 0 || r.eda === 2) && [r.shisetsu_g1, r.shisetsu_g2, r.shisetsu_g3].some((g) => (g ?? "").split("/").includes(ICT_KIJUN));
+      };
+      const n = claim.units.filter((u) => u.items.some((it) => it.kind === "SI" && ict(it.code))).length;
+      if (n > 0) out.push(`情報通信機器の区分は見ていません：${n} 行`);
+    }
+  }
+  return out;
 }

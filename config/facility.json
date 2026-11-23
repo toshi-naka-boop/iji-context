@@ -9,12 +9,15 @@
   "baseUp": "通常",
   "priceResponse": true,
   "note16Met": true,
+  "building": "none",
+  "note14": null,
   "revisitBaseUpSameDay": null,
   "revisitPriceSameDay": null,
   "demoDeclaration": {
     "grade": "zaishishin3",
     "note16": "met",
     "dispensing": "inside",
+    "building": "none",
     "codes": {
       "721": "yes",
       "4100": "1",

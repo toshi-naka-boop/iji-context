@@ -167,7 +167,7 @@ describe("注16 の有無を版の定数に通す（note16.enabled）", () => {
       expect(expectedKanri(c, r2024.consts).tier).toEqual({ known: true, value: "ロ" });
       const d = deriveLines(inputOf(c), r2024);
       expect(d.pending).toEqual([]);
-      expect(d.basis.find((b) => b.kubun === "C002_2RO1")?.needs).toEqual(["comprehensiveCare", "residence", "facility.grade", "table8_2"]);
+      expect(d.basis.find((b) => b.kubun === "C002_2RO1")?.needs).toEqual(["comprehensiveCare", "residence", "facility.grade", "facility.building", "table8_2"]);
     }
   });
 

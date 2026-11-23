@@ -6,9 +6,12 @@ import kijun from "../../../config/shisetsu-kijun.json";
 import { FACT_KEYS, type FacilityJson } from "../../engine/facility";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { codeOf } from "../../engine/revisions/codes";
+import { kanriBandOf } from "../../engine/predicates";
 import type { FacilityFactKey } from "../../engine/types";
 import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES, HOSPITAL_SIDE_CODES } from "../../facility/codes";
 import {
+  BUILDING_KEY,
+  buildingTri,
   codeKey,
   declarationView,
   DISPENSING_KEY,
@@ -83,6 +86,7 @@ export type DeclarationBody = { fromMonth: string; checkedOn: string | null; rec
   | { item: "grade"; choice: string; requirement: Requirement; startOn: string | null; notifiedOn: string | null }
   | { item: "note16"; requirement: Requirement }
   | { item: "dispensing"; choice: "outside" | "inside" | "unknown" }
+  | { item: "building"; choice: "none" | "some" | "unknown" }
   | { item: string; notified: "yes" | "no" | "unknown"; requirement: Requirement; startOn: string | null; notifiedOn: string | null; choice: "1" | "2" | null }
 );
 
@@ -116,7 +120,7 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
   }
 
   /** 申告の一覧に並べる項目の鍵（種別・注16・院内／院外処方・表 4 の行） */
-  const itemKeys = () => [GRADE_KEY, NOTE16_KEY, DISPENSING_KEY, ...LISTED_CODES.map(codeKey)];
+  const itemKeys = () => [GRADE_KEY, NOTE16_KEY, DISPENSING_KEY, BUILDING_KEY, ...LISTED_CODES.map(codeKey)];
 
   /**
    * 請求に出てきたのに申告の一覧にない施設基準コード（件数の多い順。L-90）。取り込んだレセプトの行のコードを、基本マスターの施設基準の 3 列で引く。
@@ -156,6 +160,19 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     return [...counts].map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
   }
 
+  /** 申告で building が「ない」の診療年月なのに、2 人以上の区分の管理料の行がある取り込んだ請求の数 */
+  function buildingConflicts(rows: DeclarationRow[], today: string): number {
+    let n = 0;
+    for (const file of uke.ukeFiles())
+      for (const r of file.receipts) {
+        if (!hasRevision(r.yearMonth)) continue;
+        if (buildingTri(rows, today, r.yearMonth).v !== "held" || effectiveRow(rows, BUILDING_KEY, r.yearMonth)!.row.choice !== "none") continue;
+        const c = resolveRevision(r.yearMonth).consts;
+        if (r.lines.some((l) => l.count > 0 && kanriBandOf(c, l.kubun) !== undefined && kanriBandOf(c, l.kubun) !== "1")) n++;
+      }
+    return n;
+  }
+
   /** 申告の一覧（画面と GET /api/facility/declaration）。いまの状態は今日の日付で決める */
   function declarations() {
     const rows = readDeclarations(ctx.sqlite);
@@ -169,7 +186,7 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
       const e = effectiveRow(rows, key, on.yearMonth);
       const code = key.startsWith("code:") ? key.slice(5) : null;
       const tri: Tri =
-        key === GRADE_KEY ? gradeOf(rows, on, today).tri : key === NOTE16_KEY ? note16Of(rows, on, today) : key === DISPENSING_KEY ? dispensingTri(rows, today, on.yearMonth) : heldOf(rows, code!, on, today);
+        key === GRADE_KEY ? gradeOf(rows, on, today).tri : key === NOTE16_KEY ? note16Of(rows, on, today) : key === DISPENSING_KEY ? dispensingTri(rows, today, on.yearMonth) : key === BUILDING_KEY ? buildingTri(rows, today, on.yearMonth) : heldOf(rows, code!, on, today);
       const mine = rows.filter((r) => r.itemKey === key);
       return {
         key,
@@ -195,6 +212,9 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     const heldNow = (c: string) => heldOf(rows, c, month, today).v === "held";
     if (gradeId && gradeId !== "zaishishin3" && (heldNow("3340") || heldNow("3469"))) mismatches.push("在宅療養実績加算1・2 を持つと申告されていますが、種別が在支診（(3)）ではありません");
     if (gradeId && (gradeId === "zaishishin3" || gradeId === "outside") && heldNow("4248")) mismatches.push("在宅医療充実体制加算を持つと申告されていますが、種別が在支診（(3)）か在支診以外です");
+    // 申告（2 人以上の建物はない）と請求の食い違い（design.md §15-4。round-51 C-251）：取り込んだ請求のうち、その診療年月の申告が「ない」なのに 2 人以上の区分の管理料の行がある請求の数
+    const conflicts = buildingConflicts(rows, today);
+    if (conflicts > 0) mismatches.push(`同じ建物で 2 人以上を診ている建物は「ない」と申告されていますが、2 人以上の区分の管理料の行がある請求が ${conflicts} 件あります`);
     return {
       today,
       gradeChoices: GRADE_CHOICES.map((g) => ({ id: g.id, label: g.label })),
@@ -224,6 +244,9 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     } else if (body.item === DISPENSING_KEY) {
       const b = body as Extract<DeclarationBody, { item: "dispensing" }>;
       insertDeclaration(ctx.sqlite, { ...by, itemKey: DISPENSING_KEY, notified: "na", notifiedOn: null, startOn: null, requirement: "met", choice: b.choice }, at);
+    } else if (body.item === BUILDING_KEY) {
+      const b = body as Extract<DeclarationBody, { item: "building" }>;
+      insertDeclaration(ctx.sqlite, { ...by, itemKey: BUILDING_KEY, notified: "na", notifiedOn: null, startOn: null, requirement: "met", choice: b.choice }, at);
     } else {
       const b = body as Extract<DeclarationBody, { notified: string }>;
       const code = b.item.slice(5);

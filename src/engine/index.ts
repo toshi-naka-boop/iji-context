@@ -25,7 +25,7 @@ export const targetOfNeed = (key: NeedKey): "doctor" | "clerk" => ((DOCTOR_FACTS
 
 /** 要る入力（患者の事実か、施設の設定）が分かっているか */
 function knownNeed(ctx: ClaimContext, key: NeedKey): boolean {
-  return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : ctx.facts[key as FactKey].known;
+  return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : (ctx.facts[key as FactKey]?.known ?? false);
 }
 
 /**

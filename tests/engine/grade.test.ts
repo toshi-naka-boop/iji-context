@@ -55,9 +55,14 @@ const K5 = loadCase("K5");
 const K2_PLAIN = without(K2, "C002_2RO1", "C002_N4_IKOU", "C002_N10_HOKATSU");
 const KANRI_DATE = K2.lines.find((l) => l.kubun === "C002_2RO1")!.dates;
 
+/** 単一建物 1 人の区分の行（人数の次元は R19 の担当。tests/engine/building.test.ts） */
+const ONE = C.kanri.rows.filter((r) => r.band === undefined);
+
 describe("版の区分（EM §2-2 R8-49〜93・§2-8 の 45 行）", () => {
-  it("族×種別×区分の表は 2×4×3 の 24 行で、どれも版の点数表とコードの表にある", () => {
-    expect(C.kanri.rows).toHaveLength(24);
+  // 単一建物 1 人の区分が 2×4×3 の 24 行。段 17f で人数の区分（2〜9・10〜19・20〜49・50 人以上）の 96 行（EM R8-95〜R8-190）を足して 120 行
+  it("族×種別×区分の表は 2×4×3 の 24 行（単一建物 1 人の区分。人数の区分を足して 120 行）で、どれも版の点数表とコードの表にある", () => {
+    expect(ONE).toHaveLength(24);
+    expect(C.kanri.rows).toHaveLength(120);
     for (const f of FAMILIES) for (const g of GRADES) for (const t of TIERS) expect(kanriKubunOf(C, f, g, t), `${f} ${g} ${t}`).toBeDefined();
     for (const k of kanriKubun(C)) expect(Object.hasOwn(REV.codes, k) && Object.hasOwn(REV.points, k), k).toBe(true);
   });
@@ -93,7 +98,7 @@ describe("4 つの種別 × 2 つの族 × 組み合わせの表の全行：R01�
       let n = 0;
       for (const g of GRADES)
         for (const f of FAMILIES)
-          for (const row of C.kanri.rows) {
+          for (const row of ONE) {
             const ctx = withLines(withResidence(withGrade(s.ctx, g), f), line(row.kubun, 1, KANRI_DATE));
             const fs = evaluate(ctx).findings;
             expect(keysOf(fs, ["R01", "R02", "R16", "R18"]), `${g} ${f} ${row.kubun}`).toEqual(expected(g, f, row, s.tier, s.visits));

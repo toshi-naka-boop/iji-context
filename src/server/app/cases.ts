@@ -6,7 +6,7 @@ import type { ClaimContext, EngineResult, FacilityFactKey, Facts } from "../../e
 import { DECLARED_KEYS } from "../../facility/declaration";
 import { outsideOf } from "../../generic/lookup";
 import { withMasters } from "../../masters/db";
-import { applyPatientFacts } from "../../patient/facts";
+import { applyPatientFacts, buildingBandOfRows } from "../../patient/facts";
 import { toClaimContext } from "../../uke/cases";
 import { caseFileOf } from "./case-files";
 import { facilityJsonOf, todayOf } from "./facility";
@@ -70,7 +70,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
   const { paths } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
-  const { latestPatientFacts, ingest, masterFacts } = patients;
+  const { latestPatientFacts, buildingBandRows, ingest, masterFacts } = patients;
 
   const fixtureOf = (claimId: string): Fixture | null => caseFixtureOf(paths.root, claimId);
   /** 症例側が持つ負担割合（症例がない・値がないときは null）。患者マスタに負担割合が入っていないときに使う */
@@ -91,7 +91,8 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     const master = masterFacts(patientId, r.yearMonth);
     const merged = { ...c.facts, age: master.age, insurance: master.insurance, burdenRatio: master.burdenRatio.known ? master.burdenRatio : c.facts.burdenRatio };
     // 患者ごとに確かめた情報を重ね、その上に、この請求について確かめた事実（その月・その日の出来事）を重ねる
-    const facts = claimFacts.withClaimFacts(r.claimId, applyPatientFacts(merged, latestPatientFacts(patientId), now()));
+    // 単一建物の人数の区分は、その診療年月で効く行（いつの診療月から。design.md §15-4）
+    const facts = claimFacts.withClaimFacts(r.claimId, { ...applyPatientFacts(merged, latestPatientFacts(patientId), now()), buildingBand: buildingBandOfRows(buildingBandRows(patientId), r.yearMonth) });
     const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis };
     // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
     // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）

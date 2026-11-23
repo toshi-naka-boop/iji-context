@@ -77,6 +77,8 @@ export function makeCtx(over: Partial<ClaimContext> & { kubun?: string[] } = {})
       baseUp: known("通常" as const),
       priceResponse: known(true),
       note16Met: known(true),
+      building: known("none" as const),
+      note14: { known: false },
       revisitBaseUpSameDay: { known: false },
       revisitPriceSameDay: { known: false },
     },

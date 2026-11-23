@@ -2,7 +2,7 @@
 // JSON では null を「不明」とし、ここで三値（Fact）に変える。重ねるのはこの 1 か所
 import type { Facility, FacilityFactKey, Fact } from "./types";
 
-export const FACT_KEYS: FacilityFactKey[] = ["grade", "dxTier", "baseUp", "priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"];
+export const FACT_KEYS: FacilityFactKey[] = ["grade", "dxTier", "baseUp", "priceResponse", "note16Met", "building", "note14", "revisitBaseUpSameDay", "revisitPriceSameDay"];
 
 type ValueOf<F> = F extends Fact<infer T> ? T : never;
 /** 設定ファイルと症例の JSON での形。三値の項目は値そのものか null（不明） */
@@ -11,6 +11,8 @@ export type FacilityJson = Omit<Facility, FacilityFactKey> & { [K in FacilityFac
 export const GRADES = ["1B", "1N", "2", "3"] as const;
 export const DX_TIERS = ["1", "2", "なし"] as const;
 export const BASE_UPS = ["通常", "注5", "なし"] as const;
+export const BUILDINGS = ["none", "some"] as const;
+export const NOTE14S = ["通常", "減算"] as const;
 
 /** 既定値に上書きを重ねて、判定に渡す施設の設定にする。三値の項目がない・null なら「不明」 */
 export function facilityOf(config: FacilityJson, override: Partial<FacilityJson> = {}): Facility {
@@ -23,6 +25,8 @@ export function facilityOf(config: FacilityJson, override: Partial<FacilityJson>
   if (out.grade.known && !GRADES.includes(out.grade.value)) throw new Error(`施設の設定 grade の値が違う: ${String(out.grade.value)}`);
   if (out.dxTier.known && !DX_TIERS.includes(out.dxTier.value)) throw new Error(`施設の設定 dxTier の値が違う: ${String(out.dxTier.value)}`);
   if (out.baseUp.known && !BASE_UPS.includes(out.baseUp.value)) throw new Error(`施設の設定 baseUp の値が違う: ${String(out.baseUp.value)}`);
+  if (out.building.known && !BUILDINGS.includes(out.building.value)) throw new Error(`施設の設定 building の値が違う: ${String(out.building.value)}`);
+  if (out.note14.known && !NOTE14S.includes(out.note14.value)) throw new Error(`施設の設定 note14 の値が違う: ${String(out.note14.value)}`);
   for (const k of ["priceResponse", "note16Met", "revisitBaseUpSameDay", "revisitPriceSameDay"] as const) {
     const f = out[k];
     if (f.known && typeof f.value !== "boolean") throw new Error(`施設の設定 ${k} は true・false・null のいずれか`);

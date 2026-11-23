@@ -64,6 +64,9 @@ export const FINDING_TEXT: Record<string, string> = {
   "R18.iko_grade3_only": "在宅療養移行加算は、在宅療養支援診療所以外の診療所（管理料の 3 の区分を算定する患者）に限ります{note}",
   "R18.use_baseup_note5": "ベースアップ評価料(Ⅰ)の注5 の届出があるので、「{fixName}」で算定します{note}",
   "R18.use_baseup_normal": "ベースアップ評価料(Ⅰ)の注5 の届出がないので、「{fixName}」で算定します{note}",
+  // R19 単一建物の人数（design.md §15-4。段 17f）。{fixName} はその患者の人数の区分に合う区分の名前
+  "R19.use_band": "単一建物診療患者の人数の区分が、行の区分と違います。人数の区分に合う区分は「{fixName}」です",
+  "R19.declaration_conflict": "申告（2 人以上の建物はない）と請求が食い違っています。申告を確かめてください",
 };
 
 /**
@@ -82,10 +85,16 @@ export const BY_DECLARATION = new Set<string>([
   "R18.iko_grade3_only",
   "R18.use_baseup_note5",
   "R18.use_baseup_normal",
+  "R19.use_band",
+  "R19.declaration_conflict",
 ]);
 export const BY_DECLARATION_NOTE = "（施設の申告による）";
 /** 施設の申告で決まる施設の設定（情報不足のとき、施設の申告の画面へ案内する。design.md §15-4） */
-export const DECLARED_FACILITY_KEYS: FacilityFactKey[] = ["grade", "note16Met", "dxTier", "baseUp"];
+export const DECLARED_FACILITY_KEYS: FacilityFactKey[] = ["grade", "note16Met", "dxTier", "baseUp", "building", "note14"];
+/**
+ * 単一建物の人数の入力の案内（design.md §15-4。V-4・V-3）。人数の数え方は EM R8-94 の読み（明文なし。U-22）
+ */
+export const BUILDING_BAND_GUIDE = "その月に、この建物で在医総管か施医総管を算定する人の数（月の途中で亡くなった人・入居した人も、その月に算定するなら数えます）で、みなしを当てたあとの、請求に使う区分を入れてください（読み〔明文なし〕）";
 /** 施設の申告の画面への案内（宛先の値は増やさない。§6-1 の L-44） */
 const DECLARATION_GUIDE = "施設の申告の画面で確かめてください（事務長でなければ、事務長に施設の申告を頼んでください）";
 
@@ -221,8 +230,9 @@ export const COMMENT_CHECK_SCOPE = {
     "在宅酸素療法指導管理料の、動脈血酸素分圧又は飽和度",
     "訪問診療と同じ日の往診の理由",
     "急性増悪で週 4 回以上訪問したときの、必要性と日付",
+    "単一建物 2 人以上の区分の管理料の、単一建物診療患者の人数",
   ],
-  uncheckedCount: 19,
+  uncheckedCount: 18,
 };
 /** 画面の点検の説明に出す文 */
 export const COMMENT_CHECK_NOTE = `摘要欄の必須の記載のうち、点検しているのは次の ${COMMENT_CHECK_SCOPE.checked.length} 項目です：${COMMENT_CHECK_SCOPE.checked.join("／")}。記載要領の別表Ⅰ に定めがあっても、点検していない項目が ${COMMENT_CHECK_SCOPE.uncheckedCount} 件あります。`;
@@ -257,6 +267,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
   rxLongPsychotropic: "その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
+  buildingBand: "単一建物診療患者の人数の区分（みなしを当てたあとの、請求に使う区分）",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
@@ -266,6 +277,8 @@ export const FACILITY_LABEL: Record<FacilityFactKey, string> = {
   baseUp: "ベースアップ評価料の届出の区分",
   priceResponse: "物価対応料を算定するか",
   note16Met: "管理料の注16 の基準を満たしているか",
+  building: "同じ建物で同じ月に 2 人以上を診ている建物があるか",
+  note14: "注14（単一建物 10 人以上の区分の減算）の点数で算定しているか",
   revisitBaseUpSameDay: "訪問診療料と往診料の両方がある日に、再診時等のベースアップ評価料を重ねて算定できるか",
   revisitPriceSameDay: "訪問診療料と往診料の両方がある日に、再診時等の物価対応料を重ねて算定できるか",
 };
@@ -302,6 +315,9 @@ export function findingText(f: Finding): string {
       const label = FACILITY_LABEL[facilityKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
+    // 単一建物の人数：施設の申告（building）も分からないときは、施設の申告の画面への案内を先に出す（1 項目で全患者が決まりうるため。design.md §15-4）
+    if (f.missing.field === "buildingBand")
+      return `${f.params?.facilityFirst ? `施設の申告「${FACILITY_LABEL.building}」が分かりません。${DECLARATION_GUIDE}。「ない」と申告すれば、患者ごとには入れなくて済みます。そうでなければ、` : ""}${FACT_LABEL.buildingBand}が入っていません。${BUILDING_BAND_GUIDE}`;
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
     // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
     if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";

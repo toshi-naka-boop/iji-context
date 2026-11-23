@@ -1,0 +1,39 @@
+{
+  "id": "system/r19",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R19：管理料（在宅時医学総合管理料・施設入居時等医学総合管理料）は、単一建物診療患者の人数（その月に、その患者が住む建物で在宅時医学総合管理料か施設入居時等医学総合管理料を算定する人の数）の区分（1 人、2〜9 人、10〜19 人、20〜49 人、50 人以上）で算定する。同じ建物で 2 人以上を診ている建物がないと施設が申告していれば、どの患者も 1 人の区分。摘要欄の戸数によるみなしの記載がある在宅時医学総合管理料は 1 人の区分で算定できる",
+  "rev": "6991c64b00cd",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R19",
+    "at": "2026-10-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2026-10-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2026-10-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "official_seen": [],
+  "match": {
+    "ruleId": "R19"
+  },
+  "history": [
+    {
+      "at": "2026-10-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

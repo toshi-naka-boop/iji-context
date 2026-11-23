@@ -9,6 +9,12 @@ export type Payer = "支払基金" | "国保連";
 /** 施設の種別（design.md §15-2）：1B＝機能強化型・病床あり／1N＝機能強化型・病床なし／2＝在支診（(2)イ・(3)）／3＝在支診以外 */
 export type FacilityGrade = "1B" | "1N" | "2" | "3";
 
+/** 単一建物診療患者の人数の区分（EM §2-2 R8-94 の 5 区分：1 人／2〜9 人／10〜19 人／20〜49 人／50 人以上。design.md §15-4） */
+export type BuildingBand = "1" | "2-9" | "10-19" | "20-49" | "50+";
+export const BUILDING_BANDS = ["1", "2-9", "10-19", "20-49", "50+"] as const satisfies readonly BuildingBand[];
+/** 10 人以上の人数の区分（注14 の減算の対象。EM R8-191） */
+export const NOTE14_BANDS: readonly BuildingBand[] = ["10-19", "20-49", "50+"];
+
 export type Facility = {
   /** 施設の種別（施設の申告から決める。管理料・在宅ターミナルケア加算・緊急往診加算の区分と R18 が読む。design.md §15-4） */
   grade: Fact<FacilityGrade>;
@@ -34,6 +40,13 @@ export type Facility = {
   priceResponse: Fact<boolean>;
   /** 管理料の注16 の基準を満たすか（施設に 1 つ。在医総管と施設総管の両方に効く） */
   note16Met: Fact<boolean>;
+  /**
+   * 同じ建物で同じ月に 2 人以上を診ている建物があるか（施設の申告 building。design.md §15-2。C-242）。none なら、どの患者も単一建物 1 人の区分。
+   * some・分からないなら、患者ごとの事実 buildingBand を使う。判定のルールと導出には直接渡さず、人数の区分の決め方（buildingBandOf）にだけ使う
+   */
+  building: Fact<"none" | "some">;
+  /** 注14（10 人以上の区分の減算。EM R8-191）：通常の点数で算定している（基準に当たる）／減算の点数で算定している（施設の申告 note14。design.md §15-2。段 17h） */
+  note14: Fact<"通常" | "減算">;
   /** 訪問診療料と往診料の両方を算定した日に、ベースアップ評価料(Ⅰ)の「再診時等」を重ねて算定できると確かめたか（R08 だけが読む） */
   revisitBaseUpSameDay: Fact<boolean>;
   /** 同じことを物価対応料について確かめたか（R15 だけが読む） */
@@ -44,7 +57,7 @@ export type Facility = {
 export type FacilityBasis = "declaration" | "case" | "config";
 
 /** 三値で持つ施設の設定のキー（不明なら、それに依存するルールは情報不足になる。design.md §2-7） */
-export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
+export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "building" | "note14" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
 
 /** 患者の居住の場所。管理料の族（在医総管／施設総管）を決める */
 export type Residence = "居宅" | "施設入居等";
@@ -97,6 +110,11 @@ export type Facts = {
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
   comprehensiveCare: Fact<boolean>;
+  /**
+   * 単一建物診療患者の人数の区分（その診療年月で効く、患者ごとの値。design.md §15-4）。医療事務が入れる「みなしを当てたあとの、請求に使う区分」（V-3）。
+   * 施設の申告 building が none のときは使わない（どの患者も 1 人の区分）。持たない請求（同梱の症例・練習問題）は「分からない」
+   */
+  buildingBand?: Fact<BuildingBand>;
 };
 
 export type FactKey = keyof Facts;

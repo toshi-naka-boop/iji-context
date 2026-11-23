@@ -84,6 +84,8 @@ const INPUTS: { name: string; ctx: ClaimContext }[] = [
   { name: "K1＋在宅療養移行加算（在支診）", ctx: withLines(K1, line("C002_N9_IKO1", 1, K1.lines.find((l) => l.kubun === "C002_2I1")!.dates)) },
   { name: "K1＋注5 の申告", ctx: { ...K1, facility: { ...K1.facility, baseUp: { known: true, value: "注5" } } } },
   { name: "K1＋注5 の行（通常の申告）", ctx: { ...K1, lines: K1.lines.map((l) => (l.kubun === "O001_3I" ? { ...l, kubun: "O001_3I_N5" } : l)) } },
+  // R19：単一建物の人数（design.md §15-4。段 17f）。患者ごとの人数の区分を 2〜9 人と確かめた（施設の申告 building は「ある」）のに、管理料が 1 人の区分
+  { name: "K1＋人数の区分 2〜9 人", ctx: { ...K1, facility: { ...K1.facility, building: { known: true, value: "some" } }, facts: { ...K1.facts, buildingBand: { known: true, value: "2-9" } } } },
   { name: "K2＋要介護2", ctx: withFact(withFact(withFact(loadCase("K2"), "careLevel", { known: true, value: 2 }), "disabilitySupportLevel", { known: true, value: 0 }), "table8_3Other", { known: true, value: false }) },
   { name: "K2（UKE）記載を 1 つ消す", ctx: { ...ukeCase("K2"), comments: ukeCase("K2").comments!.slice(1) } },
   { name: "K1（UKE）記載をすべて消す", ctx: { ...ukeCase("K1"), comments: [] } },
@@ -116,6 +118,8 @@ describe("申告を縛る：partial で出た指摘は、行を移す前の入�
       "R18.use_baseup_normal",
       "R18.use_baseup_note5",
       "R18.use_grade",
+      // 段 17f（design.md §15-4）
+      "R19.use_band",
     ]);
   });
 

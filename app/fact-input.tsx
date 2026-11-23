@@ -14,7 +14,8 @@ import { FACT_LABEL, fillLocal, LOCAL_PAIR_TEXT } from "../src/messages";
 import { parseLocalKey } from "../src/generic/local-pair";
 import { ROLE_LABELS } from "../src/server/roles";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
-import { LABEL as PATIENT_LABEL, choicesOf, show as showPatientFact, valueOf } from "./work/patient-panel";
+import { BUILDING_BAND_GUIDE } from "../src/messages";
+import { LABEL as PATIENT_LABEL, choicesOf, factValueOf, show as showPatientFact } from "./work/patient-panel";
 import type { Role } from "../src/server/roles";
 
 /** checkedByRole は、院内の知識で押した事実（local:*）だけが持つ（押した人の役割。名前は返らない） */
@@ -139,10 +140,11 @@ function PatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSa
   const [value, setValue] = useState("");
   const [source, setSource] = useState<string>(FACT_SOURCES[0]);
   const [validUntil, setValidUntil] = useState("");
+  const [fromMonth, setFromMonth] = useState("");
   const [err, setErr] = useState("");
   async function save() {
     setErr("");
-    const fact = { key: props.factKey, value: valueOf(props.factKey, value), source, validUntil: props.factKey === "careLevel" ? validUntil || null : null };
+    const fact = { key: props.factKey, value: factValueOf(props.factKey, value, fromMonth), source, validUntil: props.factKey === "careLevel" ? validUntil || null : null };
     const r = await fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json().catch(() => null);
     if (!r.ok) return setErr(d?.error ?? "エラー");
@@ -159,7 +161,9 @@ function PatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSa
         {FACT_SOURCES.map((s) => <option key={s} value={s}>{how(s)}</option>)}
       </select>
       {props.factKey === "careLevel" && <label>有効期間の終わり <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>}
-      <button disabled={value === ""} onClick={() => void save()}>残す</button>
+      {props.factKey === "buildingBand" && <label>いつの診療月から <input type="month" value={fromMonth} onChange={(e) => setFromMonth(e.target.value)} /></label>}
+      <button disabled={value === "" || (props.factKey === "buildingBand" && fromMonth === "")} onClick={() => void save()}>残す</button>
+      {props.factKey === "buildingBand" && <span className="muted">{BUILDING_BAND_GUIDE}</span>}
       {err && <span className="notice warn">{err}</span>}
     </span>
   );

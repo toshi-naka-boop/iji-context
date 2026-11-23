@@ -5,7 +5,7 @@ import type Database from "better-sqlite3";
 import facilityConfig from "../../config/facility.json";
 import { period } from "../demo/period";
 import { SELECTABLE_REVISIONS } from "../engine/revisions";
-import { codeKey, DISPENSING_KEY, GRADE_KEY, NOTE16_KEY, type DeclarationRow, type DeclarationSource, type Notified, type Requirement } from "./declaration";
+import { BUILDING_KEY, codeKey, DISPENSING_KEY, GRADE_KEY, NOTE16_KEY, type DeclarationRow, type DeclarationSource, type Notified, type Requirement } from "./declaration";
 
 /** 1 行を足すときの中身（id・作った日時はここで付ける） */
 export type DeclarationInput = Omit<DeclarationRow, "id" | "createdAt">;
@@ -68,6 +68,8 @@ export function demoSeedRows(): DeclarationInput[] {
     { ...base, itemKey: GRADE_KEY, notified: "yes", startOn, requirement: "met", choice: d.grade },
     { ...base, itemKey: NOTE16_KEY, notified: "na", startOn: null, requirement: d.note16 as Requirement, choice: null },
     { ...base, itemKey: DISPENSING_KEY, notified: "na", startOn: null, requirement: "met", choice: d.dispensing },
+    // 同じ建物で 2 人以上を診ている建物は「ない」（EM §5-1 の症例はどれも単一建物 1 人のコード。段 17f。C-242）
+    { ...base, itemKey: BUILDING_KEY, notified: "na", startOn: null, requirement: "met", choice: d.building },
     ...codes,
   ];
 }

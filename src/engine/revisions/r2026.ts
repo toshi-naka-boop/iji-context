@@ -19,8 +19,10 @@ import { makeR15 } from "../rules/r15";
 import { makeR16 } from "../rules/r16";
 import { makeR17 } from "../rules/r17";
 import { makeR18 } from "../rules/r18";
+import { makeR19 } from "../rules/r19";
 import { changes } from "./r2026-changes";
-import { bundles, codes, shikibetsu } from "./r2026-codes";
+import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
+import { bundles, codes as baseCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
 import { kanriRows } from "./kanri";
 import type { KubunDef, Revision, RevisionConsts } from "./types";
@@ -138,13 +140,18 @@ const points: Record<string, KubunDef> = {
   O001_2_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 再診時等（注5）", "O001 2 注5", 6),
   O001_3I_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時イ（注5）", "O001 3 イ 注5", 107),
   O001_3RO_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時ロ（注5）", "O001 3 ロ 注5", 26),
+  // 単一建物 2 人以上の管理料の区分（EM §2-2 R8-95〜R8-190。段 17f。r2026-band.ts）
+  ...bandPoints,
 };
+const codes = { ...baseCodes, ...bandCodes };
+const shikibetsu = { ...baseShikibetsu, ...bandShikibetsu };
 
 const consts: RevisionConsts = {
   visitKubun: ["C001_1I", "C001_1RO"],
   kanri: {
-    // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72。単一建物 1 人の区分だけ）
-    rows: kanriRows({
+    // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72）の単一建物 1 人の区分と、人数の区分の行（EM R8-95〜R8-190。段 17f）
+    rows: [
+      ...kanriRows({
       在医総管: { "1B": ["C002_1B_I1", "C002_1B_RO1", "C002_1B_NI1"], "1N": ["C002_1N_I1", "C002_1N_RO1", "C002_1N_NI1"], "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"], "3": ["C002_3I1", "C002_3RO1", "C002_3NI1"] },
       施設総管: {
         "1B": ["C002-2_1B_I1", "C002-2_1B_RO1", "C002-2_1B_NI1"],
@@ -152,7 +159,9 @@ const consts: RevisionConsts = {
         "2": ["C002-2_2I1", "C002-2_2RO1", "C002-2_2NI1"],
         "3": ["C002-2_3I1", "C002-2_3RO1", "C002-2_3NI1"],
       },
-    }),
+      }),
+      ...bandRows,
+    ],
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16：基準を満たさない施設は、月2回以上の区分に代えて月1回の区分を算定する（R8-17。どの種別も。重症区分は対象外）
     note16: { enabled: true, from: "ロ", to: "ニ" },
@@ -226,6 +235,7 @@ export const r2026: Revision = {
     ...[makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
     makeR17({ consts, comments, commentCodes }),
     makeR18(consts, points),
+    makeR19(consts, points),
   ],
   changes,
 };

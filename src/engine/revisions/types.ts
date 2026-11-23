@@ -1,5 +1,5 @@
 // 改定の版の型（design.md §2-4・§2-5・§2-3-2）。点数表・ルールの定数・ルール一式は版に属する
-import type { FacilityFactKey, FacilityGrade, Residence, Rule } from "../types";
+import type { BuildingBand, FacilityFactKey, FacilityGrade, Residence, Rule } from "../types";
 
 /**
  * 区分の定義。points が null の区分は点数未収載（合計は null になる）。
@@ -14,9 +14,9 @@ export type KanriTierKey = "イ" | "ロ" | "ニ";
 
 /**
  * 管理料の区分の表の 1 行（design.md §15-4）：族×施設の種別×区分 → kubun。
- * band は単一建物診療患者の数の区分（段 17f で E-1 の値が入ってから足す。省いた行は 1 人の区分）。R01・R02・R16 は band・grade を見ず、R18 は grade だけを見る（§0-12）
+ * band は単一建物診療患者の数の区分（EM R8-94。段 17f。省いた行は 1 人の区分）。R01・R02・R16 は band・grade を見ず、R18 は grade だけ、R19 は band だけを見る（§0-12）
  */
-export type KanriRow = { kubun: string; family: KanriFamily; grade: FacilityGrade; tier: KanriTierKey; band?: string };
+export type KanriRow = { kubun: string; family: KanriFamily; grade: FacilityGrade; tier: KanriTierKey; band?: Exclude<BuildingBand, "1"> };
 
 /** 施設の種別で分かれる加算の、種別 → kubun（その版に区分のない種別は持たない） */
 export type ByGrade = Partial<Record<FacilityGrade, string>>;

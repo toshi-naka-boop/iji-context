@@ -22,7 +22,14 @@ const INPUTS: { name: string; ctx: ClaimContext }[] = [
   // 在支診かで結論が変わる道（往診の翌日の訪問診療料）を通す入力
   { name: "K1＋訪問診療の前日の往診料", ctx: withLines(K1, line("C000", 1, [`${visitDay.slice(0, 8)}${String(Number(visitDay.slice(8)) - 1).padStart(2, "0")}`])) },
 ];
+/** 漏れを探す入力：上に、単一建物の人数で結論が変わる道（段 17f）を足す。管理料を 2 人以上の区分・10 人以上の区分にした K1（患者ごとの人数の区分は 2〜9 人と確かめた）。
+ * 申告から来た値かで結論が変わる（申告だけから 1 人と決まると R19 は直さず食い違いの情報不足。C-251）ので、下の「変わらない」の入力には入れない */
+const LEAK_INPUTS = [...INPUTS, ...(["C002_2I2", "C002_2I3"] as const).map((k) => ({ name: `K1 の管理料を ${k}`, ctx: bandCase(K1, k) }))];
 
+/** K1 の管理料の行を kubun に替え、患者ごとの人数の区分を 2〜9 人と確かめた請求 */
+function bandCase(c: ClaimContext, kubun: string): ClaimContext {
+  return { ...c, lines: c.lines.map((l) => (l.kubun.startsWith("C002_2") ? { ...l, kubun } : l)), facts: { ...c.facts, buildingBand: { known: true, value: "2-9" } } };
+}
 const GRADE_OF = (f: Facility, g: FacilityGrade): Facility => ({ ...f, grade: { known: true, value: g }, zaishishin: g !== "3", kyokagata: g === "1B" || g === "1N", hasBeds: g === "1B" });
 /** 申告の値ごとの変え方（分かっている値だけ。分からないは情報不足で、種類の文を持たない） */
 const VARIANTS: Record<(typeof DECLARED_KEYS)[number], ((f: Facility) => Facility)[]> = {
@@ -30,13 +37,15 @@ const VARIANTS: Record<(typeof DECLARED_KEYS)[number], ((f: Facility) => Facilit
   note16Met: [true, false].map((v) => (f: Facility) => ({ ...f, note16Met: { known: true, value: v } })),
   dxTier: (["1", "2", "なし"] as const).map((v) => (f: Facility) => ({ ...f, dxTier: { known: true, value: v } })),
   baseUp: (["通常", "注5", "なし"] as const).map((v) => (f: Facility) => ({ ...f, baseUp: { known: true, value: v } })),
+  building: (["none", "some"] as const).map((v) => (f: Facility) => ({ ...f, building: { known: true, value: v } })),
+  note14: (["通常", "減算"] as const).map((v) => (f: Facility) => ({ ...f, note14: { known: true, value: v } })),
 };
 const declared: ClaimContext["facilityBasis"] = Object.fromEntries(DECLARED_KEYS.map((k) => [k, "declaration"]));
 const kindsOf = (c: ClaimContext) => new Set(evaluate(c).findings.filter((f) => !f.messageKey.endsWith(".missing_fact")).map((f) => f.messageKey));
 
 describe("byDeclaration の漏れ（design.md §15-4）", () => {
   const changed = new Set<string>();
-  for (const { ctx } of INPUTS)
+  for (const { ctx } of LEAK_INPUTS)
     for (const vary of Object.values(VARIANTS))
       for (const basis of [undefined, declared]) {
         const sets = vary.map((v) => kindsOf({ ...ctx, facility: v(ctx.facility), facilityBasis: basis }));
@@ -48,7 +57,7 @@ describe("byDeclaration の漏れ（design.md §15-4）", () => {
     expect([...changed].filter((k) => !BY_DECLARATION.has(k)).sort()).toEqual([]);
   });
   it("空振りしていない：種別・DX・ベースアップ・在支診の道で、変わる種類が実際に見つかる", () => {
-    expect([...changed]).toEqual(expect.arrayContaining(["R18.use_grade", "R18.use_baseup_note5", "R12.dx_tier", "R12.dx_not_notified", "R10.visit_day_after_oushin"]));
+    expect([...changed]).toEqual(expect.arrayContaining(["R18.use_grade", "R18.use_baseup_note5", "R12.dx_tier", "R12.dx_not_notified", "R10.visit_day_after_oushin", "R19.use_band"]));
   });
   it("BY_DECLARATION の種類の文には「（施設の申告による）」が付く", () => {
     const f = evaluate({ ...K1, facility: GRADE_OF(K1.facility, "1B") }).findings.find((x) => x.messageKey === "R18.use_grade")!;

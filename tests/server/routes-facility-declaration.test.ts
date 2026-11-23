@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { evaluate } from "../../src/engine";
 import { resolveRevision } from "../../src/engine/revisions";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
@@ -217,5 +218,37 @@ describe("実在用のクリニック", () => {
     const saved = await fr.POST(new Request("http://localhost/api/facility", { method: "POST", headers: { cookie: realCookie, "content-type": "application/json" }, body: JSON.stringify({ key: "priceResponse", value: true }) }));
     expect(saved.status).toBe(200);
     expect(instance.runAs(real, () => instance.getApp().caseOf(id).facility).priceResponse).toEqual({ known: true, value: true });
+  });
+});
+
+describe("同じ建物で 2 人以上を診ている建物があるか（building。段 17f。C-242）", () => {
+  it("from_month のない申告は 400。残すと効く行が 15-2 の規則で決まり、申告だけから 1 人と決まる請求の 2 人以上の区分の行は、申告の画面に数が出て、R19 は食い違いの情報不足にする", async () => {
+    const real = instance.getAuth().register("decl_building", "すずき", "password123", "real");
+    const c = `resemen_session=${instance.getAuth().createSession(real.id).token}`;
+    setRole(real, "manager");
+    expect((await save({ item: "building", choice: "none", checkedOn: day(13), recheckOn: "2027-10-13" }, c)).status).toBe(400);
+    expect((await save({ item: "building", fromMonth: YM, choice: "several", checkedOn: day(13), recheckOn: "2027-10-13" }, c)).status).toBe(400);
+    const C = resolveRevision(YM).consts;
+    const base = readUke(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")));
+    const r = base.receipts[0];
+    const file: UkeFile = { ...base, receipts: [{ ...r, claimId: "B1", patient: { ...r.patient, name: "架空 松子", birth: "19470707", insurer: { number: "06139991", symbol: "77", no: "703" } }, lines: [{ kubun: C.visitKubun[0], count: 2, dates: [day(5), day(19)] }, { kubun: "C002_2RO2", count: 1, dates: [day(19)] }], comments: [] }] };
+    const id = instance.runAs(real, () => instance.getApp().uploadUke(instance.clerkIdOf(real), writeUke(file)).flatMap((u) => u.receipts.map((x) => x.claimId)))[0];
+    // 申告がない間は分からない（患者ごとの値もないので、R19 は人数の情報不足）
+    expect(instance.runAs(real, () => instance.getApp().caseOf(id).facility.building)).toEqual({ known: false });
+    expect((await list(c)).mismatches).toEqual([]);
+    // 来月からの「ない」は、今月の請求に効かない
+    expect((await save({ item: "building", fromMonth: month(1), choice: "none", checkedOn: day(13), recheckOn: "2027-10-13" }, c)).status).toBe(200);
+    expect(instance.runAs(real, () => instance.getApp().caseOf(id).facility.building)).toEqual({ known: false });
+    expect((await save({ item: "building", fromMonth: YM, choice: "none", checkedOn: day(13), recheckOn: "2027-10-13" }, c)).status).toBe(200);
+    const d = await list(c);
+    expect(itemOf(d, "building")?.status.v).toBe("held");
+    expect(d.mismatches).toEqual(["同じ建物で 2 人以上を診ている建物は「ない」と申告されていますが、2 人以上の区分の管理料の行がある請求が 1 件あります"]);
+    const claim = instance.runAs(real, () => instance.getApp().caseOf(id));
+    expect(claim.facility.building).toEqual({ known: true, value: "none" });
+    expect(claim.facilityBasis?.building).toBe("declaration");
+    const fs = evaluate(claim).findings.filter((f) => f.ruleId === "R19");
+    expect(fs.map((f) => [f.messageKey, f.missing?.field])).toEqual([["R19.declaration_conflict", "facility.building"]]);
+    // 変更の記録の問い（history）も building を受ける
+    expect((await (await historyRoute()).GET(new Request(`${URL_}/history?item=building`, { headers: { cookie: c } }))).status).toBe(200);
   });
 });

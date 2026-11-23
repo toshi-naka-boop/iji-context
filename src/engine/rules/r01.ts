@@ -52,7 +52,7 @@ export function makeR01(c: RevisionConsts, points: Record<string, KubunDef>): Ru
         if (!wrong.length) return [];
         // 注16 の基準を満たすことが施設の申告（届出の裏付けがない）だけから来ているときは、点数の高い区分へ直す区分誤りを出さず、申告と請求の食い違いの情報不足にする
         const byDeclaration = c.kanri.note16.enabled && ctx.facilityBasis?.note16Met === "declaration";
-        const conflict = byDeclaration ? wrong.filter((l) => higher(kanriKubunOf(c, l.family, l.grade, TWICE) ?? "", l.kubun)) : [];
+        const conflict = byDeclaration ? wrong.filter((l) => higher(kanriKubunOf(c, l.family, l.grade, TWICE, l.band ?? "1") ?? "", l.kubun)) : [];
         const rest = wrong.filter((l) => !conflict.includes(l)).map((l) => l.kubun);
         const out: Finding[] = [];
         if (conflict.length)

@@ -20,7 +20,7 @@ export function eventsOf<T extends ClaimEvent["type"]>(ctx: ClaimContext, type: 
 /** known=true が前提の取り出し（needs で確かめた後に使う） */
 export function fact<K extends FactKey>(ctx: ClaimContext, key: K) {
   const f = ctx.facts[key];
-  if (!f.known) throw new Error(`事実 ${key} が不明のまま check が呼ばれた`);
+  if (!f?.known) throw new Error(`事実 ${key} が不明のまま check が呼ばれた`);
   return f.value as Extract<ClaimContext["facts"][K], { known: true }>["value"];
 }
 

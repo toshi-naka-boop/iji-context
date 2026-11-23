@@ -27,6 +27,8 @@ export const declarationBody = z.union([
   z.strictObject({ item: z.literal("grade"), choice: z.enum(["unknown", ...GRADE_CHOICES.map((g) => g.id)] as [string, ...string[]]), requirement, startOn: day, notifiedOn: day, ...checked }),
   z.strictObject({ item: z.literal("note16"), requirement, ...checked }),
   z.strictObject({ item: z.literal("dispensing"), choice: z.enum(["outside", "inside", "unknown"]), ...checked }),
+  // 同じ建物で同じ月に 2 人以上を診ている建物があるか（段 17f。C-242）
+  z.strictObject({ item: z.literal("building"), choice: z.enum(["none", "some", "unknown"]), ...checked }),
   z.strictObject({ item: z.string().regex(/^code:\d{1,4}$/), notified: z.enum(["yes", "no", "unknown"]), requirement, startOn: day, notifiedOn: day, choice: z.enum(["1", "2"]).nullable(), ...checked }),
 ]);
 
@@ -36,8 +38,8 @@ export const confirmBody = z.strictObject({ ids: z.array(z.number().int().positi
 /** まとめて「変わりなし」の初期の選択の問い（GET /api/facility/declaration/confirm）：知らせの行（notice）か、判定の画面の理由（month・item） */
 export const confirmQuery = z.union([
   z.strictObject({ notice: z.coerce.number().int().positive() }),
-  z.strictObject({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), item: z.string().regex(/^(grade|note16|dispensing|code:\d{1,4})$/).optional() }),
+  z.strictObject({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), item: z.string().regex(/^(grade|note16|dispensing|building|code:\d{1,4})$/).optional() }),
 ]);
 
 /** 変更の記録の問い（GET /api/facility/declaration/history?item=） */
-export const declarationHistoryQuery = z.strictObject({ item: z.string().regex(/^(grade|note16|dispensing|code:\d{1,4})$/) });
+export const declarationHistoryQuery = z.strictObject({ item: z.string().regex(/^(grade|note16|dispensing|building|code:\d{1,4})$/) });

@@ -153,7 +153,8 @@ describe("同梱の版", () => {
       for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual(k === "C002_N8_GENSAN" ? [k, "未収載", "object"] : [k, "EM", "number"]);
     for (const rev of REVISIONS) expect(rev.consts.deferred).toContain("C002_N8_GENSAN");
   });
-  it("ルールは R01〜R18 の 18 本", () => {
-    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 18 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
+  // R19（単一建物の人数。段 17f）を足して 19 本
+  it("ルールは R01〜R19 の 19 本", () => {
+    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 19 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
   });
 });

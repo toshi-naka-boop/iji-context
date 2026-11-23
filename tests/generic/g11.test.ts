@@ -597,3 +597,21 @@ describe("再反証 round-56", () => {
     expect(JSON.stringify(r)).not.toContain(`${YM}-01`);
   });
 });
+
+describe("減算中の施設の請求（段 17f。17h までの扱い。design.md §15-4。L-142）", () => {
+  it("請求に注14 の減の行（EM §2-8 の表のコード）があると、管理料の族の候補を G11.missing に出さず、点検の範囲に数える。「管理料がありません」「通常の行」を足す向きの文が出ない", () => {
+    const db = g11Db();
+    // 10〜19 人の在医総管（通常の行。在支診）と、その減の行（注14）
+    for (const [code, name] of [["114711810", "在医総管（在支診等・月２回～１０～１９人）"], ["114721110", "在医総管（在支診等・月２回～１０～１９人減）"]]) {
+      db.prepare("DELETE FROM shinryo WHERE snapshot = ? AND code = ?").run(SNAP, code);
+      put(db, "shinryo", SNAP, { code, name, alpha: "C" });
+    }
+    const acts = [act(20, "114711810", "在医総管", { category: "診療行為" })];
+    const r = ok(evaluateG11({ units: [unit(["114721110"], 20)] }, db, about(acts), rev));
+    expect(r.findings).toEqual([]);
+    expect(r.scope).toContain("注14 の減算の行がある請求の管理料は、まだ見ていません：1 件");
+    // 減の行のない請求では、今までどおり管理料の取り忘れを見る（言うかどうかは担当のルールとの重なりで決まる）
+    const plain = ok(evaluateG11({ units: [] }, db, about(acts), rev));
+    expect(plain.scope.some((s) => s.startsWith("注14 の減算の行がある請求"))).toBe(false);
+  });
+});

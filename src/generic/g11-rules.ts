@@ -73,7 +73,7 @@ function fixOf(f: Finding, kubun: string, rev: Revision): string | null {
   if (f.ruleId === "R01") {
     const k = kanriOf(c, kubun);
     const tier = f.messageKey === "R01.use_once" || f.messageKey === "R01.note16_once_rate" ? c.kanri.note16.to : f.messageKey === "R01.use_twice_or_more" ? c.kanri.note16.from : null;
-    return k && tier ? (kanriKubunOf(c, k.family, k.grade, tier) ?? null) : null;
+    return k && tier ? (kanriKubunOf(c, k.family, k.grade, tier, k.band ?? "1") ?? null) : null;
   }
   if (f.ruleId === "R08") {
     const { visit, revisit } = baseUpDayKubun(c);

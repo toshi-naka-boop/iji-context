@@ -8,6 +8,7 @@
 // g11Owned の区分（R ルールと導出が見る区分）は、算定プレビューでは見ず、取り込んだ請求では見る（L-97 を v30 で改める。段 18c）。
 // 取り込んだ請求では、R ルールと 2 回言わない（R03・R14 の取り忘れと同じ区分は言わない。R01 の回数の区分誤りには、取り忘れを先に確かめる文を返す）
 import { kubunOfCode } from "../engine/revisions/codes";
+import { NOTE14_REDUCED_CODES } from "../engine/revisions/r2026-note14";
 import { derivedKubun, g11Owned } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
 import type { ChartAct, ChildKind, RxChoice } from "../chart/acts";
@@ -191,13 +192,14 @@ function revInfo(rev: Revision) {
   const owned = new Set(g11Owned(rev.consts));
   const derived = new Set(derivedKubun(rev.consts));
   const deferred = new Set(rev.consts.deferred ?? []);
+  const kanri = new Set(rev.consts.kanri.rows.map((r) => r.kubun));
   const codesOf = (kubun: string) => (Object.hasOwn(rev.codes, kubun) ? [rev.codes[kubun].primary, ...rev.codes[kubun].accept] : []);
   const same = (code: string): string[] => {
     const k = kubunOfCode(rev, code);
     return k ? codesOf(k) : [code];
   };
   const rxCodes = new Set([rev.consts.rx.many, rev.consts.rx.other].flatMap(codesOf));
-  return { owned, derived, deferred, same, rxCodes, rxPrimary: Object.hasOwn(rev.codes, rev.consts.rx.other) ? rev.codes[rev.consts.rx.other].primary : null, kubunOf: (code: string) => kubunOfCode(rev, code) };
+  return { owned, derived, deferred, kanri, same, rxCodes, rxPrimary: Object.hasOwn(rev.codes, rev.consts.rx.other) ? rev.codes[rev.consts.rx.other].primary : null, kubunOf: (code: string) => kubunOfCode(rev, code) };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -385,6 +387,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   const scope: string[] = [];
   const counts = { notSeen: 0 };
+  /** 段 17f の間：請求に注14 の減の行（EM §2-8 の表のコード）があるか。あれば管理料の族の候補を出さず、点検の範囲に数える */
+  const note14Claim = claim.units.some((u) => u.items.some((it) => NOTE14_REDUCED_CODES.includes(it.code)));
+  let note14Skipped = false;
   /** 点検の範囲の数（文 → 数）。suffix は数のあとに添える案内 */
   const scopeCount = new Map<string, { n: number; suffix: string }>();
   const tally = (text: string, n = 1, suffix = "") => scopeCount.set(text, { n: (scopeCount.get(text)?.n ?? 0) + n, suffix });
@@ -504,6 +509,11 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const kubun = m.tbl === "shinryo" ? info.kubunOf(m.code) : null;
       if (kubun && info.deferred.has(kubun)) {
         tally("在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算は見ていません（C〜I の手順）");
+        continue;
+      }
+      // 段 17f の間（17h まで）：注14 の減の行は版の区分になく対象外の単位なので、減の行のある請求の管理料の取り忘れは言わない（通常の行を足す向きに誘わない。design.md §15-4。L-142）
+      if (kubun && note14Claim && info.kanri.has(kubun)) {
+        note14Skipped = true;
         continue;
       }
       // 算定プレビューでは、導出が出来事から立てた行なので見ない（FR-99。C-230）。取り込んだ請求では見る（L-97 を v30 で改める）
@@ -863,6 +873,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 8. 点検の範囲
   if (unmatched > 0) tally("当てられない行為", unmatched);
+  if (note14Skipped) tally("注14 の減算の行がある請求の管理料は、まだ見ていません");
   for (const [text, { n, suffix }] of scopeCount) scope.push(`${text}：${n} 件${suffix}`);
   const hiddenBy: Record<string, number> = {};
   for (const h of hidden) hiddenBy[h.reason] = (hiddenBy[h.reason] ?? 0) + 1;

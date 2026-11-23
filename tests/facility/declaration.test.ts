@@ -174,7 +174,7 @@ describe("判定に渡す形", () => {
     expect([n({}), n({ requirement: "not_met" }), n({ requirement: "unknown" }), n({ recheckOn: day(1) })]).toEqual([true, false, null, null]);
   });
   it("申告がなければ、種別・注16・DX・ベースアップはどれも分からない（config の既定値を使わない）", () => {
-    expect(facilityFromDeclaration([], TODAY, YM)).toEqual({ grade: null, gradeChoice: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
+    expect(facilityFromDeclaration([], TODAY, YM)).toEqual({ grade: null, gradeChoice: null, note16Met: null, dxTier: null, baseUp: null, building: null, note14: null, zaishishin: null, kyokagata: null, hasBeds: null });
     const { demoDeclaration: _d, recheckNoticeDays: _n, recheckDefaultMonths: _m, ...config } = facilityConfig;
     const f = facilityOf({ ...(config as unknown as FacilityJson), ...facilityFromDeclaration([], TODAY, YM) });
     expect([f.grade, f.note16Met, f.dxTier, f.baseUp]).toEqual([{ known: false }, { known: false }, { known: false }, { known: false }]);

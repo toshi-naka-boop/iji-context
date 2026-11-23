@@ -24,10 +24,11 @@ describe("制度層の種", () => {
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("基準月の版のルール（R01〜R18）と 1 対 1。2 回目は何も作らない", () => {
+  it("基準月の版のルール（R01〜R19）と 1 対 1。2 回目は何も作らない", () => {
     const store = { knowledgeDir: path.join(tmp, "knowledge"), skillsDir: path.join(tmp, "skills") };
     const ids = rulesOf(period.yearMonth).map((r) => r.id);
-    expect(ids).toHaveLength(18);
+    // R19（単一建物の人数。段 17f）を足して 19 本
+    expect(ids).toHaveLength(19);
     expect(Object.keys(RULE_TEXT).sort()).toEqual([...ids].sort());
     expect(seed(store)).toEqual(ids.map((id) => `system/${id.toLowerCase()}`));
     expect(seed(store)).toEqual([]);

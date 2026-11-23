@@ -175,7 +175,7 @@ describe("種と移し替えの決まり", () => {
     expect(db.prepare("SELECT value FROM app_settings WHERE key = 'facility'").get()).toEqual({ value: JSON.stringify({ priceResponse: false }) });
     // 移した行は from_month が空なので効く行に選ばれない（推し量って埋めない）
     expect(rows.every((r) => r.fromMonth === null)).toBe(true);
-    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, gradeChoice: null, note16Met: null, dxTier: null, baseUp: null, zaishishin: null, kyokagata: null, hasBeds: null });
+    expect(facilityFromDeclaration(rows, "2026-12-01", YM)).toEqual({ grade: null, gradeChoice: null, note16Met: null, dxTier: null, baseUp: null, building: null, note14: null, zaishishin: null, kyokagata: null, hasBeds: null });
     db.close();
   });
 

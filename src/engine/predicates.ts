@@ -1,7 +1,7 @@
 // 導出と検証が共有する述語（design.md §2-8・§2-3-3・§2-3-4）
 import { addDays, eventsOf, fact } from "./rules/util";
 import type { ByGrade, KanriFamily, KanriRow, KanriTierKey, RevisionConsts } from "./revisions/types";
-import type { ClaimContext, Fact, FacilityGrade } from "./types";
+import type { BuildingBand, ClaimContext, Fact, FacilityGrade } from "./types";
 
 /** 版の管理料の区分をすべて（在医総管・施設総管の、種別×区分〔×人数〕の全部） */
 export function kanriKubun(c: RevisionConsts): string[] {
@@ -16,9 +16,28 @@ export function kanriOf(c: RevisionConsts, kubun: string): Omit<KanriRow, "kubun
   return rest;
 }
 
-/** 族×種別×区分の管理料の区分（単一建物 1 人の区分。人数の区分〔band〕の行は段 17f で選ぶ）。その版にない組は undefined */
-export function kanriKubunOf(c: RevisionConsts, family: KanriFamily, grade: FacilityGrade, tier: KanriTierKey): string | undefined {
-  return c.kanri.rows.find((r) => r.family === family && r.grade === grade && r.tier === tier && r.band === undefined)?.kubun;
+/** 族×種別×区分×人数の区分の管理料の区分（人数の区分を省けば単一建物 1 人の区分）。その版にない組は undefined */
+export function kanriKubunOf(c: RevisionConsts, family: KanriFamily, grade: FacilityGrade, tier: KanriTierKey, band: BuildingBand = "1"): string | undefined {
+  return c.kanri.rows.find((r) => r.family === family && r.grade === grade && r.tier === tier && (r.band ?? "1") === band)?.kubun;
+}
+
+/** 管理料の行の人数の区分（1 人の区分の行は "1"）。管理料の区分でなければ undefined */
+export const kanriBandOf = (c: RevisionConsts, kubun: string): BuildingBand | undefined => {
+  const row = c.kanri.rows.find((r) => r.kubun === kubun);
+  return row ? (row.band ?? "1") : undefined;
+};
+
+/**
+ * 単一建物診療患者の人数の区分の決め方（design.md §15-4。C-242）：施設の申告 building が「ない」→ どの患者も 1 人の区分（byDeclaration は、その値が施設の申告から来たか）。
+ * 「ある」「分からない」→ 患者ごとの事実 buildingBand。効かなければ分からない（facilityFirst は building も分からないとき。施設の申告の画面への案内を先に出す）
+ */
+export type BandRead = { known: true; value: BuildingBand; byDeclaration: boolean } | { known: false; facilityFirst: boolean };
+export function buildingBandOf(ctx: Pick<ClaimContext, "facility" | "facts" | "facilityBasis">): BandRead {
+  const b = ctx.facility.building;
+  if (b.known && b.value === "none") return { known: true, value: "1", byDeclaration: ctx.facilityBasis?.building === "declaration" };
+  const f = ctx.facts.buildingBand;
+  if (f?.known) return { known: true, value: f.value, byDeclaration: false };
+  return { known: false, facilityFirst: !b.known };
 }
 
 /** 算定している管理料の行（回数 1 以上）を、族・種別・区分つきで */

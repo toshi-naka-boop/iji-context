@@ -174,6 +174,10 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
       checkedBy: r.checked_by,
     }));
   }
+  /** 人数の区分の全部の行（古い順。「いつの診療月から」で選ぶので、最新の 1 行だけでは足りない。design.md §15-4） */
+  function buildingBandRows(patientId: string): Pick<PatientFact, "key" | "value">[] {
+    return (sqlite.prepare("SELECT value FROM patient_facts WHERE patient_id = ? AND fact_key = 'buildingBand' ORDER BY id").all(patientId) as { value: string }[]).map((r) => ({ key: "buildingBand", value: JSON.parse(r.value) as PatientFact["value"] }));
+  }
   function patientFacts(claimId: string) {
     const patientId = patientIdOf(claimId);
     return { patientId, facts: latestPatientFacts(patientId).map((f) => ({ ...f, expired: isExpired(f, now()) })) };
@@ -252,7 +256,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     return patientProfile(claimId, caseBurdenRatio);
   }
 
-  return { latestPatientFacts, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
+  return { latestPatientFacts, buildingBandRows, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
 }
 
 export type Patients = ReturnType<typeof createPatients>;

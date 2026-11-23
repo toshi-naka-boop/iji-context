@@ -422,21 +422,27 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(r.pending.map((p) => p.kind === "事実不足" && [p.need, p.target])).toEqual([["facility.dxTier", "clerk"], ["facility.baseUp", "clerk"], ["facility.priceResponse", "clerk"]]);
     expect(kubunOf(r)).toContain("C002_2RO1");
   });
-  it("同一建物 2 人以上の訪問・表にない検査の項目は unsupported で、合計を出さない（機能強化型と注5 は段 17d で導出する）", () => {
+  it("表にない検査の項目は unsupported で、合計を出さない（機能強化型と注5 は段 17d、単一建物 2 人以上は段 17f で導出する）", () => {
     const kyoka = derive(withFacility(K2, { grade: { known: true, value: "1N" }, kyokagata: true }));
     expect(kyoka.unsupported).toEqual([]);
     expect(kubunOf(kyoka)).toContain("C002_1N_RO1");
-    const multi = derive({ ...K2, events: K2.events.map((e) => (e.type === "visit" ? { ...e, sameBuildingCount: 3 } : e)) });
-    expect(multi.unsupported.map((u) => u.code)).toEqual(["single_building_multi"]);
+    // 同一建物居住者の訪問で、患者ごとの人数の区分を 2〜9 人と確かめた：人数の区分の管理料を立てる（段 17f。design.md §15-4）
+    const multi = derive({
+      ...withFacility(K2, { building: { known: true, value: "some" } }),
+      facts: { ...K2.facts, buildingBand: { known: true, value: "2-9" } },
+      events: K2.events.map((e) => (e.type === "visit" ? { ...e, sameBuildingCount: 3 } : e)),
+    });
+    expect(multi.unsupported).toEqual([]);
     expect(kubunOf(multi)).toContain(C.visitKubun[1]);
     expect(kubunOf(multi)).toContain(C.baseUp.visit[1]);
+    expect(kubunOf(multi)).toContain("C002_2RO2");
     const note5 = derive(withFacility(K2, { baseUp: { known: true, value: "注5" } }));
     expect(note5.unsupported).toEqual([]);
     expect(kubunOf(note5)).toContain("O001_3I_N5");
     const item = derive(withEvents(K2, { type: "test", date: day(28), items: ["表にない検査"] }));
     expect(item.unsupported).toEqual([{ code: "unmapped_test_item", detail: "表にない検査" }]);
-    for (const r of [multi, item]) expect(r.totalStatus).toBe("withheld");
-    for (const r of [kyoka, note5]) expect(r.totalStatus).toBe("ok");
+    expect(item.totalStatus).toBe("withheld");
+    for (const r of [kyoka, note5, multi]) expect(r.totalStatus).toBe("ok");
   });
   it("asOf を渡すと、管理料とそれに付く加算の行が見込み（tentative）になり、totalStatus も tentative", () => {
     const mid = contextAsOf(K2, day(14));

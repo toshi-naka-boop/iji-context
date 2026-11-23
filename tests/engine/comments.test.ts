@@ -33,6 +33,17 @@ const tableAfter = (head: string, until: string) => {
   return section.slice(start, end).split("\n").filter((l) => l.startsWith("|")).map((l) => l.split("|").slice(1, -1).map((c) => c.trim()));
 };
 const codesIn = (s: string) => s.match(/\d{9}/g) ?? [];
+/** 表 1 の区分キーの欄の区分。「R8-95〜R8-190」の形は、EM §2-2 のその範囲の行の区分キー（T176-band） */
+function kubunOfCell(cell: string): string[] {
+  const range = /R8-(\d+)〜R8-(\d+)/.exec(cell);
+  if (!range) return cell.match(/[A-Z]\d{3}(?:-\d)?(?:_[A-Z0-9]+)*/g) ?? [];
+  const [from, to] = [Number(range[1]), Number(range[2])];
+  return em.split("\n").flatMap((l) => {
+    const c = l.split("|").slice(1, -1).map((x) => x.trim());
+    const n = /^R8-(\d+)$/.exec(c[0] ?? "");
+    return n && Number(n[1]) >= from && Number(n[1]) <= to ? [c[1]] : [];
+  });
+}
 
 const { src } = loadSources();
 /** 同梱の症例を、UKE から作った請求と同じ形（必須のコメントつき・commentsKnown が真）にする */
@@ -84,6 +95,13 @@ const sameDays = (n: number): ClaimContext => {
 /** 別表第七に当たらない患者が、急性増悪で週 4 回（基準月の 5〜8 日）訪問した */
 const ACUTE = complete(withFact(withFact(loadCase("K3"), "table7", { known: true, value: false }), "acuteExacerbation", { known: true, value: true }));
 const ACUTE_DAYS = [day(5), day(6), day(7), day(8)];
+/** 管理料を単一建物 2〜9 人の区分にした K1（患者ごとの人数の区分は 2〜9 人と確かめた。段 17f） */
+const BAND = complete({
+  ...loadCase("K1"),
+  lines: loadCase("K1").lines.map((l) => (l.kubun === "C002_2I1" ? { ...l, kubun: "C002_2I2" } : l)),
+  facility: { ...loadCase("K1").facility, building: { known: true, value: "some" } },
+  facts: { ...loadCase("K1").facts, buildingBand: { known: true, value: "2-9" } },
+});
 const HOLDS: Record<string, ClaimContext> = {
   "T176-date": K1,
   "T178-state": K2,
@@ -93,20 +111,22 @@ const HOLDS: Record<string, ClaimContext> = {
   "T216-spo2": K1,
   "T162-reason": complete(sameDays(1)),
   "T167-acute": ACUTE,
+  "T176-band": BAND,
 };
 
 describe("evidence-master §2-10 との対応（完了条件 (a)）", () => {
   const rows = tableAfter("**表 1　点検する行", "注：").filter((c) => /^T\d+-/.test(c[0] ?? ""));
 
   it("表 1 の全行が版の comments にあり、その逆も成り立つ（id・区分・コメントコード・条件・数え方）", () => {
-    expect(rows).toHaveLength(8);
+    // 段 17f で T176-band（単一建物 2 人以上の区分の人数）を表 1 に足して 9 行
+    expect(rows).toHaveLength(9);
     for (const rev of REVISIONS) {
       expect(rev.comments.map((r) => r.id).sort(), rev.id).toEqual(rows.map((c) => c[0]).sort());
       for (const c of rows) {
         const rule = rev.comments.find((r) => r.id === c[0])!;
-        expect([...rule.kubun].sort(), c[0]).toEqual((c[1].match(/[A-Z]\d{3}(?:-\d)?(?:_[A-Z0-9]+)*/g) ?? []).sort());
+        expect([...rule.kubun].sort(), c[0]).toEqual(kubunOfCell(c[1]).sort());
         expect([...rule.codes].sort(), c[0]).toEqual(codesIn(c[3]).sort());
-        const when = c[5].includes("在宅以外で死亡") ? "deathNotAtHome" : c[5].includes("同じ日に往診料") ? "sameDayVisitAndOushin" : c[5].includes("急性増悪") ? "acuteOver3PerWeek" : c[5] === "算定すれば必ず" ? "always" : "?";
+        const when = c[5].includes("在宅以外で死亡") ? "deathNotAtHome" : c[5].includes("同じ日に往診料") ? "sameDayVisitAndOushin" : c[5].includes("急性増悪") ? "acuteOver3PerWeek" : c[5] === "算定すれば必ず" || /（[^）]*の行を算定すれば必ず）$/.test(c[5]) ? "always" : "?";
         expect(rule.when, c[0]).toBe(when);
         // 「全部」と書いてある行は each、「どれか 1 つ」「族に合う」行は any。コードが 1 つの行は、どちらでも同じ
         if (rule.codes.length > 1) expect(rule.need, c[0]).toBe(c[4].startsWith("全部") ? "each" : "any");
@@ -139,9 +159,9 @@ describe("evidence-master §2-10 との対応（完了条件 (a)）", () => {
   it("コードの補足（族・訪問した日）は、表 1 のコードの欄の書き方と同じ。補足を持つコードは、どれも表 1 のコード", () => {
     const cell = (id: string) => rows.find((c) => c[0] === id)![3];
     const family = (id: string) => Object.fromEntries(codesIn(cell(id)).map((code) => [code, new RegExp(`${code}（在医総管`).test(cell(id)) ? "在医総管" : "施設総管"]));
-    const want = { ...family("T176-date"), ...family("T177-first") };
+    const want = { ...family("T176-date"), ...family("T177-first"), ...family("T176-band") };
     expect(Object.fromEntries(Object.entries(r2026.commentCodes).flatMap(([code, n]) => (n.family ? [[code, n.family]] : [])))).toEqual(want);
-    expect(Object.values(want).sort()).toEqual(["在医総管", "在医総管", "施設総管", "施設総管"]);
+    expect(Object.values(want).sort()).toEqual(["在医総管", "在医総管", "在医総管", "施設総管", "施設総管", "施設総管"]);
     expect(cell("T167-acute")).toContain("850100095（訪問診療を行った年月日）");
     expect(Object.entries(r2026.commentCodes).filter(([, n]) => n.visited).map(([code]) => code)).toEqual(["850100095"]);
     const all = new Set(r2026.comments.flatMap((r) => r.codes));
@@ -152,8 +172,8 @@ describe("evidence-master §2-10 との対応（完了条件 (a)）", () => {
     const unchecked = tableAfter("**表 2　別表Ⅰ に定めがあるが点検しない行", "- 別表Ⅰ に行がない区分").filter((c) => c.length === 5 && /項番\d+/.test(c[1]));
     expect(COMMENT_CHECK_SCOPE.checked).toHaveLength(r2026.comments.length);
     expect(COMMENT_CHECK_SCOPE.uncheckedCount).toBe(unchecked.length);
-    expect(COMMENT_CHECK_NOTE).toContain("次の 8 項目");
-    expect(COMMENT_CHECK_NOTE).toContain("19 件");
+    expect(COMMENT_CHECK_NOTE).toContain("次の 9 項目");
+    expect(COMMENT_CHECK_NOTE).toContain("18 件");
   });
 
   it("年号区分（表 3）：5＝令和。和暦 7 桁と西暦を行き来できる", () => {

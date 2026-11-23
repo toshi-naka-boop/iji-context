@@ -6,6 +6,7 @@ import { targetOfNeed } from "./index";
 import {
   baseUpDayKubun,
   billedVisitDays,
+  buildingBandOf,
   expectedKanri,
   hokatsuEligible,
   ikouEligible,
@@ -22,7 +23,7 @@ import {
 import { resolveRevision } from "./revisions";
 import type { Revision, RevisionConsts } from "./revisions/types";
 import { addDays, eventsOf } from "./rules/util";
-import type { ClaimContext, ClaimEvent, ClaimLine, Facility, Facts, NeedKey } from "./types";
+import { NOTE14_BANDS, type ClaimContext, type ClaimEvent, type ClaimLine, type Facility, type Facts, type NeedKey } from "./types";
 
 export type DeriveInput = {
   yearMonth: string;
@@ -62,9 +63,9 @@ export type Pending =
 
 /**
  * 導出の未対応。grade_not_in_revision は、その版に施設の種別の区分がない（比較用の版）。baseup_note5 は、注5 の区分の表を持たない版（比較用の版）。
- * single_building_multi は、単一建物の人数別の管理料（段 17f で E-1 のあとに外す）
+ * 単一建物の人数別の管理料は段 17f で導出する（D03 が人数の区分を buildingBandOf で引く。design.md §15-4）
  */
-export type Unsupported = { code: "grade_not_in_revision" | "single_building_multi" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
+export type Unsupported = { code: "grade_not_in_revision" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -282,9 +283,6 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       // 施設の種別が分からないと、管理料の区分（族×種別×区分）が決まらない（design.md §15-4）
       lack(`D03-grade:${input.yearMonth}`, "facility.grade", kanriBlocks);
       kanriOpen = true;
-    } else if (visits.some((v) => v.sameBuildingCount >= 2)) {
-      unsupported.push({ code: "single_building_multi", detail: "同一建物に複数の患者がいる訪問があります。単一建物の人数別の管理料の点数は扱っていません" });
-      kanriOpen = true;
     } else if (!family.known) {
       lack(`D03-residence:${input.yearMonth}`, "residence", kanriBlocks);
       kanriOpen = true;
@@ -292,13 +290,22 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       lack(`D03-tier:${input.yearMonth}`, tier.need, kanriBlocks);
       kanriOpen = true;
     } else if (tier.value !== "none") {
-      const kubun = kanriKubunOf(c, family.value, grade.value, tier.value);
-      if (kubun === undefined) {
+      // 単一建物の人数の区分（design.md §15-4）：施設の申告 building が「ない」なら 1 人。ほかは患者ごとの事実。分からなければ保留
+      const band = buildingBandOf(ctx);
+      const kubun = band.known ? kanriKubunOf(c, family.value, grade.value, tier.value, band.value) : undefined;
+      if (!band.known) {
+        lack(`D03-band:${input.yearMonth}`, "buildingBand", kanriBlocks);
+        kanriOpen = true;
+      } else if (NOTE14_BANDS.includes(band.value)) {
+        // 10 人以上の区分：注14（減算）の申告は段 17h で読む。それまでは、減算中の施設に点数の高い通常の行を示さないよう保留する（L-142）
+        lack(`D03-note14:${input.yearMonth}`, "facility.note14", kanriBlocks);
+        kanriOpen = true;
+      } else if (kubun === undefined) {
         noGradeKubun("管理料");
         kanriOpen = true;
       } else {
         // 使った入力：施設の種別と、回数 2 以上なら重症か、重症でなければ注16
-        const needs: NeedKey[] = ["comprehensiveCare", "residence", "facility.grade", ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
+        const needs: NeedKey[] = ["comprehensiveCare", "residence", "facility.grade", facility.building.known && facility.building.value === "none" ? "facility.building" : "buildingBand", ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
         kanri = { kubun, tier: tier.value, date: visitDays[visitDays.length - 1] };
         add(kubun, [kanri.date], { derive: "D03", events: billedVisits, needs, tentative });
       }
