@@ -3,6 +3,7 @@
 // 記録・応答・監査ログに、患者の氏名・生年月日・番号・鍵を出さない（数だけ。鍵はメモリの中だけで作る）
 import type Database from "better-sqlite3";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
+import { kubunOfCode } from "../../engine/revisions/codes";
 import type { Note14Result } from "../../facility/note14";
 import { isExpired } from "../../patient/facts";
 import { AUTO_TEXT, countMonths, type AutoMonth } from "../../note14/count";
@@ -88,9 +89,17 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
       .filter((r) => months.includes(r.yearMonth))
       .map((r) => {
         if (r.unreadable || r.noRevision || !hasRevision(r.yearMonth)) return { yearMonth: r.yearMonth, patient: r.patient, families: [], excluded: false, unreadable: true };
-        const c = resolveRevision(r.yearMonth).consts;
+        const rev = resolveRevision(r.yearMonth);
+        const c = rev.consts;
         const family = new Map(c.kanri.rows.map((x) => [x.kubun, x.family]));
         const ex = new Set([c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal)]);
+        // 数えるのに使う行（管理料・除く患者の行）が、版の表で引けないコードと同じ単位にあって点検の対象外の単位（others）に外れたレセプトも読めない請求にする
+        // （lines から消えた行を 0 人と数えない。round-62 X-210）。管理料と関係のない単位だけが外れたレセプトは、下書きに使う
+        const counted = (code: string) => {
+          const k = kubunOfCode(rev, code);
+          return k !== null && (family.has(k) || ex.has(k));
+        };
+        if ((r.others ?? []).some((o) => o.codes.some(counted))) return { yearMonth: r.yearMonth, patient: r.patient, families: [], excluded: false, unreadable: true };
         const live = r.lines.filter((l) => l.count > 0);
         return { yearMonth: r.yearMonth, patient: r.patient, families: [...new Set(live.flatMap((l) => (family.has(l.kubun) ? [family.get(l.kubun)!] : [])))], excluded: live.some((l) => ex.has(l.kubun)) };
       });
