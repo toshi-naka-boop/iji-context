@@ -294,4 +294,18 @@ describe("管理料の候補の人数と注14 の側（round-61 X-203・X-204）
     expect(notes.map((n) => n.rule)).toContain("R19");
     expect(notes.find((n) => n.rule === "R19")!.text).toContain(name("C002_2RO5"));
   });
+
+  it("X-204：減算の申告・人数 10〜19 人で、訪問診療 1 回の月に 10〜19 人の減の行（2ロ）の候補 → R01 の直し先は同じ人数の 2ニ の減の行（通常の行を名指ししない）", () => {
+    const base = baseOf([line(K.visit, 14)], { buildingBand: { known: true, value: "10-19" } }, some("減算"));
+    const notes = notesOf(base, "C002_2RO3_N14", 14);
+    const r01 = notes.find((n) => n.rule === "R01")!;
+    expect(r01.text).toContain(name("C002_2NI3_N14"));
+    expect(r01.text).not.toContain(`${name("C002_2NI3")}の恐れ`);
+  });
+
+  it("X-204：減算の申告・人数 10〜19 人で、通常の行（2ロ）の候補でも、R01 の直し先は減の行（2ニ）", () => {
+    const base = baseOf([line(K.visit, 14)], { buildingBand: { known: true, value: "10-19" } }, some("減算"));
+    const r01 = notesOf(base, "C002_2RO3", 14).find((n) => n.rule === "R01")!;
+    expect(r01.text).toContain(name("C002_2NI3_N14"));
+  });
 });

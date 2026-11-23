@@ -6,7 +6,7 @@
 // 候補のコードが版の区分に当たれば行にし、当たらなければ点検の対象外の単位として足す（partial のルールの決め方は src/engine/index.ts の partialBy）
 import { evaluateWith, partialBy } from "../engine";
 import { g11Owners } from "../engine/derive";
-import { baseUpDayKubun, kanriOf, kanriKubunOf, kubunFamily } from "../engine/predicates";
+import { baseUpDayKubun, kanriOf, kanriKubunOf, kubunFamily, reducedOf } from "../engine/predicates";
 import { kubunOfCode } from "../engine/revisions/codes";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimContext, Finding } from "../engine/types";
@@ -66,15 +66,22 @@ function contextOf(base: ClaimContext, rev: Revision, db: MastersDb | null, cand
 
 /**
  * 区分誤りの直し先（正しい側の kubun）。R18 は指摘の params.fix、R01 は管理料の回数の区分、R08 は訪問診療時・再診時等の同じ並びの区分。
- * ほかの区分誤り（R02・R16 など）は直し先を持たない（「ほか」の文で出す）
+ * ほかの区分誤り（R02・R16 など）は直し先を持たない（「ほか」の文で出す）。
+ * R01 の直し先は注14 の側（通常／減）を保つ（round-61 X-204）：候補が減の行か、申告が減算なら、回数の区分を直した区分の減の行（同じ側の 1 つに決まらなければ直し先を持たない）
  */
-function fixOf(f: Finding, kubun: string, rev: Revision): string | null {
+function fixOf(f: Finding, kubun: string, rev: Revision, facility: ClaimContext["facility"]): string | null {
   const c = rev.consts;
   if (f.params?.fix) return f.params.fix;
   if (f.ruleId === "R01") {
     const k = kanriOf(c, kubun);
     const tier = f.messageKey === "R01.use_once" || f.messageKey === "R01.note16_once_rate" ? c.kanri.note16.to : f.messageKey === "R01.use_twice_or_more" ? c.kanri.note16.from : null;
-    return k && tier ? (kanriKubunOf(c, k.family, k.grade, tier, k.band ?? "1") ?? null) : null;
+    const normal = k && tier ? kanriKubunOf(c, k.family, k.grade, tier, k.band ?? "1") : undefined;
+    if (!k || !normal) return null;
+    const reds = reducedOf(c, normal);
+    const reduced = facility.note14.known && facility.note14.value === "減算";
+    if (k.note14 === undefined && !(reduced && reds.length > 0)) return normal;
+    const side = k.note14 === undefined ? reds : reds.filter((r) => kanriOf(c, r)?.note14 === k.note14);
+    return side.length === 1 ? side[0] : null;
   }
   if (f.ruleId === "R08") {
     const { visit, revisit } = baseUpDayKubun(c);
@@ -159,7 +166,7 @@ export function rulesStep3(base: ClaimContext, rev: Revision, db: MastersDb | nu
         if (hit.length === 0) return;
         if (days !== null && !days.includes(c.date)) return;
         if (f.kind === "情報不足" && f.missing) return push(i, { reason: "情報不足", text: `${needLabel(f.missing.field as NeedKey)}を確かめないと算定できるかは言えません`, rule: f.ruleId });
-        const fix = f.kind === "区分誤り" ? fixOf(f, hit[0], rev) : null;
+        const fix = f.kind === "区分誤り" ? fixOf(f, hit[0], rev, ctx.facility) : null;
         if (fix && family[fix] !== undefined && family[fix] === family[hit[0]])
           return push(i, { reason: "同じ族の区分誤り", text: `正しい区分は${f.params?.fixName ?? nameOf(fix)}の恐れがあります（${f.ruleId} による）。どの区分で算定するか確かめてください`, rule: f.ruleId, doubt: true });
         push(i, { reason: "手書きのルールの指摘", text: `${contentOf(f, mine, c.date)}。${ruleName(f.ruleId)}に当たる恐れがあります。算定できるか確かめてください`, rule: f.ruleId });
