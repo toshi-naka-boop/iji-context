@@ -359,6 +359,13 @@ describe("週 4 回以上の訪問（完了条件 (f)）", () => {
     expect(tags({ ...ACUTE, comments: [...ACUTE.comments!, commentOf("850100095", warekiOf(day(12))!, [])] })).toEqual([]);
   });
 
+  it("比べる指摘に添えるコメントの通し番号は、実際に比べたコメント（訪問診療を行った年月日）だけ。必要性・必要を認めた年月日は添えない（X-331）", () => {
+    const oneDay: ClaimContext = { ...ACUTE, comments: ACUTE.comments!.filter((x) => x.code !== "850100095" || x.text === warekiOf(ACUTE_DAYS[0])).map((c, seq) => ({ ...c, seq })) };
+    expect(oneDay.comments!.some((x) => x.code === "850100094")).toBe(true);
+    const found = r17(oneDay).find((x) => keyOf(x) === "comment_mismatch_acuteVisitDates")!;
+    expect(found.params?.seqs?.split(",")).toEqual(oneDay.comments!.filter((x) => x.code === "850100095").map((x) => String(x.seq)));
+  });
+
   it("別表第七に当たるか・急性増悪かが不明なら情報不足（宛先は医師）。看取りの場所が不明でも同じ", () => {
     const unknown = (key: "table7" | "acuteExacerbation") => withFact(ACUTE, key, { known: false });
     expect(tags(unknown("table7"))).toEqual(["情報不足:table7"]);
