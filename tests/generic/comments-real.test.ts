@@ -100,10 +100,13 @@ describe("段 13：実データの masters.db で", () => {
     const db = openMasters(file)!;
     const only: string[] = [];
     let covered = 0;
+    let multi = 0;
     for (const [kubun, def] of Object.entries(rev.codes))
       for (const code of [def.primary, ...def.accept]) {
-        const r = commentGroupsOf(claimOf([["SI", code]]), db, about) as { groups: { kouban: string; comments: string[] }[] };
-        for (const g of r.groups) {
+        const r = commentGroupsOf(claimOf([["SI", code]]), db, about) as { groups: { kouban: string; comments: string[]; kaisu?: unknown }[] };
+        // 材料加算の項番 0237（条件区分 03。design.md §17-2）は、版の R17 に規則がないので G07 だけが言う（C-474）。ここでは数えない
+        multi += r.groups.filter((g) => g.kaisu !== undefined).length;
+        for (const g of r.groups.filter((g) => g.kaisu === undefined)) {
           const same = rev.comments.some((c) => c.when === "always" && c.kubun.includes(kubun) && c.codes.some((x) => g.comments.includes(x)));
           if (same) covered++;
           else only.push(`${kubun} ${code} 項番${g.kouban} ${g.comments.join()}`);
@@ -118,6 +121,8 @@ describe("段 13：実データの masters.db で", () => {
     expect(only.filter((s) => !awaitingEm(s))).toEqual([]);
     expect(only.filter(awaitingEm)).toHaveLength(24 + 96 + 180);
     expect(covered).toBeGreaterThanOrEqual(8);
+    // 版の材料加算の区分（酸素ボンベ加算・酸素濃縮装置加算・在宅酸素療法材料加算など）は、0237 の組を持つ
+    expect(multi).toBeGreaterThanOrEqual(3);
     note(`R17 の表と関連テーブル：版の表のコードで G07 が使う組 ${covered}。どれも R17 の「算定すれば必ず」の行と同じ記載`);
     db.close();
   });
@@ -136,7 +141,9 @@ describe("段 13：実データの masters.db で", () => {
       const bad: string[] = [];
       for (const { tsuchi, code } of rows) {
         const kind = kindOf[tsuchi];
-        const r = commentGroupsOf(claimOf([[kind, code]]), db, about) as { groups: { comments: string[] }[]; notUsed: number };
+        const all03 = commentGroupsOf(claimOf([[kind, code]]), db, about) as { groups: { comments: string[]; kaisu?: unknown }[]; notUsed: number };
+        // 項番 0237（回数で判定する。design.md §17-2）は、回数 1 の行では言わないので、ここでは数えない（回数で言うことは tests/generic/comments.test.ts）
+        const r = { ...all03, groups: all03.groups.filter((g) => g.kaisu === undefined) };
         notUsed += r.notUsed;
         if (r.groups.length === 0) continue;
         codes++;

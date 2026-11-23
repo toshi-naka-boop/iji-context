@@ -89,6 +89,37 @@ describe("条件区分 00：判定せず、記載が要ることがある項目�
   });
 });
 
+describe("項番 0237：同じコードの回数が算定回数に届き、選択式のコメントがないとき、条件つきで言う（design.md §17-2）", () => {
+  it("回数 2 でコメントなし：G07.missing_any（条件つき。条件区分 03）。対象の月のコメントがあれば言わない", () => {
+    const db = v36Masters();
+    const f = g07(claimOf([unit("SI", ZAIRYO.bombe, 2)]), about, db);
+    expect(f.map((x) => [x.messageKey, x.certainty, x.codes, x.params.joken, x.params.kouban])).toEqual([["G07.missing_any", "条件つき", [ZAIRYO.bombe], "03", "237"]]);
+    expect(genericView({ findings: f, ran: [], notRun: [] }, null).findings[0].text).toContain("（このレセプトでは 2 回。2 回以上算定するとき。2 回分・3 回分を回数で表すという読み〔明文なし〕による）");
+    expect(g07(claimOf([unit("SI", ZAIRYO.bombe, 2)], [{ code: "820100125" }]), about, db)).toEqual([]);
+    // 言い切りの一覧に載せても、確定にしない
+    expect(evaluateGeneric(claimOf([unit("SI", ZAIRYO.bombe, 2)]), db, about, undefined, new Set(["G07.missing_any"])).findings.filter((x) => x.check === "G07").map((x) => x.certainty)).toEqual(["条件つき"]);
+    // 同じコードの単位が 2 つ（回数 1 ずつ）でも、合わせて 2 回
+    expect(g07(claimOf([unit("SI", ZAIRYO.bombe), unit("SI", ZAIRYO.bombe)]), about, db)).toHaveLength(1);
+  });
+
+  it("回数 1 の別のコード 4 行では言わない（別のコードの行は足さない）。数量の書いてある行は判定せず、判定していない組に数える", () => {
+    const db = v36Masters();
+    const four = claimOf(Object.values(ZAIRYO).map((code) => unit("SI", code)));
+    expect(g07(four, about, db)).toEqual([]);
+    const q = claimOf([unit("SI", ZAIRYO.bombe, 2, "2")]);
+    expect(g07(q, about, db)).toEqual([]);
+    expect(commentGroupsOf(q, db, about)).toMatchObject({ groups: [], notUsed: 1 });
+    // 数量が 1 の行は判定する
+    expect(g07(claimOf([unit("SI", ZAIRYO.bombe, 2, "1")]), about, db)).toHaveLength(1);
+  });
+
+  it("点検の範囲：見た組に 0237 の組の数を出す", () => {
+    const db = v36Masters();
+    const c = claimOf([unit("SI", ZAIRYO.bombe, 2)]);
+    expect(genericScopeOf(c, db, about, evaluateGeneric(c, db, about)).notDone.find((t) => t.startsWith("必須コメント"))).toContain("材料加算の 2 回分・3 回分の記載（項番 237）1 組");
+  });
+});
+
 describe("実データの masters.db で（完了条件 17-6 の 2・3）", () => {
   const dir = process.env.RESEMEN_MASTER_DIR;
   const file = dir ? path.join(dir, "masters.db") : "";
@@ -111,4 +142,12 @@ describe("実データの masters.db で（完了条件 17-6 の 2・3）", () =
     db.close();
   });
 
+  it.skipIf(!has)("材料加算（酸素ボンベ加算）：回数 2 でコメントなしなら条件つきの G07.missing_any。回数 1 の別のコード 4 行では出ない。数量のある行では出ない", () => {
+    const db = openMasters(file)!;
+    const zero = (c: GenericClaim) => evaluateGeneric(c, db, real).findings.filter((f) => f.check === "G07" && f.params.joken === "03");
+    expect(zero(claimOf([unit("SI", "114006110", 2)])).map((f) => [f.messageKey, f.certainty])).toEqual([["G07.missing_any", "条件つき"]]);
+    expect(zero(claimOf(["114006110", "114006210", "114006310", "114011070"].map((code) => unit("SI", code))))).toEqual([]);
+    expect(zero(claimOf([unit("SI", "114006110", 2, "2")]))).toEqual([]);
+    db.close();
+  });
 });
