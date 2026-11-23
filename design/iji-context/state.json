@@ -1,25 +1,30 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
-  "designVersion": "v31",
-  "approvedDesignVersion": "v31",
-  "approvedDesignSha256": "960235aa4187a0fc2b16a2e8a3fe1edf8249c28607144cd91e280dae90bfd0da",
-  "approvedAt": "2026-11-23",
-  "approvalEvidence": "v31（v31:960235aa4187）承認します（直前の提示で、返事の範囲を v31 と EM 追記案 em-v31-draft.md の残りの W〔W-1・W-3〜W-10・W-13〕とし、個別に見たいものは番号を、と添えた）",
-  "requiredApprovalFingerprint": "v31:960235aa4187",
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
+  "designVersion": "v32",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v32:2fabdc50f888",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 59,
+  "criticRound": 63,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§15。v31）",
-    "v31-inputs.md",
-    "sources/em-v31-draft.md"
+    "design.md（§15-6・15-7・15-10 の 18d・15-12 の L-108・L-161〜L-163）",
+    "reviews/fable-consult-acts-eval.md"
   ],
-  "nextAction": "EM 追記案を両ブランチの EM に入れ、段 17f・17h → 17i → 17j・17k の順に実装（17f と 17h、17j と 17k は束ねて出す）",
+  "nextAction": "v32 の承認と L-164（訪問診療料の同一建物居住者／以外の取り違えの検出を今回足すか）の判断を待つ",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
     "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol",
     "引き継ぎ": "design/iji-context/handoff-opus.md"
+  },
+  "v31Approval": {
+    "fingerprint": "v31:960235aa4187",
+    "sha256": "960235aa4187a0fc2b16a2e8a3fe1edf8249c28607144cd91e280dae90bfd0da",
+    "evidence": "v31（v31:960235aa4187）承認します（直前の提示で、返事の範囲を v31 と EM 追記案 em-v31-draft.md の残りの W〔W-1・W-3〜W-10・W-13〕とし、個別に見たいものは番号を、と添えた）",
+    "at": "2026-11-23"
   }
 }
