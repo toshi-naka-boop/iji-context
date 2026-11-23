@@ -1,0 +1,110 @@
+{
+  "_note": "評価の合否だけの組の記載（K24。設計 §16-9・§16-10 の E-14。split: gate）。書き方・正解・日は EM §5-1-2 の「K14〜K24 の記載」の表のまま（作成手引きの記録例の事例文・表示の書き方。薬・器材の名前はマスターの名称）。臨床の文は足さない（S・A は空）。acts は正解（本人が確かめたあとの形。match のコードは EM §2-8 の症例のコード）。lookup は空（評価では AI が挙げる語を使う）。合否の組の束（acts-exclude.json・gate の記載・この記載の entry の全体）は eval/acts-count.ts の GATE_SHA256 で固定してある。直すときは設計の版を上げる",
+  "claimId": "K24-2026-10",
+  "entries": [
+    {
+      "date": "2026-10-15",
+      "s": "",
+      "o": "在宅患者訪問診療。",
+      "a": "",
+      "p": "",
+      "rx": "院内：タガメット錠２００ｍｇ　３錠、インデラル錠１０ｍｇ　３錠　１４日分。",
+      "acts": [
+        {
+          "category": "診療行為",
+          "written": "在宅患者訪問診療",
+          "lookup": [],
+          "quote": "在宅患者訪問診療",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114001110",
+            "name": "在宅患者訪問診療料（１）１（同一建物居住者以外）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "投薬",
+          "written": "タガメット錠２００ｍｇ",
+          "lookup": [],
+          "quote": "タガメット錠２００ｍｇ",
+          "match": {
+            "tbl": "iyakuhin",
+            "code": "612320183",
+            "name": "タガメット錠２００ｍｇ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "投薬",
+          "written": "インデラル錠１０ｍｇ",
+          "lookup": [],
+          "quote": "インデラル錠１０ｍｇ",
+          "match": {
+            "tbl": "iyakuhin",
+            "code": "612120016",
+            "name": "インデラル錠１０ｍｇ",
+            "by": "name"
+          }
+        }
+      ],
+      "rxNotes": [
+        {
+          "quote": "院内"
+        }
+      ],
+      "rxChoice": "inside"
+    },
+    {
+      "date": "2026-10-30",
+      "s": "",
+      "o": "在宅患者訪問診療。",
+      "a": "",
+      "p": "",
+      "rx": "院内：タガメット錠２００ｍｇ　３錠、インデラル錠１０ｍｇ　３錠　１４日分。",
+      "acts": [
+        {
+          "category": "診療行為",
+          "written": "在宅患者訪問診療",
+          "lookup": [],
+          "quote": "在宅患者訪問診療",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114001110",
+            "name": "在宅患者訪問診療料（１）１（同一建物居住者以外）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "投薬",
+          "written": "タガメット錠２００ｍｇ",
+          "lookup": [],
+          "quote": "タガメット錠２００ｍｇ",
+          "match": {
+            "tbl": "iyakuhin",
+            "code": "612320183",
+            "name": "タガメット錠２００ｍｇ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "投薬",
+          "written": "インデラル錠１０ｍｇ",
+          "lookup": [],
+          "quote": "インデラル錠１０ｍｇ",
+          "match": {
+            "tbl": "iyakuhin",
+            "code": "612120016",
+            "name": "インデラル錠１０ｍｇ",
+            "by": "name"
+          }
+        }
+      ],
+      "rxNotes": [
+        {
+          "quote": "院内"
+        }
+      ],
+      "rxChoice": "inside"
+    }
+  ]
+}
