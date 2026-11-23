@@ -43,12 +43,14 @@ export type Stage1Input = {
   secondPatient: number | null;
   special: "none" | "some" | "unknown";
   institutions: Institution[];
+  /** 開設日（期間の初めより後に開設したときだけ。U-34 は 1 段目の門と 2 段目の両方に掛ける。round-61 C-360）。省けば null */
+  openedOn?: string | null;
 };
 /**
- * 2 段目の入力（段 17j）。values は欄の鍵（readings.ts の fieldKeys）→ 数（null は空の欄）。openedOn は開設日（期間の初めより後に開設したときだけ。U-34）。
+ * 2 段目の入力（段 17j）。values は欄の鍵（readings.ts の fieldKeys）→ 数（null は空の欄）。開設日（U-34）は 1 段目の openedOn（C-360）。
  * sources は欄ごとの出どころ（auto＝下書きのまま、manual＝本人が入れた・直した。段 17k）
  */
-export type Stage2Input = { values: Record<string, number | null>; openedOn: string | null; sources?: Record<string, "auto" | "manual"> };
+export type Stage2Input = { values: Record<string, number | null>; sources?: Record<string, "auto" | "manual"> };
 export type WorksheetInput = { stage1: Stage1Input; stage2?: Stage2Input };
 
 export type Outcome = "meets" | "not_meets" | "unknown";
@@ -74,10 +76,15 @@ export const FIELD_LABEL = {
   secondPatient: "同一の患家の 2 人目以降で初診料・再診料を算定した日の回数",
 } as const;
 
-type Gate = { kind: "under"; total: number } | { kind: "over" } | { kind: "unknown"; reason: string };
+/** unmet：U-34 の読み乙で、回数の期間（3 か月）の全部に実績がないので回数の要件を満たさない（2 段目の 3 か月の要件も満たさないので、減算になる側。C-360） */
+type Gate = { kind: "under"; total: number } | { kind: "over" } | { kind: "unmet" } | { kind: "unknown"; reason: string };
 
-/** 1 段目の門（EM R8-194・R8-195）。乙の回数は甲以上なので、空の欄を除いて数えた数を下限にし、下限が門以上なら門以上と決める（C-334）。特別の関係の機関が分からないときも、自院の数を下限にする */
-function gateOf(c: Combo, s: Stage1Input, k: Note14Consts): Gate {
+/**
+ * 1 段目の門（EM R8-194・R8-195）。乙の回数は甲以上なので、空の欄を除いて数えた数を下限にし、下限が門以上なら門以上と決める（C-334）。特別の関係の機関が分からないときも、自院の数を下限にする。
+ * U-34 は門にも掛ける（round-61 C-360。EM U-34 の読み乙は「回数・割合の 3 か月」を満たさないとする。EM の補足「門は甲乙で同じ結果になりやすい」は推測なので読みを 1 つに決めない）
+ */
+function gateOf(c: Combo, s: Stage1Input, k: Note14Consts, p: Period | null): Gate {
+  if (readingOf(c, "U-34") === "B" && p !== null && partial(s.openedOn ?? null, p.short.from)) return { kind: "unmet" };
   const sum = (xs: (number | null)[]) => xs.reduce<number>((a, x) => a + (x ?? 0), 0);
   const kou = sum(s.months.map((m) => m.kou));
   const wide = readingOf(c, "U-27") === "B";
@@ -131,11 +138,11 @@ const keyOf = (c: Combo, axes: readonly AxisId[]) => axes.map((a) => readingOf(c
 const partial = (openedOn: string | null, from: string) => openedOn !== null && openedOn > `${from}-01`;
 
 /** 2 段目の 4 つの要件（EM R8-197〜R8-200）。割合は丸めず整数の不等式で比べる。U-34 の乙では、期間の全部に実績がない要件を満たさない */
-function stage2Of(c: Combo, v: Stage2Input, k: Note14Consts, p: Period | null): Outcome {
+function stage2Of(c: Combo, v: Stage2Input, k: Note14Consts, p: Period | null, openedOn: string | null): Outcome {
   const val = (id: FieldId) => v.values[fieldKeyOf(FIELDS.find((f) => f.id === id)!, c)]!;
   const strict = readingOf(c, "U-34") === "B" && p !== null;
-  const longGone = strict && partial(v.openedOn, p!.long.from);
-  const shortGone = strict && partial(v.openedOn, p!.short.from);
+  const longGone = strict && partial(openedOn, p!.long.from);
+  const shortGone = strict && partial(openedOn, p!.short.from);
   const referral = !longGone && val("referral") >= k.referralMin;
   const mitori = val("mitoriHome") + (readingOf(c, "U-31a") === "B" ? val("mitoriFacility") : 0) + (readingOf(c, "U-31b") === "B" ? val("mitoriHospital") : 0);
   const care2 = (!longGone && mitori >= k.mitoriMin) || (!shortGone && val("jushoji") >= k.jushojiMin);
@@ -165,14 +172,13 @@ export function evaluate(input: WorksheetInput, k: Note14Consts, period: Period 
   const missing = missingOf(s);
   if (missing.length > 0) return { status: "incomplete", missing, stage2Open: false };
   const combos = allCombos();
-  const gates = combos.map((c) => gateOf(c, s, k));
-  // U-34 は 2 段目の要件だけに掛ける（回数の門は、ある期間の回数で比べる。EM U-34 の補足「門は甲乙で同じ結果になりやすい」）
+  const gates = combos.map((c) => gateOf(c, s, k, period));
   const stage2Open = gates.some((g) => g.kind === "over");
   if (stage2Open) {
     const m2 = missing2Of(input.stage2);
     if (m2.length > 0) return { status: "incomplete", missing: m2, stage2Open };
   }
-  const outs: Outcome[] = gates.map((g, i) => (g.kind === "under" ? "meets" : g.kind === "over" ? stage2Of(combos[i], input.stage2!, k, period) : "unknown"));
+  const outs: Outcome[] = gates.map((g, i) => (g.kind === "under" ? "meets" : g.kind === "unmet" ? "not_meets" : g.kind === "over" ? stage2Of(combos[i], input.stage2!, k, period, s.openedOn ?? null) : "unknown"));
   const reasons = [...new Set(gates.flatMap((g) => (g.kind === "unknown" ? [g.reason] : [])))];
   const remaining = gates.reduce<number | null>((m, g) => (g.kind === "under" ? Math.min(m ?? Infinity, k.visitThreshold - g.total) : m), null);
   return conclude(combos, outs, reasons, remaining, stage2Open);

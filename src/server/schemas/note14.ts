@@ -22,12 +22,13 @@ export const note14WorksheetBody = z.strictObject({
     secondPatient: count,
     special: z.enum(["none", "some", "unknown"]),
     institutions: z.array(z.strictObject({ openedOn: day.nullable(), ownerChangedFrom: day.nullable(), count })).max(30),
+    // 開設日（期間の初めより後に開設したときだけ。U-34 は門にも掛ける。round-61 C-360）
+    openedOn: day.nullable().optional(),
   }),
-  // 2 段目（段 17j）：欄の鍵 → 数。鍵は readings.ts の fieldKeys のものだけ（サーバーが確かめる）。openedOn は開設日（U-34）
+  // 2 段目（段 17j）：欄の鍵 → 数。鍵は readings.ts の fieldKeys のものだけ（サーバーが確かめる）
   stage2: z
     .strictObject({
       values: z.record(z.string().max(80), count),
-      openedOn: day.nullable(),
       // 欄ごとの出どころの印（段 17k。auto＝下書きのまま）。サーバーが下書きと照らして決め直す
       sources: z.record(z.string().max(80), z.enum(["auto", "manual"])).optional(),
     })

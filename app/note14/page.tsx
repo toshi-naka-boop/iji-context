@@ -112,8 +112,9 @@ export default function Note14Page() {
         secondPatient: num(second),
         special,
         institutions: insts.map((i): Institution => ({ openedOn: i.openedOn || null, ownerChangedFrom: i.changed ? i.ownerChangedFrom || null : null, count: num(i.count) })),
+        openedOn: openedOn || null,
       },
-      stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])), openedOn: openedOn || null },
+      stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])) },
     };
   }, [tool, months, gansou, second, special, insts, vals, openedOn]);
   const e = input && tool?.consts ? evaluate(input, tool.consts, tool.period ?? null) : null;
@@ -125,7 +126,7 @@ export default function Note14Page() {
       const body = {
         checkMonth: tool.month,
         stage1: { ...input.stage1, months: tool.auto!.map((a) => ({ month: a.month, confirmed: (months[a.month]?.confirmed ?? false) && a.state === "ok", kou: num(months[a.month]?.kou ?? ""), otsuExtra: num(months[a.month]?.otsuExtra ?? "") })) },
-        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, openedOn: input.stage2!.openedOn, sources: Object.fromEntries(fieldKeys().map((f) => [f.key, autoKeys.includes(f.key) ? "auto" : "manual"])) } } : {}),
+        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, sources: Object.fromEntries(fieldKeys().map((f) => [f.key, autoKeys.includes(f.key) ? "auto" : "manual"])) } } : {}),
       };
       const s = await postJson<Saved>("/api/note14/worksheets", body);
       setSaved(s);
@@ -187,6 +188,12 @@ export default function Note14Page() {
             <NumberInput label={FIELD_LABEL.secondPatient} value={second} onChange={setSecond} />
             <button onClick={() => { setGansou("0"); setSecond("0"); }}>どちらも 0（ない）にする</button>
           </div>
+          {/* 開設日は 1 段目で聞く（U-34 は回数の門にも掛ける。round-61 C-360） */}
+          <h4>開設してすぐの施設</h4>
+          <label style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            開設日（期間の初めより後に開設したときだけ）
+            <input type="date" aria-label="開設日" value={openedOn} onChange={(x) => setOpenedOn(x.target.value)} />
+          </label>
           <h4>特別の関係にある保険医療機関</h4>
           <select aria-label="特別の関係にある保険医療機関" value={special} onChange={(x) => setSpecial(x.target.value as typeof special)}>
             <option value="none">ない</option>
@@ -229,10 +236,6 @@ export default function Note14Page() {
               </li>
             ))}
           </ul>
-          <label style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-            開設日（期間の初めより後に開設したときだけ）
-            <input type="date" aria-label="開設日" value={openedOn} onChange={(x) => setOpenedOn(x.target.value)} />
-          </label>
         </div>
       )}
       {e && (

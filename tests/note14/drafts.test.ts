@@ -23,7 +23,7 @@ describe("2 段目の下書き（純関数）", () => {
     expect(d.ok && { ...all(d.values, "c002"), ...all(d.values, "c0022") }).toEqual({ "c002:U-33a=A": 1, "c002:U-33a=B": 1, "c0022:U-33a=A": 1, "c0022:U-33a=B": 3 });
     const stage1: Stage1Input = { months: [m1, m2, m3].map((month, i) => ({ month, kou: i === 0 ? K.visitThreshold : 0, otsuExtra: 0, source: "auto" })), gansou: 0, secondPatient: 0, special: "none", institutions: [] };
     const values: Record<string, number | null> = Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? K.referralMin : f.field.id === "mitoriHome" ? K.mitoriMin : 0]));
-    const e = evaluate({ stage1, stage2: { values: { ...values, ...(d.ok ? d.values : {}) }, openedOn: null } }, K, P);
+    const e = evaluate({ stage1, stage2: { values: { ...values, ...(d.ok ? d.values : {}) } } }, K, P);
     expect(e.status === "done" && [e.result, e.splits]).toEqual(["undecided", ["U-33a"]]);
   });
   it("X-180：A が 1 か月だけ在医総管を種別の違う 2 枚で請求しても、延べは 1（種別を外した鍵＋診療年月）。実人数も 1", () => {

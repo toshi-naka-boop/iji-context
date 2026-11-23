@@ -24,7 +24,7 @@ const set = (v: Record<string, number | null>, id: string, n: number | null, whe
   for (const key of Object.keys(v)) if (key.split(":")[0] === id && where(key)) v[key] = n;
   return v;
 };
-const run = (values: Record<string, number | null>, openedOn: string | null = null, s1: Stage1Input = over) => evaluate({ stage1: s1, stage2: { values, openedOn } }, K, P);
+const run = (values: Record<string, number | null>, openedOn: string | null = null, s1: Stage1Input = over) => evaluate({ stage1: { ...s1, openedOn }, stage2: { values } }, K, P);
 const done = (e: Evaluation) => {
   if (e.status !== "done") throw new Error(`結果が出ていない: ${e.missing.join("、")}`);
   return e;

@@ -150,7 +150,7 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     });
     const s = body.stage1;
     const n = (x: number | null | undefined) => x ?? null;
-    const stage1 = { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count) })) };
+    const stage1 = { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count) })), openedOn: s.openedOn ?? null };
     if (!body.stage2) return { stage1 };
     const keys = new Set(fieldKeys().map((x) => x.key));
     const bad = Object.keys(body.stage2.values).find((key) => !keys.has(key));
@@ -161,7 +161,7 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const draft = stage2Draft(want);
     const allConfirmed = body.stage1.months.every((x) => x.confirmed);
     const sources = Object.fromEntries([...keys].map((key) => [key, allConfirmed && body.stage2!.sources?.[key] === "auto" && draft.ok && draft.values[key] === values[key] ? ("auto" as const) : ("manual" as const)]));
-    return { stage1, stage2: { values, openedOn: body.stage2.openedOn ?? null, sources } };
+    return { stage1, stage2: { values, sources } };
   }
 
   /** 結果を残す（追記）。空の欄があれば残さず 400 で名指しする。残せるのは事務長・責任者（権限表） */

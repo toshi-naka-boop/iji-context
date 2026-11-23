@@ -69,7 +69,7 @@ const auto = (kou: number, otsuExtra = 0) => [m1, m2, m3].map((month, i) => ({ m
 const s1 = (over: Partial<Stage1Input> = {}): Stage1Input => ({ months: auto(0), gansou: 0, secondPatient: 0, special: "none", institutions: [], ...over });
 const T = K.visitThreshold;
 /** 2 段目の 4 つの要件のうち紹介を満たさない入力（2 段目に進む読みは減算になる） */
-const notMet = { values: Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "mitoriHome" ? K.mitoriMin : f.field.id === "referral" ? 0 : 1])), openedOn: null };
+const notMet = { values: Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "mitoriHome" ? K.mitoriMin : f.field.id === "referral" ? 0 : 1])) };
 
 describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）", () => {
   it("甲・乙のどちらでも門未満 → 基準に当たる。あと n 回は読みのうち小さいほう", () => {
@@ -122,6 +122,14 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
   it("取り込みのない月・確かめていない月は手入力で、空なら結果を出さず名指しする", () => {
     const e = evaluate({ stage1: s1({ months: [{ month: m1, kou: null, otsuExtra: null, source: "manual" }, ...auto(0).slice(1)] }) }, K);
     expect(e.status === "incomplete" && e.missing).toEqual([`${m1} の回数（C001 の行）`, `${m1} の回数（C001-2 の行）`]);
+  });
+  it("C-360：期間の初めより後に開設した施設は、門の下（300 回）でも U-34 の読み乙では回数の要件を満たさないので、U-34 で割れて決めきれない（2 段目の欄を求めない）", () => {
+    const P = periodOf(M, K);
+    const e = evaluate({ stage1: s1({ months: auto(300), openedOn: `${m2}-15` }) }, K, P);
+    expect(e.status === "done" && [e.result, e.stage2Open, e.splits]).toEqual(["undecided", false, ["U-34"]]);
+    // 期間の初めの日以前に開設していれば割れない
+    const old = evaluate({ stage1: s1({ months: auto(300), openedOn: `${m1}-01` }) }, K, P);
+    expect(old.status === "done" && [old.result, old.splits]).toEqual(["meets", []]);
   });
   it("C-325：使った期間は確認月 M に対して M-3〜M-1 と M-12〜M-1", () => {
     expect(periodOf(M, K)).toEqual({ short: { from: month(-2), to: month(0) }, long: { from: month(-11), to: month(0) } });

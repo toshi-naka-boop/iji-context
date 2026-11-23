@@ -143,14 +143,14 @@ describe("注14 の計算の道具（段 17i）", () => {
     expect(missing.status).toBe(400);
     expect((await missing.json()).error).toContain("① C002 を算定した患者の数（実人数）");
     const values = (referral: number) => Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? referral : f.field.id === "mitoriHome" ? 20 : f.field.id === "excluded" ? 0 : f.field.id === "jushoji" || f.field.id.startsWith("mitori") ? 0 : 50]));
-    const meets = await (await save({ ...body({ months: manual }), stage2: { values: values(5), openedOn: null } })).json();
+    const meets = await (await save({ ...body({ months: manual }), stage2: { values: values(5) } })).json();
     expect(meets.result).toBe("meets");
     expect((await (await draft(meets.id)).json()).choice).toBe("normal");
-    const not = await (await save({ ...body({ months: manual }), stage2: { values: values(4), openedOn: null } })).json();
+    const not = await (await save({ ...body({ months: manual }), stage2: { values: values(4) } })).json();
     expect(not.result).toBe("not_meets");
     expect((await (await draft(not.id)).json()).choice).toBe("reduced");
     expect(not.inputs.stage2.values["c002:U-33a=A"]).toBe(50);
-    expect((await save({ ...body({ months: manual }), stage2: { values: { ...values(5), "c002:same": 50 }, openedOn: null } })).status).toBe(400);
+    expect((await save({ ...body({ months: manual }), stage2: { values: { ...values(5), "c002:same": 50 } } })).status).toBe(400);
   });
 
   it("段 17k：2 段目の下書き（①②③⑤）が取り込んだ請求と患者の事実から入り、未入力 n 人が出る。下書きのままの欄は出どころが自動、直した欄は手入力で記録に残る。同じ値を手で入れたときと結果が同じ", async () => {
@@ -178,19 +178,19 @@ describe("注14 の計算の道具（段 17i）", () => {
     const values = { ...Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? 5 : f.field.id === "mitoriHome" ? 20 : 0])), ...t.draft.values };
     const auto = Object.fromEntries(Object.keys(t.draft.values).map((k) => [k, "auto"]));
     // C-373：1 段目で「全患者分を取り込んだ」を確かめていない月があれば、下書きのままの欄も自動の印にしない
-    const unconfirmed = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null, sources: auto } })).json();
+    const unconfirmed = await (await save({ ...body({ months: manual }), stage2: { values, sources: auto } })).json();
     expect(Object.values(unconfirmed.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
     // 3 か月とも確かめた月（自動の数）で、読み乙だけの手入力の欄で門以上にして 2 段目を開く
     const confirmed = body({ gansou: T });
-    const a = await (await save({ ...confirmed, stage2: { values, openedOn: null, sources: auto } })).json();
+    const a = await (await save({ ...confirmed, stage2: { values, sources: auto } })).json();
     expect(a.stage2Open).toBe(true);
     expect(a.inputs.stage2.sources["c002:U-33a=A"]).toBe("auto");
     expect(a.inputs.stage2.sources["referral:U-32=A"]).toBe("manual");
     // 下書きの数を本人が直すと、印は手入力（自動の印を送っても、下書きと違う値は手入力）
-    const b = await (await save({ ...confirmed, stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, openedOn: null, sources: auto } })).json();
+    const b = await (await save({ ...confirmed, stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, sources: auto } })).json();
     expect(b.inputs.stage2.sources["care:U-33a=A:U-33c=A"]).toBe("manual");
     // 下書きの数と同じ値を 17j の形（印なし）で手で入れたときと結果が同じ
-    const c = await (await save({ ...confirmed, stage2: { values, openedOn: null } })).json();
+    const c = await (await save({ ...confirmed, stage2: { values } })).json();
     expect([c.result, c.splits, c.outcomes]).toEqual([a.result, a.splits, a.outcomes]);
     expect(Object.values(c.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
     // 記録と応答に、下書きに使った患者の目印の値が現れない
