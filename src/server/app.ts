@@ -25,6 +25,7 @@ import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
 import { createRevision } from "./app/revision";
+import { createStructured } from "./app/structured";
 import { createUke } from "./app/uke";
 import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
 import { claimOfLines } from "../generic/overlap";
@@ -61,6 +62,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
   const facility = createFacility(ctx, clock, uke);
   const note14 = createNote14(ctx, clock, uke, patientFactsOf);
+  const structured = createStructured(ctx, clock, uke, patientFactsOf);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
@@ -196,6 +198,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     ...clock,
     ...clerks,
     ...ukeCheck,
+    /** カルテの構造化データ（design.md §16-1。段 19a） */
+    ...structured,
     /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);

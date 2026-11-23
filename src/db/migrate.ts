@@ -175,6 +175,19 @@ CREATE TABLE note14_worksheets (id INTEGER PRIMARY KEY AUTOINCREMENT, check_mont
 CREATE INDEX note14_worksheets_month ON note14_worksheets (check_month, id);
 `,
   },
+  {
+    // カルテの構造化データ（design.md §16-1・16-8。段 19a。L-165）。追記だけ。
+    // chart_structured：接続先から読んだ 4 種類を、その月の点検に使った形のまま残す（同じ患者・月・種類は最新の行を使う）。part は visits・orders・procedures・homeCare、
+    // status は supported・unsupported、items は行の JSON、gaps は欄ごとの欠けの数の JSON（手元で数えたもの）。
+    // structured_inputs：医療事務が入れた訪問の時刻（16-6）。どちらも患者 id を持つので、患者マスタを消すときに一緒に消す。ログ・監査ログ・AI に送る文脈に値を出さない
+    version: 17,
+    sql: `
+CREATE TABLE chart_structured (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, year_month TEXT NOT NULL, part TEXT NOT NULL, status TEXT NOT NULL, items TEXT NOT NULL, gaps TEXT NOT NULL, connector_id TEXT NOT NULL, fetched_at TEXT NOT NULL);
+CREATE INDEX chart_structured_month ON chart_structured (patient_id, year_month, part, id);
+CREATE TABLE structured_inputs (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, date TEXT NOT NULL, visit_ref TEXT, start TEXT NOT NULL, end TEXT NOT NULL, entered_by TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX structured_inputs_patient ON structured_inputs (patient_id, date, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

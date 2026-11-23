@@ -66,6 +66,8 @@ const ym = z.string().regex(YEAR_MONTH);
 /** 候補（GET /api/chart/acts/candidates）。lookup は「|」で区切った語（5 個まで） */
 export const candidatesQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, written: z.string().min(1).max(200), lookup: z.string().max(600).optional() });
 /** マスターを名前で探す（GET /api/masters/search） */
+/** カルテの構造化データ（GET /api/chart/structured）。患者は患者マスタの id */
+export const structuredQuery = z.strictObject({ patientId: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/), yearMonth: ym });
 export const mastersSearchQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, q: z.string().min(1).max(100) });
 
 /** 選べる版の id（比較と試算。請求の判定に使う版と、比較用の版） */
