@@ -1,12 +1,12 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
-  "designVersion": "v33",
-  "approvedDesignVersion": "v33",
-  "approvedDesignSha256": "4db86239b6c4e467c9a19d9cd135881fe4b4e82ab35f2bd6010c3a938f55f61b",
-  "approvedAt": "2026-11-23",
-  "approvalEvidence": "勧めどおりで承認（直前のメッセージで v33:4db86239b6c4 を示し「10 件を勧めどおりにして、v33（v33:4db86239b6c4）を承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
-  "requiredApprovalFingerprint": "v33:4db86239b6c4",
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
+  "designVersion": "v34",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v34:af1d2b4be431",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 67,
   "openIssueIds": [],
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "E-11（em-v33-draft を EM に写す）・E-12 → 段 19a〜19g。E-13・E-14（EM 5-1 の症例と合否の組）は行を足して利用者の承認を取ってから → 19h",
+  "nextAction": "v34（C-433・C-434 の設計の読み方）の承認を待つ。並行して round-68 の実装の指摘 13 件を直している",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
@@ -37,6 +37,12 @@
     "fingerprint": "v32:2fabdc50f888",
     "sha256": "2fabdc50f888ef198c1d06f4cfd65fe830c71df90b972e2299b2bec60ca70f61",
     "evidence": "承認・後に回す（直前のメッセージで v32:2fabdc50f888 を示し「v32 を承認し、L-164 は後の版に回してよいですか」と聞いたボタンの答え。返事そのものに指紋はない。提示のあと design.md は変えていない）",
+    "at": "2026-11-23"
+  },
+  "v33Approval": {
+    "fingerprint": "v33:4db86239b6c4",
+    "sha256": "4db86239b6c4e467c9a19d9cd135881fe4b4e82ab35f2bd6010c3a938f55f61b",
+    "evidence": "勧めどおりで承認（直前のメッセージで v33:4db86239b6c4 を示し「10 件を勧めどおりにして、v33（v33:4db86239b6c4）を承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
     "at": "2026-11-23"
   }
 }
