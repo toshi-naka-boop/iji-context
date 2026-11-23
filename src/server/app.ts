@@ -60,7 +60,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const revision = createRevision(uke, casesOf, notes);
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
   const facility = createFacility(ctx, clock, uke);
-  const note14 = createNote14(ctx, clock, uke);
+  const note14 = createNote14(ctx, clock, uke, patientFactsOf);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;

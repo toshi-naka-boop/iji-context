@@ -28,6 +28,8 @@ export const note14WorksheetBody = z.strictObject({
     .strictObject({
       values: z.record(z.string().max(80), count),
       openedOn: day.nullable(),
+      // 欄ごとの出どころの印（段 17k。auto＝下書きのまま）。サーバーが下書きと照らして決め直す
+      sources: z.record(z.string().max(80), z.enum(["auto", "manual"])).optional(),
     })
     .optional(),
 });

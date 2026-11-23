@@ -4,7 +4,9 @@
 import type Database from "better-sqlite3";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import type { Note14Result } from "../../facility/note14";
+import { isExpired } from "../../patient/facts";
 import { AUTO_TEXT, countMonths, type AutoMonth } from "../../note14/count";
+import { draftOf as stage2DraftOf, DRAFT_TEXT, type Draft, type DraftReceipt } from "../../note14/drafts";
 import { fieldKeys } from "../../note14/readings";
 import { evaluate, isCheckMonth, monthsBefore, periodOf, shiftMonth, toolConstsOf, type Evaluation, type MonthCount, type Note14Consts, type Period, type WorksheetInput } from "../../note14/evaluate";
 import type { User } from "../auth";
@@ -12,6 +14,7 @@ import { badRequest, conflict, notFound } from "../errors";
 import type { Note14WorksheetBody } from "../schemas/note14";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
+import type { Patients } from "./patients";
 import type { Uke } from "./uke";
 
 type Row = { id: number; check_month: string; period_3m_from: string; period_3m_to: string; period_12m_from: string; period_12m_to: string; inputs: string; outcomes: string; result: string; splits: string; checked_by: string; checked_on: string; created_at: string };
@@ -71,8 +74,36 @@ function view(r: Row) {
 }
 export type WorksheetView = ReturnType<typeof view>;
 
-export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "now">, uke: Pick<Uke, "parsedClaims">) {
+export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "now">, uke: Pick<Uke, "parsedClaims" | "ukeReceipts">, patients: Pick<Patients, "existingIdOf" | "latestPatientFacts">) {
   const today = () => clock.now().slice(0, 10);
+
+  /**
+   * 2 段目の下書き（段 17k）：期間の 3 か月の取り込んだ請求の管理料の行（版の管理料の表で族を決める）と、除く患者の行（版の在宅ターミナルケア加算・看取り加算・死亡診断加算）、
+   * 患者の事実（要介護 3 以上・別表第八の二。患者マスタにない患者・事実のない患者は未入力）から作る
+   */
+  function stage2Draft(months: string[]): Draft {
+    const receipts: DraftReceipt[] = uke
+      .ukeReceipts()
+      .filter((r) => !r.unreadable && !r.noRevision && months.includes(r.yearMonth) && hasRevision(r.yearMonth))
+      .map((r) => {
+        const c = resolveRevision(r.yearMonth).consts;
+        const family = new Map(c.kanri.rows.map((x) => [x.kubun, x.family]));
+        const ex = new Set([c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal)]);
+        const live = r.lines.filter((l) => l.count > 0);
+        return { yearMonth: r.yearMonth, patient: r.patient, families: [...new Set(live.flatMap((l) => (family.has(l.kubun) ? [family.get(l.kubun)!] : [])))], excluded: live.some((l) => ex.has(l.kubun)) };
+      });
+    const now = clock.now();
+    return stage2DraftOf(receipts, months, (p) => {
+      const id = patients.existingIdOf(p);
+      if (id === null) return null;
+      const facts = patients.latestPatientFacts(id).filter((f) => !isExpired(f, now));
+      const care = facts.find((f) => f.key === "careLevel")?.value;
+      const t8 = facts.find((f) => f.key === "table8_2")?.value;
+      if (care !== undefined && Number(care) >= 3) return true;
+      if (t8 === true) return true;
+      return care !== undefined && t8 === false ? false : null;
+    });
+  }
 
   /** 期間の月ごとの自動の数（その月の版の別表で数える。別表のない月・取り込みのない月・重なる月は数えない） */
   const autoOf = (months: string[]): AutoMonth[] => countMonths(uke.parsedClaims(), months, (m) => toolConstsAt(m)?.countRows ?? null);
@@ -93,6 +124,11 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
       period,
       consts: k,
       auto,
+      // 2 段目の下書き（数だけ。鍵・患者の情報は返さない）
+      draft: (() => {
+        const d = stage2Draft(monthsBefore(m, k.periodMonths.short));
+        return d.ok ? { ...d, text: d.unknownCare > 0 ? DRAFT_TEXT.unknownCare(d.unknownCare) : null } : d;
+      })(),
       worksheets: readRows(ctx.sqlite).filter((r) => r.check_month === m).map(view),
     };
   }
@@ -118,7 +154,10 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const bad = Object.keys(body.stage2.values).find((key) => !keys.has(key));
     if (bad !== undefined) throw badRequest("2 段目の欄の鍵が違います", ["stage2"]);
     const values = Object.fromEntries([...keys].map((key) => [key, n(body.stage2!.values[key])]));
-    return { stage1, stage2: { values, openedOn: body.stage2.openedOn ?? null, sources: Object.fromEntries([...keys].map((key) => [key, "manual" as const])) } };
+    // 出どころ：送られた印が「自動」で、値がサーバーの下書きと同じ欄だけを自動にする（本人が直した欄・下書きのない欄は手入力）
+    const draft = stage2Draft(want);
+    const sources = Object.fromEntries([...keys].map((key) => [key, body.stage2!.sources?.[key] === "auto" && draft.ok && draft.values[key] === values[key] ? ("auto" as const) : ("manual" as const)]));
+    return { stage1, stage2: { values, openedOn: body.stage2.openedOn ?? null, sources } };
   }
 
   /** 結果を残す（追記）。空の欄があれば残さず 400 で名指しする。残せるのは事務長・責任者（権限表） */

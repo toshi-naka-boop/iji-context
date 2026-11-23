@@ -59,8 +59,8 @@ const body = (over: Record<string, unknown> = {}, months: string[] = [m1, m2, m3
   checkMonth,
   stage1: { months: months.map((month) => ({ month, confirmed: true, kou: null, otsuExtra: null })), gansou: 0, secondPatient: 0, special: "none", institutions: [], ...over },
 });
-/** 取り込みの一覧にある症例の、R18（エンジン）と取り込んだレセプトの点検（G10 を含む）の結果 */
-const judged = () => app().cases().map((c) => [c.claimId, evaluate(c).findings.filter((f) => f.ruleId === "R18").map((f) => `${f.kind}:${f.messageKey ?? ""}`), JSON.stringify(app().ukeCheck(c.claimId, instance.clerkIdOf(owner)))]);
+/** 見本の症例（K1〜。途中で足す請求と月が重ならない）の、R18（エンジン）と取り込んだレセプトの点検（G10 を含む）の結果 */
+const judged = () => app().cases().filter((c) => c.claimId.startsWith("K")).map((c) => [c.claimId, evaluate(c).findings.filter((f) => f.ruleId === "R18").map((f) => `${f.kind}:${f.messageKey ?? ""}`), JSON.stringify(app().ukeCheck(c.claimId, instance.clerkIdOf(owner)))]);
 
 describe("注14 の計算の道具（段 17i）", () => {
   let before: unknown;
@@ -151,6 +151,45 @@ describe("注14 の計算の道具（段 17i）", () => {
     expect((await (await draft(not.id)).json()).choice).toBe("reduced");
     expect(not.inputs.stage2.values["c002:U-33a=A"]).toBe(50);
     expect((await save({ ...body({ months: manual }), stage2: { values: { ...values(5), "c002:same": 50 }, openedOn: null } })).status).toBe(400);
+  });
+
+  it("段 17k：2 段目の下書き（①②③⑤）が取り込んだ請求と患者の事実から入り、未入力 n 人が出る。下書きのままの欄は出どころが自動、直した欄は手入力で記録に残る。同じ値を手で入れたときと結果が同じ", async () => {
+    const P1 = { name: "架空 下書一", birth: "19380808", no: "880001" };
+    const P2 = { name: "架空 下書二", birth: "19370707", no: "880002" };
+    const file = {
+      ...baseFile(),
+      receipts: [
+        ...[m1, m2, m3].map((m) => receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-06`] }, { kubun: "C002_2RO1", count: 1, dates: [`${m}-06`] }], P1)),
+        ...[m1, m2].map((m) => receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-08`] }, { kubun: "C002-2_2RO1", count: 1, dates: [`${m}-08`] }], P2)),
+        receipt(m3, [{ kubun: "C001_1I", count: 1, dates: [`${m3}-08`] }, { kubun: "C002-2_2RO1", count: 1, dates: [`${m3}-08`] }, { kubun: "C001_N7_MITORI", count: 1, dates: [`${m3}-08`] }], P2),
+      ],
+    };
+    const ids = instance.runAs(owner, () => instance.getApp().uploadUke(instance.clerkIdOf(owner), ukeBytes(file))).flatMap((u) => u.receipts.filter((x) => x.patient === P1.name).map((x) => x.claimId));
+    app().savePatientFact(ids[0], instance.clerkIdOf(owner), { key: "careLevel", value: 3, source: "介護保険証", validUntil: `${month(12)}-01` });
+    const t = await (await tool(`?month=${M}`)).json();
+    expect(t.draft.ok).toBe(true);
+    const pick = (id: string) => Object.fromEntries(Object.entries(t.draft.values as Record<string, number>).filter(([k]) => k.split(":")[0] === id));
+    expect({ ...pick("c002"), ...pick("c0022") }).toEqual({ "c002:U-33a=A": 1, "c002:U-33a=B": 3, "c0022:U-33a=A": 1, "c0022:U-33a=B": 3 });
+    expect(pick("excluded")).toEqual({ "excluded:U-33a=A:U-33b=A": 1, "excluded:U-33a=A:U-33b=B": 1, "excluded:U-33a=B:U-33b=A": 3, "excluded:U-33a=B:U-33b=B": 1 });
+    expect(pick("care")).toEqual({ "care:U-33a=A:U-33c=A": 1, "care:U-33a=A:U-33c=B": 1, "care:U-33a=B:U-33c=A": 3, "care:U-33a=B:U-33c=B": 3 });
+    expect([t.draft.unknownCare, t.draft.text]).toEqual([1, "要介護度・別表第八の二の状態が未入力 1 人（下書きの数に入れていません）。認知症の自立度・障害支援区分で当たる患者は、事実にないので足してください"]);
+    const T = t.consts.visitThreshold as number;
+    const manual = [m1, m2, m3].map((month, i) => ({ month, confirmed: false, kou: i === 0 ? T : 0, otsuExtra: 0 }));
+    const values = { ...Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? 5 : f.field.id === "mitoriHome" ? 20 : 0])), ...t.draft.values };
+    const auto = Object.fromEntries(Object.keys(t.draft.values).map((k) => [k, "auto"]));
+    const a = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null, sources: auto } })).json();
+    expect(a.inputs.stage2.sources["c002:U-33a=A"]).toBe("auto");
+    expect(a.inputs.stage2.sources["referral:U-32=A"]).toBe("manual");
+    // 下書きの数を本人が直すと、印は手入力（自動の印を送っても、下書きと違う値は手入力）
+    const b = await (await save({ ...body({ months: manual }), stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, openedOn: null, sources: auto } })).json();
+    expect(b.inputs.stage2.sources["care:U-33a=A:U-33c=A"]).toBe("manual");
+    // 下書きの数と同じ値を 17j の形（印なし）で手で入れたときと結果が同じ
+    const c = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null } })).json();
+    expect([c.result, c.splits, c.outcomes]).toEqual([a.result, a.splits, a.outcomes]);
+    expect(Object.values(c.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
+    // 記録と応答に、下書きに使った患者の目印の値が現れない
+    const rows = JSON.stringify(dbRows("SELECT * FROM note14_worksheets")) + JSON.stringify(t) + JSON.stringify(a);
+    for (const v of [P1.name, P1.birth, P1.no, P2.name, P2.birth, P2.no, P1.name.replace(/\s/g, "")]) expect(rows.includes(v), v).toBe(false);
   });
 
   it("C-326：期間に別表を持たない版の月がある確認月は、その月だけ自動で数えない。確認月の版に注14 の値がない確認月は道具の対象外（計算しない）", async () => {

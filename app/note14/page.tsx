@@ -12,7 +12,8 @@ import { evaluate, FIELD_LABEL, type Evaluation, type Institution, type Note14Co
 
 type Auto = { month: string; state: "ok" | "none" | "no_table" | "overlap"; receipts: number; kou?: number; otsuExtra?: number; text?: string };
 type Saved = { id: number; checkMonth: string; isCheckMonth: boolean; period: Period; result: "meets" | "not_meets" | "undecided"; splits: string[]; lines: string[]; reasons: string[]; remaining: number | null; checkedBy: string; checkedOn: string; draft: boolean; note?: string };
-type Tool = { month: string | null; outOfScope: boolean; text?: string; isCheckMonth?: boolean; note?: string; period?: Period; consts?: Note14Consts; auto?: Auto[]; worksheets?: Saved[] };
+type Draft = { ok: true; values: Record<string, number>; unknownCare: number; text: string | null } | { ok: false; reason: string };
+type Tool = { month: string | null; outOfScope: boolean; text?: string; isCheckMonth?: boolean; note?: string; period?: Period; consts?: Note14Consts; auto?: Auto[]; draft?: Draft; worksheets?: Saved[] };
 
 const RESULT_LABEL = { meets: "基準に当たる（減算になりません）", not_meets: "基準に当たらない（減算になります）", undecided: "決めきれない" } as const;
 type MonthInput = { confirmed: boolean; kou: string; otsuExtra: string };
@@ -59,6 +60,8 @@ export default function Note14Page() {
   // 2 段目の欄（欄の鍵 → 入れた文字。欄は readings.ts の依り方の定数から決まる。段 17j）
   const [vals, setVals] = useState<Record<string, string>>({});
   const [openedOn, setOpenedOn] = useState("");
+  // 下書きのままの欄（段 17k）。本人が直した欄は外れ、出どころは手入力になる
+  const [autoKeys, setAutoKeys] = useState<string[]>([]);
 
   function load(m?: string) {
     setErr("");
@@ -68,6 +71,9 @@ export default function Note14Page() {
         if (t.month) setMonth(t.month);
         setMonths(Object.fromEntries((t.auto ?? []).map((a) => [a.month, { confirmed: false, kou: "", otsuExtra: "" }])));
         setSaved(null);
+        const d = t.draft?.ok ? t.draft.values : {};
+        setVals(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, String(v)])));
+        setAutoKeys(Object.keys(d));
       })
       .catch((e: Error) => setErr(e.message));
   }
@@ -102,7 +108,7 @@ export default function Note14Page() {
       const body = {
         checkMonth: tool.month,
         stage1: { ...input.stage1, months: tool.auto!.map((a) => ({ month: a.month, confirmed: (months[a.month]?.confirmed ?? false) && a.state === "ok", kou: num(months[a.month]?.kou ?? ""), otsuExtra: num(months[a.month]?.otsuExtra ?? "") })) },
-        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, openedOn: input.stage2!.openedOn } } : {}),
+        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, openedOn: input.stage2!.openedOn, sources: Object.fromEntries(fieldKeys().map((f) => [f.key, autoKeys.includes(f.key) ? "auto" : "manual"])) } } : {}),
       };
       const s = await postJson<Saved>("/api/note14/worksheets", body);
       setSaved(s);
@@ -195,10 +201,13 @@ export default function Note14Page() {
         <div className="panel">
           <h3 style={{ marginTop: 0 }}>2 段目：4 つの要件</h3>
           <p className="muted">1 段目で門以上になる読みがあるので開きました。欄の並びは様式19の2 の 2(1)〜2(3) と同じです。明文のない数え方の欄は、読みごとに入れてください（読みで同じとは扱いません）。割合は丸めずに比べます。</p>
+          {tool?.draft && "reason" in tool.draft && <div className="notice">{tool.draft.reason}</div>}
+          {tool?.draft && "text" in tool.draft && tool.draft.text && <div className="notice">{tool.draft.text}</div>}
           <ul style={{ paddingLeft: 18 }}>
             {fieldKeys().map((f) => (
               <li key={f.key} style={{ marginBottom: 4 }}>
-                <NumberInput label={`${f.field.form}　${f.label}`} value={vals[f.key] ?? ""} onChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))} />
+                <NumberInput label={`様式 ${f.field.form}　${f.label}`} value={vals[f.key] ?? ""} onChange={(v) => { setVals((p) => ({ ...p, [f.key]: v })); setAutoKeys((p) => p.filter((k) => k !== f.key)); }} />
+                <span className="muted">　{autoKeys.includes(f.key) ? "取り込んだ請求からの下書き" : "手入力"}</span>
               </li>
             ))}
           </ul>
