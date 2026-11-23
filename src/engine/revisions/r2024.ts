@@ -125,6 +125,7 @@ export const r2024: Revision = {
   consts: consts as RevisionConsts,
   comments: [],
   commentCodes: {},
+  kisaiYoshi: [],
   rules: [],
   changes: [],
 };

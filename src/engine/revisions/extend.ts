@@ -25,6 +25,7 @@ export function extendRevision(base: Revision, diff: RevisionDiff): Revision {
     consts: base.consts,
     comments: base.comments,
     commentCodes: base.commentCodes,
+    kisaiYoshi: base.kisaiYoshi,
     rules: base.rules,
     // 値の変更の版の「変わった点」は EM に行がないので持たない（直前の版のものは、その版が前の改定から変わった点なので引き継がない）
     changes: [],
