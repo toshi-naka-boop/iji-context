@@ -294,6 +294,30 @@ describe("T3 処方料（区分を決めない。R8-231・R8-232・R8-240。L-17
       expect(f[0].text).toBe("オーダー（14日）から、処方料が請求にありません。1 回の処方につき 1 回算定します。区分は内服の種類・向精神薬の長期処方と多剤投与で決まります（R8-240）。算定できるか確かめてください");
     }
   });
+  cell("T3-出る", "v34（C-434）：請求にその日の麻薬等加算（処方料）120001310 だけがあり、処方料そのもののコード（120001210・120002610）がない日は、処方料の候補が出る（F100 の加算の行で「ある」と読まない）", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([R.mayakuShohoryo], 14)] }, { orders: inside14([[D.carve, 14]]) });
+    expect(rules(r).filter((x) => x.codes.includes(R.shohoryo3)).map((x) => x.days.map((d) => d.date))).toEqual([[date(14)]]);
+  });
+  it("v34（C-434）：処方料の候補は、手順 2（候補どうしの背反）と手順 3（手書きのルール）にも 2 つの区分のコードの両方を渡す", () => {
+    const db = rdb();
+    // 候補の調剤料と処方料（区分 2）の背反（作り物の表）：区分 2 の側だけの関係でも、処方料の候補に添え書きが付く
+    putHaihan(db, SNAP, 1, R.chozaiOral, R.shohoryo2, "1", "0");
+    const r = run(db, { units: [] }, { orders: inside14([[D.carve, 14]]) });
+    const f = rules(r).find((x) => x.codes.includes(R.shohoryo3))!;
+    expect(notesOf(f).some((t) => t.includes("背反で算定できません"))).toBe(true);
+    // 手順 3 に渡る処方料の候補の単位に、両方の区分のコードが入る
+    const seen: string[][] = [];
+    ok(
+      evaluateG11({ units: [] }, rdb(), about({ orders: inside14([[D.carve, 14]]) }), rev, {
+        step3: (cands) => {
+          for (const c of cands) seen.push(c.units.flatMap((u) => u.items.map((it) => it.code)));
+          return { notes: new Map(), scope: [] };
+        },
+      }),
+    );
+    expect(seen).toContainEqual(expect.arrayContaining([R.shohoryo3, R.shohoryo2]));
+  });
   cell("T3-包括で出ない", "手順 1 は 2 つの区分のコードの両方が隠れるときだけ隠す（片方だけの包括では出る）", () => {
     const db = rdb();
     bundleUnderJutsugo(db, R.shohoryo3);

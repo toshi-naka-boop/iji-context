@@ -973,8 +973,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const rc = (key: string, label: string, requirement: string): RuleCand => ({ key, label, basisLabel: basis === "order" ? "オーダー" : "処方の欄で院内と確かめた日", requirement, basis: B, dayQuote: names.join("・") });
       if (forms.has(ORAL) && !present(RULE_CODES.chozaiOral, day)) ruleCand(date, [si1(RULE_CODES.chozaiOral, day)], rc("chozai-oral", "調剤料（内服薬・浸煎薬・屯服薬）", "院内で投薬した 1 回の処方につき 1 回算定します（R8-237）"), notes);
       if (forms.has(EXTERNAL) && !present(RULE_CODES.chozaiExternal, day)) ruleCand(date, [si1(RULE_CODES.chozaiExternal, day)], rc("chozai-external", "調剤料（外用薬）", "院内で投薬した 1 回の処方につき 1 回算定します（R8-237）"), notes);
-      // 処方料は区分を決めない 1 件。請求にその日の F100 のどれかの区分があれば出さない（L-173）。手順 1 は両方の区分が抑えられたときだけ隠す
-      if (!kubunOnDay(["F100"], day))
+      // 処方料は区分を決めない 1 件。請求にその日の処方料そのもののコード（EM の処方料の区分のコード）のどれかがあれば出さない（L-173）。
+      // 麻薬等加算（処方料）・特定疾患処方管理加算など F100 の加算の行は数えない（v34。C-434）。手順 1 は両方の区分が抑えられたときだけ隠し、手順 2・3 には両方を渡す
+      if (!present(RULE_CODES.shohoryo3, day) && !present(RULE_CODES.shohoryo2, day))
         ruleCand(date, [si1(RULE_CODES.shohoryo3, day)], rc("shohoryo", "処方料", "1 回の処方につき 1 回算定します。区分は内服の種類・向精神薬の長期処方と多剤投与で決まります（R8-240）"), notes, [si1(RULE_CODES.shohoryo2, day)]);
       if (!mayakuReadable) mayakuUnread++;
       else if (narcotic) {
@@ -1473,7 +1474,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const text = `『${other.report[0]?.written ?? ""}』（これも取り忘れの候補）を算定すると、${kind}で算定できません。どちらを算定するか確かめてください`;
       if (!me.notes.some((n) => n.text === text)) me.notes.push({ reason: "候補どうしの包括・背反", text });
     };
-    const all = passed.flatMap((x) => x.units.map((unit) => ({ cand: x.id, unit })));
+    // 処方料（区分を決めない）は、もう一方の区分の単位（alt）も候補の単位として見る（v34。C-434）
+    const unitsOf = (x: Cand) => [...x.units, ...(x.alt ?? [])];
+    const all = passed.flatMap((x) => unitsOf(x).map((unit) => ({ cand: x.id, unit })));
     const base = claim.units.length;
     if (checks.some((k) => k.id === "G04"))
       for (const [id, list] of bindsOf(c, checks.filter((k) => k.id === "G04"), claim, all))
@@ -1484,7 +1487,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
         }
     if (checks.some((k) => k.id === "G05")) {
       const rows = db.prepare("SELECT tani, kubun, tokurei, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND code1 = ? AND code2 = ?");
-      const si = (x: Cand) => [...new Set(x.units.flatMap((u) => u.items.filter((it) => it.kind === "SI").map((it) => it.code)))];
+      const si = (x: Cand) => [...new Set(unitsOf(x).flatMap((u) => u.items.filter((it) => it.kind === "SI").map((it) => it.code)))];
       const near = (tani: number, a: Cand, b: Cand) => (tani === 2 ? true : tani === 4 ? Math.abs(a.day - b.day) <= 6 : a.day === b.day);
       const either: [Cand, Cand][] = [];
       for (const a of passed)
@@ -1521,7 +1524,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 6. 手順 3：手書きのルール（呼び出し側。隠さない）
   if (opt.step3 && passed.length > 0) {
-    const s3 = opt.step3(passed.map((x) => ({ id: x.id, date: x.date, units: x.units.map((u) => ({ items: u.items, count: u.count })) })));
+    // 処方料（区分を決めない）は両方の区分の単位を渡す（v34。C-434）
+    const s3 = opt.step3(passed.map((x) => ({ id: x.id, date: x.date, units: [...x.units, ...(x.alt ?? [])].map((u) => ({ items: u.items, count: u.count })) })));
     for (const x of passed) for (const n of s3.notes.get(x.id) ?? []) if (!x.notes.some((m) => m.text === n.text)) x.notes.push(n);
     scope.push(...s3.scope);
   }
