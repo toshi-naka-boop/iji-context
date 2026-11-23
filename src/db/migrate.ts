@@ -165,6 +165,16 @@ ALTER TABLE chart_notes ADD COLUMN acts TEXT;
 CREATE TABLE chart_act_aliases (written_norm TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (written_norm, tbl));
 `,
   },
+  {
+    // 注14 の計算の道具の結果（design.md §15-13。段 17i）。追記だけ。使った期間（3 か月と 1 年の初めと終わりの月。C-325）を列に持つ。
+    // inputs は入力の数と出どころ（自動・手入力）の JSON、outcomes は読みの組み合わせごとの結果、splits は割れた軸の一覧。集計の数だけで、患者の氏名・生年月日・番号・鍵は持たない。
+    // result は meets・not_meets・undecided。判定（R01〜R19・G01〜G11）はこの表を読まない
+    version: 16,
+    sql: `
+CREATE TABLE note14_worksheets (id INTEGER PRIMARY KEY AUTOINCREMENT, check_month TEXT NOT NULL, period_3m_from TEXT NOT NULL, period_3m_to TEXT NOT NULL, period_12m_from TEXT NOT NULL, period_12m_to TEXT NOT NULL, inputs TEXT NOT NULL, outcomes TEXT NOT NULL, result TEXT NOT NULL, splits TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX note14_worksheets_month ON note14_worksheets (check_month, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

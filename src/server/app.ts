@@ -12,6 +12,7 @@ import { createDoctor } from "./app/doctor";
 import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility, declarationViewOf } from "./app/facility";
+import { createNote14 } from "./app/note14";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
 import { samePair } from "../generic/local-pair";
@@ -59,6 +60,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const revision = createRevision(uke, casesOf, notes);
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
   const facility = createFacility(ctx, clock, uke);
+  const note14 = createNote14(ctx, clock, uke);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
@@ -179,6 +181,10 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     setting,
     setSetting,
     ...facility,
+    /** 注14 の計算の道具（design.md §15-13） */
+    note14Tool: note14.tool,
+    saveNote14Worksheet: note14.saveWorksheet,
+    note14Draft: note14.draftOf,
     doctorQueries,
     answerDoctor,
     approveDoctor,

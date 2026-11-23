@@ -56,6 +56,10 @@ export const POLICY = {
   // まとめて「変わりなし」（design.md §15-2）：残すのは事務長と責任者。初期の選択を読むのも同じ
   "GET /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
   "POST /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
+  // 注14 の計算の道具（design.md §15-13）：使うのは事務長と責任者（申告と同じ）。取り込んだ UKE から数えるので患者の情報を扱う（応答・記録は集計の数だけ）
+  "GET /api/note14": row(["manager", "veteran"], "none", true),
+  "POST /api/note14/worksheets": row(["manager", "veteran"], "none", true),
+  "GET /api/note14/worksheets/[id]/draft": row(["manager", "veteran"], "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),

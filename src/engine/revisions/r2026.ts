@@ -194,8 +194,36 @@ const consts: RevisionConsts = {
     BNP: { kubun: "D008_19", judgement: "D026_5" },
   },
   dx: { tiers: { "1": "C001_N13_DX", "2": "C001_N13_DX2" }, conflicts: ["A_DENSHI_RENKEI"] },
-  // 注14 の基準を確かめる確認月（EM R8-201：毎年 2・5・8・11 月）
-  note14: { checkMonths: [2, 5, 8, 11] },
+  // 注14 の基準を確かめる確認月（EM R8-201：毎年 2・5・8・11 月）と、計算の道具の値（EM R8-194〜R8-200。design.md §15-13）
+  note14: {
+    checkMonths: [2, 5, 8, 11],
+    // R8-194：2,100 回未満
+    visitThreshold: 2100,
+    // R8-196：直近 3 月間・直近 1 年間
+    periodMonths: { short: 3, long: 12 },
+    // R8-195：令和6年3月31日以前に開設したものを除く
+    excludeOpenedOnOrBefore: "2024-03-31",
+    // R8-197：5 つ以上の保険医療機関
+    referralMin: 5,
+    // R8-198：看取り 20 件以上、又は重症児の実績 10 件以上
+    mitoriMin: 20,
+    jushojiMin: 10,
+    // R8-199：(②−③)×10 ≦ 7×(①＋②)。R8-200：⑤×2 ≧ ①＋②
+    ratio199: { num: 7, den: 10 },
+    ratio200: { num: 1, den: 2 },
+    // EM §2-8 の「数えるためだけの行」（注14 の訪問診療回数。版の区分には入れない）
+    countRows: [
+      { code: "114001110", reading: "both" },
+      { code: "114030310", reading: "both" },
+      { code: "114042110", reading: "both" },
+      { code: "114042210", reading: "both" },
+      { code: "114706310", reading: "both" },
+      { code: "114706410", reading: "both" },
+      { code: "114042810", reading: "otsu" },
+      { code: "114046310", reading: "otsu" },
+      { code: "114706610", reading: "otsu" },
+    ],
+  },
   weeklyVisitLimit: 3,
   weekStartsOn: 0,
   ikou: { kubun: "C002_N4_IKOU", months: 3, daysFromDischarge: 365 },

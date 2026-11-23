@@ -47,8 +47,25 @@ export type RevisionConsts = {
     /** 注14 の減の行 → 対応する通常の区分（design.md §15-4。段 17h）。持たない版では、減の行を持たず、請求の注14 の側は「なし」 */
     note14Pairs?: Record<string, string>;
   };
-  /** 注14（EM R8-191・R8-201）：基準を確かめる確認月（月の数字）。申告 note14 の確かめ直す日の既定（次の確認月の末日）に使う。持たない版では注14 の申告を聞かない */
-  note14?: { checkMonths: number[] };
+  /**
+   * 注14（EM R8-191・R8-194〜R8-201）。checkMonths は基準を確かめる確認月（月の数字。R8-201）で、申告 note14 の確かめ直す日の既定（次の確認月の末日）に使う。持たない版では注14 の申告を聞かず、計算の道具も対象外（design.md §15-13）。
+   * 計算の道具の値：visitThreshold＝回数の門（R8-194。合算がこれ未満なら基準に当たる）、periodMonths＝期間の月数（R8-196。short は回数・重症児・割合、long は紹介・看取り）、
+   * excludeOpenedOnOrBefore＝この日以前に開設した特別の関係の機関は合算しない（R8-195。境の日の読みは U-30a）、referralMin＝紹介元の機関の数（R8-197）、
+   * mitoriMin・jushojiMin＝看取りの件数・重症児の実績の件数（R8-198）、ratio199＝(②−③)×den ≦ num×(①＋②)（R8-199）、ratio200＝⑤×den ≧ num×(①＋②)（R8-200）。
+   * countRows は「回数の門に数える訪問診療の行」の別表（EM §2-8 の「数えるためだけの行」。版の区分には入れない）：コードと、数える読み（both＝甲・乙、otsu＝乙だけ）。持たない版の月は自動で数えない
+   */
+  note14?: {
+    checkMonths: number[];
+    visitThreshold?: number;
+    periodMonths?: { short: number; long: number };
+    excludeOpenedOnOrBefore?: string;
+    referralMin?: number;
+    mitoriMin?: number;
+    jushojiMin?: number;
+    ratio199?: { num: number; den: number };
+    ratio200?: { num: number; den: number };
+    countRows?: { code: string; reading: "both" | "otsu" }[];
+  };
   /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分。要介護度・障害支援区分がそれぞれの下限以上なら対象 */
   hokatsu: { kubun: string; careLevelMin: number; disabilityLevelMin: number; tiers: KanriTierKey[] };
   /** 在宅療養指導管理料（R04） */
