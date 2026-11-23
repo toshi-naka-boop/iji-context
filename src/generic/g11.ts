@@ -3,9 +3,10 @@
 // 算定できないものは 4 つの手順で決める（2026-11-22 の単純化）：
 //   1. 1 つずつ見る：元の請求＋候補 1 つで、データの点検（G03〜G06・G10）の言い切りの形の抑えが候補に結び付けば隠す。条件つきの抑えは添え書き（C-280）
 //   2. まとめて 1 回：通った候補を全部足し、候補どうしの包括・背反だけを見る。隠さず添え書き。背反区分 3 の組は 1 件の missing_either（L-113）
-//   3. 手書きのルールを 1 回：呼び出し側が渡す step3（段 18b は R18 だけ。src/generic/g11-rules.ts）。指摘は添え書きにするだけで、隠さない
+//   3. 手書きのルールを 1 回：呼び出し側が渡す step3（R18 と、取り込んだ請求では担当のルール。src/generic/g11-rules.ts）。指摘は添え書きにするだけで、隠さない
 //   4. 出す：コードごとに 1 件で日の一覧を持つ（C-281）。添え書きのある日を持つ件は「注意つき」として後ろにまとめる
-// 段 18b は段 18c に頼らない（round-53 C-273）：g11Owned の区分（R ルールと導出が見る区分）は、どちらの経路でも見ない（取り込んだ請求で見るのは段 18c。L-97）
+// g11Owned の区分（R ルールと導出が見る区分）は、算定プレビューでは見ず、取り込んだ請求では見る（L-97 を v30 で改める。段 18c）。
+// 取り込んだ請求では、R ルールと 2 回言わない（R03・R14 の取り忘れと同じ区分は言わない。R01 の回数の区分誤りには、取り忘れを先に確かめる文を返す）
 import { kubunOfCode } from "../engine/revisions/codes";
 import { derivedKubun, g11Owned } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
@@ -14,7 +15,9 @@ import { checkReady, hasUnitColumns, iyakuhinOf, pickSnapshot, shinryoOf, tokute
 import { g03 } from "./g03";
 import { g04 } from "./g04";
 import { g05 } from "./g05";
-import { g10 } from "./g10";
+import { g10, g10Blocking } from "./g10";
+import type { Finding } from "../engine/types";
+import { KIJUN_OWNERS } from "../facility/codes";
 import { tensuhyoOf, type Dated } from "./tensuhyo";
 import type { GenericAbout, GenericAboutMore, GenericCheck, GenericCheckId, GenericFinding } from "./types";
 
@@ -46,11 +49,17 @@ type AddedUnit = { items: G11Item[]; count: number; days: number[]; day: number 
 
 /** 手順 3（手書きのルール）：候補 → その候補の足した単位。戻りは候補ごとの添え書きと、点検の範囲に足す文 */
 export type Step3 = (cands: { id: number; date: string; units: { items: G11Item[]; count: number }[] }[]) => { notes: Map<number, Note[]>; scope: string[] };
+/**
+ * 手順 1 の同じ族の例外（design.md §15-8 の「施設基準の扱い」。L-128）：元の請求＋候補 1 つに R18 を掛け、候補の区分を同じ族の区分に直す区分誤りが出れば、その添え書き。
+ * 出なければ null（呼び出し側：src/generic/g11-rules.ts）
+ */
+export type SameFamily = (cand: { date: string; units: { items: G11Item[]; count: number }[] }) => Note | null;
 
 /** 添え書きの理由（注意つきの数を理由ごとに数える。design.md §15-8 の「注意つきの候補の出し方」） */
 export const CAUTION_REASONS = ["データの点検の条件つきの違反", "候補どうしの包括・背反", "同じ族の区分誤り", "情報不足", "手書きのルールの指摘", "手書きのルールで判定できない行", "施設基準の申告が分からない"] as const;
 export type CautionReason = (typeof CAUTION_REASONS)[number];
-export type Note = { reason: CautionReason; text: string };
+/** rule：添え書きの元の手書きのルール。doubt：同じ族の区分誤り（R18 のときだけ、前に選んだ対応を消す。C-263） */
+export type Note = { reason: CautionReason; text: string; rule?: string; doubt?: boolean };
 
 // ───────────────────────────────────────────────────────────────────────────
 // 出力
@@ -70,11 +79,16 @@ export type G11Finding = {
 };
 /** 言わなかった候補（L-96）：書かれた名前・日・理由（抑えた点検の名前と相手の行の名前） */
 export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string; with?: string[] };
+/** 区分誤りの出た対応（C-250・C-263）：R18 の同じ族の区分誤りが添えられた候補の、書かれた名前・表・コード。呼び出し側が前に選んだ対応から消す */
+export type KubunDoubt = { written: string; tbl: string; code: string };
 export type G11Result =
   | { skip: string }
   | {
       findings: G11Finding[];
       hidden: G11Hidden[];
+      kubunDoubts: KubunDoubt[];
+      /** 手書きのルールの指摘に添える文（R01 の回数の区分誤り。条件つきに下げる。design.md §15-8 の「R ルールと 2 回言わない」） */
+      handNotes: { messageKey: string; text: string }[];
       /** 院内・院外が選ばれていない日の案内（たたまない 1 行。C-243）。なければ null */
       guide: string | null;
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
@@ -109,7 +123,7 @@ const squash = (s: string) => s.normalize("NFKC").replace(/\s/g, "");
 // ───────────────────────────────────────────────────────────────────────────
 // 候補
 
-type Report = { code: string; written: string; quote: string; noteId?: number; name: string };
+type Report = { code: string; written: string; quote: string; noteId?: number; name: string; tbl?: string };
 type Cand = {
   id: number;
   kind: "act" | "with" | "drugs" | "derived" | "qty";
@@ -188,7 +202,7 @@ export function unitKey(name: string, collide: ReadonlySet<string>): string {
 // ───────────────────────────────────────────────────────────────────────────
 // 抑え（手順 1・2）。足した単位に結び付いた違反を、点検の上限を掛けずに全部見る（X-138）
 
-type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string; exception?: { hxText: string; month: boolean } };
+type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string; exception?: { hxText: string; month: boolean }; kijunCodes?: string };
 
 /** 指摘が参照する単位に、足した単位が入るか。日で決まる指摘は、その日が足した単位の算定日か（X-137） */
 function touches(f: GenericFinding, added: Map<number, AddedUnit>, code: string): AddedUnit[] {
@@ -270,7 +284,8 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
   const out = new Map<number, (Bind & { partnerUnit?: number })[]>();
   const push = (cand: number, b: Bind & { partnerUnit?: number }) => out.set(cand, [...(out.get(cand) ?? []), b]);
   for (const check of checks) {
-    const found = check.run({ units }, c.db, about);
+    // 施設基準は内部の入口（R12・R18 に譲る前の結果。L-128）
+    const found = check.id === "G10" ? g10Blocking({ units }, c.db, about, [...added.keys()]) : check.run({ units }, c.db, about);
     if (!Array.isArray(found)) continue;
     for (const f of found) {
       if (f.check === "G10" && f.messageKey !== "G10.not_held" && f.messageKey !== "G10.unknown") continue;
@@ -286,6 +301,7 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
           partner: f.check === "G10" ? (f.params.kijun ?? "") : nameOfCode(c, lp.partner),
           why: whyOf(f),
           ...(f.check === "G10" && f.messageKey === "G10.unknown" ? { byDeclaration: f.params.kijun ?? "" } : {}),
+          ...(f.check === "G10" && f.params.kijunCodes ? { kijunCodes: f.params.kijunCodes } : {}),
           ...(OPEN_EXCEPTION.has(f.messageKey) && f.params.hxText ? { exception: { hxText: f.params.hxText, month: f.params.where === "同じレセプト" } } : {}),
           ...(partnerUnit !== undefined ? { partnerUnit } : {}),
         };
@@ -303,7 +319,7 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
  * checks は手順 1・2 で掛けるデータの点検（テストが作り物を入れる。出荷は G03・G04・G05・G10。回数〔G06〕は kaisuBinds が電子点数表から直接見る）。
  * step3 は手書きのルール（段 18b は R18 だけ。渡さなければ掛けない）
  */
-export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11About, rev: Revision, opt: { checks?: GenericCheck[]; step3?: Step3 } = {}): G11Result {
+export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11About, rev: Revision, opt: { checks?: GenericCheck[]; step3?: Step3; sameFamily?: SameFamily; hand?: Finding[] } = {}): G11Result {
   const acts = (about.acts ?? []).filter((a) => a.date.startsWith(`${about.yearMonth}-`));
   if (acts.length === 0) return { skip: "確かめたカルテの「行ったこと」がないので、取り忘れは見ていません" };
   if (!db) return { skip: "基本マスターがないので、取り忘れは見ていません" };
@@ -421,9 +437,10 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
         tally("在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算は見ていません（C〜I の手順）");
         continue;
       }
-      if (kubun && info.owned.has(kubun)) {
+      // 算定プレビューでは、導出が出来事から立てた行なので見ない（FR-99。C-230）。取り込んだ請求では見る（L-97 を v30 で改める）
+      if (kubun && info.owned.has(kubun) && about.path === "preview") {
         counts.notSeen++;
-        tally("訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（取り込んだ請求で見るのは段 18c）");
+        tally("訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（算定プレビューでは導出と手書きのルールが見ます）");
         continue;
       }
       if (a.act.category === "投薬") {
@@ -463,10 +480,10 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const m = a.act.match!;
     const kind: G11Item["kind"] = m.tbl === "shinryo" ? "SI" : m.tbl === "iyakuhin" ? "IY" : "TO";
     const children = (a.act.with ?? []).filter((x) => x.match);
-    const rep = (code: string, written: string, quote: string): Report => ({ code, written, quote, noteId: a.noteId, name: nameOfCode(c, code) });
+    const rep = (code: string, written: string, quote: string, tbl?: string): Report => ({ code, written, quote, noteId: a.noteId, name: nameOfCode(c, code), ...(tbl ? { tbl } : {}) });
     if (!present(m.code, day, isJudgement(m.code))) {
       const items: G11Item[] = [{ kind, code: m.code }, ...children.map((x) => ({ kind: (x.match!.tbl === "iyakuhin" ? "IY" : "TO") as G11Item["kind"], code: x.match!.code }))];
-      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote)], ...(children.length > 0 ? { withNames: children.map((x) => x.written) } : {}) });
+      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote, m.tbl)], ...(children.length > 0 ? { withNames: children.map((x) => x.written) } : {}) });
       return;
     }
     // 請求にある：同じ日・同じ区分の量をまとめて比べる（X-146）
@@ -554,7 +571,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
 
   // 3. 手順 1 の前に外す：背反区分 3（どちらか一方）の相手が元の請求にある行為（C-283）
-  const either = db.prepare("SELECT tani, code1, code2, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND kubun = '3' AND (code1 = ? OR code2 = ?)");
+  // 特例条件のある行（tokurei が 0 でない）は、条件によっては両方を算定できるので「どちらか一方」と決まる組に入れない（往診料と訪問診療料など。R10 が担当。段 18c の外れ）
+  const either = db.prepare("SELECT tani, code1, code2, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND kubun = '3' AND tokurei = '0' AND (code1 = ? OR code2 = ?)");
   const partnerInClaim = (code: string, day: number): boolean =>
     (either.all(t.snapshot, code, code) as (Dated & { tani: number; code1: string; code2: string })[]).some((r) => {
       if (!t.live(r)) return false;
@@ -575,17 +593,37 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   });
   if (eitherInClaim > 0) tally("どちらか一方の組で、請求に相手がある", eitherInClaim);
 
+  // R ルールと 2 回言わない（取り込んだ請求）：R03・R14 が同じ月の取り忘れを言っていれば、その区分の候補は言わない（R ルールの側を残す。§0-12）
+  const handSays = new Set((opt.hand ?? []).flatMap((f) => (f.messageKey === "R03.missing" ? [rev.consts.hokatsu.kubun] : f.messageKey === "R14.missing" ? [rev.consts.ikou.kubun] : [])));
+  if (handSays.size > 0)
+    for (let i = live.length - 1; i >= 0; i--)
+      if (live[i].units.some((u) => u.items.some((it) => it.kind === "SI" && handSays.has(info.kubunOf(it.code) ?? "")))) {
+        live.splice(i, 1);
+        tally("手書きのルールが同じ取り忘れを言っているもの");
+      }
+
   // 4. 手順 1：1 つずつ
   const hidden: G11Hidden[] = [];
   const passed: Cand[] = [];
   for (const x of live) {
     const binds = [...(bindsOf(c, checks, claim, x.units.map((unit) => ({ cand: x.id, unit }))).get(x.id) ?? []), ...x.units.flatMap((u) => kaisuBinds(c, idx, u, firstDow))];
-    const block = binds.find((b) => b.certain);
+    let block = binds.find((b) => b.certain);
+    // 同じ族の区分誤りは G10 より C-250 を勝たせる（L-128）：抑えが R18 の担当の施設基準の届出なしだけで、R18 が同じ族の直し先を持つときは隠さず添え書き
+    const r18Codes = new Set(KIJUN_OWNERS.filter((o) => o.rule === "R18").flatMap((o) => o.codes));
+    const hard = binds.filter((b) => b.certain);
+    if (block && opt.sameFamily && hard.every((b) => b.check === "G10" && (b.kijunCodes ?? "").split("/").every((k) => r18Codes.has(k)))) {
+      const n = opt.sameFamily({ date: x.date, units: x.units.map((u) => ({ items: u.items, count: u.count })) });
+      if (n) {
+        x.notes.push(n);
+        block = undefined;
+      }
+    }
     if (block) {
       for (const r of x.report.length > 0 ? x.report : [{ written: "", code: "" } as Report]) hidden.push({ written: r.written, date: x.date, reason: CHECK_NAME[block.check], check: block.check, partner: block.partner, ...(x.withNames ? { with: x.withNames } : {}) });
       continue;
     }
     for (const b of binds) {
+      if (b.certain) continue; // 同じ族の例外で通した届出なし（添え書きは上で付けた）
       if (b.byDeclaration !== undefined) x.notes.push({ reason: "施設基準の申告が分からない", text: `施設基準${b.byDeclaration}の申告が分からないので、算定できるかは施設の申告しだいです（施設の申告による）` });
       else if (b.exception)
         // 例外を名指しする（EM §2-12 の HX の一言をそのまま使う。文を作らない）。同一月の表は「月」、1 日・同時の表は「日」
@@ -614,7 +652,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
           if (other && other.id !== id) note(byId.get(id)!, other, "包括");
         }
     if (checks.some((k) => k.id === "G05")) {
-      const rows = db.prepare("SELECT tani, kubun, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND code1 = ? AND code2 = ?");
+      const rows = db.prepare("SELECT tani, kubun, tokurei, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND code1 = ? AND code2 = ?");
       const si = (x: Cand) => [...new Set(x.units.flatMap((u) => u.items.filter((it) => it.kind === "SI").map((it) => it.code)))];
       const near = (tani: number, a: Cand, b: Cand) => (tani === 2 ? true : tani === 4 ? Math.abs(a.day - b.day) <= 6 : a.day === b.day);
       const either: [Cand, Cand][] = [];
@@ -623,11 +661,11 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
           if (a.id === b.id) continue;
           for (const ca of si(a))
             for (const cb of si(b))
-              for (const r of rows.all(t.snapshot, ca, cb) as (Dated & { tani: number; kubun: string })[]) {
+              for (const r of rows.all(t.snapshot, ca, cb) as (Dated & { tani: number; kubun: string; tokurei: string })[]) {
                 if (!t.live(r) || !near(r.tani, a, b)) continue;
                 if (r.kubun === "1") note(b, a, "背反");
                 else if (r.kubun === "2") note(a, b, "背反");
-                else if (r.kubun === "3") either.push([a, b]);
+                else if (r.kubun === "3" && r.tokurei === "0") either.push([a, b]);
               }
         }
       // 背反区分 3（どちらか一方）が候補どうしで成り立つ組（L-113）。1 つの候補は 1 つの組にだけ入れる（コードの順に決める。並べ方に依らない）
@@ -729,5 +767,25 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const guide = undecidedDays.size > 0 ? `${[...undecidedDays].sort().map((d) => `${md(d)}日`).join("・")}の処方の院内・院外を選ぶと、薬の取り忘れを見ます` : null;
   const byKind: Partial<Record<G11Kind, number>> = {};
   for (const f of findings) byKind[f.messageKey] = (byKind[f.messageKey] ?? 0) + 1;
-  return { findings, hidden, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  // 区分誤りの出た対応：R18 の同じ族の区分誤りの添え書きがある候補だけ（回数の区分〔R01 など〕では消さない。C-263）
+  const doubtKeys = new Set<string>();
+  const kubunDoubts: KubunDoubt[] = [];
+  for (const x of passed)
+    if (x.notes.some((n) => n.doubt && n.rule === "R18"))
+      for (const r of x.report) {
+        const k = `${r.written}|${r.tbl}|${r.code}`;
+        if (r.tbl && !doubtKeys.has(k)) {
+          doubtKeys.add(k);
+          kubunDoubts.push({ written: r.written, tbl: r.tbl, code: r.code });
+        }
+      }
+  // R01 の回数の区分誤り（月 1 回の区分へ）と、訪問診療料の取り忘れ：R01 の指摘に、取り忘れを先に確かめる文を添える（R01 の指摘は消さない）
+  const visit = new Set(rev.consts.visitKubun);
+  const handNotes: { messageKey: string; text: string }[] = [];
+  const visitMissing = findings.some((f) => f.messageKey === "G11.missing" && f.codes.some((code) => visit.has(info.kubunOf(code) ?? "")));
+  if (visitMissing && (opt.hand ?? []).some((f) => f.messageKey === "R01.use_once")) {
+    const n = new Set(acts.filter((a) => a.act.match && visit.has(info.kubunOf(a.act.match.code) ?? "")).map((a) => a.date)).size;
+    handNotes.push({ messageKey: "R01.use_once", text: `カルテでは訪問診療が ${n} 回あります。訪問診療料の取り忘れ（G11）を先に確かめてください` });
+  }
+  return { findings, hidden, kubunDoubts, handNotes, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }

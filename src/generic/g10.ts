@@ -199,6 +199,18 @@ export const g10: GenericCheck = {
   },
 };
 
+/**
+ * G11 の内部の入口（design.md §15-8 の X-138・L-128）：足した単位（added。請求の単位の番号）に結び付いた G10 の抑えを全部返す。
+ * 表示の指摘と別の入口で、件数の上限を掛けず、手書きのルール（R12・R18）に譲る前の結果（譲るのは表示の指摘だけ。src/generic/overlap.ts）。
+ * これで、在宅医療DX情報活用加算の届出なし（4100）も、R12 に頼らずに G11 の手順 1 で隠れる
+ */
+export function g10Blocking(claim: GenericClaim, masters: MastersDb, about: GenericAbout, added: number[]): GenericFinding[] {
+  const found = g10.run(claim, masters, about);
+  if (!Array.isArray(found)) return [];
+  const set = new Set(added);
+  return found.filter((f) => f.units.some((u) => set.has(u)));
+}
+
 /** 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、注14 の基準の行、正しい側を探していない行 */
 export function g10NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const j = judgeG10(claim, masters, about);

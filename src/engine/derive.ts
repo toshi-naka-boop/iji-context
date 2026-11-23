@@ -110,6 +110,24 @@ export function g11Owned(c: RevisionConsts): string[] {
 }
 
 /**
+ * g11Owned の区分ごとの担当のルール（design.md §15-8 の表）。取り込んだ請求の G11 の手順 3 で、候補の区分の担当のルールを R18 と一緒に 1 回掛けるのに使う。
+ * 行は表の行ごと（g11Owned と同じ版の定数から作る。表の区分を全部覆うことをテストで縛る）
+ */
+export function g11Owners(c: RevisionConsts): { kubun: string[]; rules: string[] }[] {
+  const baseUp = baseUpDayKubun(c);
+  return [
+    { kubun: [...c.visitKubun], rules: ["R01", "R10", "R13"] },
+    { kubun: [c.oushin.kubun, c.oushin.revisit, ...Object.values(c.oushin.kinkyu)], rules: ["R10", "R18"] },
+    { kubun: kanriKubun(c), rules: ["R01", "R02", "R16", "R18"] },
+    { kubun: [c.hokatsu.kubun, c.ikou.kubun], rules: ["R03", "R14"] },
+    { kubun: Object.values(c.dx.tiers), rules: ["R12"] },
+    { kubun: [...baseUp.visit, ...baseUp.revisit], rules: ["R08", "R18"] },
+    { kubun: [...c.price.visit, c.price.revisit], rules: ["R15"] },
+    { kubun: [c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal)], rules: ["R09", "R18"] },
+  ];
+}
+
+/**
  * 導出する区分（版の定数から決まる）。これ以外の区分は manual で入力どおりに通す。
  * g11Owned と、行為の結果として要る区分（検体検査の項目・血液採取・判断料〔D09〕と処方箋料〔D10〕。どちらの経路でも G11 が見る）
  */

@@ -30,6 +30,8 @@ import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
 import { declarationViewOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
+import { claimOfLines } from "../../generic/overlap";
+import { createTorikawasure } from "./torikawasure";
 import type { LocalAbout } from "./local-pairs";
 import type { Uke } from "./uke";
 
@@ -41,6 +43,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { clerk } = clerks;
   const { patientOf } = uke;
   const { cases, caseOf, isUploaded } = casesOf;
+  const tori = createTorikawasure(ctx, clock);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -54,6 +57,33 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
       .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
     return { id: Number(r.lastInsertRowid), date };
+  }
+  /**
+   * 取り込んだ請求に、日付ごとにカルテの文を貼る（design.md §15-8 の「取り込んだ実在の請求にカルテを貼る」。L-100・L-122。段 18c）。
+   * kind は「記録」で、訪問・往診の出来事は作らない（eventsFromNotes は読まない）。取り出すのは行ったこと（acts）だけで、事実は確かめない。
+   * 貼れるのは、取り込んだ一覧にある請求の、その診療年月の日付だけ。確かめは今のカルテと同じ入口（POST /api/chart/acts）
+   */
+  function saveRecord(claimId: string, clerkId: string, date: string, note: ChartNote): { id: number; date: string } {
+    clerk(clerkId);
+    const ym = uke.receiptOf(claimId).receipt.yearMonth;
+    if (!date.startsWith(`${ym}-`)) throw badRequest(`日付が診療年月（${ym}）の外です`, ["date"]);
+    const r = sqlite
+      .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, '記録', ?, NULL, ?, ?)")
+      .run(claimId, date, JSON.stringify(note), clerkId, now());
+    return { id: Number(r.lastInsertRowid), date };
+  }
+  /** 取り込んだ請求に貼って確かめたカルテ（書いた人によらない。請求ごと。貼るのは医療事務で、チームで見る） */
+  function recordNotes(claimId: string): { id: number; date: string; acts: StoredActs }[] {
+    return (sqlite.prepare("SELECT id, date, acts FROM chart_notes WHERE claim_id = ? AND kind = '記録' AND acts IS NOT NULL ORDER BY date, id").all(claimId) as { id: number; date: string; acts: string }[]).map((r) => ({
+      id: r.id,
+      date: r.date,
+      acts: JSON.parse(r.acts) as StoredActs,
+    }));
+  }
+  /** 貼って確かめたカルテのある請求と、請求ごとの貼った回数（段の報告：1 人あたりの貼った回数。L-122） */
+  function recordCounts(): Map<string, number> {
+    const rows = sqlite.prepare("SELECT claim_id, COUNT(*) AS n FROM chart_notes WHERE kind = '記録' AND acts IS NOT NULL GROUP BY claim_id").all() as { claim_id: string; n: number }[];
+    return new Map(rows.map((r) => [r.claim_id, r.n]));
   }
   type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null; acts: string | null; clerk_id: string };
   function noteRow(id: number): NoteRow {
@@ -220,6 +250,17 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       acts: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs),
     }));
   }
+  /**
+   * B の欄（G11）に渡す、日ごとの行ったこと：取り込んだ請求（合成の症例でない）は貼って確かめたカルテ、合成の症例は合成カルテの acts に、
+   * 本人が確かめたカルテの acts を重ねる（同じ日は確かめたカルテで置き換える）。upTo を渡すと、その日までの分
+   */
+  function actsDays(claimId: string, clerkId?: string, upTo?: string) {
+    if (isUploaded(claimId)) return tori.storedDays(recordNotes(claimId)).filter((d) => upTo === undefined || d.date <= upTo);
+    const mine = clerkId ? (sqlite.prepare("SELECT id, date, acts FROM chart_notes WHERE claim_id = ? AND clerk_id = ? AND acts IS NOT NULL ORDER BY date, id").all(claimId, clerkId) as { id: number; date: string; acts: string }[]) : [];
+    const own = tori.storedDays(mine.map((r) => ({ id: r.id, date: r.date, acts: JSON.parse(r.acts) as StoredActs })));
+    const dates = new Set(own.map((d) => d.date));
+    return [...tori.chartDays(claimId).filter((d) => !dates.has(d.date)), ...own].filter((d) => upTo === undefined || d.date <= upTo).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
   type SavedComment = { slot: string; code: string; text: string };
@@ -297,12 +338,16 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       // 背反の組の院内の知識（design.md §14-3）は、診療年月の版の算定プレビューにだけ渡す（試算には渡さない）。算定プレビューでは USED を出さない
       // 施設の申告（G10。design.md §15-5）は算定プレビューに渡す（版を名指しした試算にも渡す：診療年月の版を名指しした試算は、省いた呼び出しと同じ結果にする）
       const { localUsed: _used, ...generic } = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown, local, declarationOf());
-      return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic };
+      // B の欄（G11。design.md §15-9）：導出の算定行と、その日までの確かめた行ったこと（path は preview。g11Owned の区分は見ない）
+      const torikawasure = tori.run({ claim: claimOfLines(derived.lines, rev).claim, base: ctx, rev, path: "preview", days: actsDays(r.claim_id, r.clerk_id, r.date), hand: result.findings });
+      return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, torikawasure };
     }
     const result = trial(ctx, rev);
     const { localUsed: _unused, ...generic } = genericOfLines(derived.lines, rev, base.yearMonth, result, ctx.recordsKnown, undefined, declarationOf());
     const notInRevision = [...new Set(ownManual.filter((l) => !manual.includes(l)).map((l) => own.points[l.kubun].name))];
-    return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
+    // B の欄も同じに出す（診療年月の版を名指しした試算は、省いた呼び出しと同じ結果にする）
+    const torikawasure = tori.run({ claim: claimOfLines(derived.lines, rev).claim, base: ctx, rev, path: "preview", days: actsDays(r.claim_id, r.clerk_id, r.date), hand: result.findings });
+    return { claimId: r.claim_id, date: r.date, revisions, ...claimPreviewOf(derived, midMonth ? deferAtMidMonth(result) : result, rev), generic, torikawasure, trial: result.trial, rulesAvailable: result.rulesAvailable, notInRevision };
   }
   /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
   function patients() {
@@ -352,7 +397,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

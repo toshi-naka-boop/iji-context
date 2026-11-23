@@ -52,9 +52,11 @@ export function makeR10(c: RevisionConsts): Rule {
       }
       // B：1 回の診療に両方。どちらを残すかは診療の中身で決まるので、片方を名指ししない
       const same = pairsOf(ctx, "same");
-      if (same.length) out.push(finding(this, "背反", [OUSHIN, ...refs(same)], "same_encounter"));
+      // 指摘が関わる日（days）を持たせる（design.md §15-8。C-260・X-149）
+      if (same.length) out.push({ ...finding(this, "背反", [OUSHIN, ...refs(same)], "same_encounter"), days: same });
       // 別々の診療でも、訪問診療のあとに急変などで行った往診でなければ、同じ日の往診料は立てられない（EM #7-8 改）
-      if (pairsOf(ctx, "not_after").length) out.push(finding(this, "要件不足", [OUSHIN], "oushin_not_after_visit"));
+      const notAfter = pairsOf(ctx, "not_after");
+      if (notAfter.length) out.push({ ...finding(this, "要件不足", [OUSHIN], "oushin_not_after_visit"), days: notAfter });
       // C・D：制限の判定。算定しないのは訪問診療の費用（告示 C001 注10）
       const c1 = pairsOf(ctx, "after");
       const d1 = dayAfterVisits(ctx);
@@ -63,8 +65,8 @@ export function makeR10(c: RevisionConsts): Rule {
       if (billable === "unknown") {
         if (c1.length || d1.length) out.push(ask(visitBillableNeed(ctx), refs([...c1, ...d1])));
       } else if (billable === false) {
-        if (c1.length) out.push(finding(this, "要件不足", refs(c1), "same_day_as_visit"));
-        if (d1.length) out.push(finding(this, "要件不足", refs(d1), "visit_day_after_oushin"));
+        if (c1.length) out.push({ ...finding(this, "要件不足", refs(c1), "same_day_as_visit"), days: c1 });
+        if (d1.length) out.push({ ...finding(this, "要件不足", refs(d1), "visit_day_after_oushin"), days: d1 });
       }
       return out;
     },

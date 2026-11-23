@@ -28,6 +28,10 @@ import type { Cases } from "./cases";
 import { genericOut, type Hand } from "./generic";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
+import type { Torikawasure } from "./torikawasure";
+
+/** 取り込んだ請求の B の欄（G11）を作る関数（src/server/app.ts が渡す。貼ったカルテと、同じ月の貼った患者の数を読む） */
+export type TorikawasureOf = (claimId: string, clerkId: string | undefined, input: { claim: UkeClaim; base: ClaimContext; rev: Revision; hand: Finding[] }) => Torikawasure;
 
 /**
  * 1〜31 日の回数を、算定のある日（"YYYY-MM-DD"）にする。回数ぶんは重ねない：1 日の欄は 999 まであり（投薬は処方した日に日数分が入る）、
@@ -131,7 +135,7 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: Pick<ClaimContext, "
  * localOf は、背反の組の院内の知識・本人のレベル・押した事実の時刻（design.md §14-3。取り込んだレセプトの点検だけが渡す。試算は渡さない）。
  * declarationOf は、施設の申告の三値（G10。design.md §15-5。取り込んだレセプトの点検だけが渡す。試算は渡さない＝G10 は動かない）
  */
-export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null, localOf?: (claimId: string, clerkId?: string) => Pick<GenericAboutMore, "localKnowledge" | "level" | "pressed">, declarationOf?: () => DeclarationView) {
+export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId: string) => ReturnType<Patients["patientProfile"]>, answersOf: (claimId: string) => (key: string, date: string | null) => string | null, localOf?: (claimId: string, clerkId?: string) => Pick<GenericAboutMore, "localKnowledge" | "level" | "pressed">, declarationOf?: () => DeclarationView, torikawasureOf?: TorikawasureOf) {
   /** clerkId は、見ている本人（レベルで院内の知識の出し方を分ける。design.md §14-3） */
   function ukeCheck(claimId: string, clerkId?: string) {
     const { receipt: r, uploaded, claim } = uke.receiptOf(claimId);
@@ -146,6 +150,14 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
     const result = cases.judge(ctx);
     const parsed = claim();
     const mapped = mapClaim(parsed, rev);
+    // B の欄（G11。design.md §15-8・§15-9）：貼ったカルテの行ったことと UKE を突き合わせる。recordsKnown は偽のまま、手書きのルールの判定は変えない
+    const torikawasure = torikawasureOf?.(claimId, clerkId, { claim: parsed, base: ctx, rev, hand: result.findings });
+    // R01 の回数の区分誤りに、取り忘れを先に確かめる文を添える（条件つきに下げる。R01 の指摘は消さない）
+    const handNotes = torikawasure && "handNotes" in torikawasure ? torikawasure.handNotes : [];
+    const findings = result.findings.map((f) => {
+      const n = handNotes.find((h) => h.messageKey === f.messageKey);
+      return n ? { ...f, params: { ...f.params, g11First: n.text } } : f;
+    });
     return {
       ...head,
       unreadable: null,
@@ -153,7 +165,8 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       revisions: trialRevisions(r.yearMonth),
       /** UKE に書いてある請求の合計（HO と、KO の並び） */
       declared: r.declared ?? { ho: null, ko: [] },
-      ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], result.findings),
+      ...bodyOf(r.yearMonth, rev, r.lines, r.others ?? [], findings),
+      ...(torikawasure ? { torikawasure } : {}),
       // 背反の特例条件の例外の問いには、請求ごとの事実から作った答えと、その請求の事実を渡す（design.md §13-2 の入力。C-116）
       ...mastersPartOf(parsed, rev, ctx, result, mappedLinesOf(mapped.lines, mapped.origins), { answers: answersOf(claimId), facts: ctx.facts, ...localOf?.(claimId, clerkId), ...(declarationOf ? { declaration: declarationOf() } : {}) }),
       /** 点検した行の小計（請求の合計ではない） */

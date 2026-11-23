@@ -111,6 +111,7 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
         missing: { target: targetOfNeed(unknown), field: unknown },
         messageKey: `${rule.id}.missing_fact`,
         reference: rule.reference,
+        ...(rule.needDays ? { days: rule.needDays(ctx) } : {}),
       });
       continue;
     }

@@ -13,6 +13,7 @@ import { SignIn, useClerk } from "../clerk";
 import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-check";
 import { CheckedFacts, FactInput } from "../fact-input";
 import { GenericFindings } from "../generic-findings";
+import { Torikawasure, type TorikawasureView } from "../torikawasure";
 import type { GenericView } from "../../src/generic/view";
 import { PatientPanel } from "./patient-panel";
 import { Board } from "./board";
@@ -88,7 +89,7 @@ export default function Work() {
   /** 情報不足の項目に答えを残すたびに増やし、残した答えの一覧を読み直す */
   const [factTick, setFactTick] = useState(0);
   /** 確定した明細に掛けた、データで動く点検（G01〜）の結果。確定の応答にだけ付く（問題には保存しない） */
-  const [generic, setGeneric] = useState<(GenericView & { skippedLines: number }) | null>(null);
+  const [generic, setGeneric] = useState<(GenericView & { skippedLines: number; torikawasure?: TorikawasureView }) | null>(null);
   // 明細が変わるたびに、当てはまるローカルルールを当てはめ直す（決まった規則。AI は使わない）
   useEffect(() => {
     if (!q) return setLocalRules([]);
@@ -265,7 +266,7 @@ export default function Work() {
     if (!q) return;
     setErr("");
     try {
-      const { generic: g, ...cq } = await api<Question & { generic: GenericView & { skippedLines: number } }>(`/api/questions/${q.id}/confirm`, { lines });
+      const { generic: g, ...cq } = await api<Question & { generic: GenericView & { skippedLines: number; torikawasure?: TorikawasureView } }>(`/api/questions/${q.id}/confirm`, { lines });
       setQ(cq);
       setGeneric(g);
       // 確定したら、聞かれる前に解説を始める
@@ -548,6 +549,7 @@ export default function Work() {
                   </div>
                 ))}
                 {generic && <GenericFindings generic={generic} scope="line" skippedLines={generic.skippedLines} />}
+                {generic && <Torikawasure data={generic.torikawasure} />}
                 {!q.drill && <CheckedFacts claimId={q.claimId} tick={factTick} onSaved={() => setFactTick((t) => t + 1)} note="確定した判定は、そのまま残ります。残した答えは、次にこの請求を点検するときから使います。" />}
                 {/* 摘要欄の記載（R17）の範囲。問題の判定は、行を入れ直すので摘要欄を見ない（src/server/app/question-case.ts） */}
                 {!q.drill && !q.asOf && <p className="muted">{COMMENT_CHECK_NOTE}この画面の判定は、明細を入れ直すので摘要欄の記載を見ていません（カルテの算定の見込みで点検します）。</p>}

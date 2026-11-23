@@ -375,6 +375,17 @@ export async function writeChart(input: { user: User; claimId: string; clerkId: 
   return { ...saved, ...r, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
 }
 
+/**
+ * 取り込んだ請求にカルテの文を貼る（design.md §15-8・§15-9。段 18c）：日付つきで残し（kind「記録」）、AI が行ったことを取り出す。
+ * 確かめは今のカルテと同じ入口（POST /api/chart/acts）。事実は取り出しても使わない（出来事を作らない）
+ */
+export async function pasteRecord(input: { user: User; claimId: string; clerkId: string; date: string; note: ChartNote }) {
+  const a = getApp();
+  const saved = a.saveRecord(input.claimId, input.clerkId, input.date, input.note);
+  const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  return { ...saved, acts: r.acts, rx: r.rx, actsDropped: r.actsDropped, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
+}
+
 /** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
 export const formatChart = (user: User, text: string) => formatSoap(user, text, modelFor("chartSoap"));
 export const readChartFromImage = (user: User, image: Buffer) => readChartImage(user, image, modelFor("chartImage"));

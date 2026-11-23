@@ -25,7 +25,11 @@ import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
 import { createRevision } from "./app/revision";
 import { createUke } from "./app/uke";
-import { createUkeCheck } from "./app/uke-check";
+import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
+import { claimOfLines } from "../generic/overlap";
+import { normName } from "../notice/notice";
+import { resolveRevision } from "../engine/revisions";
+import type { G11Result } from "../generic/g11";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
 
@@ -65,16 +69,34 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
   const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
   /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
-  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock));
+  /**
+   * 取り込んだ請求の B の欄（G11。design.md §15-8）：貼って確かめたカルテのある請求だけを見る。同じ診療年月の取り込んだ請求のうち、貼った患者・貼っていない患者の数を 1 行で出す（L-122）。
+   * 貼っていない請求は、取り忘れを見ず、その理由を返す（指摘がないことを「取り忘れなし」に見せない）
+   */
+  const torikawasureOf: TorikawasureOf = (claimId, clerkId, input) => {
+    const ym = input.base.yearMonth;
+    const same = [...new Set([claimId, ...(clerkId ? uke.importedClaims(clerkId) : [])])].filter((id) => uke.receiptOf(id).receipt.yearMonth === ym);
+    const counts = notes.recordCounts();
+    const pasted = same.filter((id) => counts.has(id)).length;
+    const coverage = `カルテを貼った患者だけを見ています（貼った ${pasted} 人・貼っていない ${same.length - pasted} 人）`;
+    if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
+    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId) }), coverage };
+  };
+  /** 区分誤りの出た対応を、前に選んだ対応から消す（R18 の同じ族の区分誤りだけ。C-250・C-263。点検は書き込まないので、呼んだ側が消す） */
+  const forgetDoubts = (r: G11Result | undefined) => {
+    if (r && "kubunDoubts" in r && r.kubunDoubts.length > 0) notes.forgetAliases(r.kubunDoubts.map((d) => ({ writtenNorm: normName(d.written), tbl: d.tbl, code: d.code })));
+  };
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock), torikawasureOf);
   const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
     // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
     const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
+    forgetDoubts((claim as { torikawasure?: G11Result }).torikawasure);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -102,6 +124,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     askDoctorForDrill,
     drillState,
     saveNote,
+    saveRecord,
+    /** 貼って確かめたカルテのある請求と、請求ごとの貼った回数（段 18c の報告。L-122） */
+    recordCounts: notes.recordCounts,
     noteOf,
     confirmNote,
     confirmActs,
@@ -138,7 +163,17 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const { localUsed, ...generic } = genericOf(q, localPairs.aboutFor(q.clerkId));
       // 指摘に添えた承認済みの院内の知識に USED を出す（月末の点検。1 日 1 回）
       localPairOps.markUsed(q.claimId, localUsed);
-      return generic;
+      if (!q.confirmed) return generic;
+      // B の欄（G11。design.md §15-9）：確定した明細の行と、確かめた行ったこと。合成の症例は preview、取り込んだ請求は uke（design.md §15-8）
+      const base = { ...caseFor(q), lines: q.confirmed.lines };
+      const rev = resolveRevision(base.yearMonth);
+      const uploaded = casesOf.isUploaded(q.claimId);
+      const torikawasure =
+        uploaded && !notes.recordCounts().has(q.claimId)
+          ? { skip: "カルテが貼られていないので、取り忘れは見ていません" }
+          : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: uploaded ? "uke" : "preview", days: notes.actsDays(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
+      forgetDoubts(torikawasure);
+      return { ...generic, torikawasure };
     },
     explain,
     done,
@@ -162,6 +197,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);
+      forgetDoubts((r as { torikawasure?: G11Result }).torikawasure);
       localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
       // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
       // 作る入口のフォームが選ばせない向き（design.md §14-2）。作る入口を出す G05 の指摘の組ごと

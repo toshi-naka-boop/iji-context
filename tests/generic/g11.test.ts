@@ -426,14 +426,14 @@ describe("出し方", () => {
     expect(r.findings.every((f) => f.certainty === "条件つき" && !/\d+\s*点|円/.test(f.text))).toBe(true);
   });
 
-  it("当てられない行為は指摘にならず数で出る。g11Owned の区分（訪問診療料など）は見ない", () => {
+  it("当てられない行為は指摘にならず数で出る。算定プレビューでは g11Owned の区分（訪問診療料など）は見ない", () => {
     const db = g11Db();
     const unmatched: ConfirmedAct = { date: date(10), act: { category: "処置", written: "よく分からない処置", lookup: [], quote: "よく分からない処置", match: null } };
-    const r = both(db, { units: [] }, about([unmatched, act(10, "114001110", "在宅患者訪問診療料", { category: "診療行為" })]));
+    const r = both(db, { units: [] }, about([unmatched, act(10, "114001110", "在宅患者訪問診療料", { category: "診療行為" })], { path: "preview" }));
     expect(keys(r.findings)).toEqual([]);
     expect(r.counts.unmatched).toBe(1);
     expect(r.counts.notSeen).toBe(1);
-    expect(r.scope).toEqual(["訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（取り込んだ請求で見るのは段 18c）：1 件", "当てられない行為：1 件"]);
+    expect(r.scope).toEqual(["訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（算定プレビューでは導出と手書きのルールが見ます）：1 件", "当てられない行為：1 件"]);
   });
 });
 

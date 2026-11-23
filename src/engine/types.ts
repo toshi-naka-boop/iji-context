@@ -197,6 +197,11 @@ export type Finding = {
   /** 文言に埋める値（R17：何の記載か、足りない日・多い日） */
   params?: Record<string, string>;
   reference: string;
+  /**
+   * その指摘が関わる算定日（内部の欄で、文には出さない。design.md §15-8。round-52 C-260・round-53 C-272）。
+   * 日・週で決まる指摘を出す R10・R13 だけが入れる。G11 が添え書きを関わる日の候補だけに付けるのに使う
+   */
+  days?: string[];
 };
 
 export type EngineResult = {
@@ -244,5 +249,7 @@ export type Rule = {
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];
+  /** needs の情報不足が関わる算定日（R13：上限を超えた週の訪問診療料の算定日。design.md §15-8 C-272）。持たないルールは日を持たない */
+  needDays?(ctx: ClaimContext): string[];
   check(ctx: ClaimContext): Finding[];
 };
