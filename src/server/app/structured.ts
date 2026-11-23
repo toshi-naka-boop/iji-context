@@ -177,6 +177,24 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
   // ---------------------------------------------------------------------------
   // 規則で出す算定の入力（16-4・16-6。段 19c・19d）
 
+  /** 医療事務が入れた訪問の時刻を追記で残す（POST /api/chart/structured/visit-time。16-6）。"HH:MM" で終了が開始より後。値はログ・監査ログに出さない */
+  function saveVisitTime(clerkId: string, input: { claimId: string; date: string; ref?: string; start: string; end: string }): { saved: true } {
+    clerks.clerk(clerkId);
+    const ym = uke.receiptOf(input.claimId).receipt.yearMonth;
+    if (!input.date.startsWith(`${ym}-`)) throw badRequest(`日付が診療年月（${ym}）の外です`, ["date"]);
+    if (!(input.end > input.start)) throw badRequest("終了の時刻は開始の時刻より後にしてください（日をまたぐ記録は入れられません）", ["end"]);
+    sqlite
+      .prepare("INSERT INTO structured_inputs (patient_id, date, visit_ref, start, end, entered_by, entered_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(structuredPatientOf(input.claimId), input.date, input.ref ?? null, input.start, input.end, clerkId, clock.now());
+    return { saved: true };
+  }
+  /** その患者・月の、医療事務が入れた時刻（誰は医療事務の名前） */
+  function visitTimesOf(patientId: string, yearMonth: string): G11Structured["times"] {
+    const rows = sqlite
+      .prepare("SELECT i.date, i.visit_ref, i.start, i.end, i.entered_at, COALESCE(c.name, '') AS name FROM structured_inputs i LEFT JOIN clerks c ON c.id = i.entered_by WHERE i.patient_id = ? AND i.date LIKE ? ORDER BY i.id")
+      .all(patientId, `${yearMonth}-%`) as { date: string; visit_ref: string | null; start: string; end: string; entered_at: string; name: string }[];
+    return rows.map((r) => ({ date: r.date, ref: r.visit_ref, start: r.start, end: r.end, by: r.name, at: r.entered_at }));
+  }
   /** 当月の前の n か月（新しい月から） */
   const monthsBefore = (yearMonth: string, n: number): string[] =>
     Array.from({ length: n }, (_, i) => {
@@ -193,7 +211,7 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
       .map((x) => ({ yearMonth: x.yearMonth, claimId: x.claimId }));
   }
   /**
-   * G11 の規則の候補に渡す構造化データ（当月・さかのぼる月の処方のオーダー）。当月を残していなければ null（規則の候補を出さない）。
+   * G11 の規則の候補に渡す構造化データ（当月・さかのぼる月の処方のオーダー・医療事務が入れた時刻）。当月を残していなければ null（規則の候補を出さない）。
    * さかのぼる月は残した処方のオーダーだけを読み、残していない月は null（読めない。L-201）
    */
   function structuredRulesOf(claimId: string, yearMonth: string, db: MastersDb | null): Omit<G11Structured, "texts"> | null {
@@ -207,10 +225,10 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
       const only: StructuredChart = { ...unsupportedAll(), orders: st.chart.orders };
       return { yearMonth: ym, orders: st.chart.orders, items: itemsOf(only, mapContextOf(db, ym, st.connectorId)) };
     });
-    return { chart: s.chart, items: s.items, history, lookbackMonths };
+    return { chart: s.chart, items: s.items, history, lookbackMonths, times: visitTimesOf(patientId, yearMonth) };
   }
 
-  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, samePatientClaims, structuredRulesOf, monthsBefore };
+  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, saveVisitTime, visitTimesOf, samePatientClaims, structuredRulesOf, monthsBefore };
 }
 
 export type Structured = ReturnType<typeof createStructured>;

@@ -294,7 +294,7 @@ export default function UkeClaimCheck() {
 
               {!trial && (
                 <>
-                  <Torikawasure data={check?.torikawasure} />
+                  <Torikawasure data={check?.torikawasure} claimId={claimId} />
                   <RecordPaste claimId={c.claimId} yearMonth={c.yearMonth} onSaved={() => setTick((t) => t + 1)} />
                 </>
               )}

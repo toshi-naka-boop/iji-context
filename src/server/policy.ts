@@ -107,6 +107,8 @@ export const POLICY = {
   "POST /api/chart/acts/fold": row(WORK, "none", true),
   // 処方の日の院内・院外と「確かめた」の印をあとから付け直す（design.md §16-7。C-421）。権限は POST /api/chart/acts/fold と同じ
   "POST /api/chart/acts/rx-confirm": row(WORK, "none", true),
+  // 医療事務が入れる訪問の時刻（design.md §16-6・16-7）。カルテを確かめられる人。値はログ・監査ログに出さない
+  "POST /api/chart/structured/visit-time": row(WORK, "none", true),
   // 独自コードの対応表（design.md §16-7）。事務長・医療事務。返すのは接続先・欄・独自コード・表示名・件数で、患者・日は持たない
   "GET /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
   "POST /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),

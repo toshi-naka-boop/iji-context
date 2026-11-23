@@ -228,7 +228,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       ))}
 
       <GenericFindings generic={claim.generic} scope="line" skippedLines={claim.generic.skippedLines} />
-      <Torikawasure data={claim.torikawasure} />
+      <Torikawasure data={claim.torikawasure} claimId={claim.claimId} />
 
       <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
       {claim.patientFindings.length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}

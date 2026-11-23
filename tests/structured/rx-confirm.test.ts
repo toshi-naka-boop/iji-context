@@ -107,6 +107,7 @@ describe("処方の日の「確かめた」の印（16-4-1。C-410・C-421）", 
       history: Array.from({ length: 12 }, (_, i) => ({ yearMonth: month(-(i + 1)), orders: { status: "supported" as const, items: [], gaps: {} }, items: [] })),
       lookbackMonths: 12,
       texts: [{ date: d14, text: "定期処方", confirmed: true }, { date: saved.date, text: `経過良好\n${RX}`, confirmed: true }],
+      times: [],
     });
     const n2 = (s: StoredActs) => {
       const r = evaluateG11({ units: [{ items: [{ kind: "SI", code: T.zaiisoukan }], count: 1, days: Array.from({ length: 31 }, (_, i) => (i === 13 ? 1 : 0)) }] }, db, {
@@ -141,3 +142,17 @@ describe("処方の日の「確かめた」の印（16-4-1。C-410・C-421）", 
   });
 });
 
+describe("医療事務が入れる訪問の時刻（16-6。POST /api/chart/structured/visit-time）", () => {
+  it("診療年月の日に、終了が開始より後の時刻だけを追記で残し、出どころの印（誰・いつ）つきで読める。値は応答に返さない", async () => {
+    const { POST } = await import("../../app/api/chart/structured/visit-time/route");
+    const id = claimId("K4");
+    const ok = await POST(post("/api/chart/structured/visit-time", { claimId: id, date: `${YM}-05`, start: "10:00", end: "11:10" }));
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ saved: true });
+    expect((await POST(post("/api/chart/structured/visit-time", { claimId: id, date: `${YM}-05`, start: "11:10", end: "10:00" }))).status).toBe(400);
+    expect((await POST(post("/api/chart/structured/visit-time", { claimId: id, date: `${month(1)}-05`, start: "10:00", end: "11:10" }))).status).toBe(400);
+    expect((await POST(post("/api/chart/structured/visit-time", { claimId: id, date: `${YM}-05`, start: "25:00", end: "26:10" }))).status).toBe(400);
+    const times = as(() => app().visitTimesOf(app().structuredPatientOf(id), YM));
+    expect(times).toEqual([{ date: `${YM}-05`, ref: null, start: "10:00", end: "11:10", by: "かくにん", at: expect.any(String) }]);
+  });
+});

@@ -13,6 +13,7 @@ import { FR207_CELLS } from "../../src/structured/fr207-table";
 import { isOutsideText, OUTSIDE_WORDS } from "../../src/structured/outside-words";
 import type { SItem } from "../../src/structured/overlap";
 import { RULE_CODES } from "../../src/structured/rule-codes";
+import { hasTimeHint, TIME_HINT_WORDS } from "../../src/structured/time-hint";
 import { dateIn, month, YM } from "../helpers/period";
 import { GEN, put } from "./small-masters";
 import { C as T, putHaihan, tensuhyoMasters } from "./small-tensuhyo";
@@ -89,6 +90,7 @@ type Opt = {
   /** さかのぼる月（新しい月から）。省くと 12 か月とも 0 件の受け取り */
   history?: G11Structured["history"];
   texts?: G11Structured["texts"];
+  times?: G11Structured["times"];
   acts?: ConfirmedAct[];
   rxDays?: RxDay[];
   dispensing?: G11About["dispensing"];
@@ -107,7 +109,7 @@ function about(o: Opt = {}): G11About {
     homeCare: UNS,
   };
   const items = orders ? itemsOf(orders, o.unmapped) : [];
-  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [] };
+  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [] };
   const acts = o.noStructured ? (o.acts ?? []) : withStructured(o.acts ?? [], { chart, items }, rev).acts;
   return {
     yearMonth: YM,
@@ -542,6 +544,128 @@ describe("T6 在医総管 注2（版の C002_N2。R8-18・R8-241）", () => {
   });
 });
 
+// ───────────────────────────────────────────────────────────────────────────
+// T7：患家診療時間加算（段 19d）
+
+describe("T7 患家診療時間加算（114001470・114000970。R8-202〜R8-207）", () => {
+  const visitDay = { units: [unit([VISIT], 5)] };
+  const at = "2026-11-01T10:00:00+09:00";
+  cell("T7-出る", "記録の時刻の差が 61 分以上で、その日の訪問診療料が請求にあれば、数量を分で出す。60 分では何も言わず、61 分で出て数量が 61", () => {
+    const db = rdb();
+    const r70 = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    const f = rules(r70)[0];
+    expect(f.codes).toEqual([R.kakaVisit]);
+    expect(f.days).toEqual([{ date: date(5), quote: "記録の時刻では 70 分です", notes: [], quantity: "70" }]);
+    expect(f.text).toBe(
+      "訪問の記録（5日）から、患家診療時間加算（訪問診療）が請求にありません。診療に当たっていた時間（移動・待ちの時間を除く）として合っているか確かめてください（R8-204）。同じ患家の 2 人目以降なら摘要欄の記載（820100847）が要ります。訪問診療の 3 人目以降は明文が 2 人目です（U-40）。算定できるか確かめてください",
+    );
+    expect(f.rule).toEqual({ basis: "visit", sources: ["電子カルテ"] });
+    expect(rules(run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:00")] }))).toEqual([]);
+    expect(rules(run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:01")] }))[0].days[0].quantity).toBe("61");
+  });
+  cell("T7-包括で出ない", "元の請求の行と G04 の言い切りの包括で隠れる", () => {
+    const db = rdb();
+    bundleUnderJutsugo(db, R.kakaVisit);
+    const r = run(db, { units: [unit([VISIT, T.jutsugo], 5)] }, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    expect(rules(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ written: "患家診療時間加算（訪問診療）", reason: "包括" }));
+  });
+  cell("T7-背反で出ない", "元の請求の行と G05 の言い切りの背反で隠れる", () => {
+    const db = rdb();
+    putHaihan(db, SNAP, 1, T.sansoKyunyu, R.kakaVisit, "1", "0");
+    const r = run(db, { units: [unit([VISIT, T.sansoKyunyu], 5)] }, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    expect(r.hidden).toContainEqual(expect.objectContaining({ written: "患家診療時間加算（訪問診療）", reason: "背反" }));
+  });
+  cell("T7-在医総管の月で出ない", "該当しない（包括されない）：在医総管の月にも出る", () => {
+    const db = rdb();
+    bundleUnderKanri(db);
+    const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    expect(rules(r).map((f) => f.codes)).toContainEqual([R.kakaVisit]);
+  });
+  cell("T7-項目が取れず見ない-1", "訪問を受け取っていない・時刻の欠け・医療事務も入れていない日は「見ていません」と数", () => {
+    const db = rdb();
+    expect(run(db, visitDay, { visits: "unsupported" }).scope).toContain("患家診療時間加算は見ていません（時刻の分からない訪問の日：1 日）");
+    expect(run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", null)] }).scope).toContain("患家診療時間加算は見ていません（時刻の分からない訪問の日：1 日）");
+  });
+  cell("T7-項目が取れず見ない-2", "基本の行も初診料・再診料も請求・候補にない日は出さず「見ていません：n 日」（C-413）", () => {
+    const db = rdb();
+    const r = run(db, { units: [] }, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    expect(rules(r)).toEqual([]);
+    expect(r.scope).toContain("訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：1 日");
+  });
+  cell("T7-そのほか出ない", "60 分以下は何も言わない。日をまたぐ記録（終了が開始以前）は欠けの数に入る", () => {
+    const db = rdb();
+    const r = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "10:40")] });
+    expect(rules(r)).toEqual([]);
+    expect(r.scope.filter((s) => s.includes("時間の加算") || s.includes("患家診療時間加算"))).toEqual([]);
+    expect(run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "23:30", "00:40")] }).scope).toContain("患家診療時間加算は見ていません（時刻の分からない訪問の日：1 日）");
+  });
+  it("訪問診療料・往診料がなく再診料だけの日の 70 分は、同じ患家の 2 人目以降の添え書きつきで出る（X-232。L-208）", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([SAISHIN], 5)] }, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")] });
+    const f = rules(r)[0];
+    expect(f.codes).toEqual([R.kakaVisit]);
+    expect(notesOf(f)).toEqual(["同じ患家の 2 人目以降として出しました。2 人目以降でなければ、訪問診療料・往診料を確かめてください。摘要欄の記載（820100847）が要ります"]);
+  });
+  it("往診は 114000970。請求に 114002470（特別往診）があれば出ない（L-179）", () => {
+    const db = rdb();
+    const v = { visits: [visit("v1", 5, "往診", "21:00", "22:10")] };
+    expect(rules(run(db, { units: [unit([OUSHIN], 5)] }, v)).map((f) => f.codes)).toEqual([[R.kakaOushin]]);
+    expect(rules(run(db, { units: [unit([OUSHIN, R.kakaOushinSpecial], 5)] }, v))).toEqual([]);
+  });
+  it("同じ日の 2 回の往診（U-38）：回ごとと合算を並べ、合算でだけ 61 分以上の日は「回ごとではどちらも 60 分以下です」と明記する（L-202）", () => {
+    const db = rdb();
+    const r = run(db, { units: [{ ...unit([OUSHIN], 5), count: 2, days: dayArr(5, 5) }] }, { visits: [visit("v1", 5, "往診", "09:00", "09:40"), visit("v2", 5, "往診", "20:00", "20:30")] });
+    const f = rules(r)[0];
+    expect(f.days[0].quote).toBe("回ごと 40 分・30 分、合算 70 分");
+    expect(f.days[0].quantity).toBe("回ごと 40・30 分／合算 70 分");
+    expect(notesOf(f)).toEqual(["回ごとと合算のどちらで数えるかは明文がありません（U-38）。回ごとではどちらも 60 分以下です"]);
+  });
+  it("医療事務の値と電子カルテの値が違うと、両方の分を文に出し、出どころの印を両方持つ（L-178）", () => {
+    const db = rdb();
+    const r = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "10:50")], times: [{ date: date(5), ref: "v1", start: "10:00", end: "11:10", by: "たいおう", at }] });
+    const f = rules(r)[0];
+    expect(f.days[0].quote).toBe("電子カルテでは 50 分、医療事務が入れた値では 70 分");
+    expect(f.rule!.sources).toEqual(["電子カルテ", `医療事務が入れた（たいおう・${at}）`]);
+    // 訪問の記録がない日は、医療事務の値を日で結ぶ
+    const only = run(db, visitDay, { visits: [], times: [{ date: date(5), ref: null, start: "10:00", end: "11:10", by: "たいおう", at }] });
+    expect(rules(only)[0].days[0].quote).toBe("記録の時刻では 70 分です");
+  });
+  it("時刻がなく文章に時間の語がない日は案内が出ず、語がある日と請求に時間の加算がある日だけ案内が出る（16-6。L-177）", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([VISIT], 5, 6, 7), unit([R.kakaVisit], 7)] }, { visits: "unsupported", texts: [text(5, "診療時間 1時間10分"), text(6, "経過良好"), text(7, "経過良好")] });
+    expect(r.ruleGuides).toEqual(["5日・7日の訪問の開始・終了の時刻を入れると、患家診療時間加算を見ます"]);
+    expect(r.visitTimeDays).toEqual([date(5), date(7)]);
+    // 確かめていない文章の時間の語では案内しない
+    expect(run(db, { units: [unit([VISIT], 5)] }, { visits: "unsupported", texts: [text(5, "診療時間 1時間10分", false)] }).ruleGuides).toEqual([]);
+  });
+  it("時間の語の一覧は決まった語で、数字と並んだときだけ当たる", () => {
+    expect(TIME_HINT_WORDS).toEqual(["時間", "分", "時", ":"]);
+    expect(hasTimeHint("診療時間が１時間１０分")).toBe(true);
+    expect(hasTimeHint("10:00〜11:10")).toBe(true);
+    expect(hasTimeHint("時間をかけて説明した")).toBe(false);
+  });
+  it("AI が取り出した「診療時間が１時間１０分」（114001470）は、時刻があれば規則の候補にたたまれ、時刻がなければ添え書きつきで今の候補に残る", () => {
+    const db = rdb();
+    const a = textAct(5, R.kakaVisit, "診療時間が１時間１０分", "診療行為");
+    const withTime = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")], acts: [a] });
+    expect(withTime.findings.filter((f) => f.codes.includes(R.kakaVisit)).map((f) => f.messageKey)).toEqual(["G11.missing_rule"]);
+    expect(withTime.scope).toContain("規則で見る行為をたたみました：1 件");
+    const noTime = run(db, visitDay, { visits: "unsupported", acts: [a] });
+    const f = noTime.findings.filter((x) => x.codes.includes(R.kakaVisit));
+    expect(f.map((x) => x.messageKey)).toEqual(["G11.missing"]);
+    expect(notesOf(f[0])).toContain("時刻が分かれば規則で確かめます");
+  });
+  it("施設基準（G10）で算定できないと決まるものも出ない（手順 1 のまま）", () => {
+    const db = rdb();
+    db.prepare("UPDATE shinryo SET shisetsu_g1 = '721' WHERE snapshot = ? AND code = ?").run(SNAP, R.kakaVisit);
+    const decl: DeclarationView = { held: (k) => (k === "721" ? { v: "not", reason: "notified_no" } : { v: "held" }), nameOf: () => null };
+    const r = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "11:10")], declaration: decl });
+    expect(rules(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ written: "患家診療時間加算（訪問診療）", reason: "施設基準" }));
+  });
+});
+
 describe("構造化データのない請求（v32 の入力）", () => {
   it("規則の候補を出さず、注2・時間の加算の「見ていません」も出さない（v32 の点検の範囲のまま）", () => {
     const db = rdb();
@@ -552,8 +676,8 @@ describe("構造化データのない請求（v32 の入力）", () => {
 });
 
 describe("FR-207 の表の升（16-4-8）", () => {
-  it("FR207_CELLS の T1〜T6 の全部の升の id に、テストが 1 件以上ある（升を空にしない。L-197・C-413）", () => {
-    expect(FR207_CELLS.length).toBe(6 * 6 + 3 + 9);
+  it("FR207_CELLS の T1〜T7 の全部の升の id に、テストが 1 件以上ある（升を空にしない。L-197・C-413）", () => {
+    expect(FR207_CELLS.length).toBe(7 * 6 + 3 + 9 + 1);
     expect(FR207_CELLS.filter((id) => !covered.has(id))).toEqual([]);
   });
 });

@@ -5,10 +5,11 @@ const COLUMNS = ["出る", "包括で出ない", "背反で出ない", "在医�
 /** 升の中に番号のある列（列 → 番号の数） */
 const NUMBERED: Record<string, Partial<Record<(typeof COLUMNS)[number], number>>> = {
   T6: { 背反で出ない: 4, 項目が取れず見ない: 10 },
+  T7: { 項目が取れず見ない: 2 },
 };
 
-/** 段 19c で入れた行（T1〜T6） */
-export const FR207_ROWS = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
+/** 段 19c・19d で入れた行（T1〜T7） */
+export const FR207_ROWS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7"] as const;
 
 export const FR207_CELLS: readonly string[] = FR207_ROWS.flatMap((row) =>
   COLUMNS.flatMap((col) => {

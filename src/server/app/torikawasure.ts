@@ -36,7 +36,7 @@ export function actsInput(days: { date: string; noteId: number; acts: ChartAct[]
 
 /**
  * 請求の患者・診療年月の、残した構造化データと当てたコードつきの行為（src/server/app/structured.ts。ないときは null）。
- * 規則の候補（design.md §16-4）に使う、さかのぼる月の処方のオーダーも持つ
+ * 規則の候補（design.md §16-4）に使う、さかのぼる月の処方のオーダーと医療事務が入れた時刻も持つ
  */
 export type StructuredOfClaim = (claimId: string, yearMonth: string, db: MastersDb | null) => ({ chart: StructuredChart; items: SItem[] } & Partial<Omit<G11Structured, "chart" | "items" | "texts">>) | null;
 /** カルテの文章のある日（確かめたかは問わない）。stored は確かめて残した行ったこと（確かめていなければ null） */
@@ -82,6 +82,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
             items: s.items,
             history: s.history ?? [],
             lookbackMonths: s.lookbackMonths ?? 0,
+            times: s.times ?? [],
             texts: (input.texts ?? []).map((t) => ({
               date: t.date,
               text: t.text,

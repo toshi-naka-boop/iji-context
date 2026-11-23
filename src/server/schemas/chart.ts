@@ -71,6 +71,9 @@ export const foldBody = z.strictObject({ noteId: noteParams.shape.id, index: z.n
 export const codeMapBody = z.strictObject({ connectorId: z.string().regex(/^[a-z0-9_-]{1,40}$/), field: z.enum(["薬", "材料", "行為", "指導管理", "機器"]), extCode: z.string().min(1).max(100), code: z.string().min(1).max(20), yearMonth: z.string().regex(YEAR_MONTH) });
 /** 確かめたカルテのその日の処方の欄の値と「確かめた」の印を付け直す本文（POST /api/chart/acts/rx-confirm。design.md §16-7。C-421） */
 export const rxConfirmBody = z.strictObject({ noteId: noteParams.shape.id, rxChoice: z.enum(["outside", "inside", "unknown"]), confirmed: z.boolean() });
+/** 医療事務が入れる訪問の時刻（POST /api/chart/structured/visit-time。design.md §16-6・16-7）。"HH:MM"。終了が開始より後かは処理の中で確かめる */
+const hhmm = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/);
+export const visitTimeBody = z.strictObject({ claimId, date: recordBody.shape.date, ref: ref.optional(), start: hhmm, end: hhmm });
 /** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */
 export const actsOrPickBody = z.union([actsBody, pickBody]);
 const ym = z.string().regex(YEAR_MONTH);

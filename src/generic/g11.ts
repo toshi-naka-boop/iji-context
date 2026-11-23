@@ -24,6 +24,7 @@ import type { Part, RxOrder, StructuredChart } from "../connect/types";
 import type { SItem } from "../structured/overlap";
 import { RULE_CODES } from "../structured/rule-codes";
 import { isOutsideText } from "../structured/outside-words";
+import { hasTimeHint } from "../structured/time-hint";
 
 // ───────────────────────────────────────────────────────────────────────────
 // 入力
@@ -49,6 +50,7 @@ export type RxDay = { date: string; rx: boolean; choice: RxChoice | null; confir
  * 構造化データから規則で出す算定の入力（design.md §16-4。段 19c・19d）。ないときは規則の候補を出さない（v32 のまま）。
  * history：さかのぼって読む月（当月の前の月から順に lookbackMonths 個）。orders は残した処方のオーダー（残していない月は null）、items はその月の当てたコードつきの行為。
  * texts：カルテの文章のある日（当月とさかのぼる月。確かめたかは問わない）。text は S・O・A・P・処方の欄を合わせた文、confirmed は確かめたか。choice・rxAct はさかのぼる月の日だけが持つ（当月は rxDays・acts で見る）。
+ * times：医療事務が入れた訪問の時刻（16-6。出どころは「医療事務が入れた」）
  */
 export type G11Structured = {
   chart: StructuredChart;
@@ -56,6 +58,7 @@ export type G11Structured = {
   history: { yearMonth: string; orders: Part<RxOrder> | null; items: SItem[] }[];
   lookbackMonths: number;
   texts: { date: string; text: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
+  times: { date: string; ref: string | null; start: string; end: string; by: string; at: string }[];
 };
 /** 院内処方か院外処方か（施設の申告 dispensing。その請求の診療年月で効く行）。inside＝院内処方もある */
 export type Dispensing = "outside" | "inside" | "unknown";
@@ -148,8 +151,10 @@ export type G11Result =
       handNotes: { messageKey: string; text: string }[];
       /** 院内・院外が選ばれていない日の案内（たたまない 1 行。C-243）。なければ null */
       guide: string | null;
-      /** 規則の候補の入力の案内（効く場面の日だけ。処方の日の「確かめた」の印。design.md §16-6。たたまない 1 行ずつ） */
+      /** 規則の候補の入力の案内（効く場面の日だけ。訪問の時刻・処方の日の「確かめた」の印。design.md §16-6。たたまない 1 行ずつ） */
       ruleGuides: string[];
+      /** 時刻の入力を案内する日（16-6 の 2 つの場面。B の欄で時刻を入れる欄を出す日） */
+      visitTimeDays: string[];
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
       scope: string[];
       /** 段の報告に出す数（design.md §15-10 の共通の検査の G11 の数） */
@@ -463,7 +468,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   let nextId = 0;
   const add = (x: Omit<Cand, "id" | "notes">, notes: Note[] = []) => cands.push({ ...x, id: nextId++, notes: [...notes] });
   /** 構造化データとの突き合わせで添えた文（16-3。文章にあるがオーダーにない） */
-  /** 行為に添える規則の文（16-3） */
+  /** 行為に添える規則の文（時刻が分かれば規則で確かめる。16-3） */
   const extraNotes = new Map<ConfirmedAct, Note[]>();
   const orderNotes = (list: ConfirmedAct[]): Note[] => [
     ...[...new Set(list.flatMap((a) => (a.note ? [a.note] : [])))].map((text): Note => ({ reason: "文章にあるがオーダーにない", text })),
@@ -535,8 +540,40 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   /** 規則が調剤料・処方料を見る日（文章の調剤料・処方料の行為は、規則の側にたたむ。16-3） */
   const ruleDrugDay = (date: string) => orderDay(date)?.place === "inside" || confirmedInside(date);
 
-  /** 規則で出す算定と同じコードの文章の行為（16-3）：規則がその日を見るときは規則の側にたたむ */
+  // 訪問の時刻（16-4-6・16-6）：電子カルテの時刻と医療事務が入れた時刻。日をまたぐ記録（終了が開始以前）は見ない（欠け）
+  const minutesOf = (start: string | null, end: string | null): number | null => {
+    const p = (s: string | null) => (s && /^\d{2}:\d{2}$/.test(s) ? Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)) : null);
+    const a = p(start);
+    const b = p(end);
+    return a !== null && b !== null && b > a ? b - a : null;
+  };
+  type TimeEntry = { ref: string | null; kind: "訪問診療" | "往診" | null; ehr: number | null; clerk: { min: number; by: string; at: string } | null };
+  const timesOn = new Map<string, TimeEntry[]>();
+  if (S?.chart.visits.status === "supported")
+    for (const v of S.chart.visits.items) if (inMonth(v.date)) timesOn.set(v.date, [...(timesOn.get(v.date) ?? []), { ref: v.ref, kind: v.kind, ehr: minutesOf(v.start, v.end), clerk: null }]);
+  for (const t of [...(S?.times ?? [])].filter((x) => inMonth(x.date)).sort((a, b) => (a.at < b.at ? -1 : 1))) {
+    const min = minutesOf(t.start, t.end);
+    if (min === null) continue;
+    const list = timesOn.get(t.date) ?? [];
+    // 医療事務の値は、入れたときのその日の訪問の ref に結び付ける。訪問の記録がない日は日で結ぶ
+    const e = t.ref !== null ? list.find((x) => x.ref === t.ref) : list.length === 1 ? list[0] : list.length === 0 ? undefined : null;
+    if (e === null) continue;
+    if (e) e.clerk = { min, by: t.by, at: t.at };
+    else timesOn.set(t.date, [...list, { ref: t.ref, kind: null, ehr: null, clerk: { min, by: t.by, at: t.at } }]);
+  }
+  const timeKnown = (date: string) => (timesOn.get(date) ?? []).some((e) => e.ehr !== null || e.clerk !== null);
+  const KAKA = new Set<string>([RULE_CODES.kakaVisit, RULE_CODES.kakaOushin, RULE_CODES.kakaOushinSpecial]);
+  /** 規則で出す算定と同じコードの文章の行為（16-3）：規則がその日を見るときは規則の側にたたむ。見られないときは添え書きつきで今の候補に残す */
   const ruleFolded = new Set<ConfirmedAct>();
+  if (S)
+    for (const a of acts) {
+      const m = a.act.match;
+      if (!m || m.tbl !== "shinryo" || a.source === "structured") continue;
+      if (KAKA.has(m.code)) {
+        if (timeKnown(a.date)) ruleFolded.add(a);
+        else extraNotes.set(a, [{ reason: "規則の項目が取れない", text: "時刻が分かれば規則で確かめます" }]);
+      }
+    }
   for (const a of acts) {
     const m = a.act.match;
     if (m && m.tbl === "shinryo" && a.act.category === "投薬" && a.source !== "structured" && inKubun(m.code, ["F0", "F100"]) && ruleDrugDay(a.date)) ruleFolded.add(a);
@@ -831,6 +868,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 2b. 規則の候補（design.md §16-4。段 19c・19d）：処方のオーダー・処方の欄の「確かめた」の印・訪問の記録から、決まった規則で出す。言い切らず、手順 1〜4 に通す
   const ruleScope: string[] = [];
   const ruleGuides: string[] = [];
+  const visitTimeDays: string[] = [];
   const dayList = (dates: Iterable<string>) => [...new Set(dates)].sort().map((d) => `${md(d)}日`).join("・");
   const ruleCand = (date: string, units: AddedUnit[], rc: RuleCand, notes: Note[] = [], alt?: AddedUnit[]) =>
     add({ kind: "rule", date, day: Number(date.slice(8, 10)) || 0, units, ...(alt ? { alt } : {}), rule: rc, report: [{ code: units[0].items[0].code, written: rc.label, quote: rc.dayQuote, name: rc.label }] }, notes);
@@ -1037,6 +1075,93 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const kanriMonth = [...kanriCodes].some((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
     const ds = (about.rxDays ?? []).filter((r) => inMonth(r.date) && r.rx && r.choice === "inside" && !r.confirmed).map((r) => r.date);
     if (!kanriMonth && ds.length > 0) ruleGuides.push(`${dayList(ds)}の処方の院内を確かめると、調剤料・処方料を見ます`);
+  }
+
+  // 患家診療時間加算（T7。16-4-6）：記録の時刻の差が 61 分以上で、その日の基本の行（訪問診療料・往診料）が請求か候補にある日。基本の行がなく初診料・再診料がある日は 2 人目以降の添え書きつき
+  if (S) {
+    const visitSet = new Set(rev.consts.visitKubun.flatMap(kubunCodes));
+    const oushinSet = new Set(kubunCodes(rev.consts.oushin.kubun));
+    const candHas = (set: Set<string>, day: number) => cands.some((x) => x.day === day && x.kind !== "qty" && x.kind !== "rule" && x.units.some((u) => u.items.some((it) => set.has(it.code))));
+    const baseOf = (set: Set<string>, day: number) => codesOnDay(set, day) || candHas(set, day);
+    const claimVisitDays = codeDays([...visitSet, ...oushinSet]);
+    const days = [...new Set([...timesOn.keys(), ...claimVisitDays])].sort();
+    let unknown = 0;
+    let noBase = 0;
+    const guideDays: string[] = [];
+    const confirmedText = (date: string) => S.texts.filter((x) => x.date === date && x.confirmed).map((x) => x.text).join("\n");
+    for (const date of days) {
+      const day = Number(date.slice(8, 10));
+      const entries = timesOn.get(date) ?? [];
+      if (!entries.some((e) => e.ehr !== null || e.clerk !== null)) {
+        unknown++;
+        if (hasTimeHint(confirmedText(date)) || codesOnDay(KAKA, day)) guideDays.push(date);
+        continue;
+      }
+      // 種類：訪問の記録の種類。記録がない（医療事務の値だけの）日は、その日の基本の行で決める
+      const kindOf = (e: TimeEntry) => e.kind ?? (baseOf(visitSet, day) ? "訪問診療" : baseOf(oushinSet, day) ? "往診" : null);
+      for (const kind of ["訪問診療", "往診"] as const) {
+        const es = entries.filter((e) => kindOf(e) === kind && (e.ehr !== null || e.clerk !== null));
+        if (es.length === 0) continue;
+        const set = kind === "訪問診療" ? visitSet : oushinSet;
+        const base = baseOf(set, day);
+        const second = !base && kubunOnDay(["A0", "A1"], day);
+        if (!base && !second) {
+          noBase++;
+          continue;
+        }
+        const code = kind === "訪問診療" ? RULE_CODES.kakaVisit : RULE_CODES.kakaOushin;
+        if (codesOnDay(kind === "訪問診療" ? [RULE_CODES.kakaVisit] : [RULE_CODES.kakaOushin, RULE_CODES.kakaOushinSpecial], day)) continue;
+        const sources = [...new Set(es.flatMap((e) => [...(e.ehr !== null ? [EHR] : []), ...(e.clerk ? [`医療事務が入れた（${e.clerk.by}・${e.clerk.at}）`] : [])]))];
+        const notes: Note[] = second ? [{ reason: "規則の添え書き", text: "同じ患家の 2 人目以降として出しました。2 人目以降でなければ、訪問診療料・往診料を確かめてください。摘要欄の記載（820100847）が要ります" }] : [];
+        let quote: string;
+        let quantity: string;
+        let qty: number;
+        if (es.length >= 2) {
+          // 同じ日に同じ患者へ 2 回（U-38）：回ごとと合算を並べ、どちらで数えるかは決めない（L-202）
+          const per = es.map((e) => e.ehr ?? e.clerk!.min);
+          const sum = per.reduce((s, n) => s + n, 0);
+          if (per.every((n) => n <= 60) && sum <= 60) continue;
+          quote = `回ごと ${per.map((n) => `${n} 分`).join("・")}、合算 ${sum} 分`;
+          quantity = `回ごと ${per.join("・")} 分／合算 ${sum} 分`;
+          qty = Math.max(...per.filter((n) => n > 60), sum);
+          notes.push({ reason: "規則の添え書き", text: `回ごとと合算のどちらで数えるかは明文がありません（U-38）${per.every((n) => n <= 60) ? "。回ごとではどちらも 60 分以下です" : ""}` });
+        } else {
+          const e = es[0];
+          const vals = [e.ehr, e.clerk?.min ?? null];
+          if (vals[0] !== null && vals[1] !== null && vals[0] !== vals[1]) {
+            // 電子カルテと医療事務の値が違う：両方を並べ、どちらかが 61 分以上なら出す（L-178。決めない）
+            if (Math.max(vals[0], vals[1]) <= 60) continue;
+            quote = `電子カルテでは ${vals[0]} 分、医療事務が入れた値では ${vals[1]} 分`;
+            quantity = `${vals[0]} 分／${vals[1]} 分`;
+            qty = Math.max(vals[0], vals[1]);
+          } else {
+            const v = (vals[0] ?? vals[1])!;
+            if (v <= 60) continue;
+            quote = `記録の時刻では ${v} 分です`;
+            quantity = `${v}`;
+            qty = v;
+          }
+        }
+        ruleCand(
+          date,
+          [si1(code, day, String(qty))],
+          {
+            key: `kaka-${kind}`,
+            label: `患家診療時間加算（${kind}）`,
+            basisLabel: "訪問の記録",
+            requirement: "診療に当たっていた時間（移動・待ちの時間を除く）として合っているか確かめてください（R8-204）。同じ患家の 2 人目以降なら摘要欄の記載（820100847）が要ります。訪問診療の 3 人目以降は明文が 2 人目です（U-40）",
+            basis: { basis: "visit", sources },
+            dayQuote: quote,
+            quantity,
+          },
+          notes,
+        );
+      }
+    }
+    if (unknown > 0) ruleScope.push(`患家診療時間加算は見ていません（時刻の分からない訪問の日：${unknown} 日）`);
+    if (noBase > 0) ruleScope.push(`訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：${noBase} 日`);
+    if (guideDays.length > 0) ruleGuides.push(`${dayList(guideDays)}の訪問の開始・終了の時刻を入れると、患家診療時間加算を見ます`);
+    visitTimeDays.push(...guideDays);
   }
 
   // 3. 手順 1 の前に外す：背反区分 3（どちらか一方）の相手が元の請求にある行為（C-283）
@@ -1303,5 +1428,5 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
   const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
   unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
-  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }
