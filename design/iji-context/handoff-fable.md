@@ -43,8 +43,8 @@ EM は 2 つのブランチに同じファイルがある。直したら両方�
 ## 読む順（必要になったら、その節だけ）
 
 1. `design/iji-context/state.json`（工程・承認・次の作業）
-2. `design/iji-context/design.md` §15（v29。段は §15-10、論点は §15-12）
+2. `design/iji-context/design.md` §15（v32。段は §15-10、論点は §15-12。v31・v32 の承認は state.json）
 3. `design/iji-context/spec.md` の「実務の算定 A〜I」
 4. `design/iji-context/handoff-opus.md` の「実務の算定の進み具合」と「Fable が戻ったときの確かめ方」（Opus の作業を確かめるとき）
-5. `design/iji-context/ledger.md` の末尾の経緯（2026-11-22 の行）
+5. `design/iji-context/ledger.md` の末尾の経緯（2026-11-22・2026-11-23 の行）
 6. 下調べ（要るときだけ）：`sources/research/shisetsu-kijun-codes.md`・`shisetsu-points-r8.md`・`kirokurei-zaitaku.md`、EM の追記案 `sources/em-a-b-draft.md`

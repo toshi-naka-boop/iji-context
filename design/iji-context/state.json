@@ -1,6 +1,6 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
+  "currentNode": "完了",
+  "status": "done",
   "designVersion": "v32",
   "approvedDesignVersion": "v32",
   "approvedDesignSha256": "2fabdc50f888ef198c1d06f4cfd65fe830c71df90b972e2299b2bec60ca70f61",
@@ -14,7 +14,7 @@
     "design.md（§15-6・15-7・15-10 の 18d・15-12 の L-108・L-161〜L-163）",
     "reviews/fable-consult-acts-eval.md"
   ],
-  "nextAction": "段 18d を実装（あわせて C-381）→ 自分で確かめ → 実際の AI で 2 回",
+  "nextAction": "A・B は受け入れ条件まで済み。次は C〜I（FR-203）と L-164。照会の答えが来たら EM へ",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
