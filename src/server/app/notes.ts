@@ -1,6 +1,6 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
 import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
-import { claimNote14SideOf } from "../../engine/predicates";
+import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
@@ -374,7 +374,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const manual = revId === undefined ? ownManual : manualIn(ownManual, rev);
     // 原請求の 10 人以上の管理料の注14 の側は、日で絞る前の請求の全部の行から求める（round-58 C-333）。比べる版に減の行がなければ「なし」
     const claimNote14Side = rev.consts.kanri.note14Pairs ? claimNote14SideOf(base.lines, own.consts) : "なし";
-    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, claimNote14Side, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    // 原請求の 2 人以上の区分の管理料の行も、日で絞る前の請求の全部の行から求める（round-61 X-200）
+    const claimMultiBand = claimMultiBandOf(base.lines, own.consts);
+    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, claimNote14Side, claimMultiBand, ...(midMonth ? { asOf: r.date } : {}) }, rev);
     // 人が入れる記載（needsInput）に、このカルテで医療事務が入れた値があれば、ready の記載として付ける（FR-176）
     const derived = { ...plain, comments: withInputs(plain.comments, savedComments(id), rev, { ...upTo, events, facts, lines: plain.lines, comments: [], commentsKnown: true }) };
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));

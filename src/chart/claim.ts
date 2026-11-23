@@ -40,7 +40,7 @@ export type ClaimPreview = {
   /** 合計。保留・未対応があるとき（withheld）は出さない */
   total: number | null;
   pending: (
-    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[]; reason?: "note14_conflict" | "note8" }
+    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[]; reason?: "note14_conflict" | "note8" | "declaration_conflict" }
     | { kind: "要選択"; id: string; text: string; options: { id: string; label: string }[]; blocks: string[] }
   )[];
   unsupported: { code: string; text: string }[];

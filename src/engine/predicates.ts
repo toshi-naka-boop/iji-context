@@ -41,6 +41,12 @@ export function claimNote14SideOf(lines: { kubun: string; count: number }[], c: 
   return tenPlus.length ? "通常" : "なし";
 }
 
+/**
+ * 請求に 2 人以上の人数の区分の管理料の行（通常の行・減の行とも）があるか（design.md §15-4。round-61 X-200）。
+ * 施設の申告 building が「ない」でも、原請求にこの行があれば D03 は 1 人の区分を立てない（申告と請求の食い違い。R19.declaration_conflict と同じ理由）
+ */
+export const claimMultiBandOf = (lines: { kubun: string; count: number }[], c: RevisionConsts): boolean => lines.some((l) => l.count > 0 && (kanriBandOf(c, l.kubun) ?? "1") !== "1");
+
 /** 管理料の行の人数の区分（1 人の区分の行は "1"）。管理料の区分でなければ undefined */
 export const kanriBandOf = (c: RevisionConsts, kubun: string): BuildingBand | undefined => {
   const row = c.kanri.rows.find((r) => r.kubun === kubun);

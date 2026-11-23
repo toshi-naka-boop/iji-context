@@ -43,6 +43,11 @@ export type DeriveInput = {
    * 省くと「なし」（原請求がない導出）
    */
   claimNote14Side?: "減" | "通常" | "なし";
+  /**
+   * 原請求に 2 人以上の人数の区分の管理料の行があるか（claimMultiBandOf。round-61 X-200）。claimNote14Side と同じく、日で絞る前の請求の全部の行から求めて渡す。
+   * 施設の申告 building が「ない」でも、真なら 1 人の区分を立てず保留にする（申告だけを根拠に点数の高い区分へ直さない。L-126）
+   */
+  claimMultiBand?: boolean;
 };
 
 type EventRef = { type: ClaimEvent["type"]; date: string };
@@ -71,8 +76,8 @@ export type Pending =
       target: "doctor" | "clerk";
       blocks: string[];
       date?: string;
-      /** 事実がないのではなく決められない理由（段 17h）：note14_conflict＝申告（通常）と原請求（減の行）の食い違い（画面は R18.note14_conflict と同じ文）／note8＝注8 に当たるかを見ていないので減の行を 1 つに決められない */
-      reason?: "note14_conflict" | "note8";
+      /** 事実がないのではなく決められない理由（段 17h）：note14_conflict＝申告（通常）と原請求（減の行）の食い違い（画面は R18.note14_conflict と同じ文）／note8＝注8 に当たるかを見ていないので減の行を 1 つに決められない／declaration_conflict＝申告（2 人以上の建物はない）と原請求（2 人以上の区分の行）の食い違い（画面は R19.declaration_conflict と同じ文。round-61 X-200） */
+      reason?: "note14_conflict" | "note8" | "declaration_conflict";
     }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
@@ -185,7 +190,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     lines.push({ kubun, count: sorted.length, dates: sorted });
     basis.push({ kubun, dates: sorted, derive: b.derive, events: b.events.map(ref), needs: b.needs ?? [], ...(b.choice ? { choice: b.choice } : {}), tentative: b.tentative ?? false });
   }
-  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: "note14_conflict" | "note8") => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
+  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: "note14_conflict" | "note8" | "declaration_conflict") => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
   /** 要選択。答えが選択肢にあればその id を返し、なければ pending に出す（本人が選ぶまで行にしない。FR-97） */
   function ask(id: string, question: string, options: PendingOption[], blocks: string[]): string | undefined {
     asked.add(id);
@@ -315,6 +320,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       let kubun = normal;
       if (!band.known) {
         lack(`D03-band:${input.yearMonth}`, "buildingBand", kanriBlocks);
+        kanriOpen = true;
+      } else if (facility.building.known && facility.building.value === "none" && input.claimMultiBand) {
+        // 申告（2 人以上の建物はない）と原請求（2 人以上の区分の行）の食い違い：申告だけを根拠に 1 人の区分（点数の高い側）を立てない（round-61 X-200。L-126）。
+        // 原請求が減の行で申告が通常なら、その食い違いも残す（プレビューで R18.note14_conflict が消えないように）
+        lack(`D03-building:${input.yearMonth}`, "facility.building", kanriBlocks, undefined, "declaration_conflict");
+        if (note14.known && note14.value === "通常" && input.claimNote14Side === "減") lack(`D03-note14:${input.yearMonth}`, "facility.note14", kanriBlocks, undefined, "note14_conflict");
         kanriOpen = true;
       } else if (tenPlus && !note14.known) {
         lack(`D03-note14:${input.yearMonth}`, "facility.note14", kanriBlocks);

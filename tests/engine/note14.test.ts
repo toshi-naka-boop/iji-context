@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
 import { compareRevisions } from "../../src/engine/compare";
 import { derivedKubun, deriveLines, manualLinesOf, type DeriveInput, type DeriveResult } from "../../src/engine/derive";
-import { claimNote14SideOf, kanriBandOf, kanriKubunOf, kubunFamily, reducedOf } from "../../src/engine/predicates";
+import { claimMultiBandOf, claimNote14SideOf, kanriBandOf, kanriKubunOf, kubunFamily, reducedOf } from "../../src/engine/predicates";
 import { resolveRevision } from "../../src/engine/revisions";
 import { r2024 } from "../../src/engine/revisions/r2024";
 import type { KanriFamily } from "../../src/engine/revisions/types";
 import { NOTE14_BANDS, type BuildingBand, type ClaimContext, type Facility, type FacilityGrade, type Finding } from "../../src/engine/types";
 import { deferredNote } from "../../src/generic/scope";
-import { findingText, pendingText } from "../../src/messages";
+import { FINDING_TEXT, findingText, pendingText } from "../../src/messages";
 import { YM } from "../helpers/period";
 import { line, loadCase, withFact, withLines, without } from "./helpers";
 
@@ -168,6 +168,31 @@ describe("D03 の減の行", () => {
     expect(pendingText(r.pending[0] as never, (d) => d)).toContain(findingText({ ruleId: "R18", kind: "情報不足", lineRefs: [], missing: { target: "clerk", field: "facility.note14" }, messageKey: "R18.note14_conflict", reference: "" }).split("。")[0]);
     expect(kanriOfResult(derive(setup(K2, "10-19", "減算"), { claimNote14Side: side }))).toEqual([RO3_N14]);
     expect(kanriOfResult(derive(setup(K2, "10-19", "減算"), { claimNote14Side: "通常" }))).toEqual([RO3_N14]);
+  });
+
+  it("X-200：building「ない」の申告でも、原請求に 2 人以上・10 人以上の区分の行（通常・減とも）があれば 1 人の区分を立てず保留（R19.declaration_conflict と同じ文）。減の行で通常の申告なら note14_conflict も残る", () => {
+    const none = (c: ClaimContext, n14: N14): ClaimContext => ({ ...c, facility: { ...gradeFacility(c.facility, "2"), building: { known: true, value: "none" }, note14: n14 === null ? { known: false } : { known: true, value: n14 } } });
+    const reasonsOf = (r: DeriveResult) => r.pending.map((p) => (p.kind === "事実不足" ? `${p.need}:${p.reason ?? ""}` : p.kind)).sort();
+    // 指摘の入力：原請求が C002_2RO3_N14・申告 building=none・note14=通常
+    const orig = withLines(K2_PLAIN, line(RO3_N14, 1, KANRI_DATE));
+    const r = derive(none(K2, "通常"), { claimNote14Side: claimNote14SideOf(orig.lines, C), claimMultiBand: claimMultiBandOf(orig.lines, C) });
+    expect(kanriOfResult(r)).toEqual([]);
+    expect(reasonsOf(r)).toEqual(["facility.building:declaration_conflict", "facility.note14:note14_conflict"]);
+    const texts = r.pending.map((p) => pendingText(p as never, (d) => d));
+    expect(texts.some((t) => t.startsWith(FINDING_TEXT["R19.declaration_conflict"]))).toBe(true);
+    expect(texts.some((t) => t.startsWith(FINDING_TEXT["R18.note14_conflict"]))).toBe(true);
+    // 2〜9 人・10 人以上の通常の行でも保留（1 人の区分を立てない）
+    for (const k of ["C002_2RO2", RO3]) {
+      const o = withLines(K2_PLAIN, line(k, 1, KANRI_DATE));
+      expect(claimMultiBandOf(o.lines, C), k).toBe(true);
+      const x = derive(none(K2, "通常"), { claimNote14Side: claimNote14SideOf(o.lines, C), claimMultiBand: true });
+      expect(kanriOfResult(x), k).toEqual([]);
+      expect(reasonsOf(x), k).toEqual(["facility.building:declaration_conflict"]);
+    }
+    // 原請求が 1 人の区分なら今までどおり 1 人の区分を立てる
+    const one = withLines(K2_PLAIN, line("C002_2RO1", 1, KANRI_DATE));
+    expect(claimMultiBandOf(one.lines, C)).toBe(false);
+    expect(kanriOfResult(derive(none(K2, "通常"), { claimMultiBand: false }))).toEqual(["C002_2RO1"]);
   });
 
   it("C-333：原請求の注14 の側は、日で絞る前の請求の全部の行から求める（算定日が後の減の行も「減」）。比べる版に減の行がない（令和6年度の版）ときは「なし」", () => {
