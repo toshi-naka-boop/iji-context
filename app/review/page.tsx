@@ -33,6 +33,8 @@ const STATES: [string, string][] = [["unmatched", "当てられなかったも�
 const STATE_LABEL: Record<string, string> = { unmatched: "請求を選ぶ", unconfirmed: "確かめる", unjudged: "判定する", judged: "判定済み", excluded: "対象外" };
 const n = (c: Count) => `${c.items} 件（レセプト ${c.receipts} 件）`;
 const pts = (i: { points: number | null; amount: number | null }) => (i.points !== null ? `${i.points > 0 ? "+" : ""}${i.points}` : i.amount !== null ? `${i.amount} 円` : "");
+/** 判定した日（日本時間。ISO の先頭 10 文字は世界標準時の日付で、朝 9 時前は前の日になる） */
+const day = (iso: string) => new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" });
 
 export default function ReviewPage() {
   const [list, setList] = useState<List | null>(null);
@@ -85,7 +87,13 @@ export default function ReviewPage() {
   async function show(id: number) {
     setErr("");
     setJudge({ result: "", reason: "", finding: "" });
-    await getJson<Detail>(`/api/review/items/${id}`).then(setOpen).catch((e: Error) => setErr(e.message));
+    await getJson<Detail>(`/api/review/items/${id}`)
+      .then((d) => {
+        setOpen(d);
+        // 明細は一覧の下に出るので、開いたところへ移る（押しても何も起きないように見えないため）
+        requestAnimationFrame(() => document.getElementById("review-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      })
+      .catch((e: Error) => setErr(e.message));
   }
   async function act(body: Record<string, unknown>) {
     if (!open) return;
@@ -180,7 +188,7 @@ export default function ReviewPage() {
           )}
 
           {open && (
-            <section className="card" style={{ marginTop: 16 }}>
+            <section id="review-detail" className="card" style={{ marginTop: 16 }}>
               <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <h2 style={{ margin: 0, fontSize: 18 }}>{open.label}の明細（{open.row.name}）</h2>
                 <div className="muted">請求内容：{open.row.seikyu || "—"}／補正・査定後内容：{open.row.satei || "—"}／事由：{open.row.jiyu.join("") || "—"} {open.row.jiyuText}／増減：{pts(open.row)}</div>
@@ -255,7 +263,7 @@ export default function ReviewPage() {
                 )}
                 {open.judgments.length > 0 && (
                   <div className="muted">
-                    これまでの判定：{open.judgments.map((j, i) => <div key={i}>{j.at.slice(0, 10)} {j.result}{j.reason ? `（${j.reason}）` : ""}{j.finding ? `（${j.finding.system} ${j.finding.id}・${j.finding.certainty}）` : ""} 指紋 {j.fingerprint}{j.fingerprint !== open.fixedFingerprint ? "（取り込んだときと違うコード：別の回）" : ""}</div>)}
+                    これまでの判定：{open.judgments.map((j, i) => <div key={i}>{day(j.at)} {j.result}{j.reason ? `（${j.reason}）` : ""}{j.finding ? `（${j.finding.system} ${j.finding.id}・${j.finding.certainty}）` : ""} 指紋 {j.fingerprint}{j.fingerprint !== open.fixedFingerprint ? "（取り込んだときと違うコード：別の回）" : ""}</div>)}
                   </div>
                 )}
               </div>
