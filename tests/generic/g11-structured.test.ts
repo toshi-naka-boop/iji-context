@@ -1057,6 +1057,18 @@ describe("材料加算の欄（16-3・16-4-7）", () => {
   });
 });
 
+describe("対応表にないコード（16-2・16-6・16-7。C-443）", () => {
+  it("判定の外になった独自コードの数を G11 の結果に持ち、上の案内に「対応表にないコード n 件」の 1 行を出す（患者・日は出さない）", () => {
+    const db = rdb();
+    const r = run(db, { units: [] }, { orders: inside14([[D.carve, 14], [D.geben, 14]]), unmapped: [D.geben], texts: [text(14, "定期処方")] });
+    expect(r.unmappedCodes).toBe(1);
+    expect(r.ruleGuides).toContain("電子カルテの対応表にないコードが 1 件あります。下の欄で対応を選ぶと、次の点検から判定に使います");
+    const none = run(db, { units: [] }, { orders: inside14([[D.carve, 14]]), texts: [text(14, "定期処方")] });
+    expect(none.unmappedCodes).toBe(0);
+    expect(none.ruleGuides.filter((g) => g.includes("対応表"))).toEqual([]);
+  });
+});
+
 describe("構造化データのない請求（v32 の入力）", () => {
   it("機器を確かめた患者は、構造化データがなくても患者の機器から材料加算を見る（v34 の 16-4-1。C-440）", () => {
     const db = rdb();

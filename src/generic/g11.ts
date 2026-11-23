@@ -25,6 +25,7 @@ import type { SItem } from "../structured/overlap";
 import { RULE_CODES } from "../structured/rule-codes";
 import { isOutsideText } from "../structured/outside-words";
 import { hasTimeHint } from "../structured/time-hint";
+import { OUT_REASONS } from "../structured/code-map";
 import { codeOfDevice, DEVICE_KINDS, MATERIAL_MONTH_COMMENTS, OXYGEN_KINDS, unitOfDevice, type C150Detail, type DeviceKey } from "../structured/devices";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -176,6 +177,10 @@ export type G11Result =
       visitTimeDays: string[];
       /** 案内の日の、電子カルテの訪問の記録（ref・種類）。入力欄でどの訪問かを選び、ref を送る（C-442） */
       visitTimeRefs: Record<string, { ref: string; kind: "訪問診療" | "往診" | null }[]>;
+      /** 当月の構造化データのうち、対応表にない独自コードで判定の外にした行の数（G11 の結果の「対応表にないコード」。design.md §16-2・16-6。C-443） */
+      unmappedCodes: number;
+      /** 診療年月（対応表を選ぶ欄が、その月の 1 枚でコードの実在を確かめるのに使う） */
+      yearMonth: string;
       /** 材料加算の候補の欄の上に出す 1 行ずつ（見ていないもの。design.md §16-4-7。L-181・L-186） */
       materialNotes: string[];
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
@@ -911,6 +916,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 2b. 規則の候補（design.md §16-4。段 19c・19d）：処方のオーダー・処方の欄の「確かめた」の印・訪問の記録から、決まった規則で出す。言い切らず、手順 1〜4 に通す
   const ruleScope: string[] = [];
   const ruleGuides: string[] = [];
+  // 対応表にない独自コード（16-2）：数を持ち、上の案内に 1 行出す（対応を選ぶ欄は画面の側。患者・日は出さない。C-443）
+  const unmappedCodes = S ? S.items.filter((x) => x.out === OUT_REASONS.noMap).length : 0;
+  if (unmappedCodes > 0) ruleGuides.push(`電子カルテの対応表にないコードが ${unmappedCodes} 件あります。下の欄で対応を選ぶと、次の点検から判定に使います`);
   const visitTimeDays: string[] = [];
   const visitTimeRefs: Record<string, { ref: string; kind: "訪問診療" | "往診" | null }[]> = {};
   const dayList = (dates: Iterable<string>) => [...new Set(dates)].sort().map((d) => `${md(d)}日`).join("・");
@@ -1649,5 +1657,5 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
   const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
   unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
-  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, visitTimeRefs, materialNotes, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, visitTimeRefs, unmappedCodes, yearMonth: ym, materialNotes, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }
