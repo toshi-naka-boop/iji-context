@@ -132,13 +132,13 @@ describe("マスターに当てる（15-7）", () => {
     expect(rows("toyaku")!.filter((r) => r.tbl === "shinryo").every((r) => r.code.startsWith("12"))).toBe(true);
     expect(matchItem(rows("toyaku"), "toyaku", "熱傷処置（１００ｃｍ２以上５００ｃｍ２未満）", [], null)).toEqual({ initial: null, candidates: [] });
   });
-  it("候補の並べ方：前に選んだもの → 名前の完全一致 → lookup の完全一致 → lookup の部分一致 → 名前の部分一致。同じコードは 1 回。lookup の候補で自動に当てない", () => {
+  it("候補の並べ方：前に選んだもの → 名前の完全一致 → lookup の完全一致 → lookup の語と名前の前方一致・部分一致（語の輪。v32）。同じコードは 1 回。lookup の候補で自動に当てない", () => {
     const r = matchItem(rows("shinryo"), "shinryo", "創傷処置（１００ｃｍ２未満）", ["熱傷処置（１００ｃｍ２以上５００ｃｍ２未満）", "超音波", "創傷"], { tbl: "shinryo", code: "150054110" });
     expect(r.candidates.map((c) => [c.code, c.prior])).toEqual([
       ["150054110", true], // 前に選んだもの
       ["140000610", false], // 名前の完全一致
       ["140032110", false], // lookup の完全一致
-      ["160072210", false], // lookup「超音波」の部分一致
+      ["160072210", false], // lookup「超音波」の前方一致
     ]);
     // 前に選んだ対応が初期値（名前の完全一致が別のコードに 1 つあっても。L-95 を v30 で改める）
     expect(r.initial).toMatchObject({ code: "150054110", by: "alias" });
@@ -146,9 +146,9 @@ describe("マスターに当てる（15-7）", () => {
     const l = matchItem(rows("shinryo"), "shinryo", "やけど", ["熱傷処置（１００ｃｍ２以上５００ｃｍ２未満）"], null);
     expect(l.initial).toBeNull();
     expect(l.candidates.map((c) => c.code)).toEqual(["140032110"]);
-    // 部分一致は名称の短い順
+    // 同じ強さ（前方一致）の中はコードの順（v32。L-161。v31 までは名称の短い順）
     const p = matchItem(rows("shinryo"), "shinryo", "x", ["他医撮影"], null);
-    expect(p.candidates.map((c) => c.code)).toEqual(["170001450", "170001250"]);
+    expect(p.candidates.map((c) => c.code)).toEqual(["170001250", "170001450"]);
   });
   it("候補は診療年月の 1 枚の、category で決めた表に実在するコードだけ。LLM が実在しない語を挙げても候補は空のまま（探す入口が出る）。前に選んだ対応も今の 1 枚になければ使わない", () => {
     const r = matchItem(rows("tokutei"), "tokutei", "熱傷処置", ["熱傷処置", "存在しない名前"], { tbl: "shinryo", code: "140032110" });
@@ -161,13 +161,14 @@ describe("マスターに当てる（15-7）", () => {
   });
   it("候補は 20 件まで。名前で探すのも名称の部分一致で 20 件まで", () => {
     const big = chartMasters();
-    // 5 つの語に 6 行ずつ当たる表：語ごとに 5 件で 25 件になるところを 20 件で切る
+    // 5 つの語に 6 行ずつ当たる表：語の輪で 1 件ずつ足し、30 件になるところを 20 件で切る
     for (let g = 0; g < 5; g++) for (let i = 0; i < 6; i++) put(big, "shinryo", "20261001", { code: `16${g}${String(i).padStart(6, "0")}`, name: `探す群${"アイウエオ"[g]}${"カ".repeat(i)}` });
     const terms = [..."アイウエオ"].map((x) => `探す群${x}`);
     expect(matchItem(rowsFor(big, "shinryo", YM), "shinryo", "探す群", terms, null).candidates).toHaveLength(MAX_CANDIDATES);
     const found = searchRows(rowsFor(big, "shinryo", YM), "探す群");
     expect(found).toHaveLength(20);
-    expect(found.slice(0, 5).map((f) => f.name)).toEqual([..."アイウエオ"].map((x) => `探す群${x}`));
+    // 前方一致の中はコードの順（v32。L-161）
+    expect(found.slice(0, 7).map((f) => f.name)).toEqual(["探す群ア", "探す群アカ", "探す群アカカ", "探す群アカカカ", "探す群アカカカカ", "探す群アカカカカカ", "探す群イ"]);
     expect(searchRows(rowsFor(big, "shinryo", YM), " ")).toEqual([]);
   });
 });

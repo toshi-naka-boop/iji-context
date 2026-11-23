@@ -17,8 +17,6 @@ type Row = { tbl: Tbl; code: string; name: string; norm: string };
 
 /** 候補の上限（設計の値） */
 export const MAX_CANDIDATES = 20;
-/** 部分一致で語ごとに足す件数（設計の値） */
-export const PARTIAL_PER_TERM = 5;
 
 const memo = new WeakMap<MastersDb, Map<string, Row[]>>();
 const fileMemo = new Map<string, Row[]>();
@@ -73,13 +71,23 @@ export function rowsFor(db: MastersDb | null, key: TableKey, yearMonth: string):
 }
 
 const shortest = (rows: Row[]) => [...rows].sort((a, b) => a.name.length - b.name.length || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+const byCode = (a: Row, b: Row) => (a.code < b.code ? -1 : a.code > b.code ? 1 : a.tbl < b.tbl ? -1 : a.tbl > b.tbl ? 1 : 0);
+
+/** 名称がその語で始まる行（完全一致を除く）を先、名称の途中にその語がある行を後にし、同じ強さの中はコードの順（L-161） */
+function prefixThenPartial(rows: Row[], t: string): Row[] {
+  const prefix = rows.filter((r) => r.norm !== t && r.norm.startsWith(t)).sort(byCode);
+  const partial = rows.filter((r) => !r.norm.startsWith(t) && r.norm.includes(t)).sort(byCode);
+  return [...prefix, ...partial];
+}
 
 /**
  * 1 つの行為を当てる（決まった規則）。
  * 初期値：前に選んだ対応が今の 1 枚の引く表にあればそれ（名前の完全一致が別のコードにあっても。L-95）。なければ名称の完全一致がちょうど 1 つのときだけ当てる。
  * 投薬は医薬品の完全一致を先に見て、医薬品で 0 のときだけ第5部の完全一致を見る（C-224）。
- * 候補の並べ方（上から順に、同じコードは 1 回、20 件まで）：前に選んだもの → 書かれた名前の完全一致 → lookup の語の完全一致（語の順）→ lookup の語の部分一致（語ごとに名称の短い順に 5 件）→ 書かれた名前の部分一致（短い順に 5 件）。
- * 同じ段の中は名称の短い順・コードの順。lookup の語で自動には当てない
+ * 候補の並べ方（上から順に、同じコードは 1 回、20 件まで）：前に選んだもの → 書かれた名前の完全一致 → lookup の語の完全一致（語の順）→
+ * lookup の語と書かれた名前の前方一致・部分一致（v32。L-161）：語の順の lookup の語の最後に書かれた名前を置いた「語の輪」を作り（normName で同じになる語は先に出た 1 回だけ）、
+ * 語ごとに前方一致を先・部分一致を後、同じ強さの中はコードの順にする。輪を 1 周するごとに各語から 1 件ずつ（すでに候補に入った行は語の番を使わずに飛ばし、当たりの尽きた語も飛ばす）。
+ * lookup の語で自動には当てない
  */
 export function matchItem(rows: Row[] | null, key: TableKey, written: string, lookup: string[], alias: Alias | null): ItemMatch {
   if (!rows) return { initial: null, candidates: [] };
@@ -97,24 +105,38 @@ export function matchItem(rows: Row[] | null, key: TableKey, written: string, lo
   } else if (exact.length === 1) initial = as(exact[0], "name");
 
   const out: Candidate[] = [];
+  const has = (r: Row) => out.some((c) => c.tbl === r.tbl && c.code === r.code);
   const add = (r: Row, prior = false) => {
-    if (out.length >= MAX_CANDIDATES || out.some((c) => c.tbl === r.tbl && c.code === r.code)) return;
+    if (out.length >= MAX_CANDIDATES || has(r)) return;
     out.push({ tbl: r.tbl, code: r.code, name: r.name, prior });
   };
   if (aliasRow) add(aliasRow, true);
   for (const r of shortest(exact)) add(r);
   const terms = lookup.map(normName).filter(Boolean);
   for (const t of terms) for (const r of shortest(rows.filter((x) => x.norm === t))) add(r);
-  for (const t of terms) for (const r of shortest(rows.filter((x) => x.norm.includes(t))).slice(0, PARTIAL_PER_TERM)) add(r);
-  if (w) for (const r of shortest(rows.filter((x) => x.norm.includes(w))).slice(0, PARTIAL_PER_TERM)) add(r);
+  // 語の輪（L-161。round-63 C-392）
+  const ring = [...new Set([...terms, ...(w ? [w] : [])])].map((t) => prefixThenPartial(rows, t));
+  const pos = ring.map(() => 0);
+  for (let moved = true; moved && out.length < MAX_CANDIDATES; ) {
+    moved = false;
+    for (let k = 0; k < ring.length && out.length < MAX_CANDIDATES; k++) {
+      while (pos[k] < ring[k].length && has(ring[k][pos[k]])) pos[k]++;
+      if (pos[k] < ring[k].length) {
+        add(ring[k][pos[k]++]);
+        moved = true;
+      }
+    }
+  }
   return { initial, candidates: out };
 }
 
-/** マスターを名前で探す（名称の部分一致を、名称の短い順に 20 件まで） */
+/** マスターを名前で探す（名称の部分一致を 20 件まで。前方一致を先・部分一致を後、同じ強さの中はコードの順。v32。L-161） */
 export function searchRows(rows: Row[] | null, q: string): Candidate[] {
   const t = normName(q);
   if (!rows || !t) return [];
-  return shortest(rows.filter((r) => r.norm.includes(t)))
+  const prefix = rows.filter((r) => r.norm.startsWith(t)).sort(byCode);
+  const partial = rows.filter((r) => !r.norm.startsWith(t) && r.norm.includes(t)).sort(byCode);
+  return [...prefix, ...partial]
     .slice(0, MAX_CANDIDATES)
     .map((r) => ({ tbl: r.tbl, code: r.code, name: r.name, prior: false }));
 }
