@@ -189,8 +189,9 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
   },
   G11: {
     label: "取り忘れ",
-    // 施設基準の要る行為を見分けるのに 3 列を使う（design.md §15-8。C-232）。ほかに要るものは、点検を入れる段 18b で足す
-    needs: SHISETSU_NEEDS,
+    // 施設基準の要る行為を見分けるのに 3 列を使う（design.md §15-8。C-232）。判断料の候補（M-1）に、検査等実施判断区分の 1（実施）・2（判断料）と判断グループを使う（錨 A120・A73・A74）。
+    // 単位の列（A117〜A119）は挙げない：単位の列のない古い masters.db でも G11 は止めず、量の比較だけを止める（design.md §15-3）
+    needs: [...SHISETSU_NEEDS, need("shinryo", { kensa_kind: "1", kensa_group: null }), need("shinryo", { kensa_kind: "2", kensa_group: null })],
   },
 };
 

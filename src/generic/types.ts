@@ -74,6 +74,10 @@ export type GenericAbout = {
    */
   declaration?: DeclarationView;
   sideless?: ReadonlySet<string>;
+  /**
+   * 点検の中で指摘を作る数の上限（G04・G05。省くと FINDING_LIMIT）。取り忘れ（G11）の内部の判定（blocking）だけが、上限なし（Infinity）で渡す（design.md §15-8 の X-138）
+   */
+  findingLimit?: number;
 };
 
 /**

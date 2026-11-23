@@ -268,7 +268,7 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
       // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
       let more = 0;
       const push = (f: GenericFinding) => {
-        if (out.length >= FINDING_LIMIT) more++;
+        if (out.length >= (about.findingLimit ?? FINDING_LIMIT)) more++;
         else out.push(f);
       };
       for (const row of pairs.values()) {

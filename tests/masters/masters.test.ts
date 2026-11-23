@@ -388,12 +388,13 @@ describe("施設基準の組ごとの列（design.md §15-3。J-3）", () => {
     ]);
   });
 
-  it("組ごとに 0 でないコードを項番の順に「/」でつなぎ、全部 0 なら 0。錨が全部通り、G03・G10・G11 の準備ができる", () => {
+  it("組ごとに 0 でないコードを項番の順に「/」でつなぎ、全部 0 なら 0。錨が全部通り、G03・G10・G11 の施設基準の列の準備ができる", () => {
     const { db, result } = run("ok", 0);
     expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114717810'").get()).toEqual({ shisetsu_g1: "3055/4247/3057/3058", shisetsu_g2: "721", shisetsu_g3: "4101" });
     expect(db.prepare("SELECT shisetsu_g1, shisetsu_g2, shisetsu_g3 FROM shinryo WHERE code = '114018470'").get()).toEqual({ shisetsu_g1: "0", shisetsu_g2: "0", shisetsu_g3: "0" });
     expect([result.failures, failed(result.lines)]).toEqual([0, []]);
-    expect(result.ready.find((r) => r.check === "G11")).toMatchObject({ ready: true });
+    // G11 は判断料の候補（段 18b）に検査等実施判断区分・グループの錨（A120・A73・A74）も要る。施設基準の列の錨は足りている
+    expect(result.ready.find((r) => r.check === "G11")!.missing).toEqual(["shinryo:kensa_kind=1, kensa_group", "shinryo:kensa_kind=2, kensa_group"]);
     // G10 は区分番号の列の錨（A70・A72・A73）も要る（下の「区分番号の列」）。施設基準の列の錨は足りている
     expect(result.ready.find((r) => r.check === "G10")!.missing).toEqual(["shinryo:sho", "shinryo:bu", "shinryo:kubun_no", "shinryo:eda", "shinryo:kou"]);
     expect(result.ready.find((r) => r.check === "G03")!.missing.filter((m) => m.includes("shisetsu"))).toEqual([]);
