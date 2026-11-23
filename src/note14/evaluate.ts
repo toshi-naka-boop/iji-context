@@ -156,14 +156,14 @@ const partial = (openedOn: string | null, from: string) => openedOn !== null && 
 function stage2Of(c: Combo, v: Stage2Input, k: Note14Consts, p: Period | null, openedOn: string | null): Outcome {
   const val = (id: FieldId) => v.values[fieldKeyOf(FIELDS.find((f) => f.id === id)!, c)]!;
   const strict = readingOf(c, "U-34") === "B" && p !== null;
-  const longGone = strict && partial(openedOn, p!.long.from);
-  const shortGone = strict && partial(openedOn, p!.short.from);
-  const referral = !longGone && val("referral") >= k.referralMin;
+  // 期間の全部に実績がない欄か（欄の期間は FieldDef.period の 1 か所から引く。round-61 C-371）
+  const gone = (...ids: FieldId[]) => strict && ids.some((id) => partial(openedOn, p![FIELDS.find((f) => f.id === id)!.period].from));
+  const referral = !gone("referral") && val("referral") >= k.referralMin;
   const mitori = val("mitoriHome") + (readingOf(c, "U-31a") === "B" ? val("mitoriFacility") : 0) + (readingOf(c, "U-31b") === "B" ? val("mitoriHospital") : 0);
-  const care2 = (!longGone && mitori >= k.mitoriMin) || (!shortGone && val("jushoji") >= k.jushojiMin);
+  const care2 = (!gone("mitoriHome", "mitoriFacility", "mitoriHospital") && mitori >= k.mitoriMin) || (!gone("jushoji") && val("jushoji") >= k.jushojiMin);
   const [c1, c2, c3, c5] = [val("c002"), val("c0022"), val("excluded"), val("care")];
-  const ratio3 = !shortGone && (c2 - c3) * k.ratio199.den <= k.ratio199.num * (c1 + c2);
-  const ratio4 = !shortGone && c5 * k.ratio200.den >= k.ratio200.num * (c1 + c2);
+  const ratio3 = !gone("c002", "c0022", "excluded") && (c2 - c3) * k.ratio199.den <= k.ratio199.num * (c1 + c2);
+  const ratio4 = !gone("c002", "c0022", "care") && c5 * k.ratio200.den >= k.ratio200.num * (c1 + c2);
   return referral && care2 && ratio3 && ratio4 ? "meets" : "not_meets";
 }
 

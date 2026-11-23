@@ -243,6 +243,7 @@ export default function Note14Page() {
               <li key={f.key} style={{ marginBottom: 4 }}>
                 <NumberInput label={`様式 ${f.field.form}　${f.label}`} value={vals[f.key] ?? ""} onChange={(v) => { setVals((p) => ({ ...p, [f.key]: v })); setAutoKeys((p) => p.filter((k) => k !== f.key)); }} />
                 <span className="muted">　{autoKeys.includes(f.key) ? (f.field.id === "excluded" ? "取り込んだ請求からの下書き（足りないかもしれません）" : "取り込んだ請求からの下書き") : "手入力"}</span>
+                {f.how && <div className="muted" style={{ marginLeft: 12 }}>数え方：{f.how}</div>}
               </li>
             ))}
           </ul>

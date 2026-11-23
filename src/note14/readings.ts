@@ -7,9 +7,10 @@ export type Reading = "A" | "B";
 
 /**
  * 軸 1 本。a・b は EM の表の読み甲・読み乙の見出しの語（太字の語か、その欄の初めの語）。inquiry は EM §7-2 の U の行の照会の番号。
- * label は割れたときの 1 行の〔〕の中、whenA・whenB はその行の「〜なら」の部分（定型文。design.md §15-13 の例の形）
+ * label は割れたときの 1 行の〔〕の中、whenA・whenB はその行の「〜なら」の部分（定型文。design.md §15-13 の例の形）。
+ * howA・howB は、欄の数え方が読みで変わる軸の、読み甲・読み乙の数え方（EM の表の欄の文。欄の下に添える。round-61 C-371。design.md §15-9）
  */
-export type Axis = { id: AxisId; label: string; a: string; b: string; inquiry: number; whenA: string; whenB: string };
+export type Axis = { id: AxisId; label: string; a: string; b: string; inquiry: number; whenA: string; whenB: string; howA?: string; howB?: string };
 
 export const AXES: readonly Axis[] = [
   { id: "U-27", label: "回数に入れる区分", a: "狭い", b: "広い", inquiry: 1, whenA: "C001 の行だけなら", whenB: "C001-2 などを入れると" },
@@ -17,7 +18,17 @@ export const AXES: readonly Axis[] = [
   { id: "U-30b", label: "開設者を変えた機関の開設日", a: "開設者を変えたあとの新しい開設の日", b: "元の機関が最初に開設した日", inquiry: 5, whenA: "新しい開設の日なら", whenB: "最初に開設した日だと" },
   { id: "U-31a", label: "施設での看取りを入れるか", a: "狭い", b: "広い", inquiry: 6, whenA: "患家だけなら", whenB: "施設も入れると" },
   { id: "U-31b", label: "7 日以内の入院を経た死亡を入れるか", a: "狭い", b: "広い", inquiry: 6, whenA: "入れないなら", whenB: "入れると" },
-  { id: "U-32", label: "紹介の文書と特別の関係の機関", a: "狭い", b: "広い", inquiry: 7, whenA: "狭く数えるなら", whenB: "広く数えると" },
+  {
+    id: "U-32",
+    label: "紹介の文書と特別の関係の機関",
+    a: "狭い",
+    b: "広い",
+    inquiry: 7,
+    whenA: "狭く数えるなら",
+    whenB: "広く数えると",
+    howA: "診療情報提供書による紹介で、特別の関係にある機関（R8-195 の (イ)〜(ホ)）からの紹介を除く機関の数",
+    howB: "文書による紹介なら足り（診療情報提供書でなくてよい）、特別の関係にある機関からの紹介も含む機関の数",
+  },
   { id: "U-33a", label: "①② の数え方", a: "実人数", b: "月ごとの延べ", inquiry: 8, whenA: "実人数なら", whenB: "月ごとの延べだと" },
   { id: "U-33b", label: "③ の除き方", a: "1 回でも", b: "算定した月の分だけ", inquiry: 8, whenA: "1 回でも当たれば除くなら", whenB: "算定した月の分だけ除くと" },
   { id: "U-33c", label: "⑤ の数え方", a: "1 回でも", b: "各月の末日", inquiry: 8, whenA: "1 回でも当たれば数えるなら", whenB: "各月の末日の状態だと" },
@@ -51,14 +62,27 @@ export const FIELDS: readonly FieldDef[] = [
   { id: "care", label: "⑤ ① と ② のうち要介護3 以上又は別表第八の二の状態の患者等の数", form: "2(3)⑤", requirement: "R8-200", axes: ["U-33a", "U-33c"], period: "short" },
 ];
 
+/** 欄の期間の見出し（EM R8-196。期間の定義は FieldDef.period の 1 か所。round-61 C-371） */
+export const PERIOD_LABEL = { short: "3 か月", long: "1 年" } as const;
+
 /** 欄の鍵（欄の id と、依る軸の読み。例 "excluded:U-33a=A:U-33b=B"） */
 export const fieldKeyOf = (f: Pick<FieldDef, "id" | "axes">, c: Combo): string => [f.id, ...f.axes.map((a) => `${a}=${readingOf(c, a)}`)].join(":");
 
-/** 欄の一覧（依る軸の読みの組み合わせごとに 1 つ。定数から決め、画面に手で並べない） */
-export function fieldKeys(defs: readonly FieldDef[] = FIELDS): { key: string; field: FieldDef; combo: Combo; label: string }[] {
+/**
+ * 欄の一覧（依る軸の読みの組み合わせごとに 1 つ。定数から決め、画面に手で並べない）。見出しの末尾に期間（1 年／3 か月）を添える。
+ * how は、数え方が読みで変わる軸（howA・howB を持つ軸）の、その欄の読みの数え方（round-61 C-371）
+ */
+export function fieldKeys(defs: readonly FieldDef[] = FIELDS): { key: string; field: FieldDef; combo: Combo; label: string; how?: string }[] {
   return defs.flatMap((f) =>
     f.axes
       .reduce<Combo[]>((acc, a) => acc.flatMap((c) => [{ ...c, [a]: "A" as const }, { ...c, [a]: "B" as const }]), [{}])
-      .map((combo) => ({ key: fieldKeyOf(f, combo), field: f, combo, label: f.axes.length === 0 ? f.label : `${f.label}（${f.axes.map((a) => (readingOf(combo, a) === "A" ? axisOf(a).a : axisOf(a).b)).join("・")}）` })),
+      .map((combo) => {
+        const reading = f.axes.length === 0 ? "" : `（${f.axes.map((a) => (readingOf(combo, a) === "A" ? axisOf(a).a : axisOf(a).b)).join("・")}）`;
+        const how = f.axes.flatMap((a) => {
+          const h = readingOf(combo, a) === "A" ? axisOf(a).howA : axisOf(a).howB;
+          return h ? [h] : [];
+        });
+        return { key: fieldKeyOf(f, combo), field: f, combo, label: `${f.label}${reading}（${PERIOD_LABEL[f.period]}）`, ...(how.length > 0 ? { how: how.join("。") } : {}) };
+      }),
   );
 }

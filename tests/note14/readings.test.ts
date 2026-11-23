@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { REVISIONS, resolveRevision } from "../../src/engine/revisions";
 import { toolConstsOf } from "../../src/note14/evaluate";
-import { AXES } from "../../src/note14/readings";
+import { AXES, FIELDS, fieldKeys } from "../../src/note14/readings";
 import { month } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
@@ -90,5 +90,26 @@ describe("同じ月のレセプトの鍵と重なりの判定は 1 か所（roun
     for (const f of ["src/note14/count.ts", "src/note14/drafts.ts"]) expect(src(f), f).toMatch(/overlapMonths\(/);
     expect(src("src/note14/drafts.ts")).not.toMatch(/new Set\(keys\)\.size/);
     expect(src("src/note14/count.ts").match(/new Set\(keys\)\.size/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe("2 段目の欄の期間と数え方（round-61 C-371）", () => {
+  it("欄の見出しに、その欄の期間（FieldDef.period：1 年／3 か月）が出る", () => {
+    for (const f of fieldKeys()) expect(f.label, f.key).toContain(f.field.period === "long" ? "（1 年）" : "（3 か月）");
+    // 期間は EM R8-196 のとおり：紹介・看取りは 1 年、重症児・①〜⑤ は 3 か月
+    expect(FIELDS.filter((f) => f.period === "long").map((f) => f.id)).toEqual(["referral", "mitoriHome", "mitoriFacility", "mitoriHospital"]);
+  });
+  it("紹介元の 2 欄に、狭い読み・広い読みのそれぞれの数え方を添える（EM の U-32 の行の欄と照らす）", () => {
+    const start = EM.findIndex((l) => l.startsWith("#### 注14 の割れる読み"));
+    const u32 = cells(EM.slice(start).find((l) => l.startsWith("| U-32 |"))!).map((c) => c.replace(/\*\*/g, ""));
+    const ref = fieldKeys().filter((f) => f.field.id === "referral");
+    expect(ref.map((f) => f.how?.length ?? 0).every((n) => n > 0)).toBe(true);
+    expect(u32[2]).toContain(ref.find((f) => f.combo["U-32"] === "A")!.how!);
+    expect(u32[3]).toContain(ref.find((f) => f.combo["U-32"] === "B")!.how!);
+  });
+  it("2 段目の判定は欄の期間を FIELDS から引く（期間を 2 か所に持たない）", () => {
+    const code = readFileSync(path.join(repo, "src/note14/evaluate.ts"), "utf8");
+    expect(code).not.toMatch(/longGone|shortGone/);
+    expect(code).toMatch(/\.period\]/);
   });
 });

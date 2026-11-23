@@ -58,7 +58,7 @@ describe("2 段目の開き方と欄", () => {
   });
   it("2 段目の欄が空のままでは結果が出ず、空の欄が名指しされる", () => {
     const e = run(set(base(), "excluded", null, (k) => k.endsWith("U-33b=B")));
-    expect(e.status === "incomplete" && e.missing).toEqual(["③ ② のうち除く患者等の数（実人数・算定した月の分だけ）", "③ ② のうち除く患者等の数（月ごとの延べ・算定した月の分だけ）"]);
+    expect(e.status === "incomplete" && e.missing).toEqual(["③ ② のうち除く患者等の数（実人数・算定した月の分だけ）（3 か月）", "③ ② のうち除く患者等の数（月ごとの延べ・算定した月の分だけ）（3 か月）"]);
     expect(evaluate({ stage1: over }, K, P).status).toBe("incomplete");
   });
 });
