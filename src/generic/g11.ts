@@ -620,13 +620,14 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     if (m && m.tbl === "shinryo" && a.act.category === "投薬" && a.source !== "structured" && inKubun(m.code, ["F0", "F100"]) && ruleDrugDay(a.date)) ruleFolded.add(a);
   }
   if (ruleFolded.size > 0) tally("規則で見る行為をたたみました", ruleFolded.size);
-  // 材料加算のコードに当たった文章の行為は、候補にせず患者の情報の機器で見る（16-3。FR-208）。注入器加算・注入器用注射針加算は機器で見ないので、たたまない（L-181）
+  // 材料加算のコードに当たった行為は、候補にせず患者の情報の機器で見る（16-3。FR-208）。注入器加算・注入器用注射針加算は機器で見ないので、たたまない（L-181）。
+  // 構造化データ（処置の欄）から来た行為も同じ：機器の確認（16-5）を通さずに候補にしない（X-281）
   const DEVICE_CODES = new Set<string>([...Object.values(DEVICE_KINDS).flatMap((d) => [...d.codes]), RULE_CODES.oxygenMaterial2]);
   let deviceFolded = 0;
   if (DV)
     for (const a of acts) {
       const m = a.act.match;
-      if (m && m.tbl === "shinryo" && a.source !== "structured" && DEVICE_CODES.has(m.code) && !ruleFolded.has(a)) {
+      if (m && m.tbl === "shinryo" && DEVICE_CODES.has(m.code) && !ruleFolded.has(a)) {
         ruleFolded.add(a);
         deviceFolded++;
       }

@@ -1124,6 +1124,15 @@ describe("反証 round-69（X-280〜X-284）", () => {
   /** 接続先の院外のオーダーで ref のない行（読み出しで捨てる行） */
   const badOutside = (d: string) => ({ ref: null, date: d, place: "院外", refills: 0, drugs: [{ code: { system: "rece", value: D.carve }, name: "薬", days: 14, quantity: "1錠" }] });
   const rawInside14 = () => inside14([[D.carve, 14]]);
+  it("X-281：構造化データの処置の欄から来た材料加算のコードも、機器を確かめていない患者では候補にせず「見ていません」にたたむ", () => {
+    const db = rdb();
+    const rec: ProcRecord = { ref: "p1", date: date(5), act: { code: { system: "rece", value: M.c158 }, name: "酸素濃縮装置加算" }, count: 1, items: [] };
+    const item: SItem = { part: "procedures", kind: "proc", ref: "p1", date: date(5), code: M.c158, tbl: "shinryo", name: "酸素濃縮装置加算" };
+    const r = run(db, visit5(), { procedures: { records: [rec], items: [item] }, devices: devs([], { checked: false }) });
+    expect(r.findings.filter((f) => f.codes.includes(M.c158))).toEqual([]);
+    expect(r.scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+    expect(r.scope).toContain("患者の情報の機器で見る行為をたたみました：1 件");
+  });
   it("X-283：接続先の訪問の存在しない時刻（10:99）は欠けとして扱い、時間の加算の計算に使わない", () => {
     const db = rdb();
     const r = run(db, { units: [unit([VISIT], 5)] }, { rawVisits: [{ ref: "v1", date: date(5), kind: "訪問診療", start: "10:99", end: "12:40" }] });
