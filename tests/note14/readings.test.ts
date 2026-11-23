@@ -104,8 +104,12 @@ describe("2 段目の欄の期間と数え方（round-61 C-371）", () => {
     const u32 = cells(EM.slice(start).find((l) => l.startsWith("| U-32 |"))!).map((c) => c.replace(/\*\*/g, ""));
     const ref = fieldKeys().filter((f) => f.field.id === "referral");
     expect(ref.map((f) => f.how?.length ?? 0).every((n) => n > 0)).toBe(true);
-    expect(u32[2]).toContain(ref.find((f) => f.combo["U-32"] === "A")!.how!);
-    expect(u32[3]).toContain(ref.find((f) => f.combo["U-32"] === "B")!.how!);
+    // EM の行番号（R8-195）は画面に出さず、特別の関係の定義の出どころ（EM R8-195 の行の「留意 第2部 通則 7(3)」）で言う（C-381）
+    const shown = (s: string) => s.replace("（R8-195 の (イ)〜(ホ)）", "〔留意事項 第2部 通則 7(3) の (イ)〜(ホ)〕");
+    expect(row("R8-195")).toContain("留意 第2部 通則 7(3) p27（特別の関係の定義）");
+    expect(shown(u32[2])).toContain(ref.find((f) => f.combo["U-32"] === "A")!.how!);
+    expect(shown(u32[3])).toContain(ref.find((f) => f.combo["U-32"] === "B")!.how!);
+    for (const f of ref) expect(f.how).not.toMatch(/R8-\d+/);
   });
   it("2 段目の判定は欄の期間を FIELDS から引く（期間を 2 か所に持たない）", () => {
     const code = readFileSync(path.join(repo, "src/note14/evaluate.ts"), "utf8");
