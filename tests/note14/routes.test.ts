@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
 import type { User } from "../../src/server/auth";
+import { POLICY } from "../../src/server/policy";
 import type { Role } from "../../src/server/roles";
 import { DRAFT_TEXT } from "../../src/note14/drafts";
 import { fieldKeys } from "../../src/note14/readings";
@@ -90,12 +91,14 @@ describe("注14 の計算の道具（段 17i）", () => {
     expect((await (await tool()).json()).month).toBe(M);
   });
 
-  it("使うのは事務長と責任者（医療事務・医師は 403）", async () => {
+  it("C-370：読む（道具の画面）は全ロール、結果を残す・下書きを開くのは事務長と責任者（医療事務・医師は 403）。どれも集計の数だけなので patientData は偽（design.md §15-9 の権限表）", async () => {
     for (const role of ["clerk", "doctor"] as const) {
       setRole(role);
-      expect([role, (await tool()).status, (await save(body())).status]).toEqual([role, 403, 403]);
+      expect([role, (await tool()).status, (await save(body())).status, (await draft(1)).status]).toEqual([role, 200, 403, 403]);
     }
     setRole("manager");
+    for (const k of ["GET /api/note14", "POST /api/note14/worksheets", "GET /api/note14/worksheets/[id]/draft"] as const) expect([k, POLICY[k].external, POLICY[k].patientData]).toEqual([k, "none", false]);
+    expect(POLICY["GET /api/note14"].rule).toEqual(["clerk", "veteran", "manager", "doctor"]);
   });
 
   it("基準に当たる → 結果を残し、使った期間が記録と応答に出る。下書きは通常・確認月の翌月で、申告の行は増えない（道具は申告を書かない。L-132）", async () => {

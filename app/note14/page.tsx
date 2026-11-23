@@ -61,6 +61,8 @@ export default function Note14Page() {
   // 2 段目の欄（欄の鍵 → 入れた文字。欄は readings.ts の依り方の定数から決まる。段 17j）
   const [vals, setVals] = useState<Record<string, string>>({});
   const [openedOn, setOpenedOn] = useState("");
+  // 結果を残す・申告の下書きを開くのは事務長と責任者（読むのはどのロールも。round-61 C-370）
+  const [canEdit, setCanEdit] = useState(false);
   // 下書きのままの欄（段 17k）。本人が直した欄は外れ、出どころは手入力になる
   const [autoKeys, setAutoKeys] = useState<string[]>([]);
   // ③ の下書きに足す患者（別表第七・第八の二など。下書きは拾わない）を本人が確かめたか（round-61 C-363）
@@ -85,6 +87,7 @@ export default function Note14Page() {
     const q = new URLSearchParams(location.search).get("month");
     load(q ?? undefined);
     getJson<Declarations>("/api/facility/declaration").then(setDecl).catch(() => {});
+    getJson<{ role: string }>("/api/auth/me").then((me) => setCanEdit(me.role === "manager" || me.role === "veteran")).catch(() => {});
   }, []);
 
   // 1 段目の月を全部確かめたか（確かめていない月があると、下書きの元がそろっているか分からない。C-373。L-134）
@@ -252,7 +255,7 @@ export default function Note14Page() {
         <div className="panel">
           <h3 style={{ marginTop: 0 }}>結果（まだ残していません）</h3>
           <ResultView e={e} />
-          <button className="primary" disabled={e.status !== "done"} onClick={() => void save()}>結果を残す</button>
+          {canEdit ? <button className="primary" disabled={e.status !== "done"} onClick={() => void save()}>結果を残す</button> : <p className="muted">結果を残せるのは事務長と責任者です。</p>}
         </div>
       )}
       {tool?.worksheets && tool.worksheets.length > 0 && (
@@ -264,13 +267,13 @@ export default function Note14Page() {
                 {w.checkedOn}　{w.checkedBy}：{RESULT_LABEL[w.result]}{w.reasons.length > 0 && w.result === "undecided" ? `（${w.reasons.join("・")}）` : ""}　使った期間：{periodText(w.period)}
                 {w.lines.map((l) => <div key={l} className="muted">{l}</div>)}
                 {w.note && <div className="muted">{w.note}</div>}
-                {w.draft && <div><a href={`/settings?note14Draft=${w.id}#declaration-note14`}>申告の下書きを開く</a></div>}
+                {w.draft && canEdit && <div><a href={`/settings?note14Draft=${w.id}#declaration-note14`}>申告の下書きを開く</a></div>}
               </li>
             ))}
           </ul>
           {saved && <div className="notice ok">結果を残しました。</div>}
           {/* 道具の結果によらず note14 を「変わりなし」で確かめ直せる（round-57 C-320）。ただし減算になる結果のまま申告が通常なら出さない（C-342。L-155） */}
-          {decl && (blocked ? <div className="notice warn">{NOTE14_TEXT.differs}。<a href="/settings#declaration-note14">申告の画面を開く</a></div> : <div><a href={`/settings?confirmMonth=${encodeURIComponent(decl.today.slice(0, 7))}&item=note14#declaration-confirm`}>今の請求の仕方は変わりなし（注14 の申告を確かめ直す）</a>{decl.note14.state === "differs" ? `（${NOTE14_TEXT.differs}）` : ""}</div>)}
+          {decl && canEdit && (blocked ? <div className="notice warn">{NOTE14_TEXT.differs}。<a href="/settings#declaration-note14">申告の画面を開く</a></div> : <div><a href={`/settings?confirmMonth=${encodeURIComponent(decl.today.slice(0, 7))}&item=note14#declaration-confirm`}>今の請求の仕方は変わりなし（注14 の申告を確かめ直す）</a>{decl.note14.state === "differs" ? `（${NOTE14_TEXT.differs}）` : ""}</div>)}
         </div>
       )}
     </main>
