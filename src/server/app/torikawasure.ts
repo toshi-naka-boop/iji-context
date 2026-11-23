@@ -68,7 +68,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
    * G11 を掛ける。claim は突き合わせる請求（取り込んだ請求は UKE の単位、算定プレビュー・月末の点検は claimOfLines の単位）、base は元の請求の文脈（手順 3 と同じ族の例外が使う）、
    * hand は元の請求の手書きのルールの結果（R ルールと 2 回言わない）
    */
-  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[]; texts?: TextDay[] }): G11Result {
+  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[]; texts?: TextDay[]; pastTextsUnreadable?: boolean }): G11Result {
     const { acts, rxDays } = actsInput(input.days);
     const ym = input.base.yearMonth;
     const declaration = declarationViewOf(ctx, clock);
@@ -86,6 +86,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
             history: s.history ?? [],
             lookbackMonths: s.lookbackMonths ?? 0,
             times: s.times ?? [],
+            ...(input.pastTextsUnreadable ? { pastTextsUnreadable: true } : {}),
             ...(s.devices ? { devices: s.devices } : {}),
             texts: (input.texts ?? []).map((t) => ({
               date: t.date,

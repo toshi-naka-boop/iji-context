@@ -409,17 +409,20 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /**
    * G11 の規則の候補（design.md §16-4-5 (e)・(d)）に渡すカルテの文章：当月と、同じ患者のさかのぼる月の請求（構造化データを残していない請求は読まない）
    */
-  function textsOf(claimId: string, clerkId?: string): TextDay[] {
-    if (!structured) return claimTexts(claimId, clerkId);
+  function textsOf(claimId: string, clerkId?: string): { texts: TextDay[]; pastTextsUnreadable: boolean } {
+    if (!structured) return { texts: claimTexts(claimId, clerkId), pastTextsUnreadable: false };
     let past: TextDay[] = [];
+    let pastTextsUnreadable = false;
     try {
       const ym = isUploaded(claimId) ? uke.receiptOf(claimId).receipt.yearMonth : caseOf(claimId).yearMonth;
       const months = structured.monthsBefore(ym, structuredConfig().rxLookbackMonths);
       past = structured.samePatientClaims(claimId, months).flatMap((x) => claimTexts(x.claimId, clerkId));
     } catch {
+      // 例外を黙って捨てない：さかのぼる月の文章を「ない」と読まず、読めないとして G11 に渡す（注2 は「見ていません」。C-454）
       past = [];
+      pastTextsUnreadable = true;
     }
-    return [...claimTexts(claimId, clerkId), ...past];
+    return { texts: [...claimTexts(claimId, clerkId), ...past], pastTextsUnreadable };
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));

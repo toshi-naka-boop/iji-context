@@ -119,6 +119,8 @@ type Opt = {
   dispensing?: G11About["dispensing"];
   declaration?: DeclarationView;
   unmapped?: string[];
+  /** さかのぼる月のカルテの文章を読めなかった（C-454） */
+  pastTextsUnreadable?: boolean;
   /** 構造化データを渡さない（v32 の入力） */
   noStructured?: boolean;
   /** 材料加算の入力（段 19e） */
@@ -134,7 +136,7 @@ function about(o: Opt = {}): G11About {
     homeCare: UNS,
   };
   const items = orders ? itemsOf(orders, o.unmapped) : [];
-  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [], ...(o.devices ? { devices: o.devices } : {}) };
+  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [], ...(o.devices ? { devices: o.devices } : {}), ...(o.pastTextsUnreadable ? { pastTextsUnreadable: true } : {}) };
   const acts = o.noStructured ? (o.acts ?? []) : withStructured(o.acts ?? [], { chart, items }, rev).acts;
   return {
     yearMonth: YM,
@@ -568,6 +570,12 @@ describe("T6 在医総管 注2（版の C002_N2。R8-18・R8-241）", () => {
     const zero = emptyHistory();
     zero[0] = { yearMonth: month(-1), orders: sup([order("p3", dateIn(-1, 8), "院外", [[D.carve, 28]], 0)]), items: [] };
     expect(hasN2(run(db, kanri, base({ history: zero })))).toBe(true);
+  });
+  cell("T6-項目が取れず見ない-3", "さかのぼる月のカルテの文章を読めなかった（読む途中の例外）月は、文章を「ない」と読まず「前の文章を読めない」で「見ていません」（C-454）", () => {
+    const db = rdb();
+    const r = run(db, kanri, base({ pastTextsUnreadable: true }));
+    expect(hasN2(r)).toBe(false);
+    expect(n2Scope(r)).toEqual(["処方箋を交付しない場合の加算は見ていません（前の文章を読めない）"]);
   });
   cell("T6-そのほか出ない", "請求に注2 があれば出さない", () => {
     const db = rdb();

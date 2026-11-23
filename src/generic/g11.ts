@@ -60,6 +60,8 @@ export type G11Structured = {
   lookbackMonths: number;
   texts: { date: string; text: string; soap: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
   times: { date: string; ref: string | null; start: string; end: string; by: string; at: string }[];
+  /** さかのぼる月のカルテの文章を読めなかった（読む途中の例外。文章を「ない」と読まず、注2 を「見ていません」にする。C-454） */
+  pastTextsUnreadable?: boolean;
   /** 患者の機器から規則で出す材料加算の入力（design.md §16-4-7・16-5。段 19e）。ないときは材料加算を見ない（段 19d まで） */
   devices?: G11Devices;
 };
@@ -1050,6 +1052,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
             if ((isOutsideText(x.text) || x.choice === "outside" || x.rxAct === true) && !outsideDates.has(x.date)) unknownPeriod++;
         }
         if (unreadable > 0) reasons.push("前の処方を読めない");
+        if (S.pastTextsUnreadable) reasons.push("前の文章を読めない");
         if (unknownPeriod > 0) reasons.push(`期間の分からない院外処方：${unknownPeriod} 日`);
         if (noDays + refill > 0) reasons.push(`日数のない・リフィルの院外処方：${noDays + refill} 件`);
       }

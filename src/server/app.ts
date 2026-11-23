@@ -82,7 +82,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const pasted = same.filter((id) => counts.has(id)).length;
     const coverage = `カルテを貼った患者だけを見ています（貼った ${pasted} 人・貼っていない ${same.length - pasted} 人）`;
     if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
-    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), texts: notes.textsOf(claimId) }), coverage };
+    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), ...notes.textsOf(claimId) }), coverage };
   };
   /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
   const ukeTorikawasure = (claimId: string, clerkId: string) => {
@@ -174,7 +174,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const rev = resolveRevision(base.yearMonth);
       const torikawasure = casesOf.isUploaded(q.claimId)
         ? ukeTorikawasure(q.claimId, q.clerkId)
-        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), texts: notes.textsOf(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
+        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), ...notes.textsOf(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
       return { ...generic, torikawasure };
     },
     explain,
