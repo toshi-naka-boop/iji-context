@@ -6,9 +6,9 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v33:5095da648c70",
+  "requiredApprovalFingerprint": "v33:b67ef60c5fd0",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 63,
+  "criticRound": 64,
   "openIssueIds": [],
   "requiredReads": [
     "design.md §16",
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v33（§16。B-構造化）の批評 1 巡目",
+  "nextAction": "v33 の批評 2 巡目（round-65）",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
