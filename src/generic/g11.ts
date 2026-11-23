@@ -58,7 +58,7 @@ export type SameFamily = (cand: { date: string; units: { items: G11Item[]; count
 /** 添え書きの理由（注意つきの数を理由ごとに数える。design.md §15-8 の「注意つきの候補の出し方」） */
 export const CAUTION_REASONS = ["データの点検の条件つきの違反", "候補どうしの包括・背反", "同じ族の区分誤り", "情報不足", "手書きのルールの指摘", "手書きのルールで判定できない行", "施設基準の申告が分からない"] as const;
 export type CautionReason = (typeof CAUTION_REASONS)[number];
-/** rule：添え書きの元の手書きのルール。doubt：同じ族の区分誤り（R18 のときだけ、前に選んだ対応を消す。C-263） */
+/** rule：添え書きの元の手書きのルール。doubt：同じ族の区分誤り（R18 のときだけ kubunDoubts に入れる。C-263） */
 export type Note = { reason: CautionReason; text: string; rule?: string; doubt?: boolean };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ export type G11Finding = {
 };
 /** 言わなかった候補（L-96）：書かれた名前・日・理由（抑えた点検の名前と相手の行の名前） */
 export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string; with?: string[] };
-/** 区分誤りの出た対応（C-250・C-263）：R18 の同じ族の区分誤りが添えられた候補の、書かれた名前・表・コード。呼び出し側が前に選んだ対応から消す */
+/** 区分誤りの出た対応（C-250・C-263）：R18 の同じ族の区分誤りが添えられた候補の、書かれた名前・表・コード（結果に載せるだけ。前に選んだ対応は消さず、読むときに同じ R18 の規則で外す：src/server/app/notes.ts の aliasOf。反証 round-55 C-293） */
 export type KubunDoubt = { written: string; tbl: string; code: string };
 export type G11Result =
   | { skip: string }
@@ -836,7 +836,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const guide = undecidedDays.size > 0 ? `${[...undecidedDays].sort().map((d) => `${md(d)}日`).join("・")}の処方の院内・院外を選ぶと、薬の取り忘れを見ます` : null;
   const byKind: Partial<Record<G11Kind, number>> = {};
   for (const f of findings) byKind[f.messageKey] = (byKind[f.messageKey] ?? 0) + 1;
-  // 区分誤りの出た対応：R18 の同じ族の区分誤りの添え書きがある候補だけ（回数の区分〔R01 など〕では消さない。C-263）
+  // 区分誤りの出た対応：R18 の同じ族の区分誤りの添え書きがある候補だけ（回数の区分〔R01 など〕では入れない。C-263）
   const doubtKeys = new Set<string>();
   const kubunDoubts: KubunDoubt[] = [];
   for (const x of passed)

@@ -27,9 +27,7 @@ import { createRevision } from "./app/revision";
 import { createUke } from "./app/uke";
 import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
 import { claimOfLines } from "../generic/overlap";
-import { normName } from "../notice/notice";
 import { resolveRevision } from "../engine/revisions";
-import type { G11Result } from "../generic/g11";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
 
@@ -82,10 +80,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
     return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId) }), coverage };
   };
-  /** 区分誤りの出た対応を、前に選んだ対応から消す（R18 の同じ族の区分誤りだけ。C-250・C-263。点検は書き込まないので、呼んだ側が消す） */
-  const forgetDoubts = (r: G11Result | undefined) => {
-    if (r && "kubunDoubts" in r && r.kubunDoubts.length > 0) notes.forgetAliases(r.kubunDoubts.map((d) => ({ writtenNorm: normName(d.written), tbl: d.tbl, code: d.code })));
-  };
   /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
   const ukeTorikawasure = (claimId: string, clerkId: string) => {
     const base = { ...casesOf.caseOf(claimId), events: [], recordsKnown: false };
@@ -96,12 +90,11 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
     // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
     const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
-    forgetDoubts((claim as { torikawasure?: G11Result }).torikawasure);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
   const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
@@ -139,7 +132,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     actCandidates,
     searchMasters,
     savedActs,
-    forgetAliases,
     deleteNote,
     listNotes,
     chartClaim,
@@ -176,7 +168,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const torikawasure = casesOf.isUploaded(q.claimId)
         ? ukeTorikawasure(q.claimId, q.clerkId)
         : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
-      forgetDoubts(torikawasure);
       return { ...generic, torikawasure };
     },
     explain,
@@ -201,7 +192,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);
-      forgetDoubts((r as { torikawasure?: G11Result }).torikawasure);
       localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
       // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
       // 作る入口のフォームが選ばせない向き（design.md §14-2）。作る入口を出す G05 の指摘の組ごと

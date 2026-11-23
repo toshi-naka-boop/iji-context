@@ -1,5 +1,5 @@
 // 取り忘れ（G11。design.md §15-8・§15-9 の B の欄）を、取り込んだ請求の点検・月末の点検・算定プレビューから呼ぶ入口。読むだけで、何も記録しない
-// （区分誤りの出た対応を消すのは、呼んだ側。src/server/app.ts）。判定は src/generic/g11.ts の決まった規則だけで、LLM は使わない。
+// （区分誤りの出る前に選んだ対応は、消さずに読むときに外す。src/server/app/notes.ts の aliasOf。反証 round-55 C-293）。判定は src/generic/g11.ts の決まった規則だけで、LLM は使わない。
 // 行ったことは、取り込んだ請求では貼って確かめたカルテ（kind「記録」）、合成の症例では合成カルテの確かめたあとの acts と、本人が確かめたカルテの acts
 import { readFileSync } from "node:fs";
 import type { ChartAct, RxChoice, RxNote, StoredActs } from "../../chart/acts";

@@ -161,7 +161,7 @@ describe("確かめて保存する（POST /api/chart/acts）", () => {
     expect(notInNote.status).toBe(400);
     expect(savedActs(w.id)).toBeNull();
   });
-  it("前に選んだ対応（L-95）：選んだ「書かれた名前 → コード」が次のカルテで先頭に印つき・選んだ状態の初期値で出て、件数が出る。名前の完全一致が別のコードに 1 つあっても初期値は前に選んだもの。消した対応は初期値にならない（C-250）", async () => {
+  it("前に選んだ対応（L-95）：選んだ「書かれた名前 → コード」が次のカルテで先頭に印つき・選んだ状態の初期値で出て、件数が出る。名前の完全一致が別のコードに 1 つあっても初期値は前に選んだもの", async () => {
     const w = await write(claimId("K4"), K11_NOTE, K11_OUT);
     const pick = { tbl: "shinryo", code: "140032110", name: "熱傷処置（１００ｃｍ２以上５００ｃｍ２未満）", by: "candidate" };
     expect((await saveActs({ noteId: String(w.id), facts: [], acts: [{ ...w.acts[3], match: pick }], rx: [] })).status).toBe(200);
@@ -180,12 +180,7 @@ describe("確かめて保存する（POST /api/chart/acts）", () => {
     const n2 = await write(claimId("K4"), named, out);
     expect(n2.review.matches[0].act.initial).toMatchObject({ code: "140000610", by: "alias" });
     expect(n2.review.matches[0].act.candidates.map((c) => [c.code, c.prior])).toEqual([["140000610", true], ["140032110", false]]);
-    // 区分誤りの出た対応を消すと（点検を呼んだ側の処理）、初期値は名前の完全一致に戻り、消したコードは候補に残る
-    const { forgotten } = instance.runAs(user, () => instance.getApp().forgetAliases([{ writtenNorm: "熱傷処置(100cm2以上500cm2未満)", tbl: "shinryo", code: "140000610" }]));
-    expect(forgotten).toBe(1);
-    const n3 = await write(claimId("K4"), named, out);
-    expect(n3.review.aliasCount).toBe(0);
-    expect(n3.review.matches[0].act.initial).toMatchObject({ code: "140032110", by: "name" });
+    // 区分誤りの出る対応を読むときに外すことは tests/server/routes-uke-notes.test.ts（反証 round-55 C-293・C-300）
   });
 });
 

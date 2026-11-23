@@ -19,7 +19,7 @@ import type { UkeFile, UkeReceipt } from "../../uke/types";
 import { notFound } from "../errors";
 
 /** カルテ側の事実がないレセプトの事実：どれも「不明」。推測で埋めない（年齢・保険種別・負担割合だけは、UKE から作った患者マスタで上書きする） */
-const UNKNOWN_FACTS: Facts = {
+export const UNKNOWN_FACTS: Facts = {
   age: { known: false },
   insurance: { known: false },
   burdenRatio: { known: false },

@@ -9,6 +9,8 @@ import { resetLimits } from "../../src/server/rate-limit";
 import { autoConsent } from "../helpers/consent";
 import { tensuhyoMasters } from "../generic/small-tensuhyo";
 import { put } from "../generic/small-masters";
+import Database from "better-sqlite3";
+import { r2026 } from "../../src/engine/revisions/r2026";
 
 const llm = vi.hoisted(() => ({ runOnce: vi.fn() }));
 vi.mock("@anthropic-ai/claude-agent-sdk", async (original) => (await import("../helpers/sdk")).fakeSdk(await original<object>(), llm.runOnce));
@@ -122,6 +124,47 @@ describe("取り込んだ請求の月末の点検の B の欄（反証 round-55 
     const q = { id: "q-mine", claimId: mine, clerkId, confirmed: { lines: base.lines, result: { findings: [], applied: [] } } };
     const month = instance.runAs(user, () => instance.getApp().questionGeneric(q as never)) as { torikawasure: { findings: { messageKey: string; codes: string[] }[] } };
     expect(month.torikawasure.findings.map((f) => `${f.messageKey} ${f.codes.join("+")}`)).toEqual(["G11.missing 140000610"]);
+  });
+});
+
+describe("区分誤りの出た対応は消さずに、読むときに外す（反証 round-55 C-293・C-300）", () => {
+  it("施設の種別と合わない区分の在医総管を選んだ対応は、点検（GET）を開いても消えず、次の確かめでは初期値にも「前に選んだもの」にもならない。種別に合う区分の対応は初期値になる", async () => {
+    const clerkId = instance.clerkIdOf(user);
+    const [mine] = instance.runAs(user, () => instance.getApp().importedClaims(clerkId));
+    const aliases = () => {
+      const db = new Database(instance.tenantPaths(user.tenantId).dbFile, { readonly: true });
+      try {
+        return db.prepare("SELECT written_norm, tbl, code FROM chart_act_aliases ORDER BY written_norm, code").all();
+      } finally {
+        db.close();
+      }
+    };
+    const paste = async (written: string) => {
+      llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts: [{ category: "診療行為", written, lookup: [], quote: written }], rx: [] }, sessionId: "", stats: {} });
+      const r = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${mine}/notes`, { date: "2026-10-28", note: { s: "", o: `${written}。`, a: "", p: "", rx: "" } }), { params: Promise.resolve({ claimId: mine }) });
+      expect(r.status).toBe(200);
+      return (await r.json()) as { id: number; acts: Record<string, unknown>[]; review: { aliasCount: number; matches: { act: { initial: { code: string; by: string } | null; candidates: { code: string; prior: boolean }[] } }[] } };
+    };
+    const choose = async (p: { id: number; acts: Record<string, unknown>[] }, code: string) => {
+      const saved = await (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(p.id), facts: [], acts: p.acts.map((a) => ({ ...a, match: { tbl: "shinryo", code, name: "在医総管", by: "search" } })), rx: [] }));
+      expect([saved.status, saved.status === 200 ? "" : await saved.text()]).toEqual([200, ""]);
+    };
+    // 申告の種別は 2（config/facility.json）。機能強化型・病床なしの区分（C002_1N_RO1）は R18 の同じ族の区分誤り
+    const wrong = r2026.codes.C002_1N_RO1.primary;
+    await choose(await paste("在宅時医学総合管理料（強化）"), wrong);
+    const before = aliases();
+    expect(before).toContainEqual({ written_norm: expect.any(String), tbl: "shinryo", code: wrong });
+    const checked = await check(mine);
+    expect(checked.torikawasure.findings?.some((f) => f.codes.includes(wrong))).toBe(true);
+    expect(aliases()).toEqual(before);
+    const next = await paste("在宅時医学総合管理料（強化）");
+    expect(next.review.matches[0].act.initial?.by).not.toBe("alias");
+    expect(next.review.matches[0].act.candidates.some((c) => c.prior)).toBe(false);
+    expect(next.review.aliasCount).toBe(0);
+    // 種別に合う区分の対応は初期値になる
+    const right = r2026.codes.C002_2RO1.primary;
+    await choose(await paste("在宅時医学総合管理料（在支診）"), right);
+    expect((await paste("在宅時医学総合管理料（在支診）")).review.matches[0].act.initial).toMatchObject({ code: right, by: "alias" });
   });
 });
 

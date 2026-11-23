@@ -12,7 +12,9 @@ import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type Vi
 import { evaluate } from "../../engine";
 import { manualIn } from "../../engine/compare";
 import { deriveLines, manualLinesOf } from "../../engine/derive";
-import { resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { hasRevision, resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
+import { facilityOf } from "../../engine/facility";
+import { r18SameFamily } from "../../generic/g11-rules";
 import { trial } from "../../engine/trial";
 import type { ClaimContext } from "../../engine/types";
 import { monthRange } from "../../demo/period";
@@ -24,11 +26,11 @@ import { badRequest, conflict, forbidden, notFound } from "../errors";
 import type { Role } from "../roles";
 import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../../visit/as-of";
 import { chartFileOf } from "./case-files";
-import type { Cases } from "./cases";
+import { UNKNOWN_FACTS, type Cases } from "./cases";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import { json, type AppContext } from "./context";
-import { declarationViewOf, todayOf } from "./facility";
+import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
 import { createTorikawasure } from "./torikawasure";
@@ -107,13 +109,26 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /** その診療年月で効く申告の院内・院外（院外処方だけ・院内処方もある・分からない） */
   const dispensingFor = (yearMonth: string): RxChoice => dispensingOf(readDeclarations(sqlite), todayOf(clock), yearMonth);
   const tablesOfKey = (key: TableKey): Tbl[] => (key === "toyaku" ? ["iyakuhin", "shinryo"] : [key]);
-  /** 前に選んだ対応（引く表のうち、いちばん新しく選んだもの） */
-  function aliasOf(written: string, key: TableKey): Alias | null {
+  /**
+   * 前に選んだ対応が、その診療年月の施設の申告で R18 の同じ族の区分誤りになるか（施設の種別・ベースアップ評価料の通常／注5。どの患者・どの日でも同じに決まる次元。C-250・C-263）。
+   * 行と申告だけで決まるので、その行 1 つの請求に R18 を掛けて決める（決まった規則。LLM は使わない）。版のない診療年月は外さない
+   */
+  function kubunDoubt(yearMonth: string, a: Alias): boolean {
+    if (a.tbl !== "shinryo" || !hasRevision(yearMonth)) return false;
+    const rev = resolveRevision(yearMonth);
+    const base: ClaimContext = { claimId: "", yearMonth, facility: facilityOf(facilityJsonOf(ctx, todayOf(clock), yearMonth)), payer: "支払基金", prefecture: "", facts: UNKNOWN_FACTS, events: [], recordsKnown: false, lines: [], commentsKnown: false };
+    return r18SameFamily(base, rev, null)({ date: `${yearMonth}-01`, units: [{ items: [{ kind: "SI", code: a.code }], count: 1 }] }) !== null;
+  }
+  /**
+   * 前に選んだ対応（引く表のうち、いちばん新しく選んだもの）。区分誤りの出る対応は、行を消さずに、ここで外す（初期値にも「前に選んだもの」にもしない。
+   * 反証 round-55 C-293・C-300：点検・試算の GET で消していたのをやめた。申告を直せば、また使われる）
+   */
+  function aliasOf(written: string, key: TableKey, yearMonth: string): Alias | null {
     const t = tablesOfKey(key);
     const r = sqlite
       .prepare(`SELECT tbl, code FROM chart_act_aliases WHERE written_norm = ? AND tbl IN (${t.map(() => "?").join(", ")}) ORDER BY chosen_at DESC LIMIT 1`)
       .get(normName(written), ...t) as Alias | undefined;
-    return r ?? null;
+    return r && !kubunDoubt(yearMonth, r) ? r : null;
   }
   type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[] };
   /**
@@ -127,7 +142,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (!rows.has(k)) rows.set(k, rowsFor(db, k, yearMonth));
         return rows.get(k)!;
       };
-      const one = (k: TableKey, written: string, lookup: string[]) => matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k));
+      const one = (k: TableKey, written: string, lookup: string[]) => matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
       const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.lookup)) }));
       const aliasCount = matches.flatMap((m) => [m.act, ...m.with]).filter((m) => m.initial?.by === "alias").length;
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
@@ -139,7 +154,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで */
   function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[]): ItemMatch {
-    return withMasters((db) => matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key)));
+    return withMasters((db) => matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)));
   }
   /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
   function searchMasters(key: TableKey, yearMonth: string, q: string) {
@@ -202,15 +217,6 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const r = noteRow(id);
     return r.acts === null ? null : (JSON.parse(r.acts) as StoredActs);
   };
-  /**
-   * 区分誤りの出た対応を覚えない（C-250・C-263）：点検（G11）が返した kubunDoubts の行を消す。点検は書き込まないので、点検を呼んだ側がこれを呼ぶ。
-   * 消すのは R18 の区分誤りの対応だけ（どの対応を渡すかは呼んだ側が決める）。消したあとも、そのコードは候補の 2〜5 に出てくる
-   */
-  function forgetAliases(doubts: { writtenNorm: string; tbl: string; code: string }[]): { forgotten: number } {
-    let n = 0;
-    for (const d of doubts) n += sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ? AND code = ?").run(d.writtenNorm, d.tbl, d.code).changes;
-    return { forgotten: n };
-  }
 
   /**
    * 訪問カルテを消す（design.md §11-11「消す」）。消せるのは、書いた本人と事務長だけ（ロールは権限表が先に絞る。ここでは本人かどうかを照合する）。
@@ -397,7 +403,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, forgetAliases, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;
