@@ -23,6 +23,13 @@ export const note14WorksheetBody = z.strictObject({
     special: z.enum(["none", "some", "unknown"]),
     institutions: z.array(z.strictObject({ openedOn: day.nullable(), ownerChangedFrom: day.nullable(), count })).max(30),
   }),
+  // 2 段目（段 17j）：欄の鍵 → 数。鍵は readings.ts の fieldKeys のものだけ（サーバーが確かめる）。openedOn は開設日（U-34）
+  stage2: z
+    .strictObject({
+      values: z.record(z.string().max(80), count),
+      openedOn: day.nullable(),
+    })
+    .optional(),
 });
 export type Note14WorksheetBody = z.infer<typeof note14WorksheetBody>;
 

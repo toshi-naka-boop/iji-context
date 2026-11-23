@@ -4,6 +4,7 @@ import { hasRevision, resolveRevision } from "../../src/engine/revisions";
 import { countMonths } from "../../src/note14/count";
 import { evaluate, monthsBefore, periodOf, toolConstsOf, type Stage1Input } from "../../src/note14/evaluate";
 import { parseUke } from "../../src/uke/uke";
+import { fieldKeys } from "../../src/note14/readings";
 import { dateIn, month } from "../helpers/period";
 import { baseFile, receipt, ukeBytes } from "./uke";
 
@@ -56,6 +57,8 @@ describe("取り込んだ UKE から月ごとに数える（EM §2-8 の数え�
 const auto = (kou: number, otsuExtra = 0) => [m1, m2, m3].map((month, i) => ({ month, kou: i === 0 ? kou : 0, otsuExtra: i === 0 ? otsuExtra : 0, source: "auto" as const }));
 const s1 = (over: Partial<Stage1Input> = {}): Stage1Input => ({ months: auto(0), gansou: 0, secondPatient: 0, special: "none", institutions: [], ...over });
 const T = K.visitThreshold;
+/** 2 段目の 4 つの要件のうち紹介を満たさない入力（2 段目に進む読みは減算になる） */
+const notMet = { values: Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "mitoriHome" ? K.mitoriMin : f.field.id === "referral" ? 0 : 1])), openedOn: null };
 
 describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）", () => {
   it("甲・乙のどちらでも門未満 → 基準に当たる。あと n 回は読みのうち小さいほう", () => {
@@ -66,9 +69,10 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
     const e = evaluate({ stage1: s1({ months: auto(T) }) }, K);
     expect(e.stage2Open).toBe(true);
   });
-  it("割れる入力（甲は門未満・乙は門以上）→ 決めきれないと U-27 の 1 行（照会の番号つき）。2 段目は開く", () => {
-    const e = evaluate({ stage1: s1({ months: auto(T - 1, 1) }) }, K);
-    expect(e.stage2Open).toBe(true);
+  it("割れる入力（甲は門未満・乙は門以上で 2 段目を満たさない）→ 決めきれないと U-27 の 1 行（照会の番号つき）", () => {
+    expect(evaluate({ stage1: s1({ months: auto(T - 1, 1) }) }, K).stage2Open).toBe(true);
+    const e = evaluate({ stage1: s1({ months: auto(T - 1, 1) }), stage2: notMet }, K);
+    expect(e.status === "done" && [e.result, e.splits, e.lines]).toEqual(["undecided", ["U-27"], ["U-27〔回数に入れる区分〕：C001 の行だけなら減算にならず、C001-2 などを入れると減算になります。厚生局に確かめてください（照会 #1）"]]);
   });
   it("特別の関係の機関が「分からない」→ 決めきれない（自院だけで門以上なら 2 段目へ）", () => {
     const e = evaluate({ stage1: s1({ months: auto(T - 1), special: "unknown" }) }, K);
@@ -78,6 +82,9 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
     const cut = K.excludeOpenedOnOrBefore;
     const inst = (openedOn: string, ownerChangedFrom: string | null = null) => ({ stage1: s1({ months: auto(T - 200), special: "some", institutions: [{ openedOn, ownerChangedFrom, count: 200 }] }) });
     expect(evaluate(inst(cut), K).stage2Open).toBe(true);
+    const e = evaluate({ ...inst(cut), stage2: notMet }, K);
+    expect(e.status === "done" && [e.result, e.splits]).toEqual(["undecided", ["U-30a"]]);
+    expect(e.status === "done" && e.lines[0]).toBe("U-30a〔3 月 31 日に開設した機関〕：告示・通知の読み（除く）なら減算にならず、様式の読み（足す）だと減算になります。厚生局に確かめてください（照会 #5）");
     // 境の日の機関の回数を足しても門未満なら割れない
     const small = evaluate({ stage1: s1({ months: auto(T - 300), special: "some", institutions: [{ openedOn: cut, ownerChangedFrom: null, count: 100 }] }) }, K);
     expect(small.status === "done" && [small.result, small.splits]).toEqual(["meets", []]);
@@ -85,7 +92,8 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
     const before = evaluate(inst(`${Number(cut.slice(0, 4)) - 1}${cut.slice(4)}`), K);
     expect(before.status === "done" && [before.result, before.splits]).toEqual(["meets", []]);
     // 開設者を変えた機関：新しい開設の日は境より後、元の開設の日は境より前 → U-30b で割れ、2 段目が開く
-    expect(evaluate(inst(`${M}-01`, `${Number(cut.slice(0, 4)) - 1}${cut.slice(4)}`), K).stage2Open).toBe(true);
+    const changed = evaluate({ ...inst(`${M}-01`, `${Number(cut.slice(0, 4)) - 1}${cut.slice(4)}`), stage2: notMet }, K);
+    expect(changed.status === "done" && [changed.result, changed.splits]).toEqual(["undecided", ["U-30b"]]);
   });
   it("C-323：読み乙だけの手入力の欄が空で、甲・乙の自動の数が門未満 → 決めきれない（手入力の欄が空：〔欄の名前〕）。「0（ない）」で言い切る", () => {
     const e = evaluate({ stage1: s1({ months: auto(T - 100, 10), gansou: null, secondPatient: null }) }, K);

@@ -3,7 +3,7 @@
 // 明文のない点（readings.ts の軸）は、アプリが一方に決めず、読みの全部の組み合わせで計算する。全部で同じ結果のときだけ言い切り、割れたら「決めきれない」と割れた軸ごとに 1 行を出す（W-12）。
 // 割合は丸めず、EM R8-199・R8-200 の「整数で比べる形」の不等式で比べる
 import type { RevisionConsts } from "../engine/revisions/types";
-import { AXES, axisOf, readingOf, type AxisId, type Combo } from "./readings";
+import { AXES, axisOf, fieldKeyOf, fieldKeys, FIELDS, readingOf, type AxisId, type Combo, type FieldId } from "./readings";
 
 export type Note14Consts = Required<NonNullable<RevisionConsts["note14"]>>;
 
@@ -44,7 +44,12 @@ export type Stage1Input = {
   special: "none" | "some" | "unknown";
   institutions: Institution[];
 };
-export type WorksheetInput = { stage1: Stage1Input };
+/**
+ * 2 段目の入力（段 17j）。values は欄の鍵（readings.ts の fieldKeys）→ 数（null は空の欄）。openedOn は開設日（期間の初めより後に開設したときだけ。U-34）。
+ * sources は欄ごとの出どころ（auto＝下書きのまま、manual＝本人が入れた・直した。段 17k）
+ */
+export type Stage2Input = { values: Record<string, number | null>; openedOn: string | null; sources?: Record<string, "auto" | "manual"> };
+export type WorksheetInput = { stage1: Stage1Input; stage2?: Stage2Input };
 
 export type Outcome = "meets" | "not_meets" | "unknown";
 export type Evaluation =
@@ -122,17 +127,52 @@ const allCombos = (): Combo[] =>
   AXES.reduce<Combo[]>((acc, a) => acc.flatMap((c) => [{ ...c, [a.id]: "A" as const }, { ...c, [a.id]: "B" as const }]), [{}]);
 const keyOf = (c: Combo, axes: readonly AxisId[]) => axes.map((a) => readingOf(c, a)).join("");
 
-/** 判定（純関数）。必要な欄が空なら結果を出さず、空の欄を名指しする */
-export function evaluate(input: WorksheetInput, k: Note14Consts): Evaluation {
+/** 期間の全部に実績がそろわないか（開設日が期間の初めの月の 1 日より後。U-34） */
+const partial = (openedOn: string | null, from: string) => openedOn !== null && openedOn > `${from}-01`;
+
+/** 2 段目の 4 つの要件（EM R8-197〜R8-200）。割合は丸めず整数の不等式で比べる。U-34 の乙では、期間の全部に実績がない要件を満たさない */
+function stage2Of(c: Combo, v: Stage2Input, k: Note14Consts, p: Period | null): Outcome {
+  const val = (id: FieldId) => v.values[fieldKeyOf(FIELDS.find((f) => f.id === id)!, c)]!;
+  const strict = readingOf(c, "U-34") === "B" && p !== null;
+  const longGone = strict && partial(v.openedOn, p!.long.from);
+  const shortGone = strict && partial(v.openedOn, p!.short.from);
+  const referral = !longGone && val("referral") >= k.referralMin;
+  const mitori = val("mitoriHome") + (readingOf(c, "U-31a") === "B" ? val("mitoriFacility") : 0) + (readingOf(c, "U-31b") === "B" ? val("mitoriHospital") : 0);
+  const care2 = (!longGone && mitori >= k.mitoriMin) || (!shortGone && val("jushoji") >= k.jushojiMin);
+  const [c1, c2, c3, c5] = [val("c002"), val("c0022"), val("excluded"), val("care")];
+  const ratio3 = !shortGone && (c2 - c3) * k.ratio199.den <= k.ratio199.num * (c1 + c2);
+  const ratio4 = !shortGone && c5 * k.ratio200.den >= k.ratio200.num * (c1 + c2);
+  return referral && care2 && ratio3 && ratio4 ? "meets" : "not_meets";
+}
+
+/** 2 段目の空の欄と、合わない欄（③ が ② より多い・⑤ が ①＋② より多い） */
+function missing2Of(v: Stage2Input | undefined): string[] {
+  const keys = fieldKeys();
+  if (!v) return keys.map((x) => x.label);
+  const out = keys.filter((x) => v.values[x.key] === null || v.values[x.key] === undefined).map((x) => x.label);
+  if (out.length > 0) return out;
+  for (const x of keys) {
+    const at = (id: FieldId) => v.values[fieldKeyOf(FIELDS.find((f) => f.id === id)!, x.combo)]!;
+    if (x.field.id === "excluded" && at("excluded") > at("c0022")) out.push(`${x.label}（② より多い）`);
+    if (x.field.id === "care" && at("care") > at("c002") + at("c0022")) out.push(`${x.label}（① と ② の和より多い）`);
+  }
+  return out;
+}
+
+/** 判定（純関数）。必要な欄が空なら結果を出さず、空の欄を名指しする。period は確認月の期間（U-34 の開設日と比べる） */
+export function evaluate(input: WorksheetInput, k: Note14Consts, period: Period | null = null): Evaluation {
   const s = input.stage1;
   const missing = missingOf(s);
   if (missing.length > 0) return { status: "incomplete", missing, stage2Open: false };
   const combos = allCombos();
   const gates = combos.map((c) => gateOf(c, s, k));
+  // U-34 は 2 段目の要件だけに掛ける（回数の門は、ある期間の回数で比べる。EM U-34 の補足「門は甲乙で同じ結果になりやすい」）
   const stage2Open = gates.some((g) => g.kind === "over");
-  // 2 段目は段 17j で足す。それまでは、門以上の読みがあれば 2 段目の欄が要る
-  if (stage2Open) return { status: "incomplete", missing: ["2 段目の欄"], stage2Open };
-  const outs: Outcome[] = gates.map((g) => (g.kind === "under" ? "meets" : "unknown"));
+  if (stage2Open) {
+    const m2 = missing2Of(input.stage2);
+    if (m2.length > 0) return { status: "incomplete", missing: m2, stage2Open };
+  }
+  const outs: Outcome[] = gates.map((g, i) => (g.kind === "under" ? "meets" : g.kind === "over" ? stage2Of(combos[i], input.stage2!, k, period) : "unknown"));
   const reasons = [...new Set(gates.flatMap((g) => (g.kind === "unknown" ? [g.reason] : [])))];
   const remaining = gates.reduce<number | null>((m, g) => (g.kind === "under" ? Math.min(m ?? Infinity, k.visitThreshold - g.total) : m), null);
   return conclude(combos, outs, reasons, remaining, stage2Open);

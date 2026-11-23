@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
+import { fieldKeys } from "../../src/note14/readings";
 import { autoConsent } from "../helpers/consent";
 import { claimId, month } from "../helpers/period";
 import { baseFile, receipt, ukeBytes } from "./uke";
@@ -133,6 +134,23 @@ describe("注14 の計算の道具（段 17i）", () => {
     const empty = await save(body({ months: [m1, m2, m3].map((month) => ({ month, confirmed: false, kou: null, otsuExtra: null })) }));
     expect(empty.status).toBe(400);
     expect((await empty.json()).error).toContain(`${m1} の回数（C001 の行）`);
+  });
+
+  it("段 17j：門以上なら 2 段目の欄が要り（空は 400 で名指し）、4 つを満たせば基準に当たる（下書きは通常）、1 つでも満たさなければ基準に当たらない（下書きは減算）。知らない欄の鍵は 400", async () => {
+    const T = (await (await tool(`?month=${M}`)).json()).consts.visitThreshold as number;
+    const manual = [m1, m2, m3].map((month, i) => ({ month, confirmed: false, kou: i === 0 ? T : 0, otsuExtra: 0 }));
+    const missing = await save(body({ months: manual }));
+    expect(missing.status).toBe(400);
+    expect((await missing.json()).error).toContain("① C002 を算定した患者の数（実人数）");
+    const values = (referral: number) => Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? referral : f.field.id === "mitoriHome" ? 20 : f.field.id === "excluded" ? 0 : f.field.id === "jushoji" || f.field.id.startsWith("mitori") ? 0 : 50]));
+    const meets = await (await save({ ...body({ months: manual }), stage2: { values: values(5), openedOn: null } })).json();
+    expect(meets.result).toBe("meets");
+    expect((await (await draft(meets.id)).json()).choice).toBe("normal");
+    const not = await (await save({ ...body({ months: manual }), stage2: { values: values(4), openedOn: null } })).json();
+    expect(not.result).toBe("not_meets");
+    expect((await (await draft(not.id)).json()).choice).toBe("reduced");
+    expect(not.inputs.stage2.values["c002:U-33a=A"]).toBe(50);
+    expect((await save({ ...body({ months: manual }), stage2: { values: { ...values(5), "c002:same": 50 }, openedOn: null } })).status).toBe(400);
   });
 
   it("C-326：期間に別表を持たない版の月がある確認月は、その月だけ自動で数えない。確認月の版に注14 の値がない確認月は道具の対象外（計算しない）", async () => {

@@ -7,6 +7,7 @@ import { PageGuide } from "../page-guide";
 import { getJson, postJson } from "../get-json";
 import type { Declarations } from "../settings/facility";
 import { NOTE14_TEXT } from "../../src/facility/note14";
+import { fieldKeys } from "../../src/note14/readings";
 import { evaluate, FIELD_LABEL, type Evaluation, type Institution, type Note14Consts, type Period, type WorksheetInput } from "../../src/note14/evaluate";
 
 type Auto = { month: string; state: "ok" | "none" | "no_table" | "overlap"; receipts: number; kou?: number; otsuExtra?: number; text?: string };
@@ -55,6 +56,9 @@ export default function Note14Page() {
   const [special, setSpecial] = useState<"none" | "some" | "unknown">("none");
   const [insts, setInsts] = useState<InstInput[]>([]);
   const [saved, setSaved] = useState<Saved | null>(null);
+  // 2 段目の欄（欄の鍵 → 入れた文字。欄は readings.ts の依り方の定数から決まる。段 17j）
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [openedOn, setOpenedOn] = useState("");
 
   function load(m?: string) {
     setErr("");
@@ -86,9 +90,10 @@ export default function Note14Page() {
         special,
         institutions: insts.map((i): Institution => ({ openedOn: i.openedOn || null, ownerChangedFrom: i.changed ? i.ownerChangedFrom || null : null, count: num(i.count) })),
       },
+      stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])), openedOn: openedOn || null },
     };
-  }, [tool, months, gansou, second, special, insts]);
-  const e = input && tool?.consts ? evaluate(input, tool.consts) : null;
+  }, [tool, months, gansou, second, special, insts, vals, openedOn]);
+  const e = input && tool?.consts ? evaluate(input, tool.consts, tool.period ?? null) : null;
 
   async function save() {
     if (!input || !tool?.month) return;
@@ -97,6 +102,7 @@ export default function Note14Page() {
       const body = {
         checkMonth: tool.month,
         stage1: { ...input.stage1, months: tool.auto!.map((a) => ({ month: a.month, confirmed: (months[a.month]?.confirmed ?? false) && a.state === "ok", kou: num(months[a.month]?.kou ?? ""), otsuExtra: num(months[a.month]?.otsuExtra ?? "") })) },
+        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, openedOn: input.stage2!.openedOn } } : {}),
       };
       const s = await postJson<Saved>("/api/note14/worksheets", body);
       setSaved(s);
@@ -183,6 +189,23 @@ export default function Note14Page() {
               <li style={{ listStyle: "none" }}><button onClick={() => setInsts((p) => [...p, { openedOn: "", changed: false, ownerChangedFrom: "", count: "" }])}>機関を足す</button></li>
             </ul>
           )}
+        </div>
+      )}
+      {e?.stage2Open && (
+        <div className="panel">
+          <h3 style={{ marginTop: 0 }}>2 段目：4 つの要件</h3>
+          <p className="muted">1 段目で門以上になる読みがあるので開きました。欄の並びは様式19の2 の 2(1)〜2(3) と同じです。明文のない数え方の欄は、読みごとに入れてください（読みで同じとは扱いません）。割合は丸めずに比べます。</p>
+          <ul style={{ paddingLeft: 18 }}>
+            {fieldKeys().map((f) => (
+              <li key={f.key} style={{ marginBottom: 4 }}>
+                <NumberInput label={`${f.field.form}　${f.label}`} value={vals[f.key] ?? ""} onChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))} />
+              </li>
+            ))}
+          </ul>
+          <label style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            開設日（期間の初めより後に開設したときだけ）
+            <input type="date" aria-label="開設日" value={openedOn} onChange={(x) => setOpenedOn(x.target.value)} />
+          </label>
         </div>
       )}
       {e && (

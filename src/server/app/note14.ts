@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import type { Note14Result } from "../../facility/note14";
 import { AUTO_TEXT, countMonths, type AutoMonth } from "../../note14/count";
+import { fieldKeys } from "../../note14/readings";
 import { evaluate, isCheckMonth, monthsBefore, periodOf, shiftMonth, toolConstsOf, type Evaluation, type MonthCount, type Note14Consts, type Period, type WorksheetInput } from "../../note14/evaluate";
 import type { User } from "../auth";
 import { badRequest, conflict, notFound } from "../errors";
@@ -111,7 +112,13 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     });
     const s = body.stage1;
     const n = (x: number | null | undefined) => x ?? null;
-    return { stage1: { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count) })) } };
+    const stage1 = { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count) })) };
+    if (!body.stage2) return { stage1 };
+    const keys = new Set(fieldKeys().map((x) => x.key));
+    const bad = Object.keys(body.stage2.values).find((key) => !keys.has(key));
+    if (bad !== undefined) throw badRequest("2 段目の欄の鍵が違います", ["stage2"]);
+    const values = Object.fromEntries([...keys].map((key) => [key, n(body.stage2!.values[key])]));
+    return { stage1, stage2: { values, openedOn: body.stage2.openedOn ?? null, sources: Object.fromEntries([...keys].map((key) => [key, "manual" as const])) } };
   }
 
   /** 結果を残す（追記）。空の欄があれば残さず 400 で名指しする。残せるのは事務長・責任者（権限表） */
@@ -119,9 +126,9 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const k = toolConstsAt(body.checkMonth);
     if (!k) throw badRequest(NOTE14_TOOL_TEXT.outOfScope, ["checkMonth"]);
     const input = inputOf(body, k);
-    const e = evaluate(input, k);
-    if (e.status === "incomplete") throw badRequest(`空の欄があります：${e.missing.join("、")}`, ["stage1"]);
     const p = periodOf(body.checkMonth, k);
+    const e = evaluate(input, k, p);
+    if (e.status === "incomplete") throw badRequest(`空の欄があります：${e.missing.join("、")}`, [e.stage2Open ? "stage2" : "stage1"]);
     const { outcomes, lines, reasons, remaining, stage2Open } = e;
     const info = ctx.sqlite
       .prepare("INSERT INTO note14_worksheets (check_month, period_3m_from, period_3m_to, period_12m_from, period_12m_to, inputs, outcomes, result, splits, checked_by, checked_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
