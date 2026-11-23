@@ -159,6 +159,16 @@ export const POLICY = {
   // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
   "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 
+  // 査定・返戻の突き合わせ（spec FR-202 の I-1）：事務長とベテランだけ。取り込んだ明細は氏名・番号を含むので患者の情報。AI は使わない。
+  // 報告は件数だけ（氏名・番号・請求 id を返さない）。消す操作は同意を条件にしない（UKE を消すのと同じ）
+  "GET /api/review": row(["veteran", "manager"], "none", true),
+  "POST /api/review/upload": row(["veteran", "manager"], "none", true),
+  "GET /api/review/items/[id]": row(["veteran", "manager"], "none", true),
+  "POST /api/review/items/[id]": row(["veteran", "manager"], "none", true),
+  "POST /api/review/uploads/[sha256]/rematch": row(["veteran", "manager"], "none", true),
+  "DELETE /api/review/uploads/[sha256]": row(["veteran", "manager"], "none", false),
+  "GET /api/review/report": row(["veteran", "manager"], "none", false),
+
   // 知識：閲覧・投稿・共感は全員。検証（action=verify）はベテランだけ（ハンドラの中で分ける）。
   // 知識の閲覧には同意のゲートも置かない（CLAUDE.md 固定条件「可視性にゲートを置かない」）
   "GET /api/knowledge": row(ALL, "none", false),

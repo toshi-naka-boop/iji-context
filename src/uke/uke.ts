@@ -374,6 +374,7 @@ export function parseUke(buf: Buffer): UkeParsed {
       cur = {
         line,
         patientNo: c[13],
+        receiptNo: c[1],
         // レセプト種別（別表5）の 4 桁目が奇数のものは入院
         ...(/[13579]$/.test(receiptType) ? { unsupported: UNREADABLE.inpatient } : {}),
         yearMonth,

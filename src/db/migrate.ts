@@ -209,6 +209,24 @@ CREATE TABLE device_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id 
 CREATE INDEX device_proposals_patient ON device_proposals (patient_id, id);
 `,
   },
+  {
+    // 査定・返戻の突き合わせ（spec FR-202 の I-1。design/iji-context/plan-i1.md）。原本の CSV は保存せず、読んだ明細だけを持つ。
+    // review_uploads：取り込んだ CSV 1 つ（内容の sha256）。fingerprint は取り込んだとき（記録を見る前）に固定した点検のコードの指紋。
+    // review_items：明細 1 行。data は読んだ値の JSON（氏名・番号を含む。画面と当て方にだけ使い、ログ・監査ログ・AI に出さない）。
+    //   claim_id／line_code は当てた請求とコード（claim_by・line_by は auto・human、claim_by の none は「当てられない」と人が決めた、line_by の claim は請求単位）。
+    //   confirmed_* は人が当て方を確かめた印、excluded は人が付けた対象外の印。
+    // review_judgments：判定（追記だけ。回は fingerprint で分ける）。finding は同じ論点で指摘していたときの指摘（系統・id・確からしさ・文）。
+    // 取り込んだ CSV を消すと明細と判定も消え、UKE を消すとその請求に当てた分の当て方と判定が消える（FR-168）
+    version: 20,
+    sql: `
+CREATE TABLE review_uploads (sha256 TEXT PRIMARY KEY, kind TEXT NOT NULL, paper INTEGER NOT NULL, payer TEXT NOT NULL, clinic_code TEXT NOT NULL, processed_month TEXT NOT NULL, header_month TEXT, fingerprint TEXT NOT NULL, uploaded_by TEXT NOT NULL, uploaded_at TEXT NOT NULL);
+CREATE TABLE review_items (id INTEGER PRIMARY KEY AUTOINCREMENT, upload_sha256 TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL, claim_id TEXT, claim_by TEXT, claim_note TEXT, line_code TEXT, line_by TEXT, confirmed_by TEXT, confirmed_at TEXT, excluded TEXT, excluded_by TEXT);
+CREATE INDEX review_items_upload ON review_items (upload_sha256, seq);
+CREATE INDEX review_items_claim ON review_items (claim_id);
+CREATE TABLE review_judgments (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, fingerprint TEXT NOT NULL, revision_id TEXT, result TEXT NOT NULL, reason TEXT, finding TEXT, judged_by TEXT NOT NULL, judged_at TEXT NOT NULL);
+CREATE INDEX review_judgments_item ON review_judgments (item_id, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

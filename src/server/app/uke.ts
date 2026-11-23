@@ -9,6 +9,7 @@ import { parseUke, readStoredUke, readUke, UkeError } from "../../uke/uke";
 import { uploadClaimIdOf } from "../../uke/upload";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { sameMonthKey as monthKeyOf } from "../../note14/count";
+import type { ReceiptKey } from "../../review/match";
 import { badRequest, notFound } from "../errors";
 import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
@@ -235,6 +236,38 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return r.patient;
   }
 
+  /**
+   * 査定・返戻の記録を当てる鍵（src/server/app/review.ts）。一覧にある全部のファイル（デモのクリニックは見本も）のレセプトの、審査支払機関・請求年月・医療機関コード・
+   * レセプト番号・カルテ番号等・診療年月・氏名・保険者番号と公費負担者番号。いまの形式では読めないファイルは入れない。ファイルの名前ごとに覚えておく（同じ名前は同じ内容）
+   */
+  const keyCache = new Map<string, ReceiptKey[]>();
+  function receiptKeys(): ReceiptKey[] {
+    const samples = withSamples ? sampleFiles() : [];
+    return named().flatMap((u, i) => {
+      if (!u.file) return [];
+      const f = u.file;
+      let keys = keyCache.get(u.name);
+      if (!keys) {
+        const claims = parseUke(readFileSync(u.uploaded ? path.join(uploadDir(), u.name) : path.join(paths.root, samples[i]))).claims;
+        keys = f.receipts.map((r, n) => ({
+          claimId: r.claimId,
+          payer: f.payer,
+          billingMonth: f.billingMonth,
+          clinicCode: f.clinic.code,
+          receiptNo: claims[n]?.receiptNo ?? "",
+          patientNo: claims[n]?.patientNo ?? "",
+          yearMonth: r.yearMonth,
+          name: r.patient.name,
+          insurers: [r.patient.insurer.number, ...r.patient.kohi.map((k) => k.payerNo)].map((x) => x.trim()).filter((x) => x !== ""),
+          checkable: !r.unreadable && !r.noRevision,
+          noRevision: r.noRevision === true,
+        }));
+        keyCache.set(u.name, keys);
+      }
+      return keys;
+    });
+  }
+
   /** 取り込んだファイルの中のレセプト（消す操作が使う。読み直しで読めなかったレセプトも含む）。取り込みの一覧にないハッシュは「ない」。いまの形式では読めないファイルは、レセプトなしとして返す（ファイルだけ消せる） */
   function uploadedFile(sha256: string): { receipts: UkeFile["receipts"] } {
     const u = uploads().find((x) => x.sha256 === sha256);
@@ -254,10 +287,11 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
       setSetting(r.key, JSON.stringify(kept));
     }
     parsed.delete(name);
+    keyCache.delete(name);
     return path.join(uploadDir(), name);
   }
 
-  return { ukeFiles, ukeReceipts, parsedClaims, sameMonthKey, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
+  return { ukeFiles, ukeReceipts, parsedClaims, sameMonthKey, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload, receiptKeys };
 }
 
 export type Uke = ReturnType<typeof createUke>;

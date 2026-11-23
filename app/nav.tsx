@@ -13,6 +13,7 @@ const LINKS: [string, string][] = [
   ["/chart", "カルテを書く"],
   ["/doctor", "医師確認"],
   ["/uke", "UKE 取り込み"],
+  ["/review", "査定・返戻の突き合わせ"],
   ["/meeting", "レセメン会議"],
   ["/knowledge", "知識"],
   ["/revision", "改定の比較"],

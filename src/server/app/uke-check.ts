@@ -239,3 +239,5 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
 
   return { ukeCheck, ukeTrial };
 }
+
+export type UkeCheck = ReturnType<typeof createUkeCheck>;
