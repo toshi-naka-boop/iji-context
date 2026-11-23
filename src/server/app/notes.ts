@@ -625,7 +625,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   function chartOf(claimId: string, clerkId?: string): Chart | null {
     // 請求 id はパスに使わず、表を引く（合成カルテのない症例・表にない請求 id は null）
     const f = chartFileOf(paths.root, claimId);
-    return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
+    // 処方の一覧を持たない合成カルテ（K8〜K13 の確かめたあとの形）は、処方の一覧を空として読む
+    const c = f ? json<Chart>(f) : null;
+    return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
   return { claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };

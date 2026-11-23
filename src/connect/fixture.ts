@@ -11,6 +11,8 @@ import { assertQuery, type Connector, type StructuredChart } from "./types";
 
 export const FIXTURE_ID = "fixture";
 const UKE_FILES = ["kokuhoren.UKE", "shiharaikikin.UKE"];
+/** 患者とカルテを引ける UKE：見本の 2 本と、受け入れの症例 K12・K13（kozoka.UKE。design.md §16-10 の E-13。fixtures/structured/K12・K13.json の構造化データを返す）。請求（getClaims）は見本の 2 本のまま */
+const PATIENT_UKE_FILES = [...UKE_FILES, "kozoka.UKE"];
 
 const isoDate = (yyyymmdd: string) => `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 
@@ -31,14 +33,15 @@ function structuredOf(file: Record<string, unknown> | null, yearMonth: string): 
 
 export function createFixtureConnector(root = process.cwd()): Connector {
   const fixtures = path.join(root, "fixtures");
-  const files = (): UkeFile[] => UKE_FILES.map((f) => readUke(readFileSync(path.join(fixtures, "uke", f))));
+  const read = (names: string[]): UkeFile[] => names.map((f) => readUke(readFileSync(path.join(fixtures, "uke", f))));
+  const files = (): UkeFile[] => read(UKE_FILES);
   const json = <T>(dir: string, patientId: string): T | null => {
     const file = path.join(fixtures, dir, `${patientId}.json`);
     return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : null;
   };
   const receiptOf = (patientId: string): UkeReceipt => {
     assertQuery(patientId, null);
-    const r = files()
+    const r = read(PATIENT_UKE_FILES)
       .flatMap((f) => f.receipts)
       .find((x) => patientIdOf(x) === patientId);
     if (!r) throw new Error(`合成データにない患者: ${patientId}`);
