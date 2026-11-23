@@ -6,16 +6,16 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v31:96d458dbeb2c",
+  "requiredApprovalFingerprint": "v31:0ea14f484646",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 57,
+  "criticRound": 58,
   "openIssueIds": [],
   "requiredReads": [
     "design.md（§15。v31）",
     "v31-inputs.md",
     "sources/em-v31-draft.md"
   ],
-  "nextAction": "v31 の批評（round-57）。v30 の承認は v30:1226ef5db0f7 のまま実装済みの段の根拠",
+  "nextAction": "v31 の批評 2 巡目（round-58）",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
