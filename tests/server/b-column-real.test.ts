@@ -83,6 +83,14 @@ describe("取り込んだレセプトの点検の応答の B の欄（K8〜K11 �
       if (k === "K10") expect(b.hidden.filter((h) => h.reason === "背反").map((h) => [h.written, h.partner, h.with?.length])).toEqual([["酸素吸入", "在宅酸素療法指導管理料（その他）", 2]]);
       console.log(`${k} B の欄（応答）：指摘 ${JSON.stringify(b.counts.byKind)}・言わない ${JSON.stringify(b.counts.hidden)}・注意つき ${JSON.stringify(b.counts.caution)}`);
     }
+    // 月末の点検（取り込んだ請求は UKE の単位で突き合わせる。反証 round-55 C-290）も同じ期待
+    for (const [i, k] of G11_CASES.entries()) {
+      const base = instance.runAs(user, () => instance.getApp().caseOf(ids[i]));
+      const q = { id: `q-${k}`, claimId: ids[i], clerkId, confirmed: { lines: base.lines, result: { findings: [], applied: [] } } };
+      const b = (instance.runAs(user, () => instance.getApp().questionGeneric(q as never)) as { torikawasure: G11Result }).torikawasure;
+      if ("skip" in b) throw new Error(`${k}: ${b.skip}`);
+      expect([k, "月末", keys(b.findings)]).toEqual([k, "月末", CONDITIONAL[k]]);
+    }
     const counts = instance.runAs(user, () => instance.getApp().recordCounts());
     console.log(`段 18c の報告：貼った患者 ${counts.size} 人、1 人あたりの貼った回数 ${([...counts.values()].reduce((s, n) => s + n, 0) / counts.size).toFixed(1)}`);
   });

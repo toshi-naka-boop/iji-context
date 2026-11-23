@@ -29,6 +29,7 @@ beforeAll(async () => {
   const db = tensuhyoMasters("20261001");
   db.prepare("INSERT INTO checks_ready (check_id, ready, reason) VALUES ('G03', 1, ''), ('G10', 1, ''), ('G11', 1, '')").run();
   put(db, "shinryo", "20261001", { code: "140000610", name: "創傷処置（１００ｃｍ２未満）", alpha: "J" });
+  if (!db.prepare("SELECT 1 FROM shinryo WHERE snapshot = '20261001' AND code = '130000510'").get()) put(db, "shinryo", "20261001", { code: "130000510", name: "皮内、皮下及び筋肉内注射", alpha: "G" });
   writeFileSync(path.join(dir, "masters.db"), db.serialize());
   db.close();
   process.env.RESEMEN_MASTER_DIR = dir;
@@ -100,6 +101,27 @@ describe("取り込んだ請求にカルテを貼る（POST /api/uke/claims/[cla
     // 貼ったカルテは訪問・往診の出来事を作らない（記録の種類）
     const listed = instance.runAs(user, () => instance.getApp().listNotes(instance.clerkIdOf(user), user.role));
     expect(listed.find((n) => n.id === p.id)?.kind).toBe("記録");
+  });
+});
+
+describe("取り込んだ請求の月末の点検の B の欄（反証 round-55 C-290）", () => {
+  it("取り込んだ請求の月末の点検は、確定した明細の行ではなく UKE の単位と突き合わせる：UKE に載っている注射（版の区分にない行）を取り忘れと言わず、点検の画面の B の欄と同じになる", async () => {
+    const clerkId = instance.clerkIdOf(user);
+    const [mine] = instance.runAs(user, () => instance.getApp().importedClaims(clerkId));
+    const note = { s: "", o: "皮内、皮下及び筋肉内注射。", a: "", p: "", rx: "" };
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts: [{ category: "注射", written: "皮内、皮下及び筋肉内注射", lookup: [], quote: "皮内、皮下及び筋肉内注射" }], rx: [] }, sessionId: "", stats: {} });
+    const pasted = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${mine}/notes`, { date: "2026-10-14", note }), { params: Promise.resolve({ claimId: mine }) });
+    expect(pasted.status).toBe(200);
+    const p = (await pasted.json()) as { id: number; acts: Record<string, unknown>[] };
+    const match = { tbl: "shinryo", code: "130000510", name: "皮内、皮下及び筋肉内注射", by: "search" };
+    const saved = await (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(p.id), facts: [], acts: p.acts.map((a) => ({ ...a, match })), rx: [] }));
+    expect(saved.status).toBe(200);
+    const fromCheck = (await check(mine)).torikawasure;
+    expect(fromCheck.findings?.map((f) => `${f.messageKey} ${f.codes.join("+")}`)).toEqual(["G11.missing 140000610"]);
+    const base = instance.runAs(user, () => instance.getApp().caseOf(mine));
+    const q = { id: "q-mine", claimId: mine, clerkId, confirmed: { lines: base.lines, result: { findings: [], applied: [] } } };
+    const month = instance.runAs(user, () => instance.getApp().questionGeneric(q as never)) as { torikawasure: { findings: { messageKey: string; codes: string[] }[] } };
+    expect(month.torikawasure.findings.map((f) => `${f.messageKey} ${f.codes.join("+")}`)).toEqual(["G11.missing 140000610"]);
   });
 });
 

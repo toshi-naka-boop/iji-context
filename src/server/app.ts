@@ -86,6 +86,11 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const forgetDoubts = (r: G11Result | undefined) => {
     if (r && "kubunDoubts" in r && r.kubunDoubts.length > 0) notes.forgetAliases(r.kubunDoubts.map((d) => ({ writtenNorm: normName(d.written), tbl: d.tbl, code: d.code })));
   };
+  /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
+  const ukeTorikawasure = (claimId: string, clerkId: string) => {
+    const base = { ...casesOf.caseOf(claimId), events: [], recordsKnown: false };
+    return torikawasureOf(claimId, clerkId, { claim: uke.receiptOf(claimId).claim(), base, rev: resolveRevision(base.yearMonth), hand: casesOf.judge(base).findings });
+  };
   const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock), torikawasureOf);
   const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
@@ -164,14 +169,13 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       // 指摘に添えた承認済みの院内の知識に USED を出す（月末の点検。1 日 1 回）
       localPairOps.markUsed(q.claimId, localUsed);
       if (!q.confirmed) return generic;
-      // B の欄（G11。design.md §15-9）：確定した明細の行と、確かめた行ったこと。合成の症例は preview、取り込んだ請求は uke（design.md §15-8）
+      // B の欄（G11。design.md §15-9）：合成の症例は確定した明細の行と突き合わせる（preview）。取り込んだ請求は、取り込んだレセプトの点検と同じに
+      // UKE の単位と、UKE に書いてあることだけの文脈（recordsKnown は偽）で突き合わせる（uke。design.md §15-8。反証 round-55 C-290）
       const base = { ...caseFor(q), lines: q.confirmed.lines };
       const rev = resolveRevision(base.yearMonth);
-      const uploaded = casesOf.isUploaded(q.claimId);
-      const torikawasure =
-        uploaded && !notes.recordCounts().has(q.claimId)
-          ? { skip: "カルテが貼られていないので、取り忘れは見ていません" }
-          : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: uploaded ? "uke" : "preview", days: notes.actsDays(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
+      const torikawasure = casesOf.isUploaded(q.claimId)
+        ? ukeTorikawasure(q.claimId, q.clerkId)
+        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
       forgetDoubts(torikawasure);
       return { ...generic, torikawasure };
     },
