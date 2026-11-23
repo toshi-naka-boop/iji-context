@@ -103,6 +103,11 @@ export const POLICY = {
   "GET /api/chart/acts/candidates": row(WORK, "none", true),
   // カルテの構造化データ（design.md §16-7。段 19a）。読むだけ。今のカルテの読み出しと同じ役割で、患者の情報として扱う（実在のデータは同意のあとだけ）
   "GET /api/chart/structured": row(WORK, "none", true),
+  // 当てられない行為に電子カルテの行為と「同じ／違う」をあとから付ける（design.md §16-7）。当てられない行為を選んで当てる入口（POST /api/chart/acts）と同じ
+  "POST /api/chart/acts/fold": row(WORK, "none", true),
+  // 独自コードの対応表（design.md §16-7）。事務長・医療事務。返すのは接続先・欄・独自コード・表示名・件数で、患者・日は持たない
+  "GET /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
+  "POST /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
   // 基本マスターを名前で探す（design.md §15-7）。読むだけ。返すのは公開データの表・コード・名称だけ
   "GET /api/masters/search": row(WORK, "none", false),
   // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない

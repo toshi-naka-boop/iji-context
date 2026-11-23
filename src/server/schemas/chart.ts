@@ -41,7 +41,10 @@ const name200 = z.string().max(200);
 const lookup = z.array(z.string().max(100)).max(MAX_LOOKUP);
 const actMatch = z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["name", "alias", "candidate", "search"]) }).nullable().optional();
 const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch });
-const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch });
+/** 本人が選んだ「同じ（ref）／違う（same: false）」の印（design.md §16-3）。処理の中で、その日の同じ種類の電子カルテの行為かを確かめる */
+const ref = z.string().min(1).max(100);
+const actFold = z.strictObject({ kind: z.literal("order"), ref: ref.optional(), by: z.literal("person"), same: z.literal(false).optional() }).optional();
+const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch, fold: actFold });
 /** 事実と行ったことを、確かめた 1 回の操作で保存する本文（POST /api/chart/acts） */
 export const actsBody = z.strictObject({
   noteId: noteParams.shape.id,
@@ -60,6 +63,10 @@ export const pickBody = z.strictObject({
   child: z.number().int().min(0).max(19).optional(),
   match: z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["alias", "candidate", "search"]) }),
 });
+/** 確かめて残したカルテの当てられない行為に「同じ（ref）／違う／選ばない」をあとから付ける本文（POST /api/chart/acts/fold。design.md §16-7） */
+export const foldBody = z.strictObject({ noteId: noteParams.shape.id, index: z.number().int().min(0).max(99), choice: z.enum(["same", "different", "none"]), ref: ref.optional() });
+/** 独自コードの対応を残す本文（POST /api/code-maps。design.md §16-2・16-7）。code は当ててよい表のコード（機器は機器の種類のキー）。yearMonth の 1 枚で実在を確かめる */
+export const codeMapBody = z.strictObject({ connectorId: z.string().regex(/^[a-z0-9_-]{1,40}$/), field: z.enum(["薬", "材料", "行為", "指導管理", "機器"]), extCode: z.string().min(1).max(100), code: z.string().min(1).max(20), yearMonth: z.string().regex(YEAR_MONTH) });
 /** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */
 export const actsOrPickBody = z.union([actsBody, pickBody]);
 const ym = z.string().regex(YEAR_MONTH);

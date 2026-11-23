@@ -11,7 +11,10 @@ import { readDeclarations } from "../../facility/seed";
 import { evaluateG11, type ConfirmedAct, type G11Claim, type G11Result, type RxDay } from "../../generic/g11";
 import { r18SameFamily, rulesStep3 } from "../../generic/g11-rules";
 import { sidelessOf } from "../../generic/g10";
-import { withMasters } from "../../masters/db";
+import { withMasters, type MastersDb } from "../../masters/db";
+import type { StructuredChart } from "../../connect/types";
+import { withStructured } from "../../structured/g11-input";
+import type { SItem } from "../../structured/overlap";
 import { chartFileOf } from "./case-files";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
@@ -30,7 +33,10 @@ export function actsInput(days: { date: string; noteId: number; acts: ChartAct[]
   };
 }
 
-export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">) {
+/** 請求の患者・診療年月の、残した構造化データと当てたコードつきの行為（src/server/app/structured.ts。ないときは null） */
+export type StructuredOfClaim = (claimId: string, yearMonth: string, db: MastersDb | null) => { chart: StructuredChart; items: SItem[] } | null;
+
+export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim) {
   /** 合成の症例の、合成カルテの確かめたあとの行ったこと（合成カルテのない症例・acts を持たない合成カルテは空） */
   function chartDays(claimId: string): { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; stored?: boolean }[] {
     const f = chartFileOf(ctx.paths.root, claimId);
@@ -51,15 +57,19 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
     const ym = input.base.yearMonth;
     const declaration = declarationViewOf(ctx, clock);
     const dispensing = dispensingOf(readDeclarations(ctx.sqlite), todayOf(clock), ym);
-    return withMasters((db) =>
-      evaluateG11(
+    return withMasters((db) => {
+      // 構造化データがあれば、文章の行為と突き合わせてから G11 に渡す（design.md §16-3。段 19b）
+      const s = structuredOf?.(input.base.claimId, ym, db) ?? null;
+      const joined = s ? withStructured(acts, s, input.rev) : { acts, scope: [] };
+      const r = evaluateG11(
         input.claim,
         db,
-        { yearMonth: ym, generation: input.rev.generation, acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true },
+        { yearMonth: ym, generation: input.rev.generation, acts: joined.acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true },
         input.rev,
         { step3: rulesStep3(input.base, input.rev, db, input.path === "uke"), sameFamily: r18SameFamily(input.base, input.rev, db), hand: input.hand },
-      ),
-    );
+      );
+      return "skip" in r || joined.scope.length === 0 ? r : { ...r, scope: [...r.scope, ...joined.scope] };
+    });
   }
   return { chartDays, storedDays, run };
 }

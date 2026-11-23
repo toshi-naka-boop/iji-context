@@ -25,7 +25,17 @@ import type { GenericAbout, GenericAboutMore, GenericCheck, GenericCheckId, Gene
 // 入力
 
 /** 本人が確かめた行為 1 つ（カルテの日付と、その日の記載の id）。index は保存したカルテの行ったことの中の位置（保存したカルテだけ。当てられない行為をあとから選ぶ入口。X-157） */
-export type ConfirmedAct = { date: string; noteId?: number; index?: number; act: ChartAct };
+export type ConfirmedAct = {
+  date: string;
+  noteId?: number;
+  index?: number;
+  act: ChartAct;
+  /** 構造化データから来た行為（design.md §16-3。quote は接続先の表示名、ref は接続先の行の id） */
+  source?: "structured";
+  ref?: string;
+  /** 候補に添える文（16-3 の「文章にあるがオーダーにない」） */
+  note?: string;
+};
 /** その日の処方の記載があるか（rx）と、本人が選んだ（なければ初期値の規則で出た）院内・院外 */
 export type RxDay = { date: string; rx: boolean; choice: RxChoice | null };
 /** 院内処方か院外処方か（施設の申告 dispensing。その請求の診療年月で効く行）。inside＝院内処方もある */
@@ -56,7 +66,7 @@ export type Step3 = (cands: { id: number; date: string; units: { items: G11Item[
 export type SameFamily = (cand: { date: string; units: { items: G11Item[]; count: number }[] }) => Note | null;
 
 /** 添え書きの理由（注意つきの数を理由ごとに数える。design.md §15-8 の「注意つきの候補の出し方」） */
-export const CAUTION_REASONS = ["データの点検の条件つきの違反", "候補どうしの包括・背反", "同じ族の区分誤り", "情報不足", "手書きのルールの指摘", "手書きのルールで判定できない行", "施設基準の申告が分からない"] as const;
+export const CAUTION_REASONS = ["データの点検の条件つきの違反", "候補どうしの包括・背反", "同じ族の区分誤り", "情報不足", "手書きのルールの指摘", "手書きのルールで判定できない行", "施設基準の申告が分からない", "文章にあるがオーダーにない"] as const;
 export type CautionReason = (typeof CAUTION_REASONS)[number];
 /** rule：添え書きの元の手書きのルール。doubt：同じ族の区分誤り（R18 のときだけ kubunDoubts に入れる。C-263） */
 export type Note = { reason: CautionReason; text: string; rule?: string; doubt?: boolean };
@@ -400,7 +410,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const undecidedDays = new Set<string>();
   const cands: Cand[] = [];
   let nextId = 0;
-  const add = (x: Omit<Cand, "id" | "notes">) => cands.push({ ...x, id: nextId++, notes: [] });
+  const add = (x: Omit<Cand, "id" | "notes">, notes: Note[] = []) => cands.push({ ...x, id: nextId++, notes: [...notes] });
+  /** 構造化データとの突き合わせで添えた文（16-3。文章にあるがオーダーにない） */
+  const orderNotes = (list: ConfirmedAct[]): Note[] => [...new Set(list.flatMap((a) => (a.note ? [a.note] : [])))].map((text) => ({ reason: "文章にあるがオーダーにない", text }));
 
   /** 量の比較の材料：単位の列・衝突する単位の名前・1 日の上限の行 */
   const units = hasUnitColumns(db);
@@ -560,7 +572,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const rep = (code: string, written: string, quote: string, tbl?: string): Report => ({ code, written, quote, noteId: a.noteId, name: nameOfCode(c, code), ...(tbl ? { tbl } : {}) });
     if (!present(m.code, day, isJudgement(m.code))) {
       const items: G11Item[] = [{ kind, code: m.code }, ...children.map((x) => ({ kind: (x.match!.tbl === "iyakuhin" ? "IY" : "TO") as G11Item["kind"], code: x.match!.code }))];
-      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote, m.tbl)], ...(children.length > 0 ? { withNames: children.map((x) => x.written) } : {}) });
+      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote, m.tbl)], ...(children.length > 0 ? { withNames: children.map((x) => x.written) } : {}) }, orderNotes([a]));
       return;
     }
     // 請求にある：同じ日・同じ区分の量をまとめて比べる（X-146）
@@ -605,7 +617,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       ...missing.map((a) => unitOn([{ kind: (a.act.match!.tbl === "iyakuhin" ? "IY" : "SI") as G11Item["kind"], code: a.act.match!.code }], day)),
       ...auto.map((code) => unitOn([{ kind: "SI", code }], day)),
     ];
-    add({ kind: "drugs", date, day, units: unitsOfGroup, report: missing.map((a) => ({ code: a.act.match!.code, written: a.act.written, quote: a.act.quote, noteId: a.noteId, name: nameOfCode(c, a.act.match!.code) })) });
+    add({ kind: "drugs", date, day, units: unitsOfGroup, report: missing.map((a) => ({ code: a.act.match!.code, written: a.act.written, quote: a.act.quote, noteId: a.noteId, name: nameOfCode(c, a.act.match!.code) })) }, orderNotes(missing));
   }
 
   // 2. 決まった規則で足す候補（M-1。X-147）：判断料と処方箋料

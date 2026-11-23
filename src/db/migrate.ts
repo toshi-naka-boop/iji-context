@@ -188,6 +188,14 @@ CREATE TABLE structured_inputs (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id
 CREATE INDEX structured_inputs_patient ON structured_inputs (patient_id, date, id);
 `,
   },
+  {
+    // 電子カルテの独自コードの対応表（design.md §16-2・16-8。段 19b。L-167・L-213）。クリニックごとに、接続先・入力欄の種類（薬・材料・行為・指導管理・機器）・コードの体系・独自コードの組で 1 行。
+    // tbl はその欄の当ててよい表（機器は device）、code は当てたコード（機器は区分キー）。患者・請求の id を持たない（消す操作で残るもの。chart_act_aliases と同じ）。AI には送らない
+    version: 18,
+    sql: `
+CREATE TABLE ext_code_maps (connector_id TEXT NOT NULL, field TEXT NOT NULL, system TEXT NOT NULL, ext_code TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (connector_id, field, system, ext_code));
+`,
+  },
 ];
 
 /** ログインの auth.db */

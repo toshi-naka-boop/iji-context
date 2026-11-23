@@ -3,8 +3,13 @@
 import { createFixtureConnector, FIXTURE_ID } from "../../connect/fixture";
 import { STRUCTURED_PARTS, type Part, type StructuredChart, type StructuredPart } from "../../connect/types";
 import { readStructured } from "../../structured/read";
+import { checkMapTarget, FIELDS, type Field, type MapContext, type MapTable } from "../../structured/code-map";
+import { itemsOf, type SItem } from "../../structured/overlap";
+import type { Coded } from "../../connect/types";
+import { withMasters, type MastersDb } from "../../masters/db";
 import { YEAR_MONTH } from "../../demo/period";
 import { badRequest } from "../errors";
+import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Patients } from "./patients";
@@ -27,8 +32,31 @@ export type StructuredView = {
 
 const unsupportedAll = (): StructuredChart => ({ visits: { status: "unsupported" }, orders: { status: "unsupported" }, procedures: { status: "unsupported" }, homeCare: { status: "unsupported" } });
 
-export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients) {
+/** 対応表にない独自コードの一覧の 1 行（接続先・入力欄の種類・表示名・件数。患者・日は出さない） */
+export type UnmappedCode = { connectorId: string; field: Field; extCode: string; names: string[]; count: number };
+
+/** 構造化データの、コードを持つ欄と入力欄の種類（16-2 の表） */
+function codedFields(chart: StructuredChart): { field: Field; coded: Coded }[] {
+  const out: { field: Field; coded: Coded }[] = [];
+  if (chart.orders.status === "supported") for (const o of chart.orders.items) for (const d of o.drugs) out.push({ field: "薬", coded: d });
+  if (chart.procedures.status === "supported")
+    for (const p of chart.procedures.items) {
+      out.push({ field: "行為", coded: p.act });
+      for (const x of p.items) out.push({ field: x.kind === "器材" ? "材料" : "薬", coded: x });
+    }
+  if (chart.homeCare.status === "supported")
+    for (const h of chart.homeCare.items) {
+      out.push({ field: "指導管理", coded: h.kind });
+      for (const d of h.devices) out.push({ field: "機器", coded: d });
+    }
+  return out;
+}
+
+export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, clerks: Pick<Clerks, "clerk">) {
   const { sqlite, paths } = ctx;
+
+  /** 請求の患者の、患者マスタの id（請求からその月の構造化データを引くとき） */
+  const structuredPatientOf = (claimId: string): string => patients.ingest(uke.receiptOf(claimId).receipt.patient);
 
   /** 読んだ 4 種類を追記で残す（同じ患者・月・種類は、あとで最新の行を使う） */
   function saveStructured(patientId: string, yearMonth: string, connectorId: string, s: StructuredChart): void {
@@ -83,10 +111,68 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
     return { yearMonth, connectorId: stored?.connectorId ?? null, fetchedAt: stored?.fetchedAt ?? null, source: SOURCE_EHR, parts };
   }
 
-  /** 請求の患者の、患者マスタの id（請求からその月の構造化データを引くとき） */
-  const structuredPatientOf = (claimId: string): string => patients.ingest(uke.receiptOf(claimId).receipt.patient);
+  // ---------------------------------------------------------------------------
+  // 独自コードの対応表（16-2。段 19b）
 
-  return { saveStructured, storedStructured, chartStructured, structuredPatientOf };
+  type MapRow = { connector_id: string; field: string; system: string; ext_code: string; tbl: string; code: string };
+  /** その接続先の対応表を引く道具 */
+  function localMapOf(connectorId: string): MapContext["localMap"] {
+    const rows = sqlite.prepare("SELECT connector_id, field, system, ext_code, tbl, code FROM ext_code_maps WHERE connector_id = ?").all(connectorId) as MapRow[];
+    const byKey = new Map(rows.map((r) => [`${r.field}|${r.system}|${r.ext_code}`, { tbl: r.tbl as MapTable, code: r.code }]));
+    return (field, system, value) => byKey.get(`${field}|${system}|${value}`) ?? null;
+  }
+  const mapContextOf = (db: MastersDb | null, yearMonth: string, connectorId: string): MapContext => ({ db, yearMonth, connectorId, localMap: localMapOf(connectorId) });
+
+  /** 残した構造化データ（各患者・月・種類の最新）の、対応表にない独自コード（GET /api/code-maps）。同じ接続先・欄・コードは 1 行にまとめ、件数を数える */
+  function unmappedCodes(): UnmappedCode[] {
+    const rows = sqlite.prepare("SELECT patient_id, year_month, part, status, items, gaps, connector_id, fetched_at FROM chart_structured WHERE id IN (SELECT MAX(id) FROM chart_structured GROUP BY patient_id, year_month, part)").all() as (Row & { patient_id: string; year_month: string })[];
+    const out = new Map<string, UnmappedCode>();
+    const maps = new Map<string, MapContext["localMap"]>();
+    for (const r of rows) {
+      if (r.status !== "supported") continue;
+      const chart = { ...unsupportedAll(), [r.part]: { status: "supported", items: JSON.parse(r.items) as unknown[], gaps: {} } } as StructuredChart;
+      if (!maps.has(r.connector_id)) maps.set(r.connector_id, localMapOf(r.connector_id));
+      for (const { field, coded } of codedFields(chart)) {
+        if (coded.code?.system !== "local" || maps.get(r.connector_id)!(field, "local", coded.code.value)) continue;
+        const k = `${r.connector_id}|${field}|${coded.code.value}`;
+        const e = out.get(k) ?? { connectorId: r.connector_id, field, extCode: coded.code.value, names: [], count: 0 };
+        e.count++;
+        if (coded.name && !e.names.includes(coded.name)) e.names.push(coded.name);
+        out.set(k, e);
+      }
+    }
+    return [...out.values()].sort((a, b) => (a.connectorId + a.field + a.extCode < b.connectorId + b.field + b.extCode ? -1 : 1));
+  }
+
+  /**
+   * 独自コードの対応を残す（POST /api/code-maps）。機器は DEVICE_KINDS のキー（none は不可）、ほかは診療年月の 1 枚の、その欄の当ててよい表に実在するコードだけ（C-422＝X-252・X-243）。
+   * 同じ接続先・欄・独自コードの対応は置き換える（欄が違えば別の行で、互いを上書きしない）
+   */
+  function saveCodeMap(clerkId: string, input: { connectorId: string; field: Field; extCode: string; code: string; yearMonth: string }): { saved: true } {
+    clerks.clerk(clerkId);
+    if (!(FIELDS as readonly string[]).includes(input.field)) throw badRequest("入力欄の種類が違います", ["field"]);
+    const target = withMasters((db) => checkMapTarget(input.field, input.code, db, input.yearMonth));
+    if ("reason" in target) throw badRequest(target.reason, ["code"]);
+    sqlite
+      .prepare("INSERT INTO ext_code_maps (connector_id, field, system, ext_code, tbl, code, chosen_by, chosen_at) VALUES (?, ?, 'local', ?, ?, ?, ?, ?) ON CONFLICT(connector_id, field, system, ext_code) DO UPDATE SET tbl = excluded.tbl, code = excluded.code, chosen_by = excluded.chosen_by, chosen_at = excluded.chosen_at")
+      .run(input.connectorId, input.field, input.extCode, target.tbl, input.code, clerkId, clock.now());
+    return { saved: true };
+  }
+
+  /** 請求の患者・診療年月の、残した構造化データと当てたコードつきの行為（G11・確かめる画面が使う。読むだけで、接続先からは読まない） */
+  function structuredItemsOf(claimId: string, yearMonth: string, db: MastersDb | null): { chart: StructuredChart; items: SItem[]; connectorId: string } | null {
+    let patientId: string;
+    try {
+      patientId = structuredPatientOf(claimId);
+    } catch {
+      return null;
+    }
+    const stored = storedStructured(patientId, yearMonth);
+    if (!stored) return null;
+    return { chart: stored.chart, items: itemsOf(stored.chart, mapContextOf(db, yearMonth, stored.connectorId)), connectorId: stored.connectorId };
+  }
+
+  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf };
 }
 
 export type Structured = ReturnType<typeof createStructured>;

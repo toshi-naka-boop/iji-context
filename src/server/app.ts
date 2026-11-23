@@ -46,7 +46,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
   const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
   const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
-  const notes = createNotes(ctx, clock, clerks, uke, casesOf);
+  const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
+  const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
   // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
@@ -62,7 +63,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
   const facility = createFacility(ctx, clock, uke);
   const note14 = createNote14(ctx, clock, uke, patientFactsOf);
-  const structured = createStructured(ctx, clock, uke, patientFactsOf);
 
   const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
   const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
@@ -94,7 +94,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
     // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
@@ -137,6 +137,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     searchMasters,
     savedActs,
     pickAct,
+    foldAct,
     deleteNote,
     listNotes,
     chartClaim,
