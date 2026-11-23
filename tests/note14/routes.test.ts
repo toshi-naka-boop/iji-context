@@ -5,6 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
+import { resolveRevision } from "../../src/engine/revisions";
 import type { User } from "../../src/server/auth";
 import { POLICY } from "../../src/server/policy";
 import type { Role } from "../../src/server/roles";
@@ -271,5 +272,50 @@ describe("読めない請求を 0 と数えない（round-61 X-201・X-202・C-3
     expect(t.draft.ok).toBe(false);
     for (const m of [n1, n2, n3]) expect(t.draft.reason).toContain(`${m}（3 枚）`);
     expect(t.draft.reason).toContain("読めない請求");
+  });
+});
+
+describe("算定の単位に未対応のコードがあって管理料の行が外れた請求を 0 人と数えない（round-62 X-210）", () => {
+  // 確認月 Q と期間の 3 か月（ほかのテストの月と重ならない）
+  const Q = month(16);
+  const [q1, q2, q3] = [month(13), month(14), month(15)];
+  beforeAll(() => {
+    setRole("manager");
+    // 各月：在医総管の患者 A と、施医総管の患者 B・C・D。B・C・D の施医総管の単位に、版の表にないコードを同じ単位で足す（単位ごと点検の対象外 others になる）。
+    // A には管理料と関係のない、版の表にないコードだけの単位を足す（数えるのに使うコードを含まないので、読めない請求にしない）
+    const people = ["Ａ", "Ｂ", "Ｃ", "Ｄ"].map((x, i) => ({ name: `架空 単位${x}`, birth: `192${i}0505`, no: `98000${i}` }));
+    const file = {
+      ...baseFile(),
+      receipts: [q1, q2, q3].flatMap((m) => [
+        receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-06`] }, { kubun: "C002_2RO1", count: 1, dates: [`${m}-06`] }], people[0]),
+        ...people.slice(1).map((p) => receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-08`] }, { kubun: "C002-2_2RO1", count: 1, dates: [`${m}-08`] }], p)),
+      ]),
+    };
+    const kanri = new Set([q1, q2, q3].map((m) => resolveRevision(m).codes["C002-2_2RO1"].primary));
+    // 施医総管の行の前に、回数・算定日が同じで点数の欄が空の行（版の表にないコード）を入れて、同じ単位にする
+    const join = (lines: string[]) =>
+      lines.flatMap((l) => {
+        const c = l.split(",");
+        if (c[0] !== "SI" || !kanri.has(c[3])) return [l];
+        const u = [...c];
+        u[3] = "999999999";
+        u[5] = "";
+        return [u.join(","), l];
+      });
+    const extra = Object.fromEntries([0, 4, 8].map((i) => [i, [{ code: "999999999", points: 10, days: [6] }]]));
+    instance.runAs(owner, () => instance.getApp().uploadUke(instance.clerkIdOf(owner), ukeBytes(file, extra, {}, join)));
+  });
+
+  it("2 段目の下書きは、施医総管の行が点検の対象外の単位に入ったレセプトがある月を使わず、何枚かを出す（管理料と関係のない単位だけのレセプトは数えない）", async () => {
+    const t = await (await tool(`?month=${Q}`)).json();
+    expect(t.outOfScope).toBe(false);
+    expect(t.draft.ok).toBe(false);
+    for (const m of [q1, q2, q3]) expect(t.draft.reason).toContain(`${m}（3 枚）`);
+    expect(t.draft.reason).toContain("読めない請求");
+  });
+
+  it("1 段目の回数は、形式だけを読んだ行から数えるので、管理料の単位が外れても訪問診療の行は数えられる（4 回ずつ）", async () => {
+    const t = await (await tool(`?month=${Q}`)).json();
+    expect(t.auto.map((a: { state: string; kou: number }) => [a.state, a.kou])).toEqual([["ok", 4], ["ok", 4], ["ok", 4]]);
   });
 });
