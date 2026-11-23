@@ -3,7 +3,7 @@
 // 同じ月のレセプトの鍵（種別を含む）が 2 つ以上のレセプトで重なる月があれば、自動で数えない（1 段目と同じく手入力に案内する）。
 // 鍵はメモリの中だけで作り、戻り値には数だけを返す。下書きは本人が直す（本人が直した欄は出どころが手入力になる）
 import type { UkePatient } from "../uke/types";
-import { identityKey, sameMonthKey } from "./count";
+import { identityKey, overlapMonths } from "./count";
 import { fieldKeyOf, FIELDS, type Combo, type FieldId } from "./readings";
 
 /** 下書きに使うレセプト 1 枚：管理料の族（在医総管＝C002・施設総管＝C002-2）と、除く患者に当たる行（在宅ターミナルケア加算・看取り加算・死亡診断加算）があるか */
@@ -27,10 +27,7 @@ export function draftOf(receipts: DraftReceipt[], months: string[], careOf: (p: 
   const mine = receipts.filter((r) => months.includes(r.yearMonth));
   const empty = months.filter((m) => !mine.some((r) => r.yearMonth === m));
   if (empty.length > 0) return { ok: false, reason: DRAFT_TEXT.missing(empty) };
-  const overlap = months.filter((m) => {
-    const keys = mine.filter((r) => r.yearMonth === m).map((r) => sameMonthKey(r.patient, m));
-    return new Set(keys).size !== keys.length;
-  });
+  const overlap = overlapMonths(mine, months);
   if (overlap.length > 0) return { ok: false, reason: DRAFT_TEXT.overlap(overlap) };
 
   // 延べ：同定の鍵＋診療年月（種別は外す）ごとに、その月の族と除く行

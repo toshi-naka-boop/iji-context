@@ -79,3 +79,16 @@ describe("守ること（design.md §15-13。段 17i）", () => {
     }
   });
 });
+
+describe("同じ月のレセプトの鍵と重なりの判定は 1 か所（round-61 C-374）", () => {
+  const src = (f: string) => readFileSync(path.join(repo, f), "utf8");
+  it("取り込みの一覧（段 17g）は src/note14/count.ts の sameMonthKey を使い、鍵を自分で組まない", () => {
+    expect(src("src/server/app/uke.ts")).toMatch(/import \{[^}]*\bsameMonthKey\b[^}]*\} from "\.\.\/\.\.\/note14\/count"/);
+    expect(src("src/server/app/uke.ts")).not.toMatch(/replace\(\/\\s\/g, ""\)/);
+  });
+  it("重なりの判定は count.ts の overlapMonths だけ（1 段目と 2 段目の下書きが同じ関数を使う）", () => {
+    for (const f of ["src/note14/count.ts", "src/note14/drafts.ts"]) expect(src(f), f).toMatch(/overlapMonths\(/);
+    expect(src("src/note14/drafts.ts")).not.toMatch(/new Set\(keys\)\.size/);
+    expect(src("src/note14/count.ts").match(/new Set\(keys\)\.size/g) ?? []).toHaveLength(1);
+  });
+});

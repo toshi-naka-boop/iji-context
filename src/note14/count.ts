@@ -7,8 +7,16 @@ import type { UkeClaim, UkePatient } from "../uke/types";
 
 /** 期間の中で同じ患者を 1 人と数える同定の鍵（氏名〔空白を除く〕・生年月日・性別）。L-146 */
 export const identityKey = (p: Pick<UkePatient, "name" | "birth" | "sex">): string => [p.name.replace(/\s/g, ""), p.birth, p.sex].join("|");
-/** 同じ月のレセプトの重なりを見る鍵（同定の鍵＋診療年月＋レセプト種別。段 17g と同じ形） */
+/** 同じ月のレセプトの重なりを見る鍵（同定の鍵＋診療年月＋レセプト種別）。取り込みの一覧（段 17g。src/server/app/uke.ts）もこれを使う（round-61 C-374） */
 export const sameMonthKey = (p: Pick<UkePatient, "name" | "birth" | "sex" | "receiptType">, yearMonth: string): string => [identityKey(p), yearMonth, p.receiptType].join("|");
+
+/** months のうち、同じ月のレセプトの鍵が 2 つ以上のレセプトで重なる月（1 段目と 2 段目の下書きが使う 1 つの判定。C-374） */
+export function overlapMonths(receipts: { yearMonth: string; patient: Pick<UkePatient, "name" | "birth" | "sex" | "receiptType"> }[], months: string[]): string[] {
+  return months.filter((m) => {
+    const keys = receipts.filter((r) => r.yearMonth === m).map((r) => sameMonthKey(r.patient, m));
+    return new Set(keys).size !== keys.length;
+  });
+}
 
 /** 月ごとの自動の数の状態：ok＝数えた／none＝取り込みがない／no_table＝その月の版に別表がない／overlap＝同じ月のレセプトが重なる */
 export type AutoMonth =
@@ -38,8 +46,7 @@ export function countMonths(claims: Pick<UkeClaim, "yearMonth" | "patient" | "un
     const rows = rowsOf(month);
     if (!rows) return { month, state: "no_table", receipts };
     if (receipts === 0) return { month, state: "none", receipts };
-    const keys = mine.map((c) => sameMonthKey(c.patient, month));
-    if (new Set(keys).size !== keys.length) return { month, state: "overlap", receipts };
+    if (overlapMonths(mine, [month]).length > 0) return { month, state: "overlap", receipts };
     const reading = new Map(rows.map((r) => [r.code, r.reading]));
     let kou = 0;
     let otsuExtra = 0;
