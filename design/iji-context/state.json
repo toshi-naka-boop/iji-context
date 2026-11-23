@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v33",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v33",
+  "approvedDesignSha256": "4db86239b6c4e467c9a19d9cd135881fe4b4e82ab35f2bd6010c3a938f55f61b",
+  "approvedAt": "2026-11-23",
+  "approvalEvidence": "勧めどおりで承認（直前のメッセージで v33:4db86239b6c4 を示し「10 件を勧めどおりにして、v33（v33:4db86239b6c4）を承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
   "requiredApprovalFingerprint": "v33:4db86239b6c4",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 67,
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v33 の承認と、利用者に聞く 10 件の判断を待つ",
+  "nextAction": "E-11（em-v33-draft を EM に写す）・E-12 → 段 19a〜19g。E-13・E-14（EM 5-1 の症例と合否の組）は行を足して利用者の承認を取ってから → 19h",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
@@ -30,7 +30,8 @@
     "at": "2026-11-23"
   },
   "decisionsAfterApproval": {
-    "L-164": "後の版（C〜I の手順）に回す。利用者が決定 2026-11-23。design.md の L-164 の行は「利用者に聞く」のまま（書き換えると承認が外れるため。次の版で写す）"
+    "L-164": "後の版（2026-11-23）",
+    "v33の利用者に聞く10件": "すべて既定の案（L-199 (a)・L-201 12 か月・L-181 後の版・L-190 (a)・L-191 (a)・L-200・L-202〜L-205 既定）。2026-11-23"
   },
   "v32Approval": {
     "fingerprint": "v32:2fabdc50f888",
