@@ -86,6 +86,28 @@ describe("候補の並べ方の 4（L-161）", () => {
   });
 });
 
+describe("区切りでつないだ lookup の語（§15-7 の 3b。v35。L-218）", () => {
+  it("空白・「・」・括弧でつないだ語は、分けた語をすべて含む行を候補に入れる（normName で 1 語にすると当たらない形）", () => {
+    const db = chartMasters();
+    put(db, "shinryo", SNAP, { code: "179000001", name: "他医撮影の写真診断（単純撮影）" });
+    put(db, "shinryo", SNAP, { code: "179000002", name: "写真診断（特殊撮影）" });
+    const rows = rowsFor(db, "shinryo", YM);
+    // 1 語のままでは当たらない
+    expect(matchItem(rows, "shinryo", "x", ["写真診断単純撮影"], null).candidates.map((c) => c.code)).not.toContain("179000001");
+    // 空白・括弧・「・」で分けると、分けた語をすべて含む行だけが入る（「特殊撮影」の行は単純撮影を含まないので入らない）
+    for (const l of ["写真診断 単純撮影", "写真診断（他医撮影・単純撮影）", "単純撮影・写真診断"]) {
+      const codes = matchItem(rows, "shinryo", "x", [l], null).candidates.map((c) => c.code);
+      expect(codes).toContain("179000001");
+      expect(codes).not.toContain("179000002");
+    }
+  });
+  it("分けた語が 1 つだけのときは何も足さず、今までの並べ方のまま", () => {
+    const db = chartMasters();
+    const rows = rowsFor(db, "shinryo", YM);
+    expect(matchItem(rows, "shinryo", "訪診", ["在宅患者訪問診療料 "], null).candidates).toEqual(matchItem(rows, "shinryo", "訪診", ["在宅患者訪問診療料"], null).candidates);
+  });
+});
+
 describe("指示文の 5 文（L-162）", () => {
   const FIVE = [
     "訪問診療・往診を行ったと書かれていれば、それも行為として出す。",
