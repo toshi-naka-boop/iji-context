@@ -54,7 +54,8 @@ export default function Note14Page() {
   const [months, setMonths] = useState<Record<string, MonthInput>>({});
   const [gansou, setGansou] = useState("");
   const [second, setSecond] = useState("");
-  const [special, setSpecial] = useState<"none" | "some" | "unknown">("none");
+  // 初期値は空（選ぶまで結果を出さない。「ない」を既定にしない。round-61 C-362）
+  const [special, setSpecial] = useState<"none" | "some" | "unknown" | null>(null);
   const [insts, setInsts] = useState<InstInput[]>([]);
   const [saved, setSaved] = useState<Saved | null>(null);
   // 2 段目の欄（欄の鍵 → 入れた文字。欄は readings.ts の依り方の定数から決まる。段 17j）
@@ -195,7 +196,8 @@ export default function Note14Page() {
             <input type="date" aria-label="開設日" value={openedOn} onChange={(x) => setOpenedOn(x.target.value)} />
           </label>
           <h4>特別の関係にある保険医療機関</h4>
-          <select aria-label="特別の関係にある保険医療機関" value={special} onChange={(x) => setSpecial(x.target.value as typeof special)}>
+          <select aria-label="特別の関係にある保険医療機関" value={special ?? ""} onChange={(x) => setSpecial(x.target.value === "" ? null : (x.target.value as "none" | "some" | "unknown"))}>
+            <option value="">選んでください</option>
             <option value="none">ない</option>
             <option value="some">ある</option>
             <option value="unknown">分からない</option>

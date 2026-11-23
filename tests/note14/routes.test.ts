@@ -136,6 +136,12 @@ describe("注14 の計算の道具（段 17i）", () => {
     expect((await empty.json()).error).toContain(`${m1} の回数（C001 の行）`);
   });
 
+  it("C-362：特別の関係にある保険医療機関が空（null）なら残さず 400 で名指しする", async () => {
+    const res = await save(body({ special: null }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("特別の関係にある保険医療機関（ない／ある／分からない）");
+  });
+
   it("段 17j：門以上なら 2 段目の欄が要り（空は 400 で名指し）、4 つを満たせば基準に当たる（下書きは通常）、1 つでも満たさなければ基準に当たらない（下書きは減算）。知らない欄の鍵は 400", async () => {
     const T = (await (await tool(`?month=${M}`)).json()).consts.visitThreshold as number;
     const manual = [m1, m2, m3].map((month, i) => ({ month, confirmed: false, kou: i === 0 ? T : 0, otsuExtra: 0 }));

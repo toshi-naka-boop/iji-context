@@ -1,4 +1,6 @@
 // 段 17i：注14 の計算の道具の 1 段目（design.md §15-13）。取り込んだ UKE から月ごとに数える回数と、回数の門の判定（U-27・U-30 の両方の読み）
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { hasRevision, resolveRevision } from "../../src/engine/revisions";
 import { AUTO_TEXT, countMonths } from "../../src/note14/count";
@@ -140,6 +142,12 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
     // 乙だけの欄が空：乙の下限（T-50）が門未満なので決めきれない（欄を名指し）
     const u = evaluate({ stage1: inst(null) }, K);
     expect(u.status === "done" && [u.result, u.reasons]).toEqual(["undecided", ["手入力の欄が空：特別の関係にある機関 1 の期間の回数（C001-2 の行など）"]]);
+  });
+  it("C-362：特別の関係にある保険医療機関を選んでいない（空）なら「ない」と数えず、結果を出さずに名指しする。画面の初期値も空", () => {
+    const e = evaluate({ stage1: s1({ months: auto(T - 300), special: null }) }, K);
+    expect(e.status === "incomplete" && e.missing).toEqual(["特別の関係にある保険医療機関（ない／ある／分からない）"]);
+    const page = readFileSync(path.join(__dirname, "..", "..", "app", "note14", "page.tsx"), "utf8");
+    expect(page).not.toMatch(/useState<[^>]*>\("none"\)/);
   });
   it("C-325：使った期間は確認月 M に対して M-3〜M-1 と M-12〜M-1", () => {
     expect(periodOf(M, K)).toEqual({ short: { from: month(-2), to: month(0) }, long: { from: month(-11), to: month(0) } });

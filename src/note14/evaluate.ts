@@ -45,7 +45,8 @@ export type Stage1Input = {
   /** 読み乙だけの手入力の欄（期間の合計）：在宅がん医療総合診療料で訪問した日の回数、同一の患家の 2 人目以降で初診料・再診料を算定した日の回数。null は空の欄（0 と数えない。C-323） */
   gansou: number | null;
   secondPatient: number | null;
-  special: "none" | "some" | "unknown";
+  /** 特別の関係にある保険医療機関。null は選んでいない空の欄（「ない」と数えない。round-61 C-362） */
+  special: "none" | "some" | "unknown" | null;
   institutions: Institution[];
   /** 開設日（期間の初めより後に開設したときだけ。U-34 は 1 段目の門と 2 段目の両方に掛ける。round-61 C-360）。省けば null */
   openedOn?: string | null;
@@ -117,6 +118,7 @@ function missingOf(s: Stage1Input): string[] {
     if (m.kou === null) out.push(`${m.month} の回数（C001 の行）`);
     if (m.otsuExtra === null) out.push(`${m.month} の回数（C001-2 の行）`);
   }
+  if (s.special === null) out.push("特別の関係にある保険医療機関（ない／ある／分からない）");
   if (s.special === "some") {
     if (s.institutions.length === 0) out.push("特別の関係にある機関");
     s.institutions.forEach((i, n) => {
