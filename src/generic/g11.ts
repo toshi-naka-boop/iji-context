@@ -1117,6 +1117,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const days = [...new Set([...timesOn.keys(), ...claimVisitDays])].sort();
     let unknown = 0;
     let noBase = 0;
+    let unknownKind = 0;
     const guideDays: string[] = [];
     // 時間の語の規則は S・O・A・P だけに掛ける（処方の欄は掛けない。C-444）
     const confirmedText = (date: string) => S.texts.filter((x) => x.date === date && x.confirmed).map((x) => x.soap).join("\n");
@@ -1130,6 +1131,11 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       }
       // 種類：訪問の記録の種類。記録がない（医療事務の値だけの）日は、その日の基本の行で決める
       const kindOf = (e: TimeEntry) => e.kind ?? (baseOf(visitSet, day) ? "訪問診療" : baseOf(oushinSet, day) ? "往診" : null);
+      // 種類が決まらない時刻（基本の行がない日。同じ患家の 2 人目以降の初診料・再診料だけの日など）は、黙って消さず「見ていません」に数える（C-432。16-4-6）
+      if (entries.some((e) => kindOf(e) === null && (e.ehr !== null || e.clerk !== null))) {
+        if (kubunOnDay(["A0", "A1"], day)) unknownKind++;
+        else noBase++;
+      }
       for (const kind of ["訪問診療", "往診"] as const) {
         const es = entries.filter((e) => kindOf(e) === kind && (e.ehr !== null || e.clerk !== null));
         if (es.length === 0) continue;
@@ -1190,6 +1196,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       }
     }
     if (unknown > 0) ruleScope.push(`患家診療時間加算は見ていません（時刻の分からない訪問の日：${unknown} 日）`);
+    if (unknownKind > 0) ruleScope.push(`患家診療時間加算は見ていません（訪問の種類が分からない日：${unknownKind} 日）`);
     if (noBase > 0) ruleScope.push(`訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：${noBase} 日`);
     if (guideDays.length > 0) ruleGuides.push(`${dayList(guideDays)}の訪問の開始・終了の時刻を入れると、患家診療時間加算を見ます`);
     visitTimeDays.push(...guideDays);

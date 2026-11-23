@@ -646,6 +646,15 @@ describe("T7 患家診療時間加算（114001470・114000970。R8-202〜R8-207�
     expect(f.codes).toEqual([R.kakaVisit]);
     expect(notesOf(f)).toEqual(["同じ患家の 2 人目以降として出しました。2 人目以降でなければ、訪問診療料・往診料を確かめてください。摘要欄の記載（820100847）が要ります"]);
   });
+  it("訪問の記録がなく医療事務の時刻だけがあり、請求のその日に再診料だけ（同じ患家の 2 人目）の日は、黙って消さず「訪問の種類が分からない日」として「見ていません」に数える（C-432）", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([SAISHIN], 14)] }, { visits: "unsupported", times: [{ date: date(14), ref: null, start: "10:00", end: "11:10", by: "たいおう", at }] });
+    expect(rules(r)).toEqual([]);
+    expect(r.scope).toContain("患家診療時間加算は見ていません（訪問の種類が分からない日：1 日）");
+    // 再診料もない日は、基本の行のない日として数える
+    const none = run(db, { units: [] }, { visits: "unsupported", times: [{ date: date(14), ref: null, start: "10:00", end: "11:10", by: "たいおう", at }] });
+    expect(none.scope).toContain("訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：1 日");
+  });
   it("往診は 114000970。請求に 114002470（特別往診）があれば出ない（L-179）", () => {
     const db = rdb();
     const v = { visits: [visit("v1", 5, "往診", "21:00", "22:10")] };
