@@ -6,8 +6,11 @@ import type { UkePatient } from "../uke/types";
 import { identityKey, overlapMonths } from "./count";
 import { fieldKeyOf, FIELDS, type Combo, type FieldId } from "./readings";
 
-/** 下書きに使うレセプト 1 枚：管理料の族（在医総管＝C002・施設総管＝C002-2）と、除く患者に当たる行（在宅ターミナルケア加算・看取り加算・死亡診断加算）があるか */
-export type DraftReceipt = { yearMonth: string; patient: UkePatient; families: ("在医総管" | "施設総管")[]; excluded: boolean };
+/**
+ * 下書きに使うレセプト 1 枚：管理料の族（在医総管＝C002・施設総管＝C002-2）と、除く患者に当たる行（在宅ターミナルケア加算・看取り加算・死亡診断加算）があるか。
+ * unreadable は読めない請求（読み直しで読めない・未対応・診療年月の版がない）。読めない請求は 0 人と数えず、その月は下書きに使わない（round-61 X-202）
+ */
+export type DraftReceipt = { yearMonth: string; patient: UkePatient; families: ("在医総管" | "施設総管")[]; excluded: boolean; unreadable?: boolean };
 
 export type Draft =
   | { ok: true; values: Record<string, number>; unknownCare: number }
@@ -16,6 +19,7 @@ export type Draft =
 export const DRAFT_TEXT = {
   overlap: (months: string[]) => `${months.join("・")} は同じ月のレセプトが重なっているので、2 段目の下書きを作りません。数を入れてください`,
   missing: (months: string[]) => `${months.join("・")} は取り込みがないか、版の行で読めないので、2 段目の下書きを作りません。数を入れてください`,
+  unreadable: (months: { month: string; n: number }[]) => `${months.map((x) => `${x.month}（${x.n} 枚）`).join("・")} は読めない請求があるので、2 段目の下書きを作りません。取り込み直すか、数を入れてください`,
   unknownCare: (n: number) => `要介護度・別表第八の二の状態が未入力 ${n} 人（下書きの数に入れていません）。認知症の自立度・障害支援区分で当たる患者は、事実にないので足してください`,
 } as const;
 
@@ -29,6 +33,8 @@ export function draftOf(receipts: DraftReceipt[], months: string[], careOf: (p: 
   if (empty.length > 0) return { ok: false, reason: DRAFT_TEXT.missing(empty) };
   const overlap = overlapMonths(mine, months);
   if (overlap.length > 0) return { ok: false, reason: DRAFT_TEXT.overlap(overlap) };
+  const unreadable = months.map((m) => ({ month: m, n: mine.filter((r) => r.yearMonth === m && r.unreadable).length })).filter((x) => x.n > 0);
+  if (unreadable.length > 0) return { ok: false, reason: DRAFT_TEXT.unreadable(unreadable) };
 
   // 延べ：同定の鍵＋診療年月（種別は外す）ごとに、その月の族と除く行
   type Cell = { id: string; month: string; families: Set<string>; excluded: boolean; patient: DraftReceipt["patient"] };

@@ -82,10 +82,12 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
    * 患者の事実（要介護 3 以上・別表第八の二。患者マスタにない患者・事実のない患者は未入力）から作る
    */
   function stage2Draft(months: string[]): Draft {
+    // 読めない請求（読み直しで読めない・未対応・版がない）も外さずに渡し、その月は下書きに使わない（0 人と数えない。round-61 X-202・C-373）
     const receipts: DraftReceipt[] = uke
       .ukeReceipts()
-      .filter((r) => !r.unreadable && !r.noRevision && months.includes(r.yearMonth) && hasRevision(r.yearMonth))
+      .filter((r) => months.includes(r.yearMonth))
       .map((r) => {
+        if (r.unreadable || r.noRevision || !hasRevision(r.yearMonth)) return { yearMonth: r.yearMonth, patient: r.patient, families: [], excluded: false, unreadable: true };
         const c = resolveRevision(r.yearMonth).consts;
         const family = new Map(c.kanri.rows.map((x) => [x.kubun, x.family]));
         const ex = new Set([c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal)]);
@@ -115,7 +117,7 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const k = toolConstsAt(m);
     if (!k) return { month: m, outOfScope: true, text: NOTE14_TOOL_TEXT.outOfScope };
     const period = periodOf(m, k);
-    const auto = autoOf(monthsBefore(m, k.periodMonths.short)).map((a) => ({ ...a, ...(a.state === "ok" ? {} : { text: AUTO_TEXT[a.state] }) }));
+    const auto = autoOf(monthsBefore(m, k.periodMonths.short)).map((a) => ({ ...a, ...(a.state === "ok" ? {} : { text: a.state === "unreadable" ? `${AUTO_TEXT.unreadable}（読めない請求 ${a.unreadable} 枚）` : AUTO_TEXT[a.state] }) }));
     return {
       month: m,
       outOfScope: false,
@@ -154,9 +156,11 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const bad = Object.keys(body.stage2.values).find((key) => !keys.has(key));
     if (bad !== undefined) throw badRequest("2 段目の欄の鍵が違います", ["stage2"]);
     const values = Object.fromEntries([...keys].map((key) => [key, n(body.stage2!.values[key])]));
-    // 出どころ：送られた印が「自動」で、値がサーバーの下書きと同じ欄だけを自動にする（本人が直した欄・下書きのない欄は手入力）
+    // 出どころ：送られた印が「自動」で、値がサーバーの下書きと同じ欄だけを自動にする（本人が直した欄・下書きのない欄は手入力）。
+    // 1 段目で「全患者分を取り込んだ」を確かめていない月があれば、下書きの元がそろっているか分からないので自動にしない（round-61 C-373。L-134）
     const draft = stage2Draft(want);
-    const sources = Object.fromEntries([...keys].map((key) => [key, body.stage2!.sources?.[key] === "auto" && draft.ok && draft.values[key] === values[key] ? ("auto" as const) : ("manual" as const)]));
+    const allConfirmed = body.stage1.months.every((x) => x.confirmed);
+    const sources = Object.fromEntries([...keys].map((key) => [key, allConfirmed && body.stage2!.sources?.[key] === "auto" && draft.ok && draft.values[key] === values[key] ? ("auto" as const) : ("manual" as const)]));
     return { stage1, stage2: { values, openedOn: body.stage2.openedOn ?? null, sources } };
   }
 

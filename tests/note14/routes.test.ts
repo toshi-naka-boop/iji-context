@@ -177,14 +177,20 @@ describe("注14 の計算の道具（段 17i）", () => {
     const manual = [m1, m2, m3].map((month, i) => ({ month, confirmed: false, kou: i === 0 ? T : 0, otsuExtra: 0 }));
     const values = { ...Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? 5 : f.field.id === "mitoriHome" ? 20 : 0])), ...t.draft.values };
     const auto = Object.fromEntries(Object.keys(t.draft.values).map((k) => [k, "auto"]));
-    const a = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null, sources: auto } })).json();
+    // C-373：1 段目で「全患者分を取り込んだ」を確かめていない月があれば、下書きのままの欄も自動の印にしない
+    const unconfirmed = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null, sources: auto } })).json();
+    expect(Object.values(unconfirmed.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
+    // 3 か月とも確かめた月（自動の数）で、読み乙だけの手入力の欄で門以上にして 2 段目を開く
+    const confirmed = body({ gansou: T });
+    const a = await (await save({ ...confirmed, stage2: { values, openedOn: null, sources: auto } })).json();
+    expect(a.stage2Open).toBe(true);
     expect(a.inputs.stage2.sources["c002:U-33a=A"]).toBe("auto");
     expect(a.inputs.stage2.sources["referral:U-32=A"]).toBe("manual");
     // 下書きの数を本人が直すと、印は手入力（自動の印を送っても、下書きと違う値は手入力）
-    const b = await (await save({ ...body({ months: manual }), stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, openedOn: null, sources: auto } })).json();
+    const b = await (await save({ ...confirmed, stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, openedOn: null, sources: auto } })).json();
     expect(b.inputs.stage2.sources["care:U-33a=A:U-33c=A"]).toBe("manual");
     // 下書きの数と同じ値を 17j の形（印なし）で手で入れたときと結果が同じ
-    const c = await (await save({ ...body({ months: manual }), stage2: { values, openedOn: null } })).json();
+    const c = await (await save({ ...confirmed, stage2: { values, openedOn: null } })).json();
     expect([c.result, c.splits, c.outcomes]).toEqual([a.result, a.splits, a.outcomes]);
     expect(Object.values(c.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
     // 記録と応答に、下書きに使った患者の目印の値が現れない
@@ -212,5 +218,40 @@ describe("注14 の計算の道具（段 17i）", () => {
   it("見本の症例（K1〜）と取り込んだ請求の R18・G10 の結果が、道具の結果の有無で変わらない（判定は道具の記録を読まない）", () => {
     expect(dbRows("SELECT COUNT(*) AS n FROM note14_worksheets")[0].n).toBeGreaterThan(0);
     expect(judged()).toEqual(before);
+  });
+});
+
+describe("読めない請求を 0 と数えない（round-61 X-201・X-202・C-373）", () => {
+  // 確認月 N と期間の 3 か月（ほかのテストの月と重ならない）
+  const N = month(10);
+  const [n1, n2, n3] = [month(7), month(8), month(9)];
+  beforeAll(() => {
+    setRole("manager");
+    // 各月：在医総管の患者 A と、施医総管の患者 B・C・D。B・C・D のレセプトには未対応のレコード（読めない請求になる）
+    const people = ["Ａ", "Ｂ", "Ｃ", "Ｄ"].map((x, i) => ({ name: `架空 読${x}`, birth: `193${i}0404`, no: `99000${i}` }));
+    const file = {
+      ...baseFile(),
+      receipts: [n1, n2, n3].flatMap((m) => [
+        receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-06`] }, { kubun: "C002_2RO1", count: 1, dates: [`${m}-06`] }], people[0]),
+        ...people.slice(1).map((p) => receipt(m, [{ kubun: "C001_1I", count: 1, dates: [`${m}-08`] }, { kubun: "C002-2_2RO1", count: 1, dates: [`${m}-08`] }], p)),
+      ]),
+    };
+    // レセプトの添字：月ごとに 4 枚（0〜3, 4〜7, 8〜11）。B・C・D は 1・2・3 番目
+    const raw = Object.fromEntries([0, 4, 8].flatMap((b) => [b + 1, b + 2, b + 3]).map((i) => [i, ["XX,unknown"]]));
+    instance.runAs(owner, () => instance.getApp().uploadUke(instance.clerkIdOf(owner), ukeBytes(file, {}, raw)));
+  });
+
+  it("X-201：1 段目は読めない請求がある月を unreadable（何枚か）にし、確かめたことにはできない（400）", async () => {
+    const t = await (await tool(`?month=${N}`)).json();
+    expect(t.auto.map((a: { state: string; unreadable?: number }) => [a.state, a.unreadable])).toEqual([["unreadable", 3], ["unreadable", 3], ["unreadable", 3]]);
+    expect(t.auto[0].text).toContain("読めない請求");
+    expect((await save(body({}, [n1, n2, n3], N))).status).toBe(400);
+  });
+
+  it("X-202：2 段目の下書きは、読めない請求が 1 枚でもある月を使わず、どの月が何枚読めないかを出す", async () => {
+    const t = await (await tool(`?month=${N}`)).json();
+    expect(t.draft.ok).toBe(false);
+    for (const m of [n1, n2, n3]) expect(t.draft.reason).toContain(`${m}（3 枚）`);
+    expect(t.draft.reason).toContain("読めない請求");
   });
 });

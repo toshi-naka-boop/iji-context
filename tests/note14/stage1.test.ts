@@ -1,7 +1,7 @@
 // 段 17i：注14 の計算の道具の 1 段目（design.md §15-13）。取り込んだ UKE から月ごとに数える回数と、回数の門の判定（U-27・U-30 の両方の読み）
 import { describe, expect, it } from "vitest";
 import { hasRevision, resolveRevision } from "../../src/engine/revisions";
-import { countMonths } from "../../src/note14/count";
+import { AUTO_TEXT, countMonths } from "../../src/note14/count";
 import { evaluate, monthsBefore, periodOf, toolConstsOf, type Stage1Input } from "../../src/note14/evaluate";
 import { parseUke } from "../../src/uke/uke";
 import { fieldKeys } from "../../src/note14/readings";
@@ -46,6 +46,17 @@ describe("取り込んだ UKE から月ごとに数える（EM §2-8 の数え�
     // 種別の違う 2 枚は重なりではない
     const f3 = { ...baseFile(), receipts: [receipt(m1, [{ kubun: "C001_1I", count: 1, dates: [dateIn(-2, 5)] }], { ...twin, receiptType: "1112" }), receipt(m1, [{ kubun: "C001_1I", count: 1, dates: [dateIn(-2, 12)] }], { ...twin, receiptType: "1318" })] };
     expect(countMonths(parseUke(ukeBytes(f3)).claims, [m1], rowsOf)[0].state).toBe("ok");
+  });
+  it("X-201：読めない請求（未対応のレコードつき）がある月は 0 回と数えず、unreadable（取り込み直すか手入力に案内）にする", () => {
+    const f = { ...baseFile(), receipts: [receipt(m1, [{ kubun: "C001_1I", count: 10, dates: Array.from({ length: 10 }, (_, i) => dateIn(-2, i + 1)) }]), receipt(m1, [{ kubun: "C001_1I", count: 1, dates: [dateIn(-2, 5)] }]), receipt(m2, [{ kubun: "C001_1I", count: 1, dates: [dateIn(-1, 5)] }])] };
+    const parsed = parseUke(ukeBytes(f, {}, { 0: ["ZZ,x"] })).claims;
+    expect(parsed[0].unsupported).toBeDefined();
+    const got = countMonths(parsed, [m1, m2], rowsOf);
+    expect(got[0]).toEqual({ month: m1, state: "unreadable", receipts: 2, unreadable: 1 });
+    expect(got[1]).toEqual({ month: m2, state: "ok", receipts: 1, kou: 1, otsuExtra: 0 });
+    expect(AUTO_TEXT.unreadable).toContain("読めない請求");
+    // 行が 1 つも読めていない請求（units が空）も同じ
+    expect(countMonths([{ ...parsed[2], units: [] }], [m2], rowsOf)[0].state).toBe("unreadable");
   });
   it("C-326：その月の版に別表がない月（令和8年度改定より前など）は自動で数えない", () => {
     const early = month(-5);

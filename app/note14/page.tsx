@@ -10,7 +10,7 @@ import { NOTE14_TEXT } from "../../src/facility/note14";
 import { fieldKeys } from "../../src/note14/readings";
 import { evaluate, FIELD_LABEL, type Evaluation, type Institution, type Note14Consts, type Period, type WorksheetInput } from "../../src/note14/evaluate";
 
-type Auto = { month: string; state: "ok" | "none" | "no_table" | "overlap"; receipts: number; kou?: number; otsuExtra?: number; text?: string };
+type Auto = { month: string; state: "ok" | "none" | "no_table" | "overlap" | "unreadable"; receipts: number; kou?: number; otsuExtra?: number; unreadable?: number; text?: string };
 type Saved = { id: number; checkMonth: string; isCheckMonth: boolean; period: Period; result: "meets" | "not_meets" | "undecided"; splits: string[]; lines: string[]; reasons: string[]; remaining: number | null; checkedBy: string; checkedOn: string; draft: boolean; note?: string };
 type Draft = { ok: true; values: Record<string, number>; unknownCare: number; text: string | null } | { ok: false; reason: string };
 type Tool = { month: string | null; outOfScope: boolean; text?: string; isCheckMonth?: boolean; note?: string; period?: Period; consts?: Note14Consts; auto?: Auto[]; draft?: Draft; worksheets?: Saved[] };
@@ -71,9 +71,9 @@ export default function Note14Page() {
         if (t.month) setMonth(t.month);
         setMonths(Object.fromEntries((t.auto ?? []).map((a) => [a.month, { confirmed: false, kou: "", otsuExtra: "" }])));
         setSaved(null);
-        const d = t.draft?.ok ? t.draft.values : {};
-        setVals(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, String(v)])));
-        setAutoKeys(Object.keys(d));
+        // 下書きは、1 段目で 3 か月とも「全患者分を取り込んだ」を確かめてから入れる（下の useEffect。round-61 C-373）
+        setVals({});
+        setAutoKeys([]);
       })
       .catch((e: Error) => setErr(e.message));
   }
@@ -82,6 +82,23 @@ export default function Note14Page() {
     load(q ?? undefined);
     getJson<Declarations>("/api/facility/declaration").then(setDecl).catch(() => {});
   }, []);
+
+  // 1 段目の月を全部確かめたか（確かめていない月があると、下書きの元がそろっているか分からない。C-373。L-134）
+  const allConfirmed = !!tool?.auto && tool.auto.length > 0 && tool.auto.every((a) => a.state === "ok" && (months[a.month]?.confirmed ?? false));
+  useEffect(() => {
+    const d = tool?.draft?.ok ? tool.draft.values : null;
+    if (!d) return;
+    if (allConfirmed) {
+      // 空の欄にだけ下書きを入れる（本人が入れた欄は変えない）
+      const fill = Object.keys(d).filter((k) => (vals[k] ?? "") === "");
+      setVals((p) => ({ ...p, ...Object.fromEntries(fill.map((k) => [k, String(d[k])])) }));
+      setAutoKeys((p) => [...new Set([...p, ...fill])]);
+    } else {
+      // 確かめを外したら、下書きのままの欄を空に戻す（手入力として残さない）
+      setVals((p) => ({ ...p, ...Object.fromEntries(autoKeys.map((k) => [k, ""])) }));
+      setAutoKeys([]);
+    }
+  }, [allConfirmed, tool]);
 
   const input: WorksheetInput | null = useMemo(() => {
     if (!tool?.auto) return null;
@@ -202,6 +219,7 @@ export default function Note14Page() {
           <h3 style={{ marginTop: 0 }}>2 段目：4 つの要件</h3>
           <p className="muted">1 段目で門以上になる読みがあるので開きました。欄の並びは様式19の2 の 2(1)〜2(3) と同じです。明文のない数え方の欄は、読みごとに入れてください（読みで同じとは扱いません）。割合は丸めずに比べます。</p>
           {tool?.draft && "reason" in tool.draft && <div className="notice">{tool.draft.reason}</div>}
+          {tool?.draft?.ok && !allConfirmed && <div className="notice">1 段目で 3 か月とも「この月は全患者分を取り込んだ」を確かめると、取り込んだ請求からの下書きを入れます。</div>}
           {tool?.draft && "text" in tool.draft && tool.draft.text && <div className="notice">{tool.draft.text}</div>}
           <ul style={{ paddingLeft: 18 }}>
             {fieldKeys().map((f) => (

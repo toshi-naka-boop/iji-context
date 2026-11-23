@@ -27,8 +27,8 @@ export function receipt(yearMonth: string, lines: UkeReceipt["lines"], p: { name
   };
 }
 
-/** UKE のバイト列。extra はレセプトの添字 → 足す SI の行 */
-export function ukeBytes(file: UkeFile, extra: Record<number, ExtraSi[]> = {}): Buffer {
+/** UKE のバイト列。extra はレセプトの添字 → 足す SI の行。raw はレセプトの添字 → RE の直後に足す行（未対応のレコードなど。round-61 X-201・X-202） */
+export function ukeBytes(file: UkeFile, extra: Record<number, ExtraSi[]> = {}, raw: Record<number, string[]> = {}): Buffer {
   const rows = formatUke(file).split("\r\n").filter((l) => l !== "");
   const out: string[] = [];
   let idx = -1;
@@ -74,6 +74,7 @@ export function ukeBytes(file: UkeFile, extra: Record<number, ExtraSi[]> = {}): 
     }
     if (l.startsWith("HO,")) hoAt = out.length;
     out.push(l);
+    if (l.startsWith("RE,")) out.push(...(raw[idx] ?? []));
   }
   return encodeUke(`${out.join("\r\n")}\r\n`);
 }

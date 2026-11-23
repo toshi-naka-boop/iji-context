@@ -18,16 +18,24 @@ export function overlapMonths(receipts: { yearMonth: string; patient: Pick<UkePa
   });
 }
 
-/** 月ごとの自動の数の状態：ok＝数えた／none＝取り込みがない／no_table＝その月の版に別表がない／overlap＝同じ月のレセプトが重なる */
+/**
+ * 月ごとの自動の数の状態：ok＝数えた／none＝取り込みがない／no_table＝その月の版に別表がない／overlap＝同じ月のレセプトが重なる／
+ * unreadable＝読めない請求（未対応のレセプト・行が 1 つも読めていないレセプト）がある（0 回と数えない。round-61 X-201。unreadable はその枚数）
+ */
 export type AutoMonth =
   | { month: string; state: "ok"; receipts: number; kou: number; otsuExtra: number }
+  | { month: string; state: "unreadable"; receipts: number; unreadable: number }
   | { month: string; state: "none" | "no_table" | "overlap"; receipts: number };
 
 export const AUTO_TEXT = {
   none: "この月の取り込みがありません。回数を入れてください",
   no_table: "この月の版には数える行の表がないので、自動では数えません。回数を入れてください",
   overlap: "同じ月のレセプトが重なっています。どちらが正しいかを決めてから数えます。回数を入れてください",
+  unreadable: "この月には読めない請求があるので、自動では数えません。取り込み直すか、回数を入れてください",
 } as const;
+
+/** 読めない請求か（未対応のレセプト〔UkeClaim.unsupported〕か、行が 1 つも読めていないレセプト）。0 回の請求と混同しない（round-61 X-201） */
+export const unreadableClaim = (c: Pick<UkeClaim, "unsupported" | "units">): boolean => c.unsupported !== undefined || c.units.length === 0;
 
 /** 単位の回数（算定日ごとの回数の合計。日の欄がなければ回数の欄） */
 const timesOf = (u: UkeClaim["units"][number]) => {
@@ -39,13 +47,15 @@ const timesOf = (u: UkeClaim["units"][number]) => {
  * 月ごとに数える（純関数）。claims は取り込みの一覧にある全部のレセプト（形式だけを読んだもの）。
  * rowsOf はその月の版の別表（なければ null）
  */
-export function countMonths(claims: Pick<UkeClaim, "yearMonth" | "patient" | "units">[], months: string[], rowsOf: (month: string) => { code: string; reading: "both" | "otsu" }[] | null): AutoMonth[] {
+export function countMonths(claims: Pick<UkeClaim, "yearMonth" | "patient" | "units" | "unsupported">[], months: string[], rowsOf: (month: string) => { code: string; reading: "both" | "otsu" }[] | null): AutoMonth[] {
   return months.map((month) => {
     const mine = claims.filter((c) => c.yearMonth === month);
     const receipts = mine.length;
     const rows = rowsOf(month);
     if (!rows) return { month, state: "no_table", receipts };
     if (receipts === 0) return { month, state: "none", receipts };
+    const unreadable = mine.filter(unreadableClaim).length;
+    if (unreadable > 0) return { month, state: "unreadable", receipts, unreadable };
     if (overlapMonths(mine, [month]).length > 0) return { month, state: "overlap", receipts };
     const reading = new Map(rows.map((r) => [r.code, r.reading]));
     let kou = 0;
