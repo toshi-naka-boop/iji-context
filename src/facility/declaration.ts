@@ -74,6 +74,8 @@ export const NOTE16_KEY = "note16";
 export const DISPENSING_KEY = "dispensing";
 /** 同じ建物で同じ月に 2 人以上を診ている建物があるか（C-242。段 17f。choice は none・some・unknown） */
 export const BUILDING_KEY = "building";
+/** 注14（10 人以上の区分の減算。EM R8-191。段 17h。choice は normal・reduced・unknown。届出の欄は対象外） */
+export const NOTE14_KEY = "note14";
 export const codeKey = (code: string) => `code:${code}`;
 
 type KijunRow = { codes: string[]; name: string; listed: string[] };
@@ -232,6 +234,7 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
   const b = codeTri(rows, "4307", on, today);
   const baseUp = b5.v === "unknown" || b.v === "unknown" ? null : b5.v === "held" ? "注5" : b.v === "held" ? "通常" : "なし";
   const building = buildingTri(rows, today, yearMonth).v === "held" ? (effectiveRow(rows, BUILDING_KEY, yearMonth)!.row.choice as "none" | "some") : null;
+  const n14 = note14Tri(rows, today, yearMonth).v === "held" ? effectiveRow(rows, NOTE14_KEY, yearMonth)!.row.choice : null;
   return {
     grade,
     gradeChoice: tri.v === "held" ? choice!.id : null,
@@ -239,8 +242,8 @@ export function facilityFromDeclaration(rows: DeclarationRow[], today: string, y
     dxTier,
     baseUp,
     building,
-    // 注14 の申告は段 17h で読む（それまでは分からない。10 人以上の区分の患者は導出を保留する。design.md §15-4）
-    note14: null,
+    // 注14（段 17h）：通常の点数で算定している／減算の点数で算定している。算定開始年月日は見ない（from_month で判定する）
+    note14: n14 === "normal" ? "通常" : n14 === "reduced" ? "減算" : null,
     ...(grade === null ? { zaishishin: null, kyokagata: null, hasBeds: null } : { zaishishin: grade !== "3", kyokagata: grade === "1B" || grade === "1N", hasBeds: grade === "1B" }),
   };
 }
@@ -263,6 +266,15 @@ export function buildingTri(rows: DeclarationRow[], today: string, yearMonth: st
   return c === "none" || c === "some" ? HELD : unknown("requirement_unknown");
 }
 
+/** 注14 の行の三値（月で決まる値。dispensing と同じ決め方。届出日・算定開始年月日は記録だけで見ない） */
+export function note14Tri(rows: DeclarationRow[], today: string, yearMonth: string): Tri {
+  const e = effectiveRow(rows, NOTE14_KEY, yearMonth);
+  const g = gate(rows, NOTE14_KEY, e, today);
+  if (g) return g;
+  const c = e!.row.choice;
+  return c === "normal" || c === "reduced" ? HELD : unknown("requirement_unknown");
+}
+
 /** 院内処方か院外処方か（G11 だけに渡す。段 18）。その請求の診療年月で効く行で決める */
 export function dispensingOf(rows: DeclarationRow[], today: string, yearMonth: string): "outside" | "inside" | "unknown" {
   if (dispensingTri(rows, today, yearMonth).v !== "held") return "unknown";
@@ -276,6 +288,8 @@ const REQUIREMENT_LABEL: Record<Requirement, string> = { met: "満たす", not_m
 const NOTIFIED_LABEL: Record<Notified, string> = { yes: "届出あり", no: "届出なし", unknown: "届出が分からない", na: "" };
 const DISPENSING_LABEL: Record<string, string> = { outside: "院外処方だけ", inside: "院内処方もある", unknown: "分からない" };
 const BUILDING_LABEL: Record<string, string> = { none: "ない", some: "ある", unknown: "分からない" };
+/** 注14 は結果の側（医療事務が目にする点数）の言い方（design.md §15-2） */
+export const NOTE14_LABEL: Record<string, string> = { normal: "10 人以上の区分を通常の点数で算定している", reduced: "減算の点数で算定している", unknown: "分からない" };
 
 /** 申告の 1 行の値を短く（確かめの文と画面に使う） */
 export function valueLabel(row: DeclarationRow): string {
@@ -283,6 +297,7 @@ export function valueLabel(row: DeclarationRow): string {
   if (row.itemKey === NOTE16_KEY) return REQUIREMENT_LABEL[row.requirement];
   if (row.itemKey === DISPENSING_KEY) return DISPENSING_LABEL[row.choice ?? "unknown"] ?? "分からない";
   if (row.itemKey === BUILDING_KEY) return BUILDING_LABEL[row.choice ?? "unknown"] ?? "分からない";
+  if (row.itemKey === NOTE14_KEY) return NOTE14_LABEL[row.choice ?? "unknown"] ?? "分からない";
   return `${NOTIFIED_LABEL[row.notified]}${row.choice ? `・加算${row.choice}` : ""}`;
 }
 

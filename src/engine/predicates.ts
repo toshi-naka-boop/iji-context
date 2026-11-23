@@ -1,7 +1,7 @@
 // 導出と検証が共有する述語（design.md §2-8・§2-3-3・§2-3-4）
 import { addDays, eventsOf, fact } from "./rules/util";
 import type { ByGrade, KanriFamily, KanriRow, KanriTierKey, RevisionConsts } from "./revisions/types";
-import type { BuildingBand, ClaimContext, Fact, FacilityGrade } from "./types";
+import { NOTE14_BANDS, type BuildingBand, type ClaimContext, type Fact, type FacilityGrade } from "./types";
 
 /** 版の管理料の区分をすべて（在医総管・施設総管の、種別×区分〔×人数〕の全部） */
 export function kanriKubun(c: RevisionConsts): string[] {
@@ -18,7 +18,27 @@ export function kanriOf(c: RevisionConsts, kubun: string): Omit<KanriRow, "kubun
 
 /** 族×種別×区分×人数の区分の管理料の区分（人数の区分を省けば単一建物 1 人の区分）。その版にない組は undefined */
 export function kanriKubunOf(c: RevisionConsts, family: KanriFamily, grade: FacilityGrade, tier: KanriTierKey, band: BuildingBand = "1"): string | undefined {
-  return c.kanri.rows.find((r) => r.family === family && r.grade === grade && r.tier === tier && (r.band ?? "1") === band)?.kubun;
+  return c.kanri.rows.find((r) => r.family === family && r.grade === grade && r.tier === tier && (r.band ?? "1") === band && r.note14 === undefined)?.kubun;
+}
+
+/** 通常の区分の、注14 の減の行（注14 だけの行と、在支診以外では注8 と重ねた行。design.md §15-4。X-171）。持たない区分・版は空 */
+export const reducedOf = (c: RevisionConsts, normal: string): string[] => Object.entries(c.kanri.note14Pairs ?? {}).filter(([, n]) => n === normal).map(([k]) => k);
+
+/** 管理料の行が 10 人以上の人数の区分か（通常の行・減の行とも） */
+export const isNote14Band = (c: RevisionConsts, kubun: string): boolean => {
+  const b = kanriBandOf(c, kubun);
+  return b !== undefined && NOTE14_BANDS.includes(b);
+};
+
+/**
+ * 請求の 10 人以上の管理料の注14 の側（design.md §15-4。round-57 X-172）：減の行があれば 減、通常の行があれば 通常、どちらもなければ なし。
+ * 版に note14Pairs がなければ なし。算定プレビューは、日で絞る前・導出する区分を外す前の請求の全部の行から求めて導出に渡す（C-333）
+ */
+export function claimNote14SideOf(lines: { kubun: string; count: number }[], c: RevisionConsts): "減" | "通常" | "なし" {
+  if (!c.kanri.note14Pairs) return "なし";
+  const tenPlus = lines.filter((l) => l.count > 0 && isNote14Band(c, l.kubun));
+  if (tenPlus.some((l) => c.kanri.rows.find((r) => r.kubun === l.kubun)?.note14 !== undefined)) return "減";
+  return tenPlus.length ? "通常" : "なし";
 }
 
 /** 管理料の行の人数の区分（1 人の区分の行は "1"）。管理料の区分でなければ undefined */
@@ -55,7 +75,7 @@ export function kanriLines(ctx: ClaimContext, c: RevisionConsts): ({ kubun: stri
 export function gradeSlots(c: RevisionConsts): { kubun: string; grade: FacilityGrade; slot: string }[] {
   const byGrade = (slot: string, t: ByGrade) => (Object.entries(t) as [FacilityGrade, string][]).map(([grade, kubun]) => ({ kubun, grade, slot }));
   return [
-    ...c.kanri.rows.map((r) => ({ kubun: r.kubun, grade: r.grade, slot: `${r.family}/${r.tier}/${r.band ?? ""}` })),
+    ...c.kanri.rows.map((r) => ({ kubun: r.kubun, grade: r.grade, slot: `${r.family}/${r.tier}/${r.band ?? ""}/${r.note14 ?? ""}` })),
     ...byGrade("在宅ターミナルケア加算", c.terminal.terminal),
     ...byGrade("緊急往診加算", c.oushin.kinkyu),
   ];

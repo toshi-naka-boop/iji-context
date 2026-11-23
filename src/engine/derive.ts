@@ -8,6 +8,7 @@ import {
   billedVisitDays,
   buildingBandOf,
   expectedKanri,
+  reducedOf,
   hokatsuEligible,
   ikouEligible,
   kanriKubun,
@@ -37,6 +38,11 @@ export type DeriveInput = {
   choices: Record<string, string>;
   /** 月の途中の日付（"YYYY-MM-DD"）。出来事は、呼び出し側が先に contextAsOf で絞っておく */
   asOf?: string;
+  /**
+   * 原請求の 10 人以上の管理料の注14 の側（claimNote14SideOf。design.md §15-4。round-57 X-172・round-58 C-333）。呼び出し側が、日で絞る前・導出する区分を外す前の請求の全部の行から求めて渡す。
+   * 省くと「なし」（原請求がない導出）
+   */
+  claimNote14Side?: "減" | "通常" | "なし";
 };
 
 type EventRef = { type: ClaimEvent["type"]; date: string };
@@ -58,7 +64,16 @@ export type LineBasis = {
 export type PendingOption = { id: string; label: string; kubun: string[] };
 export type Pending =
   /** date は、日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
-  | { kind: "事実不足"; id: string; need: NeedKey; target: "doctor" | "clerk"; blocks: string[]; date?: string }
+  | {
+      kind: "事実不足";
+      id: string;
+      need: NeedKey;
+      target: "doctor" | "clerk";
+      blocks: string[];
+      date?: string;
+      /** 事実がないのではなく決められない理由（段 17h）：note14_conflict＝申告（通常）と原請求（減の行）の食い違い（画面は R18.note14_conflict と同じ文）／note8＝注8 に当たるかを見ていないので減の行を 1 つに決められない */
+      reason?: "note14_conflict" | "note8";
+    }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
 /**
@@ -170,7 +185,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     lines.push({ kubun, count: sorted.length, dates: sorted });
     basis.push({ kubun, dates: sorted, derive: b.derive, events: b.events.map(ref), needs: b.needs ?? [], ...(b.choice ? { choice: b.choice } : {}), tentative: b.tentative ?? false });
   }
-  const lack = (id: string, need: NeedKey, blocks: string[], date?: string) => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}) });
+  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: "note14_conflict" | "note8") => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
   /** 要選択。答えが選択肢にあればその id を返し、なければ pending に出す（本人が選ぶまで行にしない。FR-97） */
   function ask(id: string, question: string, options: PendingOption[], blocks: string[]): string | undefined {
     asked.add(id);
@@ -292,20 +307,32 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     } else if (tier.value !== "none") {
       // 単一建物の人数の区分（design.md §15-4）：施設の申告 building が「ない」なら 1 人。ほかは患者ごとの事実。分からなければ保留
       const band = buildingBandOf(ctx);
-      const kubun = band.known ? kanriKubunOf(c, family.value, grade.value, tier.value, band.value) : undefined;
+      const normal = band.known ? kanriKubunOf(c, family.value, grade.value, tier.value, band.value) : undefined;
+      // 10 人以上の区分（段 17h）：注14 の申告で、減算 → 減の行、通常 → 通常の行、分からない → 保留。版に減の行がなければ通常の行
+      const tenPlus = band.known && NOTE14_BANDS.includes(band.value) && normal !== undefined && c.kanri.note14Pairs !== undefined;
+      const note14 = facility.note14;
+      const reds = tenPlus ? reducedOf(c, normal!) : [];
+      let kubun = normal;
       if (!band.known) {
         lack(`D03-band:${input.yearMonth}`, "buildingBand", kanriBlocks);
         kanriOpen = true;
-      } else if (NOTE14_BANDS.includes(band.value)) {
-        // 10 人以上の区分：注14（減算）の申告は段 17h で読む。それまでは、減算中の施設に点数の高い通常の行を示さないよう保留する（L-142）
+      } else if (tenPlus && !note14.known) {
         lack(`D03-note14:${input.yearMonth}`, "facility.note14", kanriBlocks);
         kanriOpen = true;
-      } else if (kubun === undefined) {
+      } else if (tenPlus && note14.known && note14.value === "通常" && input.claimNote14Side === "減") {
+        // 申告（通常）と原請求（減の行）の食い違い：申告だけを根拠に点数の高い通常の行を立てない（round-57 X-172。L-130）
+        lack(`D03-note14:${input.yearMonth}`, "facility.note14", kanriBlocks, undefined, "note14_conflict");
+        kanriOpen = true;
+      } else if (tenPlus && note14.known && note14.value === "減算" && reds.length !== 1) {
+        // 在支診以外の区分では減の行が 2 つ（注14 だけ・注8 と重ねた行）。注8 に当たるかを持たないので立てない（round-57 X-171。L-151）
+        lack(`D03-note8:${input.yearMonth}`, "facility.note14", kanriBlocks, undefined, "note8");
+        kanriOpen = true;
+      } else if ((kubun = tenPlus && note14.known && note14.value === "減算" ? reds[0] : normal) === undefined) {
         noGradeKubun("管理料");
         kanriOpen = true;
       } else {
         // 使った入力：施設の種別と、回数 2 以上なら重症か、重症でなければ注16
-        const needs: NeedKey[] = ["comprehensiveCare", "residence", "facility.grade", facility.building.known && facility.building.value === "none" ? "facility.building" : "buildingBand", ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
+        const needs: NeedKey[] = ["comprehensiveCare", "residence", "facility.grade", facility.building.known && facility.building.value === "none" ? "facility.building" : "buildingBand", ...(tenPlus ? (["facility.note14"] as const) : []), ...(count >= 2 ? (tier.value === "イ" || !c.kanri.note16.enabled ? (["table8_2"] as const) : (["table8_2", "facility.note16Met"] as const)) : [])];
         kanri = { kubun, tier: tier.value, date: visitDays[visitDays.length - 1] };
         add(kubun, [kanri.date], { derive: "D03", events: billedVisits, needs, tentative });
       }

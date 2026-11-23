@@ -3,6 +3,7 @@
 // 確かめ直す日が近いもの・確かめ直す日のないものを並べる。そこから「変わりなし」を開くと、その行を選んだ状態になる（round-52 X-150）。メールなどで外に送らない
 import { useEffect, useState } from "react";
 import type { RecheckNotice as Notice } from "../../src/facility/declaration";
+import { NOTE14_TEXT } from "../../src/facility/note14";
 import { getJson } from "../get-json";
 import { itemLabel, type Declarations } from "../settings/facility";
 
@@ -30,6 +31,7 @@ export function RecheckNotice() {
   return (
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>施設の申告の確かめ直し</h3>
+      {d.note14.managerLine && <div className="notice warn">{d.note14.managerLine}</div>}
       {empty && <p className="muted">確かめ直す日が近い・過ぎた・ない申告はありません。</p>}
       {groups.map(([title, rows]) =>
         rows.length > 0 ? (
@@ -38,7 +40,11 @@ export function RecheckNotice() {
             <ul style={{ paddingLeft: 18 }}>
               {rows.map((n) => (
                 <li key={n.id}>
-                  {label(n.key)}　{text(n)}　<a href={`/settings?confirm=${n.id}#declaration-confirm`}>変わりなしとして確かめ直す</a>　<a href={`/settings#declaration-${n.key}`}>申告を見る</a>
+                  {label(n.key)}　{text(n)}　
+                  {/* 注14：道具の結果（減算になる）のまま申告が「通常」なら「変わりなし」の入口を出さず、申告の画面へ案内する（round-58 C-331・round-59 C-342。L-160） */}
+                  {n.key === "note14" && d.note14.state === "block" ? <span className="notice warn">{NOTE14_TEXT.differs}</span> : <a href={`/settings?confirm=${n.id}#declaration-confirm`}>変わりなしとして確かめ直す</a>}
+                  {n.key === "note14" && d.note14.state === "differs" && <span className="muted">（{NOTE14_TEXT.differs}）</span>}
+                  　<a href={`/settings#declaration-${n.key}`}>申告を見る</a>
                 </li>
               ))}
             </ul>

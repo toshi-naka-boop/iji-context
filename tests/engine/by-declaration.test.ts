@@ -25,6 +25,8 @@ const INPUTS: { name: string; ctx: ClaimContext }[] = [
 /** 漏れを探す入力：上に、単一建物の人数で結論が変わる道（段 17f）を足す。管理料を 2 人以上の区分・10 人以上の区分にした K1（患者ごとの人数の区分は 2〜9 人と確かめた）。
  * 申告から来た値かで結論が変わる（申告だけから 1 人と決まると R19 は直さず食い違いの情報不足。C-251）ので、下の「変わらない」の入力には入れない */
 const LEAK_INPUTS = [...INPUTS, ...(["C002_2I2", "C002_2I3"] as const).map((k) => ({ name: `K1 の管理料を ${k}`, ctx: bandCase(K1, k) }))];
+// 注14（段 17h）：10 人以上の区分の通常の行と減の行（患者の人数の区分は 10〜19 人と確かめた）。note14 を 1 つずつ変える入力
+LEAK_INPUTS.push(...(["C002_2I3", "C002_2I3_N14"] as const).map((k) => ({ name: `K1 の管理料を ${k}（10〜19 人）`, ctx: { ...bandCase(K1, k), facts: { ...bandCase(K1, k).facts, buildingBand: { known: true, value: "10-19" as const } } } })));
 
 /** K1 の管理料の行を kubun に替え、患者ごとの人数の区分を 2〜9 人と確かめた請求 */
 function bandCase(c: ClaimContext, kubun: string): ClaimContext {
@@ -57,7 +59,7 @@ describe("byDeclaration の漏れ（design.md §15-4）", () => {
     expect([...changed].filter((k) => !BY_DECLARATION.has(k)).sort()).toEqual([]);
   });
   it("空振りしていない：種別・DX・ベースアップ・在支診の道で、変わる種類が実際に見つかる", () => {
-    expect([...changed]).toEqual(expect.arrayContaining(["R18.use_grade", "R18.use_baseup_note5", "R12.dx_tier", "R12.dx_not_notified", "R10.visit_day_after_oushin", "R19.use_band"]));
+    expect([...changed]).toEqual(expect.arrayContaining(["R18.use_grade", "R18.use_baseup_note5", "R12.dx_tier", "R12.dx_not_notified", "R10.visit_day_after_oushin", "R19.use_band", "R18.use_note14_reduced"]));
   });
   it("BY_DECLARATION の種類の文には「（施設の申告による）」が付く", () => {
     const f = evaluate({ ...K1, facility: GRADE_OF(K1.facility, "1B") }).findings.find((x) => x.messageKey === "R18.use_grade")!;

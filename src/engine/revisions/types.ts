@@ -16,7 +16,15 @@ export type KanriTierKey = "イ" | "ロ" | "ニ";
  * 管理料の区分の表の 1 行（design.md §15-4）：族×施設の種別×区分 → kubun。
  * band は単一建物診療患者の数の区分（EM R8-94。段 17f。省いた行は 1 人の区分）。R01・R02・R16 は band・grade を見ず、R18 は grade だけ、R19 は band だけを見る（§0-12）
  */
-export type KanriRow = { kubun: string; family: KanriFamily; grade: FacilityGrade; tier: KanriTierKey; band?: Exclude<BuildingBand, "1"> };
+export type KanriRow = {
+  kubun: string;
+  family: KanriFamily;
+  grade: FacilityGrade;
+  tier: KanriTierKey;
+  band?: Exclude<BuildingBand, "1">;
+  /** 注14 の減の行（減＝注14 だけ、注8減＝注8 と重ねた行。段 17h）。族・種別・区分・人数の区分は組の通常の区分（note14Pairs）と同じ。省いた行は通常の行。R18 だけがこの次元を見る（§0-12） */
+  note14?: "減" | "注8減";
+};
 
 /** 施設の種別で分かれる加算の、種別 → kubun（その版に区分のない種別は持たない） */
 export type ByGrade = Partial<Record<FacilityGrade, string>>;
@@ -36,7 +44,11 @@ export type RevisionConsts = {
     rows: KanriRow[];
     familyOf: Record<Residence, KanriFamily>;
     note16: { enabled: boolean; from: KanriTierKey; to: KanriTierKey };
+    /** 注14 の減の行 → 対応する通常の区分（design.md §15-4。段 17h）。持たない版では、減の行を持たず、請求の注14 の側は「なし」 */
+    note14Pairs?: Record<string, string>;
   };
+  /** 注14（EM R8-191・R8-201）：基準を確かめる確認月（月の数字）。申告 note14 の確かめ直す日の既定（次の確認月の末日）に使う。持たない版では注14 の申告を聞かない */
+  note14?: { checkMonths: number[] };
   /** 包括的支援加算（R02・R03）。tiers は加算の対象の区分。要介護度・障害支援区分がそれぞれの下限以上なら対象 */
   hokatsu: { kubun: string; careLevelMin: number; disabilityLevelMin: number; tiers: KanriTierKey[] };
   /** 在宅療養指導管理料（R04） */

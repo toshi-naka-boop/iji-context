@@ -1,7 +1,9 @@
 // R19 単一建物の人数（design.md §15-4。段 17f）：管理料の行の人数の区分（EM R8-94）と、その患者の人数の区分（buildingBandOf）を比べる。
 // 人数の次元だけを見る（区分〔回数・重症〕は R01・R02、族は R16、種別は R18 の担当。§0-12）。行と申告・確かめた事実と摘要欄のみなしのコメントで決まる（出来事は読まない）
-import { buildingBandOf, kanriKubun, kanriKubunOf, kanriLines } from "../predicates";
-import type { KubunDef, RevisionConsts } from "../revisions/types";
+import { buildingBandOf, kanriKubun, kanriKubunOf, kanriLines, reducedOf } from "../predicates";
+import { NOTE14_BANDS, type BuildingBand } from "../types";
+import { note14Either } from "./r18";
+import type { KanriRow, KubunDef, RevisionConsts } from "../revisions/types";
 import type { ClaimContext, Finding, Rule } from "../types";
 import { finding } from "./util";
 
@@ -27,6 +29,27 @@ export function minashiOneLines(ctx: ClaimContext, c: RevisionConsts): string[] 
 
 /** points は版の点数表（直し先の区分の名前を文に添えるのに使う。点数は見ない） */
 export function makeR19(c: RevisionConsts, points: Record<string, KubunDef>): Rule {
+  const named = (fix: string) => ({ fix, fixName: points[fix]?.name ?? fix, fixText: `人数の区分に合う区分は「${points[fix]?.name ?? fix}」です` });
+  /**
+   * 直し先の名称（round-57 C-324・round-58 C-332。L-148）：直し先が 10 人以上でなければ、その人数の区分の行（注14 の側を持たない）。
+   * 10 人以上なら、申告 note14 が 減算 → 減の行（1 つに決まらなければ両方。L-151）、通常 → 通常の行（ただし請求の行が減の行なら減の行のまま。申告だけで点数の高い側を名指ししない。L-130）、
+   * 分からない → 名称を添えず「注14 の申告によって通常の行か減の行のどちらかです」。名称が申告で変わるので、use_band は byDeclaration に載る
+   */
+  function fixParams(ctx: ClaimContext, l: { kubun: string; family: KanriRow["family"]; grade: KanriRow["grade"]; tier: KanriRow["tier"]; note14?: KanriRow["note14"] }, band: BuildingBand): Record<string, string> {
+    const normal = kanriKubunOf(c, l.family, l.grade, l.tier, band);
+    if (!normal) return { fixText: "" };
+    if (!NOTE14_BANDS.includes(band) || !c.kanri.note14Pairs) return named(normal);
+    const n = ctx.facility.note14;
+    const reds = reducedOf(c, normal);
+    const sameSide = reds.find((k) => c.kanri.rows.find((r) => r.kubun === k)?.note14 === l.note14);
+    if (n.known && n.value === "減算") {
+      if (reds.length === 1) return named(reds[0]);
+      const e = note14Either(reds, points);
+      return { fixes: e.fixes, fixName: e.fixName, fixText: `人数の区分に合う区分は「${e.fixName}」です${e.note8}` };
+    }
+    if (n.known && n.value === "通常") return l.note14 !== undefined && sameSide ? named(sameSide) : named(normal);
+    return { fixText: "人数の区分に合う区分は、注14 の申告によって通常の行か減の行のどちらかです" };
+  }
   return {
     id: "R19",
     kubun: kanriKubun(c),
@@ -64,8 +87,7 @@ export function makeR19(c: RevisionConsts, points: Record<string, KubunDef>): Ru
           conflict.push(l.kubun);
           continue;
         }
-        const fix = kanriKubunOf(c, l.family, l.grade, l.tier, read.value);
-        out.push({ ...finding(this, "区分誤り", [l.kubun], "use_band"), params: fix ? { fix, fixName: points[fix]?.name ?? fix } : {} });
+        out.push({ ...finding(this, "区分誤り", [l.kubun], "use_band"), params: fixParams(ctx, l, read.value) });
       }
       if (conflict.length) out.push({ ruleId: this.id, kind: "情報不足", lineRefs: conflict, missing: { target: "clerk", field: "facility.building" }, messageKey: `${this.id}.declaration_conflict`, reference: this.reference });
       if (unknownLines.length) {

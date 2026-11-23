@@ -98,8 +98,6 @@ const ROWS: Row[] = [
   ["C002-2_3RO5_N8N14", "C002-2_3RO5", "114745310", "施医総管（在支診等以外・月２回～５０人～・注８注１４）", 266, true],
 ];
 
-/** 減の行のコード（EM §2-8 の表。段 17f の間は、G11 が減の行のある請求の管理料を見ないのに使う） */
-export const NOTE14_REDUCED_CODES: readonly string[] = ROWS.map(([, , code]) => code);
 /** 減の行 → 対応する通常の区分（族・種別・区分・人数の区分は通常の区分と同じ。版の定数 note14Pairs） */
 export const note14Pairs: Record<string, string> = Object.fromEntries(ROWS.map(([kubun, normal]) => [kubun, normal]));
 /** 注8 と重ねた減の行（在支診以外の区分。注8 は見ていない。L-92・L-151） */

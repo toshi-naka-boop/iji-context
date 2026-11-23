@@ -5,10 +5,11 @@ import { getApp } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";
 import type { DeclarationBody } from "../../../../src/server/app/facility";
 import { declarationBody } from "../../../../src/server/schemas/facility";
+import { NOTE14_OVERRIDE_REASONS } from "../../../../src/facility/note14";
 
 export const GET = route({ roles: allow("GET /api/facility/declaration") }, () => getApp().declarations());
 
-export const POST = route({ roles: allow("POST /api/facility/declaration"), body: declarationBody, audit: { target: ({ body }) => body.item } }, ({ user, body }) => getApp().saveDeclaration(user, body as DeclarationBody));
+export const POST = route({ roles: allow("POST /api/facility/declaration"), body: declarationBody, audit: { target: ({ body }) => ("override" in body && body.override ? `${body.item}（道具の結果と違うまま残した：${body.override.month}・${NOTE14_OVERRIDE_REASONS[body.override.reason]}）` : body.item) } }, ({ user, body }) => getApp().saveDeclaration(user, body as DeclarationBody));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

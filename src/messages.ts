@@ -64,8 +64,11 @@ export const FINDING_TEXT: Record<string, string> = {
   "R18.iko_grade3_only": "在宅療養移行加算は、在宅療養支援診療所以外の診療所（管理料の 3 の区分を算定する患者）に限ります{note}",
   "R18.use_baseup_note5": "ベースアップ評価料(Ⅰ)の注5 の届出があるので、「{fixName}」で算定します{note}",
   "R18.use_baseup_normal": "ベースアップ評価料(Ⅰ)の注5 の届出がないので、「{fixName}」で算定します{note}",
+  // 注14（段 17h）。{fixName} は減の行の名称（1 つに決まらないときは両方と注8 の断り）
+  "R18.use_note14_reduced": "10 人以上の区分を減算の点数で算定していると申告されています。減算の区分は「{fixName}」です{note8}{note}",
+  "R18.note14_conflict": "申告（10 人以上の区分を通常の点数で算定）と請求が食い違っています。申告を確かめてください",
   // R19 単一建物の人数（design.md §15-4。段 17f）。{fixName} はその患者の人数の区分に合う区分の名前
-  "R19.use_band": "単一建物診療患者の人数の区分が、行の区分と違います。人数の区分に合う区分は「{fixName}」です",
+  "R19.use_band": "単一建物診療患者の人数の区分が、行の区分と違います。{fixText}",
   "R19.declaration_conflict": "申告（2 人以上の建物はない）と請求が食い違っています。申告を確かめてください",
 };
 
@@ -85,6 +88,8 @@ export const BY_DECLARATION = new Set<string>([
   "R18.iko_grade3_only",
   "R18.use_baseup_note5",
   "R18.use_baseup_normal",
+  "R18.use_note14_reduced",
+  "R18.note14_conflict",
   "R19.use_band",
   "R19.declaration_conflict",
 ]);
@@ -458,4 +463,14 @@ export function eventText(event: string, trigger?: string): string {
   const extra = trigger ? triggerLabel(trigger) : "";
   if (base === "") return extra;
   return extra !== "" && extra !== base ? `${base}（${extra}）` : base;
+}
+
+/**
+ * 導出の保留（事実不足）の文（src/chart/claim.ts）。reason のある保留は、事実がないのではなく決められない理由の文（段 17h）：
+ * note14_conflict は R18.note14_conflict と同じ文と、施設の申告の画面への案内（round-58 C-330＝X-181）。note8 は注8 を見ていないので減の行を決められないこと（round-57 X-171）
+ */
+export function pendingText(p: { need: NeedKey; date?: string; reason?: "note14_conflict" | "note8" }, md: (d: string) => string): string {
+  if (p.reason === "note14_conflict") return `${FINDING_TEXT["R18.note14_conflict"]}。${DECLARATION_GUIDE}`;
+  if (p.reason === "note8") return "注8 の減算に当たるかを見ていないので、減の行を 1 つに決められません";
+  return `${needLabel(p.need)}${p.date ? `（${md(p.date)}）` : ""}`;
 }

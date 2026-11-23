@@ -203,8 +203,8 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       {claim.staleChoices.length > 0 && <div className="notice warn">前の答えは使っていません（日付が変わったか、ほかの答えや確かめた事実で、その問いがなくなったため）。</div>}
       {lacks.map((p) => p.kind === "事実不足" && (
         <div key={p.id} className="notice warn">
-          <div><strong>確かめる事実：</strong>{p.text}</div>
-          <div>{p.target === "doctor" ? "医師確認で確かめます。" : p.text.startsWith("施設の設定") ? "事務長か責任者に確かめて、施設の設定に入力します。" : "医療事務が確かめて、患者情報に入力します。"}</div>
+          <div><strong>{p.reason ? "決められないこと：" : "確かめる事実："}</strong>{p.text}</div>
+          {p.reason === "note14_conflict" ? <div><a href="/settings#declaration-note14">施設の申告を見る</a></div> : p.reason ? null : <div>{p.target === "doctor" ? "医師確認で確かめます。" : p.text.startsWith("施設の設定") ? "事務長か責任者に確かめて、施設の設定に入力します。" : "医療事務が確かめて、患者情報に入力します。"}</div>}
           {p.blocks.length > 0 && <div className="muted">決まるまで行にしないもの：{p.blocks.join("、")}</div>}
         </div>
       ))}

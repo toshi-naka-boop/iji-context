@@ -22,10 +22,11 @@ import { makeR18 } from "../rules/r18";
 import { makeR19 } from "../rules/r19";
 import { changes } from "./r2026-changes";
 import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
+import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
 import { bundles, codes as baseCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
 import { kanriRows } from "./kanri";
-import type { KubunDef, Revision, RevisionConsts } from "./types";
+import type { KanriRow, KubunDef, Revision, RevisionConsts } from "./types";
 
 const em = (name: string, no: string, points: number): KubunDef => ({ name, no, points, source: "EM" });
 
@@ -143,25 +144,31 @@ const points: Record<string, KubunDef> = {
   // 単一建物 2 人以上の管理料の区分（EM §2-2 R8-95〜R8-190。段 17f。r2026-band.ts）
   ...bandPoints,
 };
-const codes = { ...baseCodes, ...bandCodes };
-const shikibetsu = { ...baseShikibetsu, ...bandShikibetsu };
+// 注14 の減の行（EM §2-8 の「注14 の減算の行」。段 17h。r2026-note14.ts）
+Object.assign(points, note14Points(points));
+const codes = { ...baseCodes, ...bandCodes, ...note14Codes };
+const shikibetsu = { ...baseShikibetsu, ...bandShikibetsu, ...note14Shikibetsu };
+const normalKanriRows: KanriRow[] = [
+  ...kanriRows({
+    在医総管: { "1B": ["C002_1B_I1", "C002_1B_RO1", "C002_1B_NI1"], "1N": ["C002_1N_I1", "C002_1N_RO1", "C002_1N_NI1"], "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"], "3": ["C002_3I1", "C002_3RO1", "C002_3NI1"] },
+    施設総管: {
+      "1B": ["C002-2_1B_I1", "C002-2_1B_RO1", "C002-2_1B_NI1"],
+      "1N": ["C002-2_1N_I1", "C002-2_1N_RO1", "C002-2_1N_NI1"],
+      "2": ["C002-2_2I1", "C002-2_2RO1", "C002-2_2NI1"],
+      "3": ["C002-2_3I1", "C002-2_3RO1", "C002-2_3NI1"],
+    },
+  }),
+  ...bandRows,
+];
+/** 減の行は、組の通常の区分と同じ族・種別・区分・人数の区分（note14Pairs） */
+const reducedKanriRows: KanriRow[] = Object.entries(note14Pairs).map(([kubun, normal]) => ({ ...normalKanriRows.find((r) => r.kubun === normal)!, kubun, note14: note14WithNote8.includes(kubun) ? "注8減" : "減" }));
 
 const consts: RevisionConsts = {
   visitKubun: ["C001_1I", "C001_1RO"],
   kanri: {
-    // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72）の単一建物 1 人の区分と、人数の区分の行（EM R8-95〜R8-190。段 17f）
-    rows: [
-      ...kanriRows({
-      在医総管: { "1B": ["C002_1B_I1", "C002_1B_RO1", "C002_1B_NI1"], "1N": ["C002_1N_I1", "C002_1N_RO1", "C002_1N_NI1"], "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"], "3": ["C002_3I1", "C002_3RO1", "C002_3NI1"] },
-      施設総管: {
-        "1B": ["C002-2_1B_I1", "C002-2_1B_RO1", "C002-2_1B_NI1"],
-        "1N": ["C002-2_1N_I1", "C002-2_1N_RO1", "C002-2_1N_NI1"],
-        "2": ["C002-2_2I1", "C002-2_2RO1", "C002-2_2NI1"],
-        "3": ["C002-2_3I1", "C002-2_3RO1", "C002-2_3NI1"],
-      },
-      }),
-      ...bandRows,
-    ],
+    // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72）の単一建物 1 人の区分と、人数の区分の行（EM R8-95〜R8-190。段 17f）、注14 の減の行（段 17h）
+    rows: [...normalKanriRows, ...reducedKanriRows],
+    note14Pairs,
     familyOf: { 居宅: "在医総管", 施設入居等: "施設総管" },
     // 注16：基準を満たさない施設は、月2回以上の区分に代えて月1回の区分を算定する（R8-17。どの種別も。重症区分は対象外）
     note16: { enabled: true, from: "ロ", to: "ニ" },
@@ -187,6 +194,8 @@ const consts: RevisionConsts = {
     BNP: { kubun: "D008_19", judgement: "D026_5" },
   },
   dx: { tiers: { "1": "C001_N13_DX", "2": "C001_N13_DX2" }, conflicts: ["A_DENSHI_RENKEI"] },
+  // 注14 の基準を確かめる確認月（EM R8-201：毎年 2・5・8・11 月）
+  note14: { checkMonths: [2, 5, 8, 11] },
   weeklyVisitLimit: 3,
   weekStartsOn: 0,
   ikou: { kubun: "C002_N4_IKOU", months: 3, daysFromDischarge: 365 },

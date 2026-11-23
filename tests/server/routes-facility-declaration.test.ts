@@ -22,7 +22,7 @@ let cookie: string;
 type Row = { id: number; itemKey: string; fromMonth: string | null; checkedBy: string; checkedOn: string | null; source: string; recheckOn: string | null; requirement: string; choice: string | null };
 type Item = { key: string; row: Row | null; status: { v: string; reason: string | null } };
 type Notice = { key: string; id: number; fromMonth: string; untilMonth: string | null; state: string };
-type Decl = { today: string; items: Item[]; recheck: { rows: Notice[]; noFromMonth: string[] }; selectable: Row[]; initialSelection: number[]; mismatches: string[] };
+type Decl = { today: string; items: Item[]; recheck: { rows: Notice[]; noFromMonth: string[] }; selectable: Row[]; initialSelection: number[]; mismatches: string[]; note14RecheckDefault: string };
 
 beforeAll(async () => {
   tmp = mkdtempSync(path.join(tmpdir(), "iji-routes-declaration-"));
@@ -250,5 +250,45 @@ describe("同じ建物で 2 人以上を診ている建物があるか（buildin
     expect(fs.map((f) => [f.messageKey, f.missing?.field])).toEqual([["R19.declaration_conflict", "facility.building"]]);
     // 変更の記録の問い（history）も building を受ける
     expect((await (await historyRoute()).GET(new Request(`${URL_}/history?item=building`, { headers: { cookie: c } }))).status).toBe(200);
+  });
+});
+
+describe("注14 の申告（note14。段 17h）", () => {
+  it("building が「ない」の施設には欄を出さず、請求に 10 人以上の区分の行が出たときだけ「注14 を入れてください」。from_month のない申告は 400。確かめ直す日を過ぎた行は分からないになり、「変わりなし」で残すと情報不足が消える（C-320 のうち道具の結果に依らない部分）", async () => {
+    const real = instance.getAuth().register("decl_note14", "たなか", "password123", "real");
+    const c = `resemen_session=${instance.getAuth().createSession(real.id).token}`;
+    setRole(real, "manager");
+    expect((await save({ item: "building", fromMonth: YM, choice: "none", checkedOn: day(13), recheckOn: "2027-10-13" }, c)).status).toBe(200);
+    expect(itemOf(await list(c), "note14")).toBeUndefined();
+    const C = resolveRevision(YM).consts;
+    const base = readUke(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")));
+    const r = base.receipts[0];
+    const file: UkeFile = { ...base, receipts: [{ ...r, claimId: "N1", patient: { ...r.patient, name: "架空 竹子", birth: "19460606", insurer: { number: "06139991", symbol: "77", no: "704" } }, lines: [{ kubun: C.visitKubun[0], count: 2, dates: [day(5), day(19)] }, { kubun: "C002_2RO3", count: 1, dates: [day(19)] }], comments: [] }] };
+    const id = instance.runAs(real, () => instance.getApp().uploadUke(instance.clerkIdOf(real), writeUke(file)).flatMap((u) => u.receipts.map((x) => x.claimId)))[0];
+    let d = await list(c);
+    expect(d.mismatches).toContain("注14 を入れてください（10 人以上の区分の管理料の行がある請求があります）：1 件");
+    expect(itemOf(d, "note14")?.status.v).toBe("unknown");
+    // 形：from_month が要る。届出日・算定開始年月日は減算のときだけ
+    const n14 = (o: Record<string, unknown>) => ({ item: "note14", fromMonth: YM, choice: "normal", notifiedOn: null, startOn: null, checkedOn: day(1), recheckOn: day(10), ...o });
+    expect((await save(n14({ fromMonth: undefined }), c)).status).toBe(400);
+    expect((await save(n14({ startOn: "2026-10-01" }), c)).status).toBe(400);
+    // 確かめ直す日（10 日）を過ぎた「通常」：その月の 10 人以上の区分の行に情報不足（確かめ直す日を過ぎた）
+    expect((await save(n14({}), c)).status).toBe(200);
+    const judged = () => evaluate(instance.runAs(real, () => instance.getApp().caseOf(id))).findings.filter((f) => f.missing?.field === "facility.note14").map((f) => f.ruleId);
+    expect(judged()).toEqual(["R18"]);
+    d = await list(c);
+    expect(itemOf(d, "note14")?.status.reason).toBe("確かめ直す日を過ぎています");
+    expect(d.note14RecheckDefault).toBe("2027-02-28");
+    // 「変わりなし」で残すと（確かめ直す日は次の確認月の末日）、同じ点検で情報不足が消える。応答は行ごと
+    const note14Row = itemOf(d, "note14")!.row!;
+    const res = await confirm([note14Row.id], c);
+    expect(res.status).toBe(200);
+    const after = (await res.json()) as Decl & { results: { id: number; ok: boolean }[] };
+    expect(after.results).toEqual([{ id: note14Row.id, ok: true }]);
+    expect(itemOf(after, "note14")?.row?.recheckOn).toBe("2027-02-28");
+    expect(judged()).toEqual([]);
+    // 減算なら、届出日と算定開始年月日を記録として残せる（判定は from_month）
+    expect((await save(n14({ choice: "reduced", startOn: "2026-10-01", notifiedOn: "2026-09-20", recheckOn: "2027-02-28" }), c)).status).toBe(200);
+    expect(instance.runAs(real, () => instance.getApp().caseOf(id)).facility.note14).toEqual({ known: true, value: "減算" });
   });
 });

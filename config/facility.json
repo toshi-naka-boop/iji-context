@@ -27,5 +27,6 @@
     }
   },
   "recheckNoticeDays": 30,
-  "recheckDefaultMonths": { "note16": 3, "default": 12 }
+  "recheckDefaultMonths": { "note16": 3, "default": 12 },
+  "recheckNote14": "next_check_month_end"
 }

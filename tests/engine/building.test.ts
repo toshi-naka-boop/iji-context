@@ -27,9 +27,9 @@ const KANRI_DATE = K2.lines.find((l) => l.kubun === "C002_2RO1")!.dates;
 const gradeFacility = (f: Facility, g: FacilityGrade): Facility => ({ ...f, grade: { known: true, value: g }, zaishishin: g !== "3", kyokagata: g === "1B" || g === "1N", hasBeds: g === "1B" });
 const withResidence = (c: ClaimContext, family: KanriFamily): ClaimContext => withFact(c, "residence", { known: true, value: family === "在医総管" ? "居宅" : "施設入居等" });
 /** 施設の申告 building と患者ごとの人数の区分 */
-const withBuilding = (c: ClaimContext, building: "none" | "some" | null, band?: BuildingBand | null, basis?: "declaration"): ClaimContext => ({
+const withBuilding = (c: ClaimContext, building: "none" | "some" | null, band?: BuildingBand | null, basis?: "declaration", note14: "通常" | "減算" | null = "通常"): ClaimContext => ({
   ...c,
-  facility: { ...c.facility, building: building === null ? { known: false } : { known: true, value: building } },
+  facility: { ...c.facility, building: building === null ? { known: false } : { known: true, value: building }, note14: note14 === null ? { known: false } : { known: true, value: note14 } },
   facts: { ...c.facts, buildingBand: band ? { known: true, value: band } : { known: false } },
   ...(basis ? { facilityBasis: { ...c.facilityBasis, building: basis } } : {}),
 });
@@ -43,12 +43,12 @@ const commentOf = (code: string, on: string[]): Comment => ({ code, text: "", ra
 describe("版の人数の区分（EM R8-95〜R8-190）", () => {
   it("族×種別×区分のどの組にも、5 つの人数の区分の行がある（1 人は今の行）", () => {
     for (const f of FAMILIES) for (const g of GRADES) for (const t of ["イ", "ロ", "ニ"] as const) for (const b of BUILDING_BANDS) expect(kanriKubunOf(C, f, g, t, b), `${f} ${g} ${t} ${b}`).toBeDefined();
-    expect(C.kanri.rows.filter((r) => r.band !== undefined)).toHaveLength(96);
+    expect(C.kanri.rows.filter((r) => r.band !== undefined && r.note14 === undefined)).toHaveLength(96);
   });
 });
 
 describe("R19（人数の区分ごと×族）", () => {
-  // 管理料の行の人数の区分が、患者の人数の区分と違えば use_band（直し先は同じ族・種別・区分の、患者の人数の区分の行）。同じなら言わない
+  // 管理料の行の人数の区分が、患者の人数の区分と違えば use_band（直し先は同じ族・種別・区分の、患者の人数の区分の行。注14 の申告は「通常」）。同じなら言わない
   for (const f of FAMILIES)
     for (const lineBand of BUILDING_BANDS)
       it(`${f}・行の人数 ${lineBand}`, () => {
@@ -106,7 +106,7 @@ describe("R19（人数の区分ごと×族）", () => {
     expect(kanriOfResult(d)).toEqual([]);
   });
 
-  it("R01・R02・R16・R18 は人数の次元で指摘を出さない（1 人の区分の行と同じ指摘）", () => {
+  it("R01・R02・R16・R18 は人数の次元で指摘を出さない（1 人の区分の行と同じ指摘。注14 の申告は「通常」）", () => {
     for (const g of GRADES)
       for (const f of FAMILIES)
         for (const tier of ["イ", "ロ", "ニ"] as const) {
@@ -122,17 +122,17 @@ describe("R19（人数の区分ごと×族）", () => {
 });
 
 describe("D03 の人数（buildingBand で区分を引く）", () => {
-  it("導出した行を検証に通して区分誤り・取り忘れが 0 件（人数の区分〔10 人未満〕×種別×族）。10 人以上は段 17h まで注14 の申告で保留する", () => {
+  it("導出した行を検証に通して区分誤り・取り忘れが 0 件（人数の区分〔10 人未満〕×種別×族。10 人以上は注14 の申告「通常」の通常の行。減算は tests/engine/note14.test.ts）。注14 が分からない 10 人以上は保留", () => {
     for (const g of GRADES)
       for (const f of FAMILIES)
         for (const b of BUILDING_BANDS) {
           const c = withBuilding(withResidence({ ...K2, facility: gradeFacility(K2.facility, g) }, f), "some", b);
-          const r = derive(c);
           if (NOTE14_BANDS.includes(b)) {
-            expect(r.pending, `${g} ${f} ${b}`).toEqual([expect.objectContaining({ kind: "事実不足", need: "facility.note14", target: "clerk" })]);
-            expect(kanriOfResult(r)).toEqual([]);
-            continue;
+            const held = derive(withBuilding(c, "some", b, undefined, null));
+            expect(held.pending, `${g} ${f} ${b}`).toEqual([expect.objectContaining({ kind: "事実不足", need: "facility.note14", target: "clerk" })]);
+            expect(kanriOfResult(held)).toEqual([]);
           }
+          const r = derive(c);
           expect(r.pending, `${g} ${f} ${b}`).toEqual([]);
           expect(kanriOfResult(r), `${g} ${f} ${b}`).toEqual([kanriKubunOf(C, f, g, "ロ", b)]);
           const fs = evaluate({ ...c, lines: r.lines }).findings.filter((x) => x.kind === "区分誤り" || x.kind === "取り忘れ");

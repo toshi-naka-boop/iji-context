@@ -212,7 +212,10 @@ export function g10Blocking(claim: GenericClaim, masters: MastersDb, about: Gene
   });
 }
 
-/** 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、注14 の基準の行、正しい側を探していない行 */
+/**
+ * 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、正しい側を探していない行。
+ * 注14 の基準（4101）を含む行は今までどおり判定しないが、減の行と通常の行の正しい側は申告 note14 で R18 が見るので、「見ていません」とは出さない（段 17h。design.md §15-3）
+ */
 export function g10NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const j = judgeG10(claim, masters, about);
   if ("skip" in j) return [];
@@ -220,7 +223,6 @@ export function g10NotDone(claim: GenericClaim, masters: MastersDb, about: Gener
   const unsearched = sideNotSearched(about, j.lines);
   return [
     `施設基準の要る行：${j.lines.length} 行（申告で持つ ${n("held")}・持たない ${n("not")}・分からない ${n("unknown")}）`,
-    ...(j.note14 > 0 ? [`注14 の基準の行は見ていません：${j.note14} 行`] : []),
     ...(unsearched > 0 ? [`施設基準を持たない行の正しい側は探していません：${unsearched} 行`] : []),
   ];
 }

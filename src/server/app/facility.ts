@@ -4,14 +4,18 @@
 // 判定に渡す形は「config の既定値 ← 残した設定 ← 申告 ← 症例ごとの上書き」。申告の項目（種別・注16・DX・ベースアップ）は、どのクリニックでも config の既定値を使わない（申告がなければ分からない）
 import kijun from "../../../config/shisetsu-kijun.json";
 import { FACT_KEYS, type FacilityJson } from "../../engine/facility";
-import { hasRevision, resolveRevision } from "../../engine/revisions";
+import { hasRevision, REVISIONS, resolveRevision } from "../../engine/revisions";
 import { codeOf } from "../../engine/revisions/codes";
-import { kanriBandOf } from "../../engine/predicates";
+import { isNote14Band, kanriBandOf } from "../../engine/predicates";
 import type { FacilityFactKey } from "../../engine/types";
 import { GRADE_CHOICES, GRADE_CODES, HOSPITAL_CODES, HOSPITAL_SIDE_CODES } from "../../facility/codes";
+import { nextCheckMonthEnd, note14Compare, NOTE14_TEXT, type Note14Choice, type Note14OverrideReason, type Note14Result } from "../../facility/note14";
+import facilityConfig from "../../../config/facility.json";
 import {
   BUILDING_KEY,
   buildingTri,
+  NOTE14_KEY,
+  note14Tri,
   codeKey,
   declarationView,
   DISPENSING_KEY,
@@ -87,6 +91,7 @@ export type DeclarationBody = { fromMonth: string; checkedOn: string | null; rec
   | { item: "note16"; requirement: Requirement }
   | { item: "dispensing"; choice: "outside" | "inside" | "unknown" }
   | { item: "building"; choice: "none" | "some" | "unknown" }
+  | { item: "note14"; choice: Note14Choice; notifiedOn: string | null; startOn: string | null; override?: { reason: Note14OverrideReason; month: string } }
   | { item: string; notified: "yes" | "no" | "unknown"; requirement: Requirement; startOn: string | null; notifiedOn: string | null; choice: "1" | "2" | null }
 );
 
@@ -98,12 +103,29 @@ function addDays(day: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** 確かめ直す日の既定：確かめた日の n か月後（n は項目ごと。config/facility.json の recheckDefaultMonths。docs M-5） */
+/** 注14 の確認月（版の定数。EM R8-201）：確かめた日の診療年月の版、なければ注14 を持つ最初の版 */
+const checkMonthsOf = (day: string): readonly number[] => {
+  const ym = day.slice(0, 7);
+  const rev = hasRevision(ym) ? resolveRevision(ym) : undefined;
+  return (rev?.consts.note14 ?? REVISIONS.find((r) => r.consts.note14)!.consts.note14!).checkMonths;
+};
+
+/**
+ * 確かめ直す日の既定：確かめた日の n か月後（n は項目ごと。config/facility.json の recheckDefaultMonths。docs M-5）。
+ * 注14 は、確かめた日の次の確認月の末日（config の recheckNote14。v31。design.md §15-2 の 6）
+ */
 export function recheckDefaultOf(months: Record<string, number>, itemKey: string, checkedOn: string): string {
+  if (itemKey === NOTE14_KEY && facilityConfig.recheckNote14 === "next_check_month_end") return nextCheckMonthEnd(checkedOn, checkMonthsOf(checkedOn));
   const d = new Date(`${checkedOn}T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + (months[itemKey] ?? months.default));
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * 注14 の計算の道具の結果（note14_worksheets。マイグレーション 16）。表は段 17i で足す。それまでは結果がない（どの入口も止まらない）。
+ * 段 17i で、この関数を表の読み出しに替え、round-58 C-331・round-59 C-342・round-60 C-350（L-160）の通しのテストを通す
+ */
+export const note14ResultsOf = (_ctx: Pick<AppContext, "sqlite">): Note14Result[] => [];
 
 export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "ukeFiles">) {
   /** 設定の画面に出す一覧（申告に移さない項目だけ）：項目ごとに、いま効いている値（null は分からない）と、クリニックで残した値か（偽なら既定値のまま） */
@@ -120,7 +142,24 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
   }
 
   /** 申告の一覧に並べる項目の鍵（種別・注16・院内／院外処方・表 4 の行） */
-  const itemKeys = () => [GRADE_KEY, NOTE16_KEY, DISPENSING_KEY, BUILDING_KEY, ...LISTED_CODES.map(codeKey)];
+  const itemKeys = (note14: boolean) => [GRADE_KEY, NOTE16_KEY, DISPENSING_KEY, BUILDING_KEY, ...(note14 ? [NOTE14_KEY] : []), ...LISTED_CODES.map(codeKey)];
+
+  /** 取り込んだ請求のうち、10 人以上の区分の管理料の行（通常・減とも）があり、その診療年月の注14 の申告が効かない請求の数（「注14 を入れてください」） */
+  function note14Needed(rows: DeclarationRow[], today: string): number {
+    let n = 0;
+    for (const file of uke.ukeFiles())
+      for (const r of file.receipts) {
+        if (!hasRevision(r.yearMonth)) continue;
+        const c = resolveRevision(r.yearMonth).consts;
+        if (r.lines.some((l) => l.count > 0 && isNote14Band(c, l.kubun)) && note14Tri(rows, today, r.yearMonth).v !== "held") n++;
+      }
+    return n;
+  }
+  /** 注14 の申告の今の値と、道具の結果との比べ（L-160。round-60 C-350） */
+  function note14State(rows: DeclarationRow[], today: string) {
+    const e = effectiveRow(rows, NOTE14_KEY, today.slice(0, 7));
+    return note14Compare(note14ResultsOf(ctx), (e?.row.choice as Note14Choice | undefined) ?? null, today);
+  }
 
   /**
    * 請求に出てきたのに申告の一覧にない施設基準コード（件数の多い順。L-90）。取り込んだレセプトの行のコードを、基本マスターの施設基準の 3 列で引く。
@@ -180,13 +219,17 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     const on: On = { yearMonth: today.slice(0, 7), day: today };
     const month: On = { yearMonth: today.slice(0, 7) };
     const unlisted = unlistedCodes();
-    const keys = [...itemKeys(), ...unlisted.map((u) => codeKey(u.code)).filter((k) => rows.some((r) => r.itemKey === k))];
+    // 注14 は、building が「ない」の施設には聞かない。ただし、請求に 10 人以上の区分の行が出たら「注14 を入れてください」と出して聞く（design.md §15-2）
+    const needNote14 = note14Needed(rows, today);
+    const buildingNone = buildingTri(rows, today, on.yearMonth).v === "held" && effectiveRow(rows, BUILDING_KEY, on.yearMonth)!.row.choice === "none";
+    const askNote14 = !buildingNone || needNote14 > 0 || rows.some((r) => r.itemKey === NOTE14_KEY);
+    const keys = [...itemKeys(askNote14), ...unlisted.map((u) => codeKey(u.code)).filter((k) => rows.some((r) => r.itemKey === k))];
     const grade = gradeOf(rows, month, today);
     const items = keys.map((key) => {
       const e = effectiveRow(rows, key, on.yearMonth);
       const code = key.startsWith("code:") ? key.slice(5) : null;
       const tri: Tri =
-        key === GRADE_KEY ? gradeOf(rows, on, today).tri : key === NOTE16_KEY ? note16Of(rows, on, today) : key === DISPENSING_KEY ? dispensingTri(rows, today, on.yearMonth) : key === BUILDING_KEY ? buildingTri(rows, today, on.yearMonth) : heldOf(rows, code!, on, today);
+        key === GRADE_KEY ? gradeOf(rows, on, today).tri : key === NOTE16_KEY ? note16Of(rows, on, today) : key === DISPENSING_KEY ? dispensingTri(rows, today, on.yearMonth) : key === BUILDING_KEY ? buildingTri(rows, today, on.yearMonth) : key === NOTE14_KEY ? note14Tri(rows, today, on.yearMonth) : heldOf(rows, code!, on, today);
       const mine = rows.filter((r) => r.itemKey === key);
       return {
         key,
@@ -214,6 +257,7 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     if (gradeId && (gradeId === "zaishishin3" || gradeId === "outside") && heldNow("4248")) mismatches.push("在宅医療充実体制加算を持つと申告されていますが、種別が在支診（(3)）か在支診以外です");
     // 申告（2 人以上の建物はない）と請求の食い違い（design.md §15-4。round-51 C-251）：取り込んだ請求のうち、その診療年月の申告が「ない」なのに 2 人以上の区分の管理料の行がある請求の数
     const conflicts = buildingConflicts(rows, today);
+    if (needNote14 > 0) mismatches.push(`${NOTE14_TEXT.needInput}：${needNote14} 件`);
     if (conflicts > 0) mismatches.push(`同じ建物で 2 人以上を診ている建物は「ない」と申告されていますが、2 人以上の区分の管理料の行がある請求が ${conflicts} 件あります`);
     return {
       today,
@@ -227,6 +271,12 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
       selectable: selectableRows(rows),
       initialSelection: initialSelection(rows, { screen: today }),
       mismatches,
+      // 注14 の道具の結果との比べ（L-160）。block のあいだは事務長の画面に 1 行出し、「変わりなし」の入口を出さない
+      note14: (() => {
+        const s = note14State(rows, today);
+        return { month: s.month, state: s.state, results: s.results, ...(s.state === "block" ? { managerLine: NOTE14_TEXT.overrideManager(s.month!) } : {}), ...(s.state === "differs" ? { note: NOTE14_TEXT.differs } : {}) };
+      })(),
+      note14RecheckDefault: recheckDefaultOf(ctx.recheckDefaultMonths, NOTE14_KEY, today),
     };
   }
 
@@ -244,6 +294,15 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
     } else if (body.item === DISPENSING_KEY) {
       const b = body as Extract<DeclarationBody, { item: "dispensing" }>;
       insertDeclaration(ctx.sqlite, { ...by, itemKey: DISPENSING_KEY, notified: "na", notifiedOn: null, startOn: null, requirement: "met", choice: b.choice }, at);
+    } else if (body.item === NOTE14_KEY) {
+      const b = body as Extract<DeclarationBody, { item: "note14" }>;
+      if (b.choice !== "reduced" && (b.startOn !== null || b.notifiedOn !== null)) throw badRequest("届出日と算定開始年月日は、減算の点数で算定しているときだけ入れられます", ["startOn"]);
+      // 道具の結果が「減算になる」の確認月に「通常」を残すとき：止めずに警告し、通常で残す理由を必ず選ばせる（L-160。round-60 C-350）
+      if (b.choice === "normal") {
+        const s = note14Compare(note14ResultsOf(ctx), "normal", todayOf(clock));
+        if (s.state === "block" && (!b.override || b.override.month !== s.month)) throw badRequest(`${NOTE14_TEXT.overrideWarning(s.month!)}。通常で残す理由を選んでください`, ["override"]);
+      }
+      insertDeclaration(ctx.sqlite, { ...by, itemKey: NOTE14_KEY, notified: "na", notifiedOn: b.choice === "reduced" ? b.notifiedOn : null, startOn: b.choice === "reduced" ? b.startOn : null, requirement: "met", choice: b.choice }, at);
     } else if (body.item === BUILDING_KEY) {
       const b = body as Extract<DeclarationBody, { item: "building" }>;
       insertDeclaration(ctx.sqlite, { ...by, itemKey: BUILDING_KEY, notified: "na", notifiedOn: null, startOn: null, requirement: "met", choice: b.choice }, at);
@@ -275,9 +334,13 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
       if (!selectable.has(id)) throw conflict("選んだ申告の行は、その後に直されています。画面を開き直してください");
       return r;
     });
+    // 道具の結果が「減算になる」のまま、申告が「通常」の注14 の行は「変わりなし」で写さない（行ごとに断り、ほかの行は残す。round-58 C-331・round-59 C-342）
+    const results = note14ResultsOf(ctx);
+    const refused = picked.filter((r) => r.itemKey === NOTE14_KEY && note14Compare(results, r.choice as Note14Choice, today).state === "block");
     const at = new Date().toISOString();
     ctx.sqlite.transaction(() => {
       for (const r of picked) {
+        if (refused.includes(r)) continue;
         insertDeclaration(
           ctx.sqlite,
           { itemKey: r.itemKey, fromMonth: r.fromMonth, notified: r.notified, notifiedOn: r.notifiedOn, startOn: r.startOn, requirement: r.requirement, choice: r.choice, checkedBy: user.name, checkedRole: user.role, checkedOn: today, recheckOn: recheckDefaultOf(ctx.recheckDefaultMonths, r.itemKey, today), source: "input" },
@@ -285,7 +348,7 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
         );
       }
     })();
-    return declarations();
+    return { ...declarations(), results: picked.map((r) => (refused.includes(r) ? { id: r.id, ok: false, reason: NOTE14_TEXT.differs } : { id: r.id, ok: true })) };
   }
 
   /** まとめて「変わりなし」の初期の選択：知らせの行から（notice）、判定の画面の理由から（その診療月で効く行。month・item） */

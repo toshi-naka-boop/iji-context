@@ -104,7 +104,7 @@ describe("G10 の三値（合成の請求）", () => {
     expect(keys(runG10(db, claimOf({ code: DX }), [row("code:4100", { choice: "1", fromMonth: YM, startOn: day(15) })]))).toEqual([`G10.unknown:${DX}:4100`]);
   });
 
-  it("名寄せ（8032）は 4 つに開く。注14 の基準（4101）を含む行は判定せず、点検の範囲に数を出す", () => {
+  it("名寄せ（8032）は 4 つに開く。注14 の基準（4101）を含む行は判定せず、点検の範囲の「注14 の基準の行は見ていません」も出さない（段 17h：R18 が申告 note14 で見る）", () => {
     const db = mastersWithKijun();
     db.prepare("UPDATE shinryo SET shisetsu_g1 = '8032/3057/3058/3169' WHERE code = ?").run(HOUMON);
     db.prepare("UPDATE shinryo SET shisetsu_g1 = '3055/4247/3057/3058', shisetsu_g2 = '721', shisetsu_g3 = '4101' WHERE code = ?").run(OUSHIN);
@@ -113,7 +113,7 @@ describe("G10 の三値（合成の請求）", () => {
     expect(keys(runG10(db, c, BASE()))).toEqual([]);
     const outside = runG10(db, c, [row("grade", { choice: "outside" }), row("code:721")]) as GenericFinding[];
     expect(keys(outside)).toEqual([`G10.not_held:${HOUMON}:3055/4247/3056/3168/3057/3058/3169`]);
-    expect(g10NotDone(c, db, aboutOf([row("grade", { choice: "outside" }), row("code:721")]))).toEqual(["施設基準の要る行：1 行（申告で持つ 0・持たない 1・分からない 0）", "注14 の基準の行は見ていません：1 行",
+    expect(g10NotDone(c, db, aboutOf([row("grade", { choice: "outside" }), row("code:721")]))).toEqual(["施設基準の要る行：1 行（申告で持つ 0・持たない 1・分からない 0）",
       // 正しい側は探さず、持たない行の数を出す（L-91。2026-11-23）
       "施設基準を持たない行の正しい側は探していません：1 行",
     ]);

@@ -56,13 +56,13 @@ const K2_PLAIN = without(K2, "C002_2RO1", "C002_N4_IKOU", "C002_N10_HOKATSU");
 const KANRI_DATE = K2.lines.find((l) => l.kubun === "C002_2RO1")!.dates;
 
 /** 単一建物 1 人の区分の行（人数の次元は R19 の担当。tests/engine/building.test.ts） */
-const ONE = C.kanri.rows.filter((r) => r.band === undefined);
+const ONE = C.kanri.rows.filter((r) => r.band === undefined && r.note14 === undefined);
 
 describe("版の区分（EM §2-2 R8-49〜93・§2-8 の 45 行）", () => {
-  // 単一建物 1 人の区分が 2×4×3 の 24 行。段 17f で人数の区分（2〜9・10〜19・20〜49・50 人以上）の 96 行（EM R8-95〜R8-190）を足して 120 行
-  it("族×種別×区分の表は 2×4×3 の 24 行（単一建物 1 人の区分。人数の区分を足して 120 行）で、どれも版の点数表とコードの表にある", () => {
+  // 単一建物 1 人の区分が 2×4×3 の 24 行。段 17f で人数の区分（2〜9・10〜19・20〜49・50 人以上）の 96 行（EM R8-95〜R8-190）を、段 17h で注14 の減の行の 90 行を足して 210 行
+  it("族×種別×区分の表は 2×4×3 の 24 行（単一建物 1 人の区分。人数の区分と注14 の減の行を足して 210 行）で、どれも版の点数表とコードの表にある", () => {
     expect(ONE).toHaveLength(24);
-    expect(C.kanri.rows).toHaveLength(120);
+    expect(C.kanri.rows).toHaveLength(210);
     for (const f of FAMILIES) for (const g of GRADES) for (const t of TIERS) expect(kanriKubunOf(C, f, g, t), `${f} ${g} ${t}`).toBeDefined();
     for (const k of kanriKubun(C)) expect(Object.hasOwn(REV.codes, k) && Object.hasOwn(REV.points, k), k).toBe(true);
   });
@@ -256,7 +256,7 @@ describe("derivedKubun・g11Owned・kubunFamily（C-234・C-230・C-250）", () 
   });
   it("表は人数の次元（band）を持てる：band の行を足した定数でも、derivedKubun・R18 の表に入り、D03 は 1 人の区分を選ぶ", () => {
     const banded: RevisionConsts = { ...C, kanri: { ...C.kanri, rows: [...C.kanri.rows, { kubun: "C002_2RO1", family: "在医総管", grade: "2", tier: "ロ", band: "2-9" }] } };
-    expect(gradeSlots(banded).filter((s) => s.kubun === "C002_2RO1").map((s) => s.slot)).toEqual(["在医総管/ロ/", "在医総管/ロ/2-9"]);
+    expect(gradeSlots(banded).filter((s) => s.kubun === "C002_2RO1").map((s) => s.slot)).toEqual(["在医総管/ロ//", "在医総管/ロ/2-9/"]);
     expect(kanriKubunOf(banded, "在医総管", "2", "ロ")).toBe("C002_2RO1");
     expect(derivedKubun(banded)).toContain("C002_2RO1");
   });
@@ -317,9 +317,10 @@ describe("連携型の申告の断り（docs M-8）と C〜I に回した区分�
 });
 
 describe("R18 の単体", () => {
-  it("行がなければ当たらない。soundWhenPartial は 4 種類", () => {
+  // 段 17h で注14 の use_note14_reduced を足して 5 種類（行と申告だけで決まる）
+  it("行がなければ当たらない。soundWhenPartial は 5 種類", () => {
     const r = makeR18(C, REV.points);
     expect(r.appliesTo({ ...K2_PLAIN, lines: [] })).toBe(false);
-    expect(r.soundWhenPartial.sort()).toEqual(["iko_grade3_only", "use_baseup_normal", "use_baseup_note5", "use_grade"]);
+    expect(r.soundWhenPartial.sort()).toEqual(["iko_grade3_only", "use_baseup_normal", "use_baseup_note5", "use_grade", "use_note14_reduced"]);
   });
 });
