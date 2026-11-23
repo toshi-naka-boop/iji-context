@@ -1131,6 +1131,14 @@ describe("反証 round-69（X-280〜X-284）", () => {
     expect(r.scope).toContain("患家診療時間加算は見ていません（時刻の分からない訪問の日：1 日）");
     expect(readPart("visits", [{ ref: "v1", date: date(5), kind: "訪問診療", start: "24:00", end: "9:5" }])).toEqual({ status: "supported", items: [{ ref: "v1", date: date(5), kind: "訪問診療", start: null, end: null }], gaps: { start: 1, end: 1 } });
   });
+  it("X-284：行為も構造化データもない請求でも、機器を確かめた患者は材料加算を判定する（早期終了しない）", () => {
+    const db = rdb();
+    const r = ok(evaluateG11(visit5(), db, about({ noStructured: true, acts: [], devices: devs([drow("C158", { fromMonth: YM })]) }), rev));
+    expect(rules(r).map((f) => f.codes)).toContainEqual([M.c158]);
+    // 機器を確かめていない患者・機器の入力がない請求は、今までどおり早期終了
+    expect(evaluateG11(visit5(), db, about({ noStructured: true, acts: [], devices: devs([], { checked: false }) }), rev)).toHaveProperty("skip");
+    expect(evaluateG11(visit5(), db, about({ noStructured: true, acts: [] }), rev)).toHaveProperty("skip");
+  });
 });
 
 describe("FR-207 の表の升（16-4-8）", () => {

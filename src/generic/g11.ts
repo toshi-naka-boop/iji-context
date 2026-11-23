@@ -460,8 +460,8 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
  */
 export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11About, rev: Revision, opt: { checks?: GenericCheck[]; step3?: Step3; sameFamily?: SameFamily; hand?: Finding[] } = {}): G11Result {
   const acts = (about.acts ?? []).filter((a) => a.date.startsWith(`${about.yearMonth}-`));
-  // 構造化データがあれば、文章の行為がなくても規則の候補を見る（design.md §16-4）
-  if (acts.length === 0 && !about.structured) return { skip: "確かめたカルテの「行ったこと」がないので、取り忘れは見ていません" };
+  // 構造化データがあれば、文章の行為がなくても規則の候補を見る（design.md §16-4）。機器を確かめた患者も、患者の機器で材料加算を見る（v34 の 16-4-1。X-284）
+  if (acts.length === 0 && !about.structured && !about.devices?.checked) return { skip: "確かめたカルテの「行ったこと」がないので、取り忘れは見ていません" };
   if (!db) return { skip: "基本マスターがないので、取り忘れは見ていません" };
   // G11 が頼る点検（G03〜G06・G10）が判定不能なら、その請求の取り忘れは何も言わない（X-131・X-136）
   for (const [id, label] of [["G11", "取り忘れ"], ["G03", "行の属性"], ["G04", "包括"], ["G05", "背反"], ["G06", "回数"], ["G10", "施設基準"]] as const) {
