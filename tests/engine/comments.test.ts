@@ -168,10 +168,13 @@ describe("evidence-master §2-10 との対応（完了条件 (a)）", () => {
     for (const code of Object.keys(r2026.commentCodes)) expect(all.has(code), code).toBe(true);
   });
 
-  it("画面の説明：点検している項目は表 1 の行数、点検していない項目は表 2 の行数", () => {
+  it("画面の説明：点検している項目は表 1 の行数、点検していない項目は表 2 の行数と表 1-b の項番の数（表 1-b は読むだけで、記載もれは点検しない）", () => {
     const unchecked = tableAfter("**表 2　別表Ⅰ に定めがあるが点検しない行", "- 別表Ⅰ に行がない区分").filter((c) => c.length === 5 && /項番\d+/.test(c[1]));
+    // 表 1-b（材料加算の 2 回分・3 回分の対象の月。設計 v33 E-11 で表 2 から移した）は G11 が読むだけで、R17 は点検しない
+    const readOnly = tableAfter("表 1-b", "**表 2").filter((c) => /^\d{9}$/.test(c[0] ?? ""));
+    expect(readOnly.map((c) => c[0]).sort()).toEqual(["820100122", "820100123", "820100124", "820100125", "820100126"]);
     expect(COMMENT_CHECK_SCOPE.checked).toHaveLength(r2026.comments.length);
-    expect(COMMENT_CHECK_SCOPE.uncheckedCount).toBe(unchecked.length);
+    expect(COMMENT_CHECK_SCOPE.uncheckedCount).toBe(unchecked.length + new Set(readOnly.map((c) => c[1])).size);
     expect(COMMENT_CHECK_NOTE).toContain("次の 9 項目");
     expect(COMMENT_CHECK_NOTE).toContain("18 件");
   });
