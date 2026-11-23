@@ -497,7 +497,7 @@ describe("T6 在医総管 注2（版の C002_N2。R8-18・R8-241）", () => {
   cell("T6-項目が取れず見ない-3", "(iii) 範囲の中の月の院外のオーダーの内服の days が欠ける・範囲の中の月を読めない（残していない）と「見ていません」（X-231）", () => {
     const db = rdb();
     const gap = emptyHistory();
-    gap[1] = { yearMonth: month(-2), orders: sup([order("p1", dateIn(-2, 3), "院外", [[D.carve, null]])]), items: itemsOf([order("p1", dateIn(-2, 3), "院外", [[D.carve, null]])]) };
+    gap[1] = { yearMonth: month(-2), orders: sup([order("p1", dateIn(-2, 3), "院外", [[D.carve, null]], 0)]), items: itemsOf([order("p1", dateIn(-2, 3), "院外", [[D.carve, null]], 0)]) };
     expect(n2Scope(run(db, kanri, base({ history: gap })))).toEqual(["処方箋を交付しない場合の加算は見ていません（前の処方を読めない）"]);
     const missing = emptyHistory();
     missing[11] = { yearMonth: month(-12), orders: null, items: [] };
@@ -548,12 +548,25 @@ describe("T6 在医総管 注2（版の C002_N2。R8-18・R8-241）", () => {
   cell("T6-項目が取れず見ない-10", "日数のない院外処方（外用）・リフィルの院外処方（回数 2 以上）が範囲の中にあると「見ていません」（C-423。L-201 の既定）", () => {
     const db = rdb();
     const noDays = emptyHistory();
-    const o = order("p1", dateIn(-3, 8), "院外", [[D.geben, null]]);
+    const o = order("p1", dateIn(-3, 8), "院外", [[D.geben, null]], 0);
     noDays[2] = { yearMonth: month(-3), orders: sup([o]), items: itemsOf([o]) };
     expect(n2Scope(run(db, kanri, base({ history: noDays })))).toEqual(["処方箋を交付しない場合の加算は見ていません（日数のない・リフィルの院外処方：1 件）"]);
     const refill = emptyHistory();
     refill[0] = { yearMonth: month(-1), orders: sup([order("p2", dateIn(-1, 8), "院外", [[D.carve, 28]], 2)]), items: [] };
     expect(n2Scope(run(db, kanri, base({ history: refill })))).toEqual(["処方箋を交付しない場合の加算は見ていません（日数のない・リフィルの院外処方：1 件）"]);
+  });
+  cell("T6-項目が取れず見ない-10", "リフィルの回数を接続先が返さない（null）院外のオーダーと、回数 1 の院外のオーダー（設計に定めがない）は、リフィルでないとみなさず「見ていません」（C-430＝C-450。16-4-5・L-201 の既定）。回数 0 は止めない", () => {
+    const db = rdb();
+    for (const refills of [null, 1]) {
+      const h = emptyHistory();
+      h[0] = { yearMonth: month(-1), orders: sup([order("p3", dateIn(-1, 8), "院外", [[D.carve, 28]], refills)]), items: [] };
+      const r = run(db, kanri, base({ history: h }));
+      expect(hasN2(r)).toBe(false);
+      expect(n2Scope(r)).toEqual(["処方箋を交付しない場合の加算は見ていません（日数のない・リフィルの院外処方：1 件）"]);
+    }
+    const zero = emptyHistory();
+    zero[0] = { yearMonth: month(-1), orders: sup([order("p3", dateIn(-1, 8), "院外", [[D.carve, 28]], 0)]), items: [] };
+    expect(hasN2(run(db, kanri, base({ history: zero })))).toBe(true);
   });
   cell("T6-そのほか出ない", "請求に注2 があれば出さない", () => {
     const db = rdb();

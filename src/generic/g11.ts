@@ -1029,7 +1029,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
               continue;
             }
             if (o.place !== "院外") continue;
-            if ((o.refills ?? 0) >= 2) refill++;
+            // リフィル：回数 2 以上をリフィルとみなすかは EM にない。接続先が回数を返さない（null）ときと、設計に定めのない回数 1 も分からないので、どれも「見ていません」に数える（L-201 の既定。C-430）
+            if (o.refills === null || o.refills >= 1) refill++;
             o.drugs.forEach((d, i) => {
               if (d.days === null) {
                 // 日数の欠け：内服（剤形 1）やコードの当たらない薬は読めない。外用・頓服など日数を持たない薬は「日数のない院外処方」（L-201 (2)）
