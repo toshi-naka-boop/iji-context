@@ -1098,6 +1098,8 @@ describe("構造化データのない請求（v32 の入力）", () => {
     const db = rdb();
     const r = ok(evaluateG11({ units: [unit([VISIT], 5)] }, db, about({ noStructured: true, acts: [textAct(5, T.sansoKyunyu, "酸素吸入", "処置")], devices: devs([drow("C158")]) }), rev));
     expect(rules(r).map((f) => f.codes)).toContainEqual([M.c158]);
+    // 材料加算は見ているので、点検の範囲の 1 行は材料加算を「見ていません」と言わない
+    expect(r.scope.filter((s) => s.startsWith("電子カルテの構造化データがない"))).toEqual(["電子カルテの構造化データがないので、処方箋を交付しない場合の加算・患家診療時間加算は見ていません"]);
   });
   it("規則の候補を出さず、点検の範囲に「電子カルテの構造化データがないので…見ていません」の 1 行だけを出す（v34。C-433。指摘の数は増えない）", () => {
     const db = rdb();
