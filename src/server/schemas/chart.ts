@@ -16,9 +16,15 @@ export const chartBody = z.strictObject({
   kind: z.enum(["訪問診療", "往診"]),
   note: z.strictObject({ s: field, o: field, a: field, p: field, rx: field }),
 });
-/** 取り込んだ請求に貼るカルテ（design.md §15-9 の POST /api/uke/claims/[claimId]/notes）。日付はその請求の診療年月の日（処理の中で確かめる） */
+/** 取り込んだ請求に貼るカルテ（design.md §15-9 の POST /api/uke/claims/[claimId]/notes）。日付は暦にある日で（反証 round-55 C-301）、その請求の診療年月の日（処理の中で確かめる） */
 export const recordBody = z.strictObject({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((s) => {
+      const d = new Date(`${s}T00:00:00Z`);
+      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+    }),
   note: chartBody.shape.note,
 });
 /** カルテを書く本文（JSON）の上限（バイト）：5 欄 × 上限の字数 × 3 バイト（日本語の UTF-8）と、JSON の枠・改行の分 */

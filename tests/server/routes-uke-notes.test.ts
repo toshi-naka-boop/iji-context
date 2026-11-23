@@ -82,6 +82,11 @@ describe("取り込んだ請求にカルテを貼る（POST /api/uke/claims/[cla
     // 診療年月の外の日付は 400
     const outside = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${mine}/notes`, { date: "2026-11-01", note }), { params: Promise.resolve({ claimId: mine }) });
     expect(outside.status).toBe(400);
+    // 暦にない日は 400（反証 round-55 C-301）
+    for (const date of ["2026-10-32", "2026-10-00", "2026-02-30"]) {
+      const bad = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${mine}/notes`, { date, note }), { params: Promise.resolve({ claimId: mine }) });
+      expect([date, bad.status]).toEqual([date, 400]);
+    }
     // 確かめて残す（今のカルテと同じ入口）
     const acts = (p.acts as Record<string, unknown>[]).map((a, i) => ({ ...a, match: p.review.matches[i].act.initial ?? { tbl: "shinryo", code: "140000610", name: "創傷処置（１００ｃｍ２未満）", by: "search" } }));
     const saved = await (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(p.id), facts: [], acts, rx: [] }));
