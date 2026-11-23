@@ -51,7 +51,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { clerk } = clerks;
   const { patientOf } = uke;
   const { cases, caseOf, isUploaded } = casesOf;
-  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined);
+  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -332,6 +332,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
     return { claimId: r.claim_id, date: r.date };
   }
+  /** カルテの請求の id（画面の操作の前に構造化データを読むため。C-440） */
+  const claimIdOfNote = (id: number): string => noteRow(id).claim_id;
   /** 保存した行ったこと（確かめていなければ null） */
   const savedActs = (id: number): StoredActs | null => {
     const r = noteRow(id);
@@ -559,7 +561,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { claimIdOfNote, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

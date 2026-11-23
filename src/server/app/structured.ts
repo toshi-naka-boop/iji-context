@@ -36,6 +36,9 @@ export type StructuredView = {
   parts: Record<StructuredPart, Part<unknown> & { count: number | null }>;
 };
 
+/** 4 種類のどれかを受け取っているか（どれも unsupported なら、構造化データのない請求） */
+const hasStructured = (chart: StructuredChart | null): boolean => !!chart && STRUCTURED_PARTS.some((p) => chart[p].status === "supported");
+
 const unsupportedAll = (): StructuredChart => ({ visits: { status: "unsupported" }, orders: { status: "unsupported" }, procedures: { status: "unsupported" }, homeCare: { status: "unsupported" } });
 
 /** 対応表にない独自コードの一覧の 1 行（接続先・入力欄の種類・表示名・件数。患者・日は出さない） */
@@ -65,17 +68,17 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
   /** 請求の患者の、患者マスタの id（請求からその月の構造化データを引くとき） */
   const structuredPatientOf = (claimId: string): string => patients.ingest(uke.receiptOf(claimId).receipt.patient);
 
-  /** 読んだ 4 種類を追記で残す（同じ患者・月・種類は、あとで最新の行を使う） */
-  function saveStructured(patientId: string, yearMonth: string, connectorId: string, s: StructuredChart): void {
+  /** 読んだ 4 種類を追記で残す（同じ患者・月・種類は、あとで最新の行を使う）。only を渡すと、その種類だけを残す（さかのぼる月の処方のオーダー。機器の変える案は作らない） */
+  function saveStructured(patientId: string, yearMonth: string, connectorId: string, s: StructuredChart, only?: readonly StructuredPart[]): void {
     const at = clock.now();
     const put = sqlite.prepare("INSERT INTO chart_structured (patient_id, year_month, part, status, items, gaps, connector_id, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     sqlite.transaction(() => {
-      for (const p of STRUCTURED_PARTS) {
+      for (const p of only ?? STRUCTURED_PARTS) {
         const part = s[p];
         put.run(patientId, yearMonth, p, part.status, JSON.stringify(part.status === "supported" ? part.items : []), JSON.stringify(part.status === "supported" ? part.gaps : {}), connectorId, at);
       }
       // 在宅療養の指示の機器は、患者の機器の「変える案」にする（16-5。確かめるまで判定に使わない）
-      if (s.homeCare.status === "supported") devices.syncProposals(patientId, yearMonth, connectorId, instructedOf(s, yearMonth, connectorId));
+      if (!only && s.homeCare.status === "supported") devices.syncProposals(patientId, yearMonth, connectorId, instructedOf(s, yearMonth, connectorId));
     })();
   }
   /** 在宅療養の指示の機器を、機器の種類に当てる（16-2 の機器の欄。表示名だけで決まらないものは種類なし） */
@@ -89,6 +92,10 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
       }),
     );
   }
+
+  /** 残した種類（その患者・月） */
+  const storedParts = (patientId: string, yearMonth: string): Set<string> =>
+    new Set((sqlite.prepare("SELECT DISTINCT part FROM chart_structured WHERE patient_id = ? AND year_month = ?").all(patientId, yearMonth) as { part: string }[]).map((r) => r.part));
 
   /** 残した 4 種類の最新（1 つも残していなければ null） */
   function storedStructured(patientId: string, yearMonth: string): { chart: StructuredChart; connectorId: string; fetchedAt: string } | null {
@@ -129,6 +136,32 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
     const chart = stored?.chart ?? unsupportedAll();
     const parts = Object.fromEntries(STRUCTURED_PARTS.map((p) => [p, { ...chart[p], count: chart[p].status === "supported" ? chart[p].items.length : null }])) as StructuredView["parts"];
     return { yearMonth, connectorId: stored?.connectorId ?? null, fetchedAt: stored?.fetchedAt ?? null, source: SOURCE_EHR, parts };
+  }
+
+  /** 請求の患者と診療年月（UKE にない請求は null） */
+  function claimPatientOf(claimId: string): { patientId: string; yearMonth: string } | null {
+    try {
+      const r = uke.receiptOf(claimId).receipt;
+      return { patientId: patients.ingest(r.patient), yearMonth: r.yearMonth };
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * 画面の操作（取り込んだ請求の点検・算定プレビュー・月末の点検・カルテの確かめる画面・患者の機器の欄）の前に、その請求の構造化データを接続先から読んで残す（C-440。16-1・16-7）。
+   * 当月は 4 種類を、さかのぼる月（rxLookbackMonths）は処方のオーダーだけを、まだ残していなければ読む。読める接続先がない請求（取り込んだ実在の請求）は何もしない
+   */
+  async function ensureStructured(claimId: string): Promise<void> {
+    const c = claimPatientOf(claimId);
+    if (!c) return;
+    const caseId = fixturePatientOf(c.patientId, c.yearMonth);
+    if (!caseId) return;
+    const connector = createFixtureConnector(paths.root).chart!;
+    if (storedParts(c.patientId, c.yearMonth).size < STRUCTURED_PARTS.length) saveStructured(c.patientId, c.yearMonth, FIXTURE_ID, readStructured(await connector.getChart({ patientId: caseId, yearMonth: c.yearMonth })));
+    // 構造化データを返さない接続先（当月が 4 種類とも unsupported）は、さかのぼる月を読まない
+    if (!hasStructured(storedStructured(c.patientId, c.yearMonth)?.chart ?? null)) return;
+    for (const ym of monthsBefore(c.yearMonth, structuredConfig().rxLookbackMonths))
+      if (!storedParts(c.patientId, ym).has("orders")) saveStructured(c.patientId, ym, FIXTURE_ID, readStructured(await connector.getChart({ patientId: caseId, yearMonth: ym })), ["orders"]);
   }
 
   // ---------------------------------------------------------------------------
@@ -188,7 +221,8 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
       return null;
     }
     const stored = storedStructured(patientId, yearMonth);
-    if (!stored) return null;
+    // 接続先が構造化データを返さない（4 種類とも unsupported）請求は、構造化データのない請求として扱う（C-440・v34 の 16-4-1）
+    if (!stored || !hasStructured(stored.chart)) return null;
     return { chart: stored.chart, items: itemsOf(stored.chart, mapContextOf(db, yearMonth, stored.connectorId)), connectorId: stored.connectorId };
   }
 
@@ -246,18 +280,33 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
     return { chart: s.chart, items: s.items, history, lookbackMonths, times: visitTimesOf(patientId, yearMonth), devices: deviceRulesOf(claimId, patientId, yearMonth, s.chart, s.connectorId, db) };
   }
 
-  /**
-   * 材料加算の入力（16-4-7）：患者の機器（効く行・確かめたか・決めていない案）、前の 2 か月の取り込んだ請求の単位ごとのコードとコメント、
-   * 電子カルテの在宅療養の指示に C103 の 2 の指導管理があるか
-   */
-  function deviceRulesOf(claimId: string, patientId: string, yearMonth: string, chart: StructuredChart, connectorId: string, db: MastersDb | null): NonNullable<G11Structured["devices"]> {
-    const prev = samePatientClaims(claimId, monthsBefore(yearMonth, 2)).map((x) => {
+  /** 前の 2 か月の取り込んだ請求の、単位ごとのコードとコメント（材料加算の前の月の分。16-4-7） */
+  const prevClaimsOf = (claimId: string, yearMonth: string): NonNullable<G11Structured["devices"]>["prev"] =>
+    samePatientClaims(claimId, monthsBefore(yearMonth, 2)).map((x) => {
       const claim = uke.receiptOf(x.claimId).claim();
       return {
         yearMonth: x.yearMonth,
         units: claim.units.map((u, i) => ({ codes: u.items.map((it) => it.code), comments: claim.comments.filter((cm) => cm.unit === i).map((cm) => cm.code) })),
       };
     });
+  /**
+   * 構造化データのない請求の、材料加算の入力（v34 の 16-4-1：患者の情報の機器だけで決まる材料加算は、機器を確かめた患者なら今までどおり見る）。
+   * 機器を確かめていない患者は null（入力を促さない。C-440）
+   */
+  function devicesOnlyOf(claimId: string, yearMonth: string): NonNullable<G11Structured["devices"]> | null {
+    const c = claimPatientOf(claimId);
+    if (!c) return null;
+    const own = devices.deviceInputOf(c.patientId, yearMonth);
+    if (!own.checked) return null;
+    return { ...own, prev: prevClaimsOf(claimId, yearMonth), c103: false };
+  }
+
+  /**
+   * 材料加算の入力（16-4-7）：患者の機器（効く行・確かめたか・決めていない案）、前の 2 か月の取り込んだ請求の単位ごとのコードとコメント、
+   * 電子カルテの在宅療養の指示に C103 の 2 の指導管理があるか
+   */
+  function deviceRulesOf(claimId: string, patientId: string, yearMonth: string, chart: StructuredChart, connectorId: string, db: MastersDb | null): NonNullable<G11Structured["devices"]> {
+    const prev = prevClaimsOf(claimId, yearMonth);
     const rev = resolveRevision(yearMonth);
     const c103Codes = new Set(Object.hasOwn(rev.codes, "C103_2") ? [rev.codes.C103_2.primary, ...rev.codes.C103_2.accept] : []);
     const ctx = mapContextOf(db, yearMonth, connectorId);
@@ -271,11 +320,16 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
   // ---------------------------------------------------------------------------
   // 患者の機器の画面と API（16-5・16-7。段 19e）。請求から患者を引く（患者の識別子は画面に出さない）
 
-  const patientDevices = (claimId: string) => devices.devicesView(structuredPatientOf(claimId), uke.receiptOf(claimId).receipt.yearMonth);
+  /** 患者の機器の欄。structured：その請求に構造化データがあるか（ないときは画面で機器の入力を促さない。C-440） */
+  const patientDevices = (claimId: string) => {
+    const ym = uke.receiptOf(claimId).receipt.yearMonth;
+    const patientId = structuredPatientOf(claimId);
+    return { ...devices.devicesView(patientId, ym), structured: hasStructured(storedStructured(patientId, ym)?.chart ?? null) };
+  };
   const savePatientDevice = (claimId: string, clerkId: string, input: DeviceInput) => devices.addDevice(structuredPatientOf(claimId), clerkId, input);
   const decideDeviceProposal = (claimId: string, id: number, clerkId: string, input: ProposalDecision) => devices.decideProposal(structuredPatientOf(claimId), id, clerkId, input);
 
-  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, saveVisitTime, visitTimesOf, samePatientClaims, structuredRulesOf, monthsBefore, patientDevices, savePatientDevice, decideDeviceProposal, devices };
+  return { ensureStructured, devicesOnlyOf, saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, saveVisitTime, visitTimesOf, samePatientClaims, structuredRulesOf, monthsBefore, patientDevices, savePatientDevice, decideDeviceProposal, devices };
 }
 
 export type Structured = ReturnType<typeof createStructured>;

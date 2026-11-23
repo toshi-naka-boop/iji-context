@@ -4,7 +4,11 @@ import { getApp } from "../../../../../../src/server/instance";
 import { allow } from "../../../../../../src/server/policy";
 import { claimParams } from "../../../../../../src/server/schemas/patients";
 
-export const GET = route({ roles: allow("GET /api/uke/claims/[claimId]/check"), params: claimParams }, ({ params, clerkId }) => getApp().ukeCheck(params.claimId, clerkId));
+export const GET = route({ roles: allow("GET /api/uke/claims/[claimId]/check"), params: claimParams }, async ({ params, clerkId }) => {
+  // B の欄（G11）の規則の候補のため、その請求の構造化データを接続先から読んで残してから点検する（C-440）
+  await getApp().ensureStructured(params.claimId);
+  return getApp().ukeCheck(params.claimId, clerkId);
+});
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

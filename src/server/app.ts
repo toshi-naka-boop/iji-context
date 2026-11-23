@@ -202,6 +202,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     ...ukeCheck,
     /** カルテの構造化データ（design.md §16-1。段 19a） */
     ...structured,
+    /** 画面の操作の前に、カルテの請求の構造化データを接続先から読んで残す（C-440） */
+    ensureStructuredOfNote: (noteId: number) => structured.ensureStructured(notes.claimIdOfNote(noteId)),
     /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);

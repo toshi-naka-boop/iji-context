@@ -145,7 +145,7 @@ function about(o: Opt = {}): G11About {
     dispensing: o.dispensing ?? "inside",
     declaration: o.declaration ?? held,
     outpatient: true,
-    ...(o.noStructured ? {} : { structured: S }),
+    ...(o.noStructured ? (o.devices ? { devices: o.devices } : {}) : { structured: S }),
   };
 }
 const ok = (r: G11Result) => {
@@ -1040,6 +1040,11 @@ describe("材料加算の欄（16-3・16-4-7）", () => {
 });
 
 describe("構造化データのない請求（v32 の入力）", () => {
+  it("機器を確かめた患者は、構造化データがなくても患者の機器から材料加算を見る（v34 の 16-4-1。C-440）", () => {
+    const db = rdb();
+    const r = ok(evaluateG11({ units: [unit([VISIT], 5)] }, db, about({ noStructured: true, acts: [textAct(5, T.sansoKyunyu, "酸素吸入", "処置")], devices: devs([drow("C158")]) }), rev));
+    expect(rules(r).map((f) => f.codes)).toContainEqual([M.c158]);
+  });
   it("規則の候補を出さず、注2・時間の加算の「見ていません」も出さない（v32 の点検の範囲のまま）", () => {
     const db = rdb();
     const r = ok(evaluateG11({ units: [unit([KANRI, VISIT], 14)] }, db, about({ noStructured: true, acts: [textAct(14, T.sansoKyunyu, "酸素吸入", "処置")] }), rev));

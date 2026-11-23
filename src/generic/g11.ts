@@ -90,6 +90,8 @@ export type G11About = GenericAboutMore & {
   path: "uke" | "preview";
   dispensing: Dispensing;
   structured?: G11Structured;
+  /** 構造化データのない請求の、患者の機器（機器を確かめた患者だけ。v34 の 16-4-1：材料加算は機器があれば今までどおり見る。C-440） */
+  devices?: G11Devices;
 };
 
 /** 足した単位 1 つ（候補の単位。算定日は 1 日） */
@@ -494,6 +496,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // ── 構造化データから規則で出す算定の準備（design.md §16-4。段 19c・19d）。S がなければ何もしない（v32 のまま）
   const S = about.structured ?? null;
+  /** 材料加算の入力：構造化データの請求はその中の機器、ない請求は患者の機器（C-440） */
+  const DV = S ? (S.devices ?? null) : (about.devices ?? null);
   const ym = about.yearMonth;
   const inMonth = (d: string) => d.startsWith(`${ym}-`);
   const kubunCodes = (k: string) => (Object.hasOwn(rev.codes, k) ? [rev.codes[k].primary, ...rev.codes[k].accept] : []);
@@ -599,7 +603,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 材料加算のコードに当たった文章の行為は、候補にせず患者の情報の機器で見る（16-3。FR-208）。注入器加算・注入器用注射針加算は機器で見ないので、たたまない（L-181）
   const DEVICE_CODES = new Set<string>([...Object.values(DEVICE_KINDS).flatMap((d) => [...d.codes]), RULE_CODES.oxygenMaterial2]);
   let deviceFolded = 0;
-  if (S?.devices)
+  if (DV)
     for (const a of acts) {
       const m = a.act.match;
       if (m && m.tbl === "shinryo" && a.source !== "structured" && DEVICE_CODES.has(m.code) && !ruleFolded.has(a)) {
@@ -1205,8 +1209,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 在宅療養指導管理材料加算（T8〜T15。16-4-7）：患者の機器の行だけから出す。請求に「ある」は EM の区分と組の単位で見る（C-401）。前の 2 か月の請求のコメントで当月分を見る（C-411）
   const materialNotes: string[] = [];
   const mismatchFindings: G11Finding[] = [];
-  if (S?.devices) {
-    const dv = S.devices;
+  if (DV) {
+    const dv = DV;
     materialNotes.push("注入器加算・注入器用注射針加算は見ていません", "ほかの医療機関が在宅療養指導管理料を算定している患者かは見ていません");
     const inClaim = (codes: Iterable<string>) => [...codes].filter((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
     const nameOf = (code: string) => shinryoOf(db, c.snapshot.si, code)?.name ?? code;

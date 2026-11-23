@@ -8,7 +8,8 @@ import { getJson, postJson } from "../get-json";
 type Live = { kind: DeviceKey; fromMonth: string; endMonth: string | null; c150?: { band: string; patientClass: "イ" | "ロ" }; source: string };
 type Hist = Omit<Live, "kind"> & { kind: DeviceKey | "none" };
 type Proposal = { id: number; kind: DeviceKey | null; startedOn: string | null; endedOn: string | null; type: "start" | "end" | "choose"; receivedAt: string };
-type View = { yearMonth: string; checked: boolean; live: Live[]; history: Hist[]; proposals: Proposal[] };
+/** structured：その請求に電子カルテの構造化データがあるか（ないときは機器の入力を促さない。C-440） */
+type View = { yearMonth: string; checked: boolean; live: Live[]; history: Hist[]; proposals: Proposal[]; structured: boolean };
 
 const nameOf = (k: DeviceKey | "none") => (k === "none" ? "機器なし" : DEVICE_KINDS[k].names[0]);
 const C150_LABEL: Record<string, string> = { C150_1: "月 20 回以上", C150_2: "月 30 回以上", C150_3: "月 40 回以上", C150_4: "月 60 回以上", C150_5: "月 90 回以上", C150_6: "月 120 回以上", C150_7: "間歇スキャン式持続血糖測定器" };
@@ -93,7 +94,7 @@ export function DevicePanel(props: { claimId: string; editable: boolean }) {
   return (
     <div id="patient-devices">
       <h4>在宅療養で使っている機器（{view.yearMonth} の診療月）</h4>
-      {!view.checked && <p className="muted" style={{ margin: 0 }}>機器を確かめていません。確かめるまで、在宅療養指導管理材料加算は見ていません。</p>}
+      {!view.checked && view.structured && <p className="muted" style={{ margin: 0 }}>機器を確かめていません。確かめるまで、在宅療養指導管理材料加算は見ていません。</p>}
       {view.checked && view.live.length === 0 && <p className="muted" style={{ margin: 0 }}>この月に効く機器はありません（機器なし）。</p>}
       <ul>
         {view.live.map((r) => (

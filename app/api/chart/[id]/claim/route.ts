@@ -15,7 +15,11 @@ function choicesOf(raw: string | undefined): Record<string, string> {
   }
 }
 
-export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, ({ params, query, clerkId }) => getApp().chartClaim(Number(params.id), choicesOf(query.choices), query.rev, clerkId));
+export const GET = route({ roles: allow("GET /api/chart/[id]/claim"), params: noteParams, query: claimQuery }, async ({ params, query, clerkId }) => {
+  // B の欄（G11）の規則の候補のため、その請求の構造化データを接続先から読んで残してから導出する（C-440）
+  await getApp().ensureStructuredOfNote(Number(params.id));
+  return getApp().chartClaim(Number(params.id), choicesOf(query.choices), query.rev, clerkId);
+});
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

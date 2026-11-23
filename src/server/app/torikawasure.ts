@@ -8,7 +8,7 @@ import type { Revision } from "../../engine/revisions/types";
 import type { ClaimContext, Finding } from "../../engine/types";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
-import { evaluateG11, type ConfirmedAct, type G11Claim, type G11Result, type G11Structured, type RxDay } from "../../generic/g11";
+import { evaluateG11, type ConfirmedAct, type G11Claim, type G11Devices, type G11Result, type G11Structured, type RxDay } from "../../generic/g11";
 import { rxConfirmedOf } from "../../structured/rx-mark";
 import { r18SameFamily, rulesStep3 } from "../../generic/g11-rules";
 import { sidelessOf } from "../../generic/g10";
@@ -42,7 +42,10 @@ export type StructuredOfClaim = (claimId: string, yearMonth: string, db: Masters
 /** カルテの文章のある日（確かめたかは問わない）。stored は確かめて残した行ったこと（確かめていなければ null） */
 export type TextDay = { date: string; text: string; soap: string; stored: StoredActs | null; rxChoice?: RxChoice | null };
 
-export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim) {
+/** 構造化データのない請求の、患者の機器（機器を確かめた患者だけ。ないときは null。C-440） */
+export type DevicesOfClaim = (claimId: string, yearMonth: string) => G11Devices | null;
+
+export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim, devicesOf?: DevicesOfClaim) {
   /** 合成の症例の、合成カルテの確かめたあとの行ったこと（合成カルテのない症例・acts を持たない合成カルテは空） */
   function chartDays(claimId: string): { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; stored?: boolean }[] {
     const f = chartFileOf(ctx.paths.root, claimId);
@@ -94,10 +97,11 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
             })),
           }
         : undefined;
+      const devices = s ? null : (devicesOf?.(input.base.claimId, ym) ?? null);
       const r = evaluateG11(
         input.claim,
         db,
-        { yearMonth: ym, generation: input.rev.generation, acts: joined.acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true, ...(structured ? { structured } : {}) },
+        { yearMonth: ym, generation: input.rev.generation, acts: joined.acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true, ...(structured ? { structured } : {}), ...(devices ? { devices } : {}) },
         input.rev,
         { step3: rulesStep3(input.base, input.rev, db, input.path === "uke"), sameFamily: r18SameFamily(input.base, input.rev, db), hand: input.hand },
       );
