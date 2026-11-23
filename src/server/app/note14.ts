@@ -130,7 +130,7 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
       draft: (() => {
         const d = stage2Draft(monthsBefore(m, k.periodMonths.short));
         // notes：下書きしない欄・足りないかもしれない欄の案内（たたまずに出す）
-        return d.ok ? { ...d, text: d.unknownCare > 0 ? DRAFT_TEXT.unknownCare(d.unknownCare) : null, notes: [DRAFT_TEXT.careEnd] } : d;
+        return d.ok ? { ...d, text: d.unknownCare > 0 ? DRAFT_TEXT.unknownCare(d.unknownCare) : null, notes: [DRAFT_TEXT.excludedPartial, DRAFT_TEXT.careEnd] } : d;
       })(),
       worksheets: readRows(ctx.sqlite).filter((r) => r.check_month === m).map(view),
     };
@@ -162,7 +162,9 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     const draft = stage2Draft(want);
     const allConfirmed = body.stage1.months.every((x) => x.confirmed);
     const sources = Object.fromEntries([...keys].map((key) => [key, allConfirmed && body.stage2!.sources?.[key] === "auto" && draft.ok && draft.values[key] === values[key] ? ("auto" as const) : ("manual" as const)]));
-    return { stage1, stage2: { values, sources } };
+    // ③ の下書きのままの欄は、本人が足す患者を確かめるまで結果を出さない（C-363）
+    const unchecked = body.stage2.excludedChecked ? [] : [...keys].filter((key) => key.startsWith("excluded:") && sources[key] === "auto");
+    return { stage1, stage2: { values, sources, unchecked } };
   }
 
   /** 結果を残す（追記）。空の欄があれば残さず 400 で名指しする。残せるのは事務長・責任者（権限表） */

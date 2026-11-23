@@ -33,6 +33,8 @@ export const note14WorksheetBody = z.strictObject({
       values: z.record(z.string().max(80), count),
       // 欄ごとの出どころの印（段 17k。auto＝下書きのまま）。サーバーが下書きと照らして決め直す
       sources: z.record(z.string().max(80), z.enum(["auto", "manual"])).optional(),
+      // ③ の下書きに足す患者を本人が確かめたか（round-61 C-363）。確かめていなければ、下書きのままの ③ の欄は結果を出さず名指しする
+      excludedChecked: z.boolean().optional(),
     })
     .optional(),
 });

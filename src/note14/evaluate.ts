@@ -55,7 +55,12 @@ export type Stage1Input = {
  * 2 段目の入力（段 17j）。values は欄の鍵（readings.ts の fieldKeys）→ 数（null は空の欄）。開設日（U-34）は 1 段目の openedOn（C-360）。
  * sources は欄ごとの出どころ（auto＝下書きのまま、manual＝本人が入れた・直した。段 17k）
  */
-export type Stage2Input = { values: Record<string, number | null>; sources?: Record<string, "auto" | "manual"> };
+export type Stage2Input = {
+  values: Record<string, number | null>;
+  sources?: Record<string, "auto" | "manual">;
+  /** ③ の下書きのままで、本人が足す患者を確かめていない欄（下書きは一部の行だけを拾うので、確かめるまで結果を出さない。round-61 C-363） */
+  unchecked?: string[];
+};
 export type WorksheetInput = { stage1: Stage1Input; stage2?: Stage2Input };
 
 export type Outcome = "meets" | "not_meets" | "unknown";
@@ -167,6 +172,7 @@ function missing2Of(v: Stage2Input | undefined): string[] {
   const keys = fieldKeys();
   if (!v) return keys.map((x) => x.label);
   const out = keys.filter((x) => v.values[x.key] === null || v.values[x.key] === undefined).map((x) => x.label);
+  for (const x of keys) if (v.unchecked?.includes(x.key)) out.push(`${x.label}（下書きに足す患者がいないか確かめてください）`);
   if (out.length > 0) return out;
   for (const x of keys) {
     const at = (id: FieldId) => v.values[fieldKeyOf(FIELDS.find((f) => f.id === id)!, x.combo)]!;

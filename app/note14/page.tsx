@@ -63,6 +63,8 @@ export default function Note14Page() {
   const [openedOn, setOpenedOn] = useState("");
   // 下書きのままの欄（段 17k）。本人が直した欄は外れ、出どころは手入力になる
   const [autoKeys, setAutoKeys] = useState<string[]>([]);
+  // ③ の下書きに足す患者（別表第七・第八の二など。下書きは拾わない）を本人が確かめたか（round-61 C-363）
+  const [excludedChecked, setExcludedChecked] = useState(false);
 
   function load(m?: string) {
     setErr("");
@@ -75,6 +77,7 @@ export default function Note14Page() {
         // 下書きは、1 段目で 3 か月とも「全患者分を取り込んだ」を確かめてから入れる（下の useEffect。round-61 C-373）
         setVals({});
         setAutoKeys([]);
+        setExcludedChecked(false);
       })
       .catch((e: Error) => setErr(e.message));
   }
@@ -115,9 +118,9 @@ export default function Note14Page() {
         institutions: insts.map((i): Institution => ({ openedOn: i.openedOn || null, ownerChangedFrom: i.changed ? i.ownerChangedFrom || null : null, count: num(i.count), otsuExtra: num(i.otsuExtra) })),
         openedOn: openedOn || null,
       },
-      stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])) },
+      stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])), unchecked: excludedChecked ? [] : autoKeys.filter((k) => k.startsWith("excluded:")) },
     };
-  }, [tool, months, gansou, second, special, insts, vals, openedOn]);
+  }, [tool, months, gansou, second, special, insts, vals, openedOn, autoKeys, excludedChecked]);
   const e = input && tool?.consts ? evaluate(input, tool.consts, tool.period ?? null) : null;
 
   async function save() {
@@ -127,7 +130,7 @@ export default function Note14Page() {
       const body = {
         checkMonth: tool.month,
         stage1: { ...input.stage1, months: tool.auto!.map((a) => ({ month: a.month, confirmed: (months[a.month]?.confirmed ?? false) && a.state === "ok", kou: num(months[a.month]?.kou ?? ""), otsuExtra: num(months[a.month]?.otsuExtra ?? "") })) },
-        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, sources: Object.fromEntries(fieldKeys().map((f) => [f.key, autoKeys.includes(f.key) ? "auto" : "manual"])) } } : {}),
+        ...(e?.stage2Open ? { stage2: { values: input.stage2!.values, excludedChecked, sources: Object.fromEntries(fieldKeys().map((f) => [f.key, autoKeys.includes(f.key) ? "auto" : "manual"])) } } : {}),
       };
       const s = await postJson<Saved>("/api/note14/worksheets", body);
       setSaved(s);
@@ -236,10 +239,13 @@ export default function Note14Page() {
             {fieldKeys().map((f) => (
               <li key={f.key} style={{ marginBottom: 4 }}>
                 <NumberInput label={`様式 ${f.field.form}　${f.label}`} value={vals[f.key] ?? ""} onChange={(v) => { setVals((p) => ({ ...p, [f.key]: v })); setAutoKeys((p) => p.filter((k) => k !== f.key)); }} />
-                <span className="muted">　{autoKeys.includes(f.key) ? "取り込んだ請求からの下書き" : "手入力"}</span>
+                <span className="muted">　{autoKeys.includes(f.key) ? (f.field.id === "excluded" ? "取り込んだ請求からの下書き（足りないかもしれません）" : "取り込んだ請求からの下書き") : "手入力"}</span>
               </li>
             ))}
           </ul>
+          {autoKeys.some((k) => k.startsWith("excluded:")) && (
+            <label><input type="checkbox" checked={excludedChecked} onChange={(x) => setExcludedChecked(x.target.checked)} />③ の下書きに足す患者（別表第七・別表第八の二の患者など）を確かめた</label>
+          )}
         </div>
       )}
       {e && (

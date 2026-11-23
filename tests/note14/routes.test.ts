@@ -191,12 +191,18 @@ describe("注14 の計算の道具（段 17i）", () => {
     expect(Object.values(unconfirmed.inputs.stage2.sources as Record<string, string>).every((x) => x === "manual")).toBe(true);
     // 3 か月とも確かめた月（自動の数）で、読み乙だけの手入力の欄で門以上にして 2 段目を開く
     const confirmed = body({ gansou: T });
-    const a = await (await save({ ...confirmed, stage2: { values, sources: auto } })).json();
+    // C-363：③ の下書きは拾う範囲が一部の行だけなので、本人が足す患者を確かめるまで結果を出さない（自動で確定扱いにしない）
+    expect(t.draft.notes).toContain(DRAFT_TEXT.excludedPartial);
+    const unchecked = await save({ ...confirmed, stage2: { values, sources: auto } });
+    expect(unchecked.status).toBe(400);
+    expect((await unchecked.json()).error).toContain("③ ② のうち除く患者等の数");
+    const a = await (await save({ ...confirmed, stage2: { values, sources: auto, excludedChecked: true } })).json();
+    expect(a.inputs.stage2.sources["excluded:U-33a=A:U-33b=A"]).toBe("auto");
     expect(a.stage2Open).toBe(true);
     expect(a.inputs.stage2.sources["c002:U-33a=A"]).toBe("auto");
     expect(a.inputs.stage2.sources["referral:U-32=A"]).toBe("manual");
     // 下書きの数を本人が直すと、印は手入力（自動の印を送っても、下書きと違う値は手入力）
-    const b = await (await save({ ...confirmed, stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, sources: auto } })).json();
+    const b = await (await save({ ...confirmed, stage2: { values: { ...values, "care:U-33a=A:U-33c=A": 2 }, sources: auto, excludedChecked: true } })).json();
     expect(b.inputs.stage2.sources["care:U-33a=A:U-33c=A"]).toBe("manual");
     // 下書きの数と同じ値を 17j の形（印なし）で手で入れたときと結果が同じ
     const c = await (await save({ ...confirmed, stage2: { values } })).json();

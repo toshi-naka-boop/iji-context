@@ -44,6 +44,14 @@ describe("2 段目の下書き（純関数）", () => {
     const d = draftOf([r(m1, B, ["施設総管"], true), r(m2, B, ["施設総管"]), r(m3, B, ["施設総管"]), r(m1, A, ["施設総管"]), r(m2, A, ["施設総管"]), r(m3, A, ["施設総管"])], [m1, m2, m3], () => true);
     expect(d.ok && all(d.values, "excluded")).toEqual({ "excluded:U-33a=A:U-33b=A": 1, "excluded:U-33a=A:U-33b=B": 0, "excluded:U-33a=B:U-33b=A": 3, "excluded:U-33a=B:U-33b=B": 1 });
   });
+  it("C-363：③ の下書きのまま本人が確かめていない欄（unchecked）があると、結果を出さず名指しする。案内は拾わない種類を挙げる", () => {
+    const stage1: Stage1Input = { months: [m1, m2, m3].map((month, i) => ({ month, kou: i === 0 ? K.visitThreshold : 0, otsuExtra: 0, source: "auto" })), gansou: 0, secondPatient: 0, special: "none", institutions: [] };
+    const values: Record<string, number | null> = Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? K.referralMin : f.field.id === "mitoriHome" ? K.mitoriMin : 0]));
+    const key = "excluded:U-33a=A:U-33b=A";
+    const e = evaluate({ stage1, stage2: { values, unchecked: [key] } }, K, P);
+    expect(e.status === "incomplete" && e.missing).toEqual([`${fieldKeys().find((f) => f.key === key)!.label}（下書きに足す患者がいないか確かめてください）`]);
+    for (const w of ["別表第七", "別表第八の二", "C000", "C001-2"]) expect(DRAFT_TEXT.excludedPartial).toContain(w);
+  });
   it("⑤：要介護 3 以上・別表第八の二が事実にある患者だけを数え、事実のない患者は「未入力 n 人」に出して数に入れない", () => {
     const d = draftOf([r(m1, A, ["在医総管"]), r(m2, A, ["在医総管"]), r(m3, A, ["在医総管"]), r(m1, B, ["施設総管"]), r(m2, B, ["施設総管"]), r(m3, B, ["施設総管"])], [m1, m2, m3], (p) => (p.name === A.name ? true : null));
     // C-372：事実は月ごとにないので、U-33c の乙（各月の末日）の 2 欄は下書きせず空にする（甲乙に同じ数を入れない）
