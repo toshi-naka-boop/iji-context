@@ -1,23 +1,23 @@
 {
   "currentNode": "完了",
   "status": "done",
-  "designVersion": "v35",
-  "approvedDesignVersion": "v35",
-  "approvedDesignSha256": "dc78bfce4a2aba1c610509f36b212cfbaa85c401270354bbeac74cebbe2d4e43",
+  "designVersion": "v36",
+  "approvedDesignVersion": "v36",
+  "approvedDesignSha256": "1d653e5130e673a28770d8e75704e00d4701066f744bd8ac051bf68d6aaa3912",
   "approvedAt": "2026-11-24",
-  "approvalEvidence": "v35（v35:dc78bfce4a2a）を承認",
-  "requiredApprovalFingerprint": "v35:dc78bfce4a2a",
-  "baseline": "feat/integration（16e3499）",
-  "criticRound": 67,
+  "approvalEvidence": "アで承認（直前のメッセージで v36:1d653e5130e6 を示し「v36（v36:1d653e5130e6）と EM 追記案を「ア」で承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
+  "requiredApprovalFingerprint": "v36:1d653e5130e6",
+  "baseline": "feat/integration（f576407）",
+  "criticRound": 72,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md §16",
-    "v33-inputs.md",
-    "spec.md FR-205〜211",
-    "sources/em-v33-draft.md"
+    "design.md §17",
+    "ledger.md",
+    "reviews/fable-consult-e.md",
+    "sources/em-v36-draft.md"
   ],
-  "nextAction": "A・B は受け入れ条件まで済み（B は候補出しの合否の組で 95% 合格）。次は C〜I（FR-203）、オンライン診療・L-164・FR-211（次の版）、モバカルの答えで実際の項目をつなぐ、厚生局の照会の答えを EM へ",
-  "lastUpdated": "2026-11-23",
+  "nextAction": "C〜I の次は C＋D＋F の入れ物（設計の版）。C・D の EM 追記案を kyufu-chosei-r8.md・takikan-r8.md から作る",
+  "lastUpdated": "2026-11-24",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
     "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol",
@@ -50,5 +50,11 @@
     "sha256": "af1d2b4be431c89e987c5a417720c0c93b6f4363105de2a8c9b8b2715f866e44",
     "evidence": "承認する（直前のメッセージで v34:af1d2b4be431 を示し「v34（v34:af1d2b4be431）を承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
     "at": "2026-11-23"
+  },
+  "v35Approval": {
+    "fingerprint": "v35:dc78bfce4a2a",
+    "sha256": "dc78bfce4a2aba1c610509f36b212cfbaa85c401270354bbeac74cebbe2d4e43",
+    "evidence": "v35（v35:dc78bfce4a2a）を承認",
+    "at": "2026-11-24"
   }
 }
