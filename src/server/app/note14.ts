@@ -129,7 +129,8 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
       // 2 段目の下書き（数だけ。鍵・患者の情報は返さない）
       draft: (() => {
         const d = stage2Draft(monthsBefore(m, k.periodMonths.short));
-        return d.ok ? { ...d, text: d.unknownCare > 0 ? DRAFT_TEXT.unknownCare(d.unknownCare) : null } : d;
+        // notes：下書きしない欄・足りないかもしれない欄の案内（たたまずに出す）
+        return d.ok ? { ...d, text: d.unknownCare > 0 ? DRAFT_TEXT.unknownCare(d.unknownCare) : null, notes: [DRAFT_TEXT.careEnd] } : d;
       })(),
       worksheets: readRows(ctx.sqlite).filter((r) => r.check_month === m).map(view),
     };

@@ -12,7 +12,7 @@ import { evaluate, FIELD_LABEL, type Evaluation, type Institution, type Note14Co
 
 type Auto = { month: string; state: "ok" | "none" | "no_table" | "overlap" | "unreadable"; receipts: number; kou?: number; otsuExtra?: number; unreadable?: number; text?: string };
 type Saved = { id: number; checkMonth: string; isCheckMonth: boolean; period: Period; result: "meets" | "not_meets" | "undecided"; splits: string[]; lines: string[]; reasons: string[]; remaining: number | null; checkedBy: string; checkedOn: string; draft: boolean; note?: string };
-type Draft = { ok: true; values: Record<string, number>; unknownCare: number; text: string | null } | { ok: false; reason: string };
+type Draft = { ok: true; values: Record<string, number>; unknownCare: number; text: string | null; notes: string[] } | { ok: false; reason: string };
 type Tool = { month: string | null; outOfScope: boolean; text?: string; isCheckMonth?: boolean; note?: string; period?: Period; consts?: Note14Consts; auto?: Auto[]; draft?: Draft; worksheets?: Saved[] };
 
 const RESULT_LABEL = { meets: "基準に当たる（減算になりません）", not_meets: "基準に当たらない（減算になります）", undecided: "決めきれない" } as const;
@@ -231,6 +231,7 @@ export default function Note14Page() {
           {tool?.draft && "reason" in tool.draft && <div className="notice">{tool.draft.reason}</div>}
           {tool?.draft?.ok && !allConfirmed && <div className="notice">1 段目で 3 か月とも「この月は全患者分を取り込んだ」を確かめると、取り込んだ請求からの下書きを入れます。</div>}
           {tool?.draft && "text" in tool.draft && tool.draft.text && <div className="notice">{tool.draft.text}</div>}
+          {tool?.draft?.ok && tool.draft.notes.map((n) => <div key={n} className="notice">{n}</div>)}
           <ul style={{ paddingLeft: 18 }}>
             {fieldKeys().map((f) => (
               <li key={f.key} style={{ marginBottom: 4 }}>

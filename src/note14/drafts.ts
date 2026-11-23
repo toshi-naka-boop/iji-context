@@ -20,12 +20,13 @@ export const DRAFT_TEXT = {
   overlap: (months: string[]) => `${months.join("・")} は同じ月のレセプトが重なっているので、2 段目の下書きを作りません。数を入れてください`,
   missing: (months: string[]) => `${months.join("・")} は取り込みがないか、版の行で読めないので、2 段目の下書きを作りません。数を入れてください`,
   unreadable: (months: { month: string; n: number }[]) => `${months.map((x) => `${x.month}（${x.n} 枚）`).join("・")} は読めない請求があるので、2 段目の下書きを作りません。取り込み直すか、数を入れてください`,
+  careEnd: "⑤ の「各月の末日」の欄は、患者の事実を月ごとに持たないので下書きしていません。数を入れてください",
   unknownCare: (n: number) => `要介護度・別表第八の二の状態が未入力 ${n} 人（下書きの数に入れていません）。認知症の自立度・障害支援区分で当たる患者は、事実にないので足してください`,
 } as const;
 
 /**
  * 下書き（純関数）。months は期間の 3 か月、careOf は患者の事実から要介護 3 以上又は別表第八の二に当たるか（true）・当たらない（false）・未入力（null）。
- * ③ は ② の患者のうち除く患者、⑤ は ①・② の患者のうち当たる患者（認知症の自立度・障害支援区分は事実にないので数えない。本人が足す）
+ * ③ は ② の患者のうち除く患者、⑤ は ①・② の患者のうち当たる患者（認知症の自立度・障害支援区分は事実にないので数えない。本人が足す）。⑤ の U-33c の乙の欄は入れない（C-372）
  */
 export function draftOf(receipts: DraftReceipt[], months: string[], careOf: (p: DraftReceipt["patient"]) => boolean | null): Draft {
   const mine = receipts.filter((r) => months.includes(r.yearMonth));
@@ -70,10 +71,9 @@ export function draftOf(receipts: DraftReceipt[], months: string[], careOf: (p: 
     // ③：甲＝期間中に 1 回でも除く患者に当たれば除く、乙＝算定した月（実人数は最後に算定した月）の分だけ
     put("excluded", { "U-33a": u, "U-33b": "A" }, of("c0022").filter((c) => everExcluded.has(c.id)).length);
     put("excluded", { "U-33a": u, "U-33b": "B" }, of("c0022").filter((c) => c.excluded).length);
-    // ⑤：事実は月ごとに持たないので、どちらの読みも同じ事実で数える（本人が直す）
-    const n5 = list.filter((c) => careOfId(c) === true).length;
-    put("care", { "U-33a": u, "U-33c": "A" }, n5);
-    put("care", { "U-33a": u, "U-33c": "B" }, n5);
+    // ⑤：事実は月ごとに持たないので、U-33c の甲（1 回でも）の欄だけを今の事実で数える。乙（各月の末日）の欄は下書きせず空にする
+    // （甲乙に同じ数を入れると U-33c が割れなくなる。C-340 の「同じ数を全部の欄に入れる入口を置かない」と同じ。round-61 C-372）
+    put("care", { "U-33a": u, "U-33c": "A" }, list.filter((c) => careOfId(c) === true).length);
   }
   const unknownCare = real.filter((c) => careOfId(c) === null).length;
   return { ok: true, values, unknownCare };

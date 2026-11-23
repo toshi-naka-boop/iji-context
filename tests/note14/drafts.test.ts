@@ -1,7 +1,7 @@
 // 段 17k：注14 の計算の道具の 2 段目の下書き（design.md §15-13）。①②③⑤ の自動入力、患者の数え方（X-173・X-180・C-341）、未入力 n 人、出どころの印
 import { describe, expect, it } from "vitest";
 import { resolveRevision } from "../../src/engine/revisions";
-import { draftOf, type DraftReceipt } from "../../src/note14/drafts";
+import { DRAFT_TEXT, draftOf, type DraftReceipt } from "../../src/note14/drafts";
 import { evaluate, monthsBefore, periodOf, shiftMonth, toolConstsOf, type Stage1Input } from "../../src/note14/evaluate";
 import { fieldKeys } from "../../src/note14/readings";
 import { month } from "../helpers/period";
@@ -23,7 +23,10 @@ describe("2 段目の下書き（純関数）", () => {
     expect(d.ok && { ...all(d.values, "c002"), ...all(d.values, "c0022") }).toEqual({ "c002:U-33a=A": 1, "c002:U-33a=B": 1, "c0022:U-33a=A": 1, "c0022:U-33a=B": 3 });
     const stage1: Stage1Input = { months: [m1, m2, m3].map((month, i) => ({ month, kou: i === 0 ? K.visitThreshold : 0, otsuExtra: 0, source: "auto" })), gansou: 0, secondPatient: 0, special: "none", institutions: [] };
     const values: Record<string, number | null> = Object.fromEntries(fieldKeys().map((f) => [f.key, f.field.id === "referral" ? K.referralMin : f.field.id === "mitoriHome" ? K.mitoriMin : 0]));
-    const e = evaluate({ stage1, stage2: { values: { ...values, ...(d.ok ? d.values : {}) } } }, K, P);
+    // ⑤ の各月の末日の欄は下書きしない（C-372）。この例では本人が 1 回でもの欄と同じ数を入れたとする
+    const drafted: Record<string, number> = d.ok ? d.values : {};
+    const careEnd = Object.fromEntries((["A", "B"] as const).map((u) => [`care:U-33a=${u}:U-33c=B`, drafted[`care:U-33a=${u}:U-33c=A`]]));
+    const e = evaluate({ stage1, stage2: { values: { ...values, ...drafted, ...careEnd } } }, K, P);
     expect(e.status === "done" && [e.result, e.splits]).toEqual(["undecided", ["U-33a"]]);
   });
   it("X-180：A が 1 か月だけ在医総管を種別の違う 2 枚で請求しても、延べは 1（種別を外した鍵＋診療年月）。実人数も 1", () => {
@@ -43,7 +46,9 @@ describe("2 段目の下書き（純関数）", () => {
   });
   it("⑤：要介護 3 以上・別表第八の二が事実にある患者だけを数え、事実のない患者は「未入力 n 人」に出して数に入れない", () => {
     const d = draftOf([r(m1, A, ["在医総管"]), r(m2, A, ["在医総管"]), r(m3, A, ["在医総管"]), r(m1, B, ["施設総管"]), r(m2, B, ["施設総管"]), r(m3, B, ["施設総管"])], [m1, m2, m3], (p) => (p.name === A.name ? true : null));
-    expect(d.ok && [all(d.values, "care"), d.unknownCare]).toEqual([{ "care:U-33a=A:U-33c=A": 1, "care:U-33a=A:U-33c=B": 1, "care:U-33a=B:U-33c=A": 3, "care:U-33a=B:U-33c=B": 3 }, 1]);
+    // C-372：事実は月ごとにないので、U-33c の乙（各月の末日）の 2 欄は下書きせず空にする（甲乙に同じ数を入れない）
+    expect(d.ok && [all(d.values, "care"), d.unknownCare]).toEqual([{ "care:U-33a=A:U-33c=A": 1, "care:U-33a=B:U-33c=A": 3 }, 1]);
+    expect(DRAFT_TEXT.careEnd).toContain("各月の末日");
   });
   it("下書きに鍵・患者の情報が現れない（数だけ）", () => {
     const d = draftOf([r(m1, A, ["在医総管"]), r(m2, A, ["在医総管"]), r(m3, B, ["施設総管"])], [m1, m2, m3], () => null);

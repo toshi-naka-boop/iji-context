@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluate } from "../../src/engine";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
+import { DRAFT_TEXT } from "../../src/note14/drafts";
 import { fieldKeys } from "../../src/note14/readings";
 import { autoConsent } from "../helpers/consent";
 import { claimId, month } from "../helpers/period";
@@ -177,7 +178,9 @@ describe("注14 の計算の道具（段 17i）", () => {
     const pick = (id: string) => Object.fromEntries(Object.entries(t.draft.values as Record<string, number>).filter(([k]) => k.split(":")[0] === id));
     expect({ ...pick("c002"), ...pick("c0022") }).toEqual({ "c002:U-33a=A": 1, "c002:U-33a=B": 3, "c0022:U-33a=A": 1, "c0022:U-33a=B": 3 });
     expect(pick("excluded")).toEqual({ "excluded:U-33a=A:U-33b=A": 1, "excluded:U-33a=A:U-33b=B": 1, "excluded:U-33a=B:U-33b=A": 3, "excluded:U-33a=B:U-33b=B": 1 });
-    expect(pick("care")).toEqual({ "care:U-33a=A:U-33c=A": 1, "care:U-33a=A:U-33c=B": 1, "care:U-33a=B:U-33c=A": 3, "care:U-33a=B:U-33c=B": 3 });
+    // C-372：⑤ の各月の末日（U-33c の乙）の欄は下書きしない（空のまま手入力を求め、その旨を出す）
+    expect(pick("care")).toEqual({ "care:U-33a=A:U-33c=A": 1, "care:U-33a=B:U-33c=A": 3 });
+    expect(t.draft.notes).toContain(DRAFT_TEXT.careEnd);
     expect([t.draft.unknownCare, t.draft.text]).toEqual([1, "要介護度・別表第八の二の状態が未入力 1 人（下書きの数に入れていません）。認知症の自立度・障害支援区分で当たる患者は、事実にないので足してください"]);
     const T = t.consts.visitThreshold as number;
     const manual = [m1, m2, m3].map((month, i) => ({ month, confirmed: false, kou: i === 0 ? T : 0, otsuExtra: 0 }));
