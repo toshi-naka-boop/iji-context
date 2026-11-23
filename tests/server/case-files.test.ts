@@ -35,7 +35,7 @@ describe("請求 id からファイルを引く表", () => {
   });
 
   it("パスの区切り・.. ・表にない番号を含む請求 id は、どのファイルにもならない", () => {
-    for (const id of [...TRAVERSALS, claimId("K8"), claimId("K17"), ""]) expect([id, caseFileOf(repo, id), chartFileOf(repo, id)]).toEqual([id, null, null]);
+    for (const id of [...TRAVERSALS, claimId("K12"), claimId("K17"), ""]) expect([id, caseFileOf(repo, id), chartFileOf(repo, id)]).toEqual([id, null, null]);
   });
 });
 

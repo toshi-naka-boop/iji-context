@@ -78,8 +78,10 @@ describe("段 13：実データの masters.db で", () => {
         claims++;
         const r = checkUke(c, db);
         expect(r.result.ran.map((x) => x.check)).toEqual(expect.arrayContaining(["G07", "G08"]));
-        expect([name, i, r.shown]).toEqual([name, i, []]);
-        for (const f of r.generic) raw.push(`${name} #${i + 1} ${f.check} ${f.codes.join()} 項番${f.params.kouban ?? ""}`);
+        // torikawasure.UKE（K8〜K11。段 18b）の K9 の超音波は、作成手引きの記録例に領域のコメントがないので入れていない（作らない）。その 1 件だけは出る
+        const known = (f: { codes: string[] }) => name === "torikawasure.UKE" && f.codes.join() === "160072210";
+        expect([name, i, r.shown.filter((f) => !known(f))]).toEqual([name, i, []]);
+        for (const f of r.generic.filter((f) => !known(f))) raw.push(`${name} #${i + 1} ${f.check} ${f.codes.join()} 項番${f.params.kouban ?? ""}`);
         if (name === "kisaimore.UKE") {
           // R17 が 1 件、G07 の同じ記載（在宅酸素の飽和度）は「手書きの指摘と同じ内容」として出さない
           expect(r.hand.findings.filter((f) => f.kind === "記載もれ").map((f) => f.messageKey)).toEqual(["R17.comment_missing"]);
