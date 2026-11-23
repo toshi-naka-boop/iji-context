@@ -3,6 +3,7 @@
 // 見本の 2 本とは別に、アップロードで試すための合成の UKE も 3 本書き出す（design.md §11-11・§11-12。設定は fixtures/uke/extra.json、値は EM 5-1 の表）：
 // 点検の対象外の行を含むもの（taishogai.UKE）、必須の記載を 1 つ欠いたもの（kisaimore.UKE）、改定前の診療年月のもの（kaiteimae.UKE）。
 // 取り忘れの症例 K8〜K11 の合成の UKE（torikawasure.UKE。設定は fixtures/uke/kb.json。design.md §15-10 の 3）も、同じ作り方で書き出す。
+// 受け入れの症例 K12・K13 の合成の UKE（kozoka.UKE。設定は fixtures/uke/kb-structured.json。design.md §16-10 の E-13）も、同じ作り方で書き出す。
 // もう 1 本、実在の請求と同じ形（医薬品・特定器材・症状詳記などを含む）を読めることを確かめるための合成の UKE（jitsurei.UKE。設定は fixtures/uke/jitsurei.json）
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -149,6 +150,8 @@ type Jitsurei = {
 export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "jitsurei.json"), "utf8")) as Jitsurei;
 /** 取り忘れの症例 K8〜K11 の合成の UKE の設定（design.md §15-10 の 3。形は jitsurei.json と同じ） */
 export const TORIKAWASURE = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb.json"), "utf8")) as Jitsurei;
+/** 受け入れの症例 K12・K13 の合成の UKE の設定（design.md §16-10 の E-13。形は jitsurei.json と同じ） */
+export const KOZOKA = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb-structured.json"), "utf8")) as Jitsurei;
 
 /**
  * 実在の請求と同じ形の、検証用の合成の UKE（設定は fixtures/uke/jitsurei.json。EM 5-1 の表）。外来 3 件と在宅 1 件を 1 つのファイルにする。
@@ -227,4 +230,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   console.log(`書き出し: ${JITSUREI.file}`);
   writeFileSync(path.join(root, TORIKAWASURE.file), generateJitsurei(TORIKAWASURE));
   console.log(`書き出し: ${TORIKAWASURE.file}`);
+  writeFileSync(path.join(root, KOZOKA.file), generateJitsurei(KOZOKA));
+  console.log(`書き出し: ${KOZOKA.file}`);
 }

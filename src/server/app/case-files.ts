@@ -15,6 +15,8 @@ const CASE_FILES: ReadonlyMap<string, string> = new Map([
   ["K9", "K9.json"],
   ["K10", "K10.json"],
   ["K11", "K11.json"],
+  ["K12", "K12.json"],
+  ["K13", "K13.json"],
 ]);
 /** 合成カルテのある症例（K6 は合成カルテを持たない） */
 const CHART_FILES: ReadonlyMap<string, string> = new Map([
@@ -28,6 +30,8 @@ const CHART_FILES: ReadonlyMap<string, string> = new Map([
   ["K9", "K9.json"],
   ["K10", "K10.json"],
   ["K11", "K11.json"],
+  ["K12", "K12.json"],
+  ["K13", "K13.json"],
 ]);
 
 /** 請求 id の頭（最初のハイフンの前）が症例の番号 */

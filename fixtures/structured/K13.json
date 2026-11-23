@@ -1,0 +1,98 @@
+{
+  "_note": "合成の接続先（FR-105）の構造化データ（K13。設計 §16-1・§16-10 の E-13）。値は EM §5-1 の「K12・K13 の構造化データ」の表のまま（往診の日・時刻・オーダーの ref は合成の設定。薬と量は記録例 X51 の 15 日の行）。patientDevices は患者の情報の機器（設計 16-5）の合成の設定で、接続先は返さない（「機器なし」）",
+  "visits": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "v1",
+        "date": "2026-10-02",
+        "start": "10:00",
+        "end": "11:15",
+        "kind": "往診"
+      }
+    ]
+  },
+  "orders": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "o1",
+        "date": "2026-10-02",
+        "place": "院内",
+        "refills": null,
+        "drugs": [
+          {
+            "code": {
+              "system": "rece",
+              "value": "620491801"
+            },
+            "name": "アローゼン顆粒",
+            "days": 14,
+            "quantity": "0.5g"
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "610463223"
+            },
+            "name": "レンドルミンＤ錠０．２５ｍｇ",
+            "days": 14,
+            "quantity": "1錠"
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "622095502"
+            },
+            "name": "カルベジロール錠１０ｍｇ「ニプロ」",
+            "days": 28,
+            "quantity": "1錠"
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "620006480"
+            },
+            "name": "ハップスターＩＤ７０ｍｇ　１０ｃｍ×１４ｃｍ",
+            "days": null,
+            "quantity": "35枚"
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "620631201"
+            },
+            "name": "ベトノバールＧ軟膏０．１２％",
+            "days": null,
+            "quantity": "5g"
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "622096401"
+            },
+            "name": "オンブレス吸入用カプセル１５０μｇ",
+            "days": null,
+            "quantity": "14カプセル"
+          }
+        ]
+      }
+    ]
+  },
+  "procedures": {
+    "status": "supported",
+    "items": []
+  },
+  "homeCare": {
+    "status": "supported",
+    "items": []
+  },
+  "patientDevices": [
+    {
+      "kind": "none",
+      "fromMonth": "2026-10",
+      "endMonth": null,
+      "source": "医療事務が入れた"
+    }
+  ]
+}
