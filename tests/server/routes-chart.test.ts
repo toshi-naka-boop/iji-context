@@ -192,6 +192,22 @@ describe("訪問カルテ", () => {
     expect(auditRows().at(-1)).toMatchObject({ action: "POST /api/chart/[id]", target: String(w.id), result: "ok", userId: mate.id, role: "veteran" });
   });
 
+  it("訪問カルテの行ったことを確かめて残せるのは、書いた本人だけ（POST /api/chart/acts。反証 round-55 C-302）。ほかの人は 403 で、何も残らず、本人はあとから確かめられる", async () => {
+    const chart = (await import("../../app/api/chart/route")).POST;
+    const acts = (await import("../../app/api/chart/acts/route")).POST;
+    const a = instance.getAuth();
+    const owner = a.register("chart_acts_owner", "かるて", "password123");
+    const mate = a.registerWithInvite("chart_acts_mate", "どうりょう", "password123", a.createInvite(owner, "veteran").code);
+    const [mine, theirs] = [owner, mate].map((u) => `resemen_session=${a.createSession(u.id).token}`);
+    llm.runOnce.mockResolvedValue({ structured: { facts: [], acts: [], rx: [] }, sessionId: "", stats: {} });
+    const w = (await (await chart(post("/api/chart", { claimId: claimId("K5"), kind: "訪問診療", note: NOTE }, mine))).json()) as { id: number };
+    const body = { noteId: String(w.id), facts: [], acts: [], rx: [] };
+    const refused = await acts(post("/api/chart/acts", body, theirs));
+    expect([refused.status, ((await refused.json()) as { error: string }).error]).toEqual([403, "この訪問カルテの行ったことを確かめられるのは、書いた本人だけです"]);
+    expect(instance.runAs(owner, () => instance.getApp().savedActs(w.id))).toBeNull();
+    expect((await acts(post("/api/chart/acts", body, mine))).status).toBe(200);
+  });
+
   it("確定したカルテの算定プレビュー：その日までの出来事から導出した行・根拠・見込みの合計・指摘を返す。確かめる前は 409、形の違う choices は 400", async () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;

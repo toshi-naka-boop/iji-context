@@ -168,6 +168,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }) {
     clerk(clerkId);
     const r = noteRow(id);
+    // 訪問カルテ（訪問診療・往診）は書いた本人の算定プレビューに重なるので、書いた本人だけが確かめる。貼ったカルテ（記録）はチームで見る（反証 round-55 C-302）
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
     if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
     const note = JSON.parse(r.note) as ChartNote;
     const v = validateFacts({ facts: input.facts }, note);
