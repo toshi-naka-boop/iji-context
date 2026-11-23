@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v35",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v35",
+  "approvedDesignSha256": "dc78bfce4a2aba1c610509f36b212cfbaa85c401270354bbeac74cebbe2d4e43",
+  "approvedAt": "2026-11-24",
+  "approvalEvidence": "v35（v35:dc78bfce4a2a）を承認",
   "requiredApprovalFingerprint": "v35:dc78bfce4a2a",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 67,
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v35（§15-7 の 3b・やり直し 1 回）の承認 → 実装 → 新しい条件で合否の組の最初の 2 回（1 回だけ）",
+  "nextAction": "§15-7 の 3b を実装 → 統合ブランチ → 新しい条件で合否の組の最初の 2 回（1 回だけ）",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
