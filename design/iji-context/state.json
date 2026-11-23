@@ -1,6 +1,6 @@
 {
-  "currentNode": "実装",
-  "status": "in_progress",
+  "currentNode": "完了",
+  "status": "done",
   "designVersion": "v35",
   "approvedDesignVersion": "v35",
   "approvedDesignSha256": "dc78bfce4a2aba1c610509f36b212cfbaa85c401270354bbeac74cebbe2d4e43",
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "§15-7 の 3b を実装 → 統合ブランチ → 新しい条件で合否の組の最初の 2 回（1 回だけ）",
+  "nextAction": "A・B は受け入れ条件まで済み（B は候補出しの合否の組で 95% 合格）。次は C〜I（FR-203）、オンライン診療・L-164・FR-211（次の版）、モバカルの答えで実際の項目をつなぐ、厚生局の照会の答えを EM へ",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
