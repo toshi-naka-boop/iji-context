@@ -11,7 +11,8 @@ import { postJson } from "./get-json";
 
 export type TorikawasureView = G11Result & { coverage?: string };
 
-const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+// 日を付けない候補（日付が診療年月だけ。X-162）は月だけを出す
+const md = (date: string) => (date.length === 10 ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : `${Number(date.slice(5, 7))}月`);
 
 export function Torikawasure({ data, chartHref }: { data: TorikawasureView | undefined; chartHref?: string }) {
   if (!data) return null;

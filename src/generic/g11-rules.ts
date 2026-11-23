@@ -49,7 +49,7 @@ function contextOf(base: ClaimContext, rev: Revision, db: MastersDb | null, cand
         codesOf.set(i, (codesOf.get(i) ?? new Set()).add(it.code));
         const k = it.kind === "SI" ? kubunOfCode(rev, it.code) : null;
         if (k) {
-          lines.push({ kubun: k, count: Math.max(1, u.count), dates: [c.date] });
+          lines.push({ kubun: k, count: Math.max(1, u.count), dates: c.date.length === 10 ? [c.date] : [] }); // 日を付けない候補（X-162）は算定日なし
           kubunOf.set(i, (kubunOf.get(i) ?? new Set()).add(k));
         } else outside.push(it.code);
       }

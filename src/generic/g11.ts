@@ -116,6 +116,11 @@ const CHECK_NAME: Record<string, string> = { G03: "行の属性", G04: "包括",
 
 const md = (date: string) => String(Number(date.slice(8, 10)));
 const daysText = (dates: string[]) => [...new Set(dates)].sort().map(md).join("・");
+/** 「（n日）」。日を付けない候補（日付が診療年月だけ。X-162）は出さない */
+const daysPart = (dates: string[]) => {
+  const ds = dates.filter((d) => d.length === 10);
+  return ds.length > 0 ? `（${daysText(ds)}日）` : "";
+};
 const zeros = () => Array.from({ length: 31 }, () => 0);
 const unitOn = (items: G11Item[], day: number, count = 1): AddedUnit => {
   const days = zeros();
@@ -590,8 +595,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 2. 決まった規則で足す候補（M-1。X-147）：判断料と処方箋料
   {
     const kensa = db.prepare("SELECT code FROM shinryo WHERE snapshot = ? AND kensa_kind = '2' AND kensa_group = ?");
-    // 根拠は、その月の請求と確かめた行為にある検体検査の項目（X-158）。claim は請求にある項目（コードと最初の算定日）
-    const groups = new Map<number, { acts: ConfirmedAct[]; claim: { code: string; day: number }[] }>();
+    // 根拠は、その月の請求と確かめた行為にある検体検査の項目（X-158）。claim は請求にある項目（コードと最初の算定日。算定日の分からない単位だけなら null）
+    const groups = new Map<number, { acts: ConfirmedAct[]; claim: { code: string; day: number | null }[] }>();
     const groupOf = (code: string): number | null => {
       const r = shinryoOf(db, c.snapshot.si, code);
       return r && r.kensa_kind === "1" && JUDGEMENT_GROUPS.includes(r.kensa_group) ? r.kensa_group : null;
@@ -610,7 +615,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       if (g === null) continue;
       const first = (idx.days.get(code) ?? []).findIndex((n) => n > 0);
       const e = groupEntry(g);
-      groups.set(g, { ...e, claim: [...e.claim, { code, day: first >= 0 ? first + 1 : 1 }] });
+      groups.set(g, { ...e, claim: [...e.claim, { code, day: first >= 0 ? first + 1 : null }] });
     }
     let undecided = 0;
     for (const [group, g] of groups) {
@@ -625,10 +630,13 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       if (present(code, 1, true) || acts.some((a) => a.act.match && sameAsCode.has(a.act.match.code))) continue;
       const name = nameOfCode(c, code);
       if (g.acts.length === 0) {
-        // 請求にある項目だけから決まる判断料（X-158）：日は請求の最初の算定日、引用はない
-        const day = Math.min(...g.claim.map((x) => x.day));
-        const date = `${about.yearMonth}-${String(day).padStart(2, "0")}`;
-        add({ kind: "derived", date, day, units: [unitOn([{ kind: "SI", code }], day)], report: [{ code, written: name, quote: "", name }], derived: { what: [...new Set(g.claim.map((x) => `『${nameOfCode(c, x.code)}』`))].join("・"), basis: "マスターの検査のグループ", name, fromClaim: true } });
+        // 請求にある項目だけから決まる判断料（X-158）：日は請求の最初の算定日、引用はない。
+        // 算定日の分かる項目がなければ、日を付けずに月で扱う（日は 0、診療年月を日付の代わりにし、足す単位は算定日の分からない単位。X-162）
+        const timed = g.claim.flatMap((x) => (x.day === null ? [] : [x.day]));
+        const day = timed.length > 0 ? Math.min(...timed) : 0;
+        const date = day > 0 ? `${about.yearMonth}-${String(day).padStart(2, "0")}` : about.yearMonth;
+        const u = day > 0 ? unitOn([{ kind: "SI", code }], day) : { items: [{ kind: "SI" as const, code }], count: 1, days: zeros(), day: 0 };
+        add({ kind: "derived", date, day, units: [u], report: [{ code, written: name, quote: "", name }], derived: { what: [...new Set(g.claim.map((x) => `『${nameOfCode(c, x.code)}』`))].join("・"), basis: "マスターの検査のグループ", name, fromClaim: true } });
         continue;
       }
       const first = g.acts.map((a) => a.date).sort()[0];
@@ -663,7 +671,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       if (idx.untimed.has(other)) return true;
       const d = idx.days.get(other);
       if (!d) return false;
-      if (r.tani === 2) return d.some((n) => n > 0);
+      if (r.tani === 2 || day === 0) return d.some((n) => n > 0); // 日を付けない候補（X-162）は月の中で見る
       if (r.tani === 4) return d.some((n, i) => n > 0 && Math.abs(i + 1 - day) <= 6);
       return d[day - 1] > 0;
     });
@@ -812,7 +820,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       g.key === "G11.missing_with"
         ? `カルテ（${daysText(dates)}日）の『${first.cand.parent}』で使った『${first.r.written}』が、請求にありません。確かめてください`
         : g.key === "G11.missing_derived"
-          ? `${first.cand.derived!.fromClaim ? "請求" : "カルテ"}（${daysText(dates)}日）に${first.cand.derived!.what}があり、${first.cand.derived!.name}が請求にありません。${first.cand.derived!.basis}から決まる項目です。算定できるか確かめてください`
+          ? `${first.cand.derived!.fromClaim ? "請求" : "カルテ"}${daysPart(dates)}に${first.cand.derived!.what}があり、${first.cand.derived!.name}が請求にありません。${first.cand.derived!.basis}から決まる項目です。算定できるか確かめてください`
           : `カルテ（${daysText(dates)}日）に『${first.r.written}』（${first.r.name}）がありますが、請求にありません。カルテに記録された行為です。算定できるか確かめてください`;
     // 同じ日の行為（同じコードの 2 回など）は 1 つの日の行にまとめる（引用は文の順に並べ、添え書きは重ねない）
     const byDate = new Map<string, { quotes: string[]; notes: Note[] }>();

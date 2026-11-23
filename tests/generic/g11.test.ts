@@ -576,4 +576,14 @@ describe("再反証 round-56", () => {
     expect(keys(less.findings)).toEqual(["G11.quantity_less 620008991 5"]);
     expect(less.findings[0].text).toBe("カルテ（5日）では「熱傷処置」で使った「ゲーベン」が10g、請求では5です。算定できるか確かめてください");
   });
+
+  it("X-162：算定日の分からない請求の検査からは、日を付けた判断料の候補を作らない（月で扱い、文に日を出さない）", () => {
+    const db = g11Db();
+    const untimed = { units: [{ items: [{ kind: "SI" as const, code: C.pt }], count: 1 }] };
+    const r = both(db, untimed, about([act(20, C.wound, "創傷処置")]));
+    const f = r.findings.find((x) => x.messageKey === "G11.missing_derived")!;
+    expect(f.text).toBe("請求に『ＰＴ』があり、血液学的検査判断料が請求にありません。マスターの検査のグループから決まる項目です。算定できるか確かめてください");
+    expect(f.days.map((d) => d.date)).toEqual([YM]);
+    expect(JSON.stringify(r)).not.toContain(`${YM}-01`);
+  });
 });
