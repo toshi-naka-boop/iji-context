@@ -148,7 +148,7 @@ type Cand = {
 };
 
 /** 同じ日・同じ親の区分の中の同じ子の区分ごとの、子の量（X-156） */
-type ChildGroups = Map<string, { kind: G11Item["kind"]; code: string; parent: string; child: string; items: { quantity?: string; quote: string; noteId?: number }[] }>;
+type ChildGroups = Map<string, { kind: G11Item["kind"]; code: string; parent: string; parentCodes: string[]; child: string; items: { quantity?: string; quote: string; noteId?: number }[] }>;
 
 /** 請求の中の、コードの日ごとの回数（SI・IY・TO）と、量の合計（日ごと） */
 type Index = { days: Map<string, number[]>; untimed: Set<string>; qty: Map<string, number[]> };
@@ -411,7 +411,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
    * その日・その区分のカルテの量（同じ日・同じ区分の行を合計。X-146）と請求の量を比べる。kind はマスターの表、child は子（「回」を比べない）。
    * 差があれば量の候補・指摘を足す
    */
-  const compare = (kind: G11Item["kind"], code: string, date: string, quantities: (string | undefined)[], label: { written: string; child?: string; quote: string; noteIds: (number | undefined)[] }) => {
+  const compare = (kind: G11Item["kind"], code: string, date: string, quantities: (string | undefined)[], label: { written: string; child?: string; parentCodes?: string[]; quote: string; noteIds: (number | undefined)[] }) => {
     if (quantities.every((q) => q === undefined || q.trim() === "")) return;
     if (!units) return notQty("単位の列が古い形です");
     const read = quantities.map((q) => (q === undefined ? null : readQuantity(q)));
@@ -423,7 +423,26 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const day = Number(date.slice(8, 10));
     const mu = masterUnit(kind, code);
     const claimDays = (x: string) => info.same(x).reduce((s, y) => s + (idx.days.get(y)?.[day - 1] ?? 0), 0);
-    const claimQty = (x: string) => info.same(x).reduce((s, y) => s + (idx.qty.get(y)?.[day - 1] ?? 0), 0);
+    const dayQty = (x: string) => info.same(x).reduce((s, y) => s + (idx.qty.get(y)?.[day - 1] ?? 0), 0);
+    // 子の量は、請求の側も同じ日・同じ親の区分の単位の中で合計する（カルテの側と同じ単位。C-310・X-160）。親の単位に子がなければ、その日の全部の量
+    const parentQty = (x: string, parents: string[]): number | null => {
+      const ps = new Set(parents);
+      const cs = new Set(info.same(x));
+      let found = false;
+      let total = 0;
+      for (const u of claim.units) {
+        const n = u.days?.[day - 1] ?? 0;
+        if (n <= 0 || !u.items.some((it) => ps.has(it.code))) continue;
+        for (const it of u.items) {
+          if (!cs.has(it.code)) continue;
+          found = true;
+          const v = Number((it.quantity ?? "").trim());
+          if (it.quantity !== undefined && it.quantity.trim() !== "" && Number.isFinite(v)) total += v * n;
+        }
+      }
+      return found ? total : null;
+    };
+    const claimQty = (x: string) => (label.parentCodes ? (parentQty(x, label.parentCodes) ?? dayQty(x)) : dayQty(x));
     const base = { date, day, report: label.noteIds.map((noteId) => ({ code, written: label.written, quote: label.quote, noteId, name: nameOfCode(c, code) })) };
     if (mu !== null && unitKey(unit, collide) === unitKey(mu, collide)) {
       const have = claimQty(code);
@@ -509,7 +528,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       else drugGroup(date, day, drugs, procs);
     }
     for (const g of childGroups.values())
-      compare(g.kind, g.code, date, g.items.map((x) => x.quantity), { written: g.parent, child: g.child, quote: [...new Set(g.items.map((x) => x.quote))].sort().join("／"), noteIds: g.items.map((x) => x.noteId) });
+      compare(g.kind, g.code, date, g.items.map((x) => x.quantity), { written: g.parent, child: g.child, parentCodes: g.parentCodes, quote: [...new Set(g.items.map((x) => x.quote))].sort().join("／"), noteIds: g.items.map((x) => x.noteId) });
   }
 
   /** 投薬でない行為（と、院外の日の投薬の手技）：請求にないなら候補、あれば with の子と量を見る */
@@ -535,7 +554,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       else {
         // 量は、同じ日・同じ親の区分の中の同じ子の区分ごとに合計してから比べる（X-156）
         const k = `${key}|${ck}|${info.same(x.match!.code).sort().join(",")}`;
-        const cg = childGroups.get(k) ?? { kind: ck, code: x.match!.code, parent: a.act.written, child: x.written, items: [] };
+        const cg = childGroups.get(k) ?? { kind: ck, code: x.match!.code, parent: a.act.written, parentCodes: info.same(m.code), child: x.written, items: [] };
         cg.items.push({ quantity: x.quantity, quote: x.quote, noteId: a.noteId });
         childGroups.set(k, cg);
       }

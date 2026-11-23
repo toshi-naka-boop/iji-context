@@ -562,3 +562,18 @@ describe("反証 round-55", () => {
     expect(r.findings[0].text).toBe("請求（14日）に『ＰＴ』があり、血液学的検査判断料が請求にありません。マスターの検査のグループから決まる項目です。算定できるか確かめてください");
   });
 });
+
+describe("再反証 round-56", () => {
+  it("C-310＝X-160：子の量は、請求の側も同じ日・同じ親の区分の単位の中で合計して比べる（創傷処置と熱傷処置でゲーベン 10g ずつ・請求も単位ごとに 10g は合っている）", () => {
+    const db = g11Db();
+    const geben = (q: string) => ({ kind: "IY" as const, code: D.geben, quantity: q });
+    const claim = (burn: string) => ({ units: [{ items: [{ kind: "SI" as const, code: C.wound }, geben("10")], count: 1, days: dayArr(5) }, { items: [{ kind: "SI" as const, code: C.burn }, geben(burn)], count: 1, days: dayArr(5) }] });
+    const kid: [ChildKind, string, string, string?][] = [["薬", D.geben, "ゲーベン", "10g"]];
+    const acts = [act(5, C.wound, "創傷処置", { kids: kid }), act(5, C.burn, "熱傷処置", { kids: kid })];
+    expect(keys(both(db, claim("10"), about(acts)).findings)).toEqual([]);
+    // 熱傷処置の単位だけ 5g なら、熱傷処置の子だけを言い、請求の数はその親の単位の量
+    const less = both(db, claim("5"), about(acts));
+    expect(keys(less.findings)).toEqual(["G11.quantity_less 620008991 5"]);
+    expect(less.findings[0].text).toBe("カルテ（5日）では「熱傷処置」で使った「ゲーベン」が10g、請求では5です。算定できるか確かめてください");
+  });
+});
