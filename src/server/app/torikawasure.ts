@@ -40,7 +40,7 @@ export function actsInput(days: { date: string; noteId: number; acts: ChartAct[]
  */
 export type StructuredOfClaim = (claimId: string, yearMonth: string, db: MastersDb | null) => ({ chart: StructuredChart; items: SItem[] } & Partial<Omit<G11Structured, "chart" | "items" | "texts">>) | null;
 /** カルテの文章のある日（確かめたかは問わない）。stored は確かめて残した行ったこと（確かめていなければ null） */
-export type TextDay = { date: string; text: string; stored: StoredActs | null; rxChoice?: RxChoice | null };
+export type TextDay = { date: string; text: string; soap: string; stored: StoredActs | null; rxChoice?: RxChoice | null };
 
 export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim) {
   /** 合成の症例の、合成カルテの確かめたあとの行ったこと（合成カルテのない症例・acts を持たない合成カルテは空） */
@@ -58,7 +58,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
     const f = chartFileOf(ctx.paths.root, claimId);
     if (!f) return [];
     const entries = (JSON.parse(readFileSync(f, "utf8")) as { entries: (Entry & { s?: string; o?: string; a?: string; p?: string; rx?: string })[] }).entries;
-    return entries.map((e) => ({ date: e.date, text: [e.s, e.o, e.a, e.p, e.rx].filter(Boolean).join("\n"), stored: e.acts ? { acts: e.acts, rx: e.rxNotes ?? [], rxChoice: e.rxChoice ?? null, rxChoiceBy: null } : null }));
+    return entries.map((e) => ({ date: e.date, text: [e.s, e.o, e.a, e.p, e.rx].filter(Boolean).join("\n"), soap: [e.s, e.o, e.a, e.p].filter(Boolean).join("\n"), stored: e.acts ? { acts: e.acts, rx: e.rxNotes ?? [], rxChoice: e.rxChoice ?? null, rxChoiceBy: null } : null }));
   }
 
   /**
@@ -87,6 +87,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
             texts: (input.texts ?? []).map((t) => ({
               date: t.date,
               text: t.text,
+              soap: t.soap,
               confirmed: t.stored !== null,
               choice: t.stored ? (t.stored.rxChoice ?? (t.stored.rx.length > 0 ? rxDefault(t.stored.rx) : null)) : null,
               rxAct: !!t.stored?.acts.some((a) => a.match && rxCodes.has(a.match.code)),

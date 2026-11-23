@@ -50,7 +50,7 @@ export type RxDay = { date: string; rx: boolean; choice: RxChoice | null; confir
 /**
  * 構造化データから規則で出す算定の入力（design.md §16-4。段 19c・19d）。ないときは規則の候補を出さない（v32 のまま）。
  * history：さかのぼって読む月（当月の前の月から順に lookbackMonths 個）。orders は残した処方のオーダー（残していない月は null）、items はその月の当てたコードつきの行為。
- * texts：カルテの文章のある日（当月とさかのぼる月。確かめたかは問わない）。text は S・O・A・P・処方の欄を合わせた文、confirmed は確かめたか。choice・rxAct はさかのぼる月の日だけが持つ（当月は rxDays・acts で見る）。
+ * texts：カルテの文章のある日（当月とさかのぼる月。確かめたかは問わない）。text は S・O・A・P・処方の欄を合わせた文、soap は S・O・A・P だけの文（時間の語の規則に使う。処方の欄の「分3」「疼痛時1錠」に当てない。C-444）、confirmed は確かめたか。choice・rxAct はさかのぼる月の日だけが持つ（当月は rxDays・acts で見る）。
  * times：医療事務が入れた訪問の時刻（16-6。出どころは「医療事務が入れた」）
  */
 export type G11Structured = {
@@ -58,7 +58,7 @@ export type G11Structured = {
   items: SItem[];
   history: { yearMonth: string; orders: Part<RxOrder> | null; items: SItem[] }[];
   lookbackMonths: number;
-  texts: { date: string; text: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
+  texts: { date: string; text: string; soap: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
   times: { date: string; ref: string | null; start: string; end: string; by: string; at: string }[];
   /** 患者の機器から規則で出す材料加算の入力（design.md §16-4-7・16-5。段 19e）。ないときは材料加算を見ない（段 19d まで） */
   devices?: G11Devices;
@@ -1118,7 +1118,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     let unknown = 0;
     let noBase = 0;
     const guideDays: string[] = [];
-    const confirmedText = (date: string) => S.texts.filter((x) => x.date === date && x.confirmed).map((x) => x.text).join("\n");
+    // 時間の語の規則は S・O・A・P だけに掛ける（処方の欄は掛けない。C-444）
+    const confirmedText = (date: string) => S.texts.filter((x) => x.date === date && x.confirmed).map((x) => x.soap).join("\n");
     for (const date of days) {
       const day = Number(date.slice(8, 10));
       const entries = timesOn.get(date) ?? [];

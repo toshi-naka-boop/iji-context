@@ -390,6 +390,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /** 1 つの請求の、カルテの文章のある日（確かめたかは問わない）。取り込んだ請求は貼ったカルテ、合成の症例は合成カルテの文に本人のカルテを重ねる */
   function claimTexts(claimId: string, clerkId?: string): TextDay[] {
     const join = (n: ChartNote) => [n.s, n.o, n.a, n.p, n.rx].filter(Boolean).join("\n");
+    const soapOf = (n: ChartNote) => [n.s, n.o, n.a, n.p].filter(Boolean).join("\n");
     type R = { date: string; note: string; acts: string | null };
     const rows = (
       isUploaded(claimId)
@@ -398,7 +399,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
           ? sqlite.prepare("SELECT date, note, acts FROM chart_notes WHERE claim_id = ? AND clerk_id = ? ORDER BY date, id").all(claimId, clerkId)
           : []
     ) as R[];
-    const own: TextDay[] = rows.map((r) => ({ date: r.date, text: join(JSON.parse(r.note) as ChartNote), stored: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs) }));
+    const own: TextDay[] = rows.map((r) => ({ date: r.date, text: join(JSON.parse(r.note) as ChartNote), soap: soapOf(JSON.parse(r.note) as ChartNote), stored: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs) }));
     if (isUploaded(claimId)) return own;
     const dates = new Set(own.map((d) => d.date));
     return [...tori.chartTextDays(claimId).filter((d) => !dates.has(d.date)), ...own];

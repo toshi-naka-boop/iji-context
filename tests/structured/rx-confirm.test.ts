@@ -106,7 +106,7 @@ describe("処方の日の「確かめた」の印（16-4-1。C-410・C-421）", 
       items: [],
       history: Array.from({ length: 12 }, (_, i) => ({ yearMonth: month(-(i + 1)), orders: { status: "supported" as const, items: [], gaps: {} }, items: [] })),
       lookbackMonths: 12,
-      texts: [{ date: d14, text: "定期処方", confirmed: true }, { date: saved.date, text: `経過良好\n${RX}`, confirmed: true }],
+      texts: [{ date: d14, text: "定期処方", soap: "定期処方", confirmed: true }, { date: saved.date, text: `経過良好\n${RX}`, soap: "経過良好", confirmed: true }],
       times: [],
     });
     const n2 = (s: StoredActs) => {

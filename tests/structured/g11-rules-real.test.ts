@@ -43,7 +43,7 @@ function run(db: MastersDb, claim: G11Claim, orders: RxOrder[]): Extract<G11Resu
     items,
     history: Array.from({ length: 12 }, (_, i) => ({ yearMonth: month(-(i + 1)), orders: sup<RxOrder>([]), items: [] })),
     lookbackMonths: 12,
-    texts: [{ date: d14, text: "定期処方を院内で投薬", confirmed: true }],
+    texts: [{ date: d14, text: "定期処方を院内で投薬", soap: "定期処方を院内で投薬", confirmed: true }],
     times: [],
   };
   const r = evaluateG11(

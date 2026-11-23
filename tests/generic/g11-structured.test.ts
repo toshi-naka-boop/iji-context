@@ -164,7 +164,8 @@ const textAct = (d: number, code: string, written: string, category: ChartAct["c
   noteId: ++nid,
   act: { category, written, lookup: [], quote: written, match: { tbl, code, name: written, by: "name" } },
 });
-const text = (d: number | string, body: string, confirmed = true) => ({ date: typeof d === "number" ? date(d) : d, text: body, confirmed });
+/** カルテの文章のある日。body は S・O・A・P の文、rx は処方の欄（text は両方を合わせた文、soap は S・O・A・P だけ） */
+const text = (d: number | string, body: string, confirmed = true, rx = "") => ({ date: typeof d === "number" ? date(d) : d, text: [body, rx].filter(Boolean).join("\n"), soap: body, confirmed });
 
 /** 升の id を名前に入れたテスト。表の全部の升にテストがあるかを最後に確かめる */
 const covered = new Set<string>();
@@ -676,6 +677,12 @@ describe("T7 患家診療時間加算（114001470・114000970。R8-202〜R8-207�
     expect(r.visitTimeDays).toEqual([date(5), date(7)]);
     // 確かめていない文章の時間の語では案内しない
     expect(run(db, { units: [unit([VISIT], 5)] }, { visits: "unsupported", texts: [text(5, "診療時間 1時間10分", false)] }).ruleGuides).toEqual([]);
+  });
+  it("時間の語の規則は処方の欄に掛けない（S・O・A・P だけ）：処方の欄の「分3 毎食後」「疼痛時1錠」では案内が出ない（C-444）", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([VISIT], 5, 6)] }, { visits: "unsupported", texts: [text(5, "経過良好", true, "アムロジピン5mg 1T 分3 毎食後"), text(6, "経過良好", true, "ロキソプロフェン 疼痛時1錠")] });
+    expect(r.ruleGuides).toEqual([]);
+    expect(r.visitTimeDays).toEqual([]);
   });
   it("時間の語の一覧は決まった語で、数字と並んだときだけ当たる", () => {
     expect(TIME_HINT_WORDS).toEqual(["時間", "分", "時", ":"]);
