@@ -5,28 +5,41 @@
 //   コメント記載通知等が、行の種類に合う表：診療行為＝1（別表Ⅰ 医科）／医薬品＝5（別表Ⅱ）／特定器材＝8（別表Ⅳ）。別表Ⅲ（検査値。指定の病院だけ）・歯科・調剤・訪問看護は使わない
 //   条件区分 01（その行為の算定が条件で、ほかの条件がない）と、入院外のレセプトでの 02・入外区分 2（入院外で算定した場合）
 //   非算定理由コメント（その行為を算定しなかった場合に書く）でない行。抹消でなく、変更年月日が診療年月の末日以前の行（その後に変わった行は、前の中身がデータにないので使わない）
-// 使わない行（点検の範囲に数を出す）：条件区分 00（条件は記載要領の文章にある）、03・13（複数回算定した場合。数えるのが回数か数量か、どの期間かが仕様に書かれていない）、
+// 条件区分 00（条件は記載要領の文章にある）は判定しない。「記載が要ることがある項目」として、組（別表, 項番, 枝番）の単位で点検の範囲に畳んで並べる（design.md §17-1。conditionalOf）。
+// 使わない行（点検の範囲に数を出す）：03・13（複数回算定した場合。数えるのが回数か数量か、どの期間かが仕様に書かれていない）、
 //   10〜12（DPC）、20・30（選定療養など）、入院か入院外かが分からないときの 02。診療行為を特定しない行（199999999 など）は、コードで引けないので当たらない。
 // 組の読み方：同じ行為・同じ項番・同じ枝番の行を 1 つの組にする（枝番は「項番内の条件ごと」。［関］p3）。組にコメントが複数あるとき、選択（どれか 1 つ）か全部要るかは、表からは決まらない。
 //   別表Ⅰ の原文で確かめた範囲では、選択肢・「初回である旨か前回の年月日」・「どちらかの値」が同じ枝番に並び、両方とも要る記載は別の枝番に分かれている（EM §2-11）。
 //   どちらの読み方でも成り立つことだけを言う：組のコメントが 1 つもないときだけ指摘する（1 つでもあれば言わない）
+import type { CommentRule, KisaiYoshi } from "../engine/revisions/types";
 import { pickSnapshot, sourcesOf, type MastersDb } from "../masters/db";
+import { rowNamesOf } from "./lookup";
 import type { GenericAbout, GenericAboutMore, GenericCheck, GenericClaim, GenericFinding } from "./types";
 
 /** 行の種類 → コメント記載通知等の値と、記載要領の表の呼び名 */
 const SHEET = { SI: { tsuchi: "1", name: "別表Ⅰ" }, IY: { tsuchi: "5", name: "別表Ⅱ" }, TO: { tsuchi: "8", name: "別表Ⅳ" } } as const;
 export const COMMENT_TABLE = "コメント関連テーブル";
 
+type Kind = "SI" | "IY" | "TO";
 type Row = { tsuchi: string; kouban: string; edaban: string; comment_code: string; joken: string; hisantei: string; nyugai: string; change: string; changed_on: string; abolished_on: string };
 
 /** 要る記載の組 1 つ。comments は、その組のコメントコード（どれか 1 つ以上が要る）。found＝レセプトに 1 つでもあるか */
-export type CommentGroup = { kind: "SI" | "IY" | "TO"; code: string; units: number[]; kouban: string; edaban: string; comments: string[]; found: boolean };
+export type CommentGroup = { kind: Kind; code: string; units: number[]; kouban: string; edaban: string; comments: string[]; found: boolean };
+/** 条件区分 00 の組 1 つ（行のコードごと）。判定しない（design.md §17-1） */
+export type ConditionalRow = { kind: Kind; code: string; kouban: string; edaban: string; comments: string[] };
+
+/** 版の摘要欄の表から、G07 に渡すもの（GenericAbout.kisai）。kubun は、このレセプトで算定のある区分（R17 が掛かる規則を決める。design.md §17-1 の C-470） */
+export function kisaiOf(rev: { comments: CommentRule[]; kisaiYoshi: KisaiYoshi[] }, kubun: string[]): NonNullable<GenericAbout["kisai"]> {
+  const has = new Set(kubun);
+  return { yoshi: rev.kisaiYoshi, r17Codes: new Set(rev.comments.filter((r) => r.kubun.some((k) => has.has(k))).flatMap((r) => r.codes)) };
+}
 
 /**
- * レセプトの行のコードごとの、要る記載の組と、使わなかった組の数（notUsed。条件が文章にある・複数回・DPC・選定療養など・診療年月の後に変わった行）。
+ * レセプトの行のコードごとの、要る記載の組（01・入院外の 02）と、条件区分 00 の組（conditional）と、使わなかった組の数
+ * （notUsed。複数回・DPC・選定療養など・診療年月の後に変わった行）。
  * コメントを持たない請求（claim.comments がない）は null。診療年月の世代のコメント関連テーブルがなければ skip
  */
-export function commentGroupsOf(claim: GenericClaim, masters: MastersDb, about: GenericAbout): { groups: CommentGroup[]; notUsed: number } | { skip: string } | null {
+export function commentGroupsOf(claim: GenericClaim, masters: MastersDb, about: GenericAbout): { groups: CommentGroup[]; conditional: ConditionalRow[]; notUsed: number } | { skip: string } | null {
   if (claim.comments === undefined) return null;
   const pick = pickSnapshot(masters, "comment_kanren", about.yearMonth, about.generation);
   if (pick === null) return { skip: `診療年月の世代（${about.generation}）のコメント関連テーブルがありません` };
@@ -35,7 +48,7 @@ export function commentGroupsOf(claim: GenericClaim, masters: MastersDb, about: 
   const outpatient = (about as GenericAboutMore).outpatient;
   const have = new Set(claim.comments.map((c) => c.code));
   const rowsOf = masters.prepare("SELECT tsuchi, kouban, edaban, comment_code, joken, hisantei, nyugai, change, changed_on, abolished_on FROM comment_kanren WHERE snapshot = ? AND code = ? ORDER BY kouban, edaban, comment_code");
-  const seen = new Map<string, { kind: "SI" | "IY" | "TO"; units: number[] }>();
+  const seen = new Map<string, { kind: Kind; units: number[] }>();
   claim.units.forEach((u, i) => {
     for (const it of u.items) {
       const s = seen.get(it.code) ?? { kind: it.kind, units: [] };
@@ -44,9 +57,10 @@ export function commentGroupsOf(claim: GenericClaim, masters: MastersDb, about: 
     }
   });
   const groups: CommentGroup[] = [];
+  const conditional: ConditionalRow[] = [];
   let notUsed = 0;
   for (const [code, { kind, units }] of seen) {
-    const byGroup = new Map<string, { kouban: string; edaban: string; used: boolean; skip: boolean; comments: string[] }>();
+    const byGroup = new Map<string, { kouban: string; edaban: string; used: boolean; cond: boolean; skip: boolean; comments: string[] }>();
     for (const r of rowsOf.all(pick.snapshot, code) as Row[]) {
       if (r.tsuchi !== SHEET[kind].tsuchi || r.change === "1" || r.abolished_on < start) continue;
       const live = r.changed_on <= end && r.hisantei === "0";
@@ -54,19 +68,79 @@ export function commentGroupsOf(claim: GenericClaim, masters: MastersDb, about: 
       // 入院で算定した場合の行は、入院外のレセプトには当たらない。算定しなかった場合の行は、行があることが条件でない（どちらも「使わなかった」に数えない）
       const skip = r.hisantei !== "0" || (r.joken === "02" && r.nyugai === "1" && outpatient === true);
       const key = `${r.kouban}/${r.edaban}`;
-      const g = byGroup.get(key) ?? { kouban: r.kouban, edaban: r.edaban, used: true, skip: true, comments: [] };
+      const g = byGroup.get(key) ?? { kouban: r.kouban, edaban: r.edaban, used: true, cond: true, skip: true, comments: [] };
       // 組の中に、使えない行が 1 つでもあれば、その組は使わない（条件の違う行が混ざる組は、どれが要るかを決められない）
       g.used &&= used;
+      g.cond &&= live && r.joken === "00";
       g.skip &&= skip;
       g.comments.push(r.comment_code);
       byGroup.set(key, g);
     }
     for (const g of byGroup.values()) {
-      if (g.used) groups.push({ kind, code, units, kouban: g.kouban, edaban: g.edaban, comments: [...new Set(g.comments)], found: g.comments.some((c) => have.has(c)) });
+      const comments = [...new Set(g.comments)];
+      const found = g.comments.some((c) => have.has(c));
+      if (g.used) groups.push({ kind, code, units, kouban: g.kouban, edaban: g.edaban, comments, found });
+      else if (g.cond) conditional.push({ kind, code, kouban: g.kouban, edaban: g.edaban, comments });
       else if (!g.skip) notUsed++;
     }
   }
-  return { groups, notUsed };
+  return { groups, conditional, notUsed };
+}
+
+/** 記載が要ることがある項目（条件区分 00）の 1 項番（design.md §17-1）。codes は当たる行為、branches は残った枝番と、そのコメントの定型文（先頭のいくつかと残りの数） */
+export type ConditionalItem = { sheet: string; kouban: string; codes: { code: string; name: string | null }[]; branches: { edaban: string; comments: string[] }[]; summary: string | null; source: { em?: string; url?: string; page?: string } };
+/** items は並べる項番、hidden は外した組の数（r17＝R17 がこのレセプトで見ている記載／present＝組のコメントのどれかがレセプトにある） */
+export type Conditional = { items: ConditionalItem[]; hidden: { r17: number; present: number } };
+
+/**
+ * 記載が要ることがある項目（design.md §17-1。判断 A・B・C・F・G）。判定しない（指摘にしない）。組は（別表, 項番, 枝番）の単位で、
+ * R17 がこのレセプトで見ている記載（about.kisai.r17Codes）を含む組と、組のコメントのどれかがレセプトにある組を外し、残りを（別表, 項番）ごとにまとめる。
+ * 要旨は版の kisaiYoshi（EM に採用した行）だけ。表にない項番は要旨なし。G07 が動かない請求（コメントを持たない・表がない）は null
+ */
+export function conditionalOf(claim: GenericClaim, masters: MastersDb, about: GenericAbout): Conditional | null {
+  const r = commentGroupsOf(claim, masters, about);
+  if (r === null || "skip" in r) return null;
+  const have = new Set((claim.comments ?? []).map((c) => c.code));
+  const r17 = about.kisai?.r17Codes ?? new Set<string>();
+  const byBranch = new Map<string, { kind: Kind; kouban: string; edaban: string; codes: Set<string>; comments: Set<string> }>();
+  for (const c of r.conditional) {
+    const key = `${SHEET[c.kind].tsuchi}/${c.kouban}/${c.edaban}`;
+    const b = byBranch.get(key) ?? { kind: c.kind, kouban: c.kouban, edaban: c.edaban, codes: new Set<string>(), comments: new Set<string>() };
+    b.codes.add(c.code);
+    for (const x of c.comments) b.comments.add(x);
+    byBranch.set(key, b);
+  }
+  const hidden = { r17: 0, present: 0 };
+  const byItem = new Map<string, { kind: Kind; kouban: string; codes: Set<string>; branches: { edaban: string; comments: string[] }[] }>();
+  for (const b of [...byBranch.values()].sort((x, y) => SHEET[x.kind].tsuchi.localeCompare(SHEET[y.kind].tsuchi) || x.kouban.localeCompare(y.kouban) || x.edaban.localeCompare(y.edaban))) {
+    const comments = [...b.comments];
+    if (comments.some((x) => r17.has(x))) hidden.r17++;
+    else if (comments.some((x) => have.has(x))) hidden.present++;
+    else {
+      const key = `${SHEET[b.kind].tsuchi}/${b.kouban}`;
+      const item = byItem.get(key) ?? { kind: b.kind, kouban: b.kouban, codes: new Set<string>(), branches: [] };
+      for (const x of b.codes) item.codes.add(x);
+      item.branches.push({ edaban: b.edaban, comments });
+      byItem.set(key, item);
+    }
+  }
+  const names = rowNamesOf(masters, about, { items: [...byItem.values()].flatMap((i) => [...i.codes].map((code) => ({ kind: i.kind, code }))), comments: [...byItem.values()].flatMap((i) => i.branches.flatMap((b) => b.comments)), diseases: [] });
+  const yoshi = about.kisai?.yoshi ?? [];
+  const items = [...byItem.values()].map((i): ConditionalItem => {
+    const sheet = SHEET[i.kind].name;
+    const y = yoshi.find((x) => x.sheet === sheet && x.kouban === i.kouban);
+    // 要旨のない項番は、記載要領の同じ表の PDF へのリンクだけ（版の表に同じ表の行があるときだけ。ない表はリンクを持たない）
+    const url = y?.url ?? yoshi.find((x) => x.sheet === sheet)?.url;
+    return {
+      sheet,
+      kouban: String(Number(i.kouban)),
+      codes: [...i.codes].map((code) => ({ code, name: names.items[code]?.name ?? null })),
+      branches: i.branches.map((b) => ({ edaban: b.edaban, comments: shown(b.comments.map((c) => (names.comments[c] ? `「${phrase(names.comments[c])}」（${c}）` : `コメントコード ${c}`))) })),
+      summary: y?.summary ?? null,
+      source: y ? { em: y.em, url: y.url, page: y.page } : url ? { url } : {},
+    };
+  });
+  return { items, hidden };
 }
 
 /** コメント関連テーブルの 1 枚についての断り書き（src/generic/lookup.ts の sheetNotesOf と同じ意味。later＝診療年月より後の 1 枚で代えている、newer＝読み方を確かめた版より新しい） */
@@ -81,16 +155,21 @@ const SHOWN = 3;
 /** コメントマスターの名称（定型文）。文字データが続く定型文の末尾の「；」は落とす */
 const phrase = (name: string): string => name.replace(/[；;]\s*$/, "");
 
-/** G07 が点検していないこと（点検の範囲の説明に出す。数は、このレセプトの行について） */
+/** 先頭の SHOWN 個と、残りの数 */
+const shown = (list: string[]): string[] => (list.length > SHOWN ? [...list.slice(0, SHOWN), `ほか ${list.length - SHOWN} 個`] : list);
+
+/** G07 が点検していないこと（点検の範囲の説明に出す。数は、このレセプトの行について）。見た組／記載が要ることがある項目／判定していない組の 3 つ（design.md §17-4） */
 export function g07NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const r = commentGroupsOf(claim, masters, about);
   if (r === null) return ["必須コメントは、コメントを持つレセプトにだけ掛けます。ここの行にはコメントが付いていないので、点検していません"];
   if ("skip" in r) return [];
   const multi = r.groups.filter((g) => g.comments.length > 1).length;
+  const conditional = conditionalOf(claim, masters, about);
   return [
     `必須コメント：このレセプトの行について見たのは、算定すれば必ず要る記載 ${r.groups.length} 組です（記載があるか・ないかだけで、中身は見ていません）。` +
-      `${multi > 0 ? `そのうち、同じ項番・枝番にコメントコードが複数ある ${multi} 組は、どれか 1 つがあれば指摘しません（全部が要る組か、選択かを、表からは決められないため）。` : ""}` +
-      `条件によって要る記載（条件は記載要領の文章にあります）・複数回算定したときの記載など、点検していない組は ${r.notUsed} 組です`,
+      `${multi > 0 ? `そのうち、同じ項番・枝番にコメントコードが複数ある ${multi} 組は、どれか 1 つがあれば指摘しません（全部が要る組か、選択かを、表からは決められないため）` : ""}`,
+    `記載が要ることがある項目 ${conditional?.items.length ?? 0} 件は、判定していません（条件は記載要領の文章にあります。条件に当たるかは記載要領で確かめてください）`,
+    `判定していない組（複数回算定したときの記載・診療年月の後に変わった行・DPC など）は ${r.notUsed} 組です`,
   ];
 }
 

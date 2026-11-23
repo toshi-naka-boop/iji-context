@@ -7,14 +7,17 @@ import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, pickSnapshot, shinryoOf, ty
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
-import { g07NotDone } from "./g07";
+import { conditionalOf, g07NotDone, type Conditional } from "./g07";
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
 import { g10NotDone } from "./g10";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
-/** recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す） */
-export type GenericScope = { recalc?: RecalcSummary; notDone: string[]; g09?: string[] };
+/**
+ * recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す）。
+ * conditional は、記載が要ることがある項目（条件区分 00。判定しない。design.md §17-1）：G07 が動いて、並べる項番か外した組があるときだけ。指摘の数・提出の判定には入れない
+ */
+export type GenericScope = { recalc?: RecalcSummary; notDone: string[]; g09?: string[]; conditional?: Conditional };
 
 export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, about: GenericAbout, result: GenericResult): GenericScope {
   const out: GenericScope = { notDone: [] };
@@ -31,7 +34,11 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if ((result.localSilenced ?? []).length > 0) out.notDone.push(`${LOCAL_PAIR_TEXT.silenced}：${result.localSilenced!.reduce((s, x) => s + x.count, 0)} 件（${result.localSilenced!.map((x) => x.id).join("・")}）`);
   // G04〜G06 の断り（作っていない単位・数え方）。画面の部品が別に足していたのをここに寄せ、月末の点検・算定プレビューの 1 行の表示でも出す（round-32 O-19）
   for (const r of result.ran) if (GENERIC_SCOPE_NOTE[r.check]) out.notDone.push(`${r.check}（${r.kind}）が点検していないこと：${GENERIC_SCOPE_NOTE[r.check]}`);
-  if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));
+  if (masters !== null && ran("G07")) {
+    out.notDone.push(...g07NotDone(claim, masters, about));
+    const c = conditionalOf(claim, masters, about);
+    if (c !== null && c.items.length + c.hidden.r17 + c.hidden.present > 0) out.conditional = c;
+  }
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));

@@ -40,7 +40,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
   const recalc = generic.scope?.recalc;
   const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
   const notDone = generic.scope?.notDone ?? [];
-  const g09 = generic.findings.filter((f) => f.check === "G09");
+  const conditionalItems = generic.scope?.conditional;
+  const g09 =generic.findings.filter((f) => f.check === "G09");
   const g10 = generic.findings.filter((f) => f.check === "G10");
   const g09Notes = generic.scope?.g09 ?? [];
   // 傷病名を持たない行（月末の点検・算定プレビュー）には掛けていない：見出しは出さず、掛けていないことだけを点検の範囲に出す
@@ -118,6 +119,23 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
               <div>{f.check}・出どころ：{f.source.data}（{f.source.ref}）</div>
             </div>
           ))}
+        </details>
+      )}
+      {/* 記載が要ることがある項目（条件区分 00。design.md §17-1）：判定しない一覧。指摘の数には入れず、既定で閉じる */}
+      {scope === "full" && conditionalItems && (
+        <details className="muted">
+          <summary>記載が要ることがある項目 {conditionalItems.items.length} 件（判定していません。条件に当たるかは記載要領で確かめてください）</summary>
+          <p style={{ margin: "4px 0" }}>外した組：R17 が見ている記載 {conditionalItems.hidden.r17} 組・記載がある {conditionalItems.hidden.present} 組</p>
+          <ul style={{ margin: "4px 0", paddingLeft: 20 }}>
+            {conditionalItems.items.map((it) => (
+              <li key={`${it.sheet}-${it.kouban}`}>
+                記載要領 {it.sheet} 項番 {it.kouban}（{it.codes.map(rowText).join("、")}）
+                {it.summary && <div>要旨：{it.summary}</div>}
+                {it.branches.map((b) => <div key={b.edaban}>枝番 {b.edaban}：{b.comments.join("、")}</div>)}
+                {it.source.url && <div><a href={it.source.url} target="_blank" rel="noreferrer">記載要領{it.source.page ? `（${it.source.page}）` : ""}</a>{it.source.em ? `・${it.source.em}` : ""}</div>}
+              </li>
+            ))}
+          </ul>
         </details>
       )}
       {scope === "full" ? (

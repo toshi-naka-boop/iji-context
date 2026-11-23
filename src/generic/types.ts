@@ -1,4 +1,5 @@
 // データで動く点検（design.md §12-2・§12-3）の型。手書きのルール（src/engine/。区分キーで動く）とは別の道で、UKE の単位とコードのまま点検する
+import type { KisaiYoshi } from "../engine/revisions/types";
 import type { Facts } from "../engine/types";
 import type { DeclarationView } from "../facility/declaration";
 import type { CodePair } from "../lifecycle/types";
@@ -78,6 +79,11 @@ export type GenericAbout = {
    * 点検の中で指摘を作る数の上限（G04・G05。省くと FINDING_LIMIT）。取り忘れ（G11）の内部の判定（blocking）だけが、上限なし（Infinity）で渡す（design.md §15-8 の X-138）
    */
   findingLimit?: number;
+  /**
+   * 版の摘要欄の表から G07 が読むもの（design.md §17-1・§17-2。src/generic/g07.ts の kisaiOf で作る）：yoshi＝記載が要ることがある項目（条件区分 00）の要旨（版の kisaiYoshi）／
+   * r17Codes＝版の R17 の規則のうち、このレセプトの区分に当たる規則のコメントコード（R17 が見ている記載。00 の一覧と 0237 の指摘から外す）。渡さない呼び出しでは要旨なし・外さない
+   */
+  kisai?: { yoshi: KisaiYoshi[]; r17Codes: ReadonlySet<string> };
 };
 
 /**
