@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { period } from "../../src/demo/period";
 import { r2026 } from "../../src/engine/revisions/r2026";
 import { MASTERS_CONFIG } from "../../src/masters/config";
-import { iyakuhinOf, openMasters, pickSnapshot, shinryoOf, sourcesOf, tokuteiOf } from "../../src/masters/db";
+import { iyakuhinOf, openMasters, pickSnapshot, shinryoOf, sourcesOf, tokuteiOf, unitCaseCollisions } from "../../src/masters/db";
 import { readEm, verifyMasters } from "../../src/masters/verify";
 
 const dir = process.env.RESEMEN_MASTER_DIR;
@@ -26,8 +26,9 @@ describe("実データの masters.db", () => {
   withData("読み方を確かめた版の件数が、EM §2-11 の件数と合う（基本マスター 6 本・電子点数表・コメント関連テーブル・チェックマスタ）", () => {
     const db = openMasters(file)!;
     const rows = (tbl: string) => sourcesOf(db).filter((s) => s.tbl === tbl && s.snapshot === s.verified).reduce((n, s) => n + s.rows, 0);
-    for (const c of em.counts.filter((x) => Object.keys(x.where).length === 0)) expect(rows(c.table), c.table).toBe(c.count);
-    expect(em.counts.filter((x) => Object.keys(x.where).length === 0)).toHaveLength(14);
+    const whole = em.counts.filter((x) => Object.keys(x.where).length === 0 && !x.not);
+    for (const c of whole) expect(rows(c.table), c.table).toBe(c.count);
+    expect(whole).toHaveLength(14);
     db.close();
   });
 
@@ -38,6 +39,17 @@ describe("実データの masters.db", () => {
     expect(r.failures).toBe(0);
     expect(r.lines).toContain("版の表との食い違い：0 件");
     expect(r.lines[0]).toMatch(new RegExp(`^錨：${em.anchors.length} 個のうち ${em.anchors.length} 個が通った`));
+    db.close();
+  });
+
+  withData("施設基準の組ごとの列（design.md §15-3）：錨 A109〜A116 が通り、組ごとの件数（g1≠0 4,623・g2≠0 900・g3≠0 286）が合う", () => {
+    const db = openMasters(file)!;
+    const r = verifyMasters(db, em, { write: false });
+    expect(em.anchors.filter((a) => /^A1(09|1[0-6])$/.test(a.id))).toHaveLength(8);
+    expect(r.lines.filter((l) => /^錨 A1(09|1[0-6]) /.test(l))).toEqual([]);
+    const n = (col: string) => (db.prepare(`SELECT count(*) AS n FROM shinryo WHERE snapshot = ? AND ${col} != '0'`).get(em.verified.shinryo) as { n: number }).n;
+    expect(["shisetsu_g1", "shisetsu_g2", "shisetsu_g3"].map(n)).toEqual([4623, 900, 286]);
+    expect(r.ready.filter((x) => x.check === "G10" || x.check === "G11").map((x) => x.ready)).toEqual([true, true]);
     db.close();
   });
 
@@ -59,9 +71,25 @@ describe("実データの masters.db", () => {
     db.close();
   });
 
+  withData("単位の列（design.md §15-3。round-52 C-262）：錨の案 A117〜A119（EM の追記 E-8 の承認待ち）の値が入り、大文字・小文字の衝突の組を数える（L-98）", () => {
+    const db = openMasters(file)!;
+    const one = (t: string, code: string) => db.prepare(`SELECT unit_code, unit_name FROM ${t} WHERE snapshot = ? AND code = ?`).get(em.verified[t], code);
+    expect([one("shinryo", "114001470"), one("iyakuhin", "620008991"), one("tokutei", "739210000")]).toEqual([
+      { unit_code: 1, unit_name: "分" },
+      { unit_code: 33, unit_name: "ｇ" },
+      { unit_code: 37, unit_name: "Ｌ" },
+    ]);
+    // 20261102 の医科診療行為マスターで、量の単位のある行（データ規格コードが 0 でない）は 616 行（design.md §15-3 で原本の CSV から数えた）
+    expect((db.prepare("SELECT count(*) AS n FROM shinryo WHERE snapshot = ? AND unit_code != 0").get(em.verified.shinryo) as { n: number }).n).toBe(616);
+    const collisions = unitCaseCollisions(db);
+    process.stderr.write(`単位の名前の大文字・小文字の衝突：${collisions.length} 組${collisions.length ? `（${collisions.map((g) => g.join("／")).join("、")}）` : ""}\n`);
+    expect(Array.isArray(collisions)).toBe(true);
+    db.close();
+  });
+
   it("データがないときは、飛ばした数を表示する（黙って通さない）", () => {
     // console は、通ったテストの分を vitest が表示しないことがあるので、標準エラーに直接書く
     if (!has) process.stderr.write(`実データのテストを ${skipped} 件飛ばした（RESEMEN_MASTER_DIR に masters.db がない）\n`);
-    expect(has ? 0 : skipped).toBe(has ? 0 : 3);
+    expect(has ? 0 : skipped).toBe(has ? 0 : 5);
   });
 });

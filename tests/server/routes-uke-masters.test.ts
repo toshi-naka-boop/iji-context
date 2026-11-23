@@ -85,8 +85,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(c.others.map((o) => o.codes)).toEqual([["114000110", "114704470"]]);
     expect([c.generic.findings, c.generic.ran]).toEqual([[], []]);
     expect(c.generic.notRun[0]).toEqual({ check: "G01", kind: "コード", reason: "noMasters", text: "マスターが入っていないので、していません" });
-    // G01〜G09 が全部入っている（まだ入っていない点検＝notBuilt はない。round-32 O-20）：どれも、マスターがないので動かなかった
-    expect(c.generic.notRun.map((n) => [n.check, n.reason])).toEqual(["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"].map((id) => [id, "noMasters"]));
+    // G01〜G10 が全部入っている（まだ入っていない点検＝notBuilt はない。round-32 O-20）：どれも、マスターがないので動かなかった
+    expect(c.generic.notRun.map((n) => [n.check, n.reason])).toEqual(["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10"].map((id) => [id, "noMasters"]));
     // どのルールも partial（ルールごとには決められない）。dropped は、指摘を実際に捨てたルール（情報不足 unsupportedLines が出ている）
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.map((r) => r.id));
     expect(c.stopped.every((s) => s.all && s.codes.length === 0)).toBe(true);
@@ -117,7 +117,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(rows.filter((x) => x.kubun.length > 0).every((x) => x.checkedBy === "rules+generic")).toBe(true);
     // 止まるルール：往診料（C000）を読むルールだけ。止めた行と、その区分番号を返す
     expect(c.stopped.map((s) => s.ruleId)).toEqual(r2026.rules.filter((r) => r.reads!(r2026).some((k) => k.startsWith("C000"))).map((r) => r.id));
-    expect(c.stopped.map((s) => s.ruleId)).toEqual(["R08", "R10", "R11", "R15", "R17"]);
+    // R18 は種別ごとの緊急往診加算（C000 注1）を読む（段 17d）。指摘は全部 soundWhenPartial なので、止めても捨てる指摘はない
+    expect(c.stopped.map((s) => s.ruleId)).toEqual(["R08", "R10", "R11", "R15", "R17", "R18"]);
     for (const s of c.stopped) {
       expect(s.all, s.ruleId).toBe(false);
       expect(s.codes, s.ruleId).toEqual([{ code: "114000110", known: true, name: r2026.points.C000.name, no: "C000" }, { code: "114704470", known: true, name: "手作りの加算（往診料）", no: "C000" }]);

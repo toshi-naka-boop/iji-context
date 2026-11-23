@@ -268,7 +268,7 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
       // 上限（FINDING_LIMIT）に達したら、指摘を作らずに数えるだけにする（組で増える。round-32 S-9）
       let more = 0;
       const push = (f: GenericFinding) => {
-        if (out.length >= FINDING_LIMIT) more++;
+        if (out.length >= (about.findingLimit ?? FINDING_LIMIT)) more++;
         else out.push(f);
       };
       for (const row of pairs.values()) {
@@ -372,7 +372,9 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
           }
           if (groups.none.length > 0) {
             const answered = groups.none.some((n) => n.answered);
-            push(base("G05.exception_none", hit2.sure && !t.weak(row) ? "確定" : "条件つき", { hp: p.id, hx: p.exceptions.join("・"), hxText: textOf(p.exceptions), answered: String(answered), because: answered ? "医療事務の答え（確かめた事実）で確かめたので、" : "レセプトで確かめたところ、", ...dayParams(groups.none.map((n) => n.day)) }));
+            // receiptOnly：組の例外が全部 分類ア（レセプトで決まる）か。G11 が言い切りの形として隠すかを決める（C-280 の直し。2026-11-23 利用者の判断）
+            const receiptOnly = p.exceptions.every((id) => config.exceptions.find((x) => x.id === id)?.kind === "receipt");
+            push(base("G05.exception_none", hit2.sure && !t.weak(row) ? "確定" : "条件つき", { hp: p.id, hx: p.exceptions.join("・"), hxText: textOf(p.exceptions), answered: String(answered), receiptOnly: String(receiptOnly), because: answered ? "医療事務の答え（確かめた事実）で確かめたので、" : "レセプトで確かめたところ、", ...dayParams(groups.none.map((n) => n.day)) }));
           }
           if (groups.open.length > 0) {
             const days = groups.open.map((g) => g.day);

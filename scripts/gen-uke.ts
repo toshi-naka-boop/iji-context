@@ -2,6 +2,7 @@
 // 入力は fixtures/cases/K1〜K7.json と fixtures/uke/patients.json。出力は入力だけで決まる。
 // 見本の 2 本とは別に、アップロードで試すための合成の UKE も 3 本書き出す（design.md §11-11・§11-12。設定は fixtures/uke/extra.json、値は EM 5-1 の表）：
 // 点検の対象外の行を含むもの（taishogai.UKE）、必須の記載を 1 つ欠いたもの（kisaimore.UKE）、改定前の診療年月のもの（kaiteimae.UKE）。
+// 取り忘れの症例 K8〜K11 の合成の UKE（torikawasure.UKE。設定は fixtures/uke/kb.json。design.md §15-10 の 3）も、同じ作り方で書き出す。
 // もう 1 本、実在の請求と同じ形（医薬品・特定器材・症状詳記などを含む）を読めることを確かめるための合成の UKE（jitsurei.UKE。設定は fixtures/uke/jitsurei.json）
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -146,13 +147,16 @@ type Jitsurei = {
   }[];
 };
 export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "jitsurei.json"), "utf8")) as Jitsurei;
+/** 取り忘れの症例 K8〜K11 の合成の UKE の設定（design.md §15-10 の 3。形は jitsurei.json と同じ） */
+export const TORIKAWASURE = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb.json"), "utf8")) as Jitsurei;
 
 /**
  * 実在の請求と同じ形の、検証用の合成の UKE（設定は fixtures/uke/jitsurei.json。EM 5-1 の表）。外来 3 件と在宅 1 件を 1 つのファイルにする。
+ * 同じ形の設定（cfg）で、取り忘れの症例 K8〜K11 の UKE（fixtures/uke/kb.json → torikawasure.UKE）も書く。
  * formatUke は診療行為の行しか書かないので、ここでレコードを組む：医薬品（IY）・特定器材（TO）・コメント（CO）・症状詳記（SJ）と、資格確認（SN）・受診日等（JD）・窓口負担額（MF）を含む。
  * 回数は算定日情報の合計、HO の合計点数は「1 回分の点数 × 回数」の合計（minus の行は引く）、診療実日数は受診等区分が 1 の日の数。医療機関は同梱の症例と同じ（東京都）
  */
-export function generateJitsurei(): Buffer {
+export function generateJitsurei(cfg: Jitsurei = JITSUREI): Buffer {
   const { src } = loadSources();
   // 値が undefined の列は空のまま（TO だけの列を条件つきで広げるため、型の上で undefined があり得る）
   const rec = (n: number, cols: Record<number, string | number | undefined>) => {
@@ -164,9 +168,9 @@ export function generateJitsurei(): Buffer {
   const dayCols = (first: number, days: Record<string, number>) => Object.fromEntries(Object.entries(days).map(([d, n]) => [first + Number(d) - 1, n]));
   const count = (x: JitsureiRow) => Object.values(x.days ?? {}).reduce((s, n) => s + n, 0);
   const ym = (yearMonth: string) => yearMonth.replace("-", "");
-  const rows = [rec(10, { 1: "IR", 2: JITSUREI.payer === "支払基金" ? 1 : 2, 3: "13", 4: 1, 5: src.clinic.code, 7: src.clinic.name, 8: ym(BILLING_MONTH), 9: "00", 10: src.clinic.phone })];
+  const rows = [rec(10, { 1: "IR", 2: cfg.payer === "支払基金" ? 1 : 2, 3: "13", 4: 1, 5: src.clinic.code, 7: src.clinic.name, 8: ym(BILLING_MONTH), 9: "00", 10: src.clinic.phone })];
   let grand = 0;
-  JITSUREI.receipts.forEach((r, i) => {
+  cfg.receipts.forEach((r, i) => {
     const p = r.patient;
     const total = r.rows.reduce((s, x) => s + (x.points === undefined ? 0 : (x.minus ? -1 : 1) * x.points * count(x)), 0);
     grand += total;
@@ -204,7 +208,7 @@ export function generateJitsurei(): Buffer {
     }
     for (const n of r.notes) rows.push(rec(3, { 1: "SJ", 2: n.kind, 3: n.text }));
   });
-  rows.push(rec(4, { 1: "GO", 2: JITSUREI.receipts.length, 3: grand, 4: "99" }));
+  rows.push(rec(4, { 1: "GO", 2: cfg.receipts.length, 3: grand, 4: "99" }));
   return encodeUke(`${rows.join("\r\n")}\r\n`);
 }
 
@@ -219,6 +223,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     writeFileSync(path.join(root, EXTRA[key].file), extra[key]);
     console.log(`書き出し: ${EXTRA[key].file}`);
   }
-  writeFileSync(path.join(root, JITSUREI.file), generateJitsurei());
+  writeFileSync(path.join(root, JITSUREI.file), generateJitsurei(JITSUREI));
   console.log(`書き出し: ${JITSUREI.file}`);
+  writeFileSync(path.join(root, TORIKAWASURE.file), generateJitsurei(TORIKAWASURE));
+  console.log(`書き出し: ${TORIKAWASURE.file}`);
 }

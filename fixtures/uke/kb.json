@@ -1,0 +1,744 @@
+{
+ "_note": "取り忘れの症例 K8〜K11 の合成の UKE の設定（scripts/gen-uke.ts の generateJitsurei が fixtures/uke/torikawasure.UKE にする。設計 §15-10 の 3・段 18b）。患者は合成で、氏名・生年月日・番号はすべて架空。行は、fixtures/cases/K8〜K11.json の版の区分の行（C001・C002・施設設定から出る行。コードと 1 回分の点数は版の表）と、EM §5-1 の「K8〜K11 の行為」の表の「出るべき」行（コード・点数・診療識別は表のまま。数量は記録例の数量）。「出ないのが正しい（対照）」の行は入れない。日は EM §5-1-2 の日ごとの割り付け。管理料の行には訪問診療の年月日のコメント（850100106。K1〜K7 の UKE と同じ書き方）を付けた。記録例のコメントは、初回年月日（EM §5-1-2 の割り付けの 2026-10-14）・PaO2（記録例の 50。jitsurei.json と同じ）・撮影部位（記録例の胃）を入れ、X27 の部位（890000001）は記録例の修飾語のコードが調べにないので入れていない。K9 の輸液 7 種は記録例のとおり各 14 で 1 つの単位（回数 1）。rows・days・points・visits の意味は jitsurei.json と同じ",
+ "file": "fixtures/uke/torikawasure.UKE",
+ "payer": "国保連",
+ "receipts": [
+  {
+   "patientNo": "K8",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　八郎",
+    "sex": 1,
+    "birth": "19440508",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000081"
+    }
+   },
+   "diseases": [],
+   "visits": {
+    "14": 1,
+    "28": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114001110",
+     "points": 890,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180725910",
+     "points": 79,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180820110",
+     "points": 3,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114746310",
+     "points": 11,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114032810",
+     "points": 3685,
+     "days": {
+      "28": 1
+     },
+     "comments": [
+      [
+       "850100106",
+       "５０８１０１４"
+      ],
+      [
+       "850100106",
+       "５０８１０２８"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114001470",
+     "points": 100,
+     "days": {
+      "14": 1
+     },
+     "quantity": "70"
+    },
+    {
+     "rec": "SI",
+     "code": "130000510",
+     "shikibetsu": "31",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "641140046",
+     "quantity": "1",
+     "points": 35,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "130000510",
+     "shikibetsu": "31",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "621128301",
+     "quantity": "1",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "647130028",
+     "quantity": "1",
+     "points": 69,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "130000510",
+     "shikibetsu": "31",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "130000110",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "646320003",
+     "quantity": "1",
+     "points": 157,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "140032110",
+     "shikibetsu": "40",
+     "days": {
+      "14": 1,
+      "28": 1
+     },
+     "comments": [
+      [
+       "850100268",
+       "５０８１０１４"
+      ]
+     ]
+    },
+    {
+     "rec": "IY",
+     "code": "620008991",
+     "quantity": "20",
+     "points": 173,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "50",
+     "code": "150054110",
+     "points": 770,
+     "days": {
+      "14": 1
+     },
+     "quantity": "1"
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K9",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　九子",
+    "sex": 2,
+    "birth": "19420912",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000091"
+    }
+   },
+   "diseases": [],
+   "visits": {
+    "14": 1,
+    "28": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114001110",
+     "points": 890,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180725910",
+     "points": 79,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180820110",
+     "points": 3,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114746310",
+     "points": 11,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114032510",
+     "points": 4585,
+     "days": {
+      "28": 1
+     },
+     "comments": [
+      [
+       "850100106",
+       "５０８１０１４"
+      ],
+      [
+       "850100106",
+       "５０８１０２８"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114004210",
+     "points": 3000,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114005110",
+     "points": 2000,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "shikibetsu": "14",
+     "code": "643230027",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "643230038",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "622345201",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "643180017",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "643140004",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "620717601",
+     "quantity": "14",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "643330011",
+     "quantity": "14",
+     "points": 2293,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160031710",
+     "points": 98,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "160033610",
+     "shikibetsu": "60",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "160033310",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "160034210",
+     "points": 410,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160012010",
+     "points": 18,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160012310",
+     "points": 29,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160012610",
+     "points": 23,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160036810",
+     "points": 102,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160061810",
+     "points": 125,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160061910",
+     "points": 144,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160062010",
+     "points": 144,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "160072210",
+     "shikibetsu": "60",
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "160072370",
+     "points": 680,
+     "days": {
+      "14": 1
+     }
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K10",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　十郎",
+    "sex": 1,
+    "birth": "19401010",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000101"
+    }
+   },
+   "diseases": [],
+   "visits": {
+    "14": 1,
+    "28": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114001110",
+     "points": 890,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180725910",
+     "points": 79,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180820110",
+     "points": 3,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114746310",
+     "points": 11,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114032510",
+     "points": 4585,
+     "days": {
+      "28": 1
+     },
+     "comments": [
+      [
+       "850100106",
+       "５０８１０１４"
+      ],
+      [
+       "850100106",
+       "５０８１０２８"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114003710",
+     "points": 2400,
+     "days": {
+      "14": 1
+     },
+     "comments": [
+      [
+       "842100072",
+       "５０"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114006110",
+     "points": 3950,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160056110",
+     "points": 1100,
+     "days": {
+      "14": 1
+     },
+     "quantity": "10"
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160062110",
+     "points": 144,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160089810",
+     "points": 336,
+     "days": {
+      "28": 1
+     },
+     "quantity": "21"
+    },
+    {
+     "rec": "IY",
+     "shikibetsu": "60",
+     "code": "647250002",
+     "quantity": "0.21",
+     "points": 170,
+     "days": {
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "170001250",
+     "shikibetsu": "70",
+     "days": {
+      "28": 1
+     },
+     "comments": [
+      [
+       "830189000",
+       "胃"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "code": "170001450",
+     "points": 181,
+     "days": {
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "60",
+     "code": "160068410",
+     "points": 130,
+     "days": {
+      "14": 1
+     }
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K11",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　十一子",
+    "sex": 2,
+    "birth": "19381111",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000111"
+    }
+   },
+   "diseases": [],
+   "visits": {
+    "14": 1,
+    "28": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114001110",
+     "points": 890,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180725910",
+     "points": 79,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "80",
+     "code": "180820110",
+     "points": 3,
+     "days": {
+      "14": 1,
+      "28": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114746310",
+     "points": 11,
+     "days": {
+      "14": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114032810",
+     "points": 3685,
+     "days": {
+      "28": 1
+     },
+     "comments": [
+      [
+       "850100106",
+       "５０８１０１４"
+      ],
+      [
+       "850100106",
+       "５０８１０２８"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "code": "130005310",
+     "shikibetsu": "33",
+     "days": {
+      "14": 2
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "620007260",
+     "quantity": "1",
+     "days": {
+      "14": 2
+     }
+    },
+    {
+     "rec": "IY",
+     "code": "620002613",
+     "quantity": "1",
+     "points": 103,
+     "days": {
+      "14": 2
+     }
+    }
+   ],
+   "notes": []
+  }
+ ]
+}

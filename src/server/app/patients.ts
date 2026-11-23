@@ -96,20 +96,27 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
    * 記号・番号は、ここで半角にそろえてから比べ、入れる。
    * すでにある加入情報に、出所が負担割合・有効期間を持ってきたときは、医療事務がまだ確かめていない行に限って履歴に 1 行足す（確かめた記録は上書きしない）
    */
-  function ingestRecord(record: PatientRecord, source: string): string {
-    const p = { ...record, coverages: record.coverages.map((c) => ({ ...c, payerNumber: toHalfWidth(c.payerNumber), symbol: toHalfWidth(c.symbol), memberNo: toHalfWidth(c.memberNo) })) };
+  /** 番号を半角にそろえた記録 */
+  const normalized = (record: PatientRecord): PatientRecord => ({ ...record, coverages: record.coverages.map((c) => ({ ...c, payerNumber: toHalfWidth(c.payerNumber), symbol: toHalfWidth(c.symbol), memberNo: toHalfWidth(c.memberNo) })) });
+  /** 患者マスタにある同じ患者（医保の番号で探し、なければ生年月日・性別・氏名で探す）。書き込まない */
+  function findRow(p: PatientRecord): PatientRow | undefined {
     const medical = p.coverages.find((c) => c.kind === "医保");
-    const find = (): PatientRow | undefined => {
-      const byNumber = medical
-        ? (sqlite
-            .prepare("SELECT DISTINCT p.id, p.name, p.sex, p.birth FROM patient_coverages c JOIN patients p ON p.id = c.patient_id WHERE c.kind = '医保' AND c.payer_number = ? AND c.member_no = ? ORDER BY p.id")
-            .all(medical.payerNumber, medical.memberNo) as PatientRow[])
-        : [];
-      const hit = byNumber.find((x) => x.name === null || (x.birth === p.birth && x.sex === p.sex));
-      if (hit) return hit;
-      const sameBirth = sqlite.prepare("SELECT id, name, sex, birth FROM patients WHERE birth = ? AND sex IS ? ORDER BY id").all(p.birth, p.sex) as PatientRow[];
-      return sameBirth.find((x) => nameKey(x.name) !== "" && nameKey(x.name) === nameKey(p.name));
-    };
+    const byNumber = medical
+      ? (sqlite
+          .prepare("SELECT DISTINCT p.id, p.name, p.sex, p.birth FROM patient_coverages c JOIN patients p ON p.id = c.patient_id WHERE c.kind = '医保' AND c.payer_number = ? AND c.member_no = ? ORDER BY p.id")
+          .all(medical.payerNumber, medical.memberNo) as PatientRow[])
+      : [];
+    const hit = byNumber.find((x) => x.name === null || (x.birth === p.birth && x.sex === p.sex));
+    if (hit) return hit;
+    const sameBirth = sqlite.prepare("SELECT id, name, sex, birth FROM patients WHERE birth = ? AND sex IS ? ORDER BY id").all(p.birth, p.sex) as PatientRow[];
+    return sameBirth.find((x) => nameKey(x.name) !== "" && nameKey(x.name) === nameKey(p.name));
+  }
+  /** UKE の患者が患者マスタにあれば、その id（なければ null。取り込まない。注14 の計算の道具の下書きが使う） */
+  const existingIdOf = (p: UkePatient): string | null => findRow(normalized(recordOfUke(p)))?.id ?? null;
+
+  function ingestRecord(record: PatientRecord, source: string): string {
+    const p = normalized(record);
+    const find = () => findRow(p);
     const known = sqlite.prepare("SELECT coverage_id FROM patient_coverages WHERE patient_id = ? AND kind = ? AND payer_number = ? AND member_no = ? LIMIT 1");
     const isKnown = (id: string, c: CoverageInfo) => known.get(id, c.kind, c.payerNumber, c.memberNo) as { coverage_id: string } | undefined;
     /** 負担割合・有効期間を持たない出所（UKE）か */
@@ -173,6 +180,10 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
       checkedAt: r.checked_at,
       checkedBy: r.checked_by,
     }));
+  }
+  /** 人数の区分の全部の行（古い順。「いつの診療月から」で選ぶので、最新の 1 行だけでは足りない。design.md §15-4） */
+  function buildingBandRows(patientId: string): Pick<PatientFact, "key" | "value">[] {
+    return (sqlite.prepare("SELECT value FROM patient_facts WHERE patient_id = ? AND fact_key = 'buildingBand' ORDER BY id").all(patientId) as { value: string }[]).map((r) => ({ key: "buildingBand", value: JSON.parse(r.value) as PatientFact["value"] }));
   }
   function patientFacts(claimId: string) {
     const patientId = patientIdOf(claimId);
@@ -252,7 +263,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     return patientProfile(claimId, caseBurdenRatio);
   }
 
-  return { latestPatientFacts, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
+  return { latestPatientFacts, existingIdOf, buildingBandRows, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
 }
 
 export type Patients = ReturnType<typeof createPatients>;

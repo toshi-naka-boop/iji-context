@@ -54,7 +54,7 @@ export default function Settings() {
         </div>
       )}
       {me?.canInvite && <Invites />}
-      {(me?.role === "manager" || me?.role === "veteran") && <Facility />}
+      {me && <Facility canEdit={me.role === "manager" || me.role === "veteran"} />}
       {me?.role === "manager" && <Masters />}
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>メンター</h3>

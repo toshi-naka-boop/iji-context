@@ -5,7 +5,7 @@ import { makeDayTypeRule } from "./day-type";
 
 export function makeR15(c: RevisionConsts): Rule {
   return makeDayTypeRule(
-    { id: "R15", visitKubun: c.price.visit, otherKubun: c.price.revisit, overlapKey: c.price.overlapKey, reference: "O100 外来・在宅物価対応料（留意事項 (3)(4)）" },
+    { id: "R15", visitKubun: c.price.visit, otherKubun: [c.price.revisit], overlapKey: c.price.overlapKey, reference: "O100 外来・在宅物価対応料（留意事項 (3)(4)）" },
     c,
   );
 }

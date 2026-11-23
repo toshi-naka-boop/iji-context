@@ -3,7 +3,7 @@
 import type { DeriveResult, LineBasis, Pending, Unsupported } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimEvent, EngineResult } from "../engine/types";
-import { DERIVE_TEXT, findingText, needLabel } from "../messages";
+import { BY_DECLARATION_NOTE, DECLARED_FACILITY_KEYS, DERIVE_TEXT, findingText, needLabel, pendingText } from "../messages";
 
 const EVENT_LABEL: Record<ClaimEvent["type"], string> = { visit: "訪問診療", oushin: "往診", test: "検査", prescription: "処方", death: "死亡", discharge: "退院", kanriStart: "管理料の算定開始" };
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -40,7 +40,7 @@ export type ClaimPreview = {
   /** 合計。保留・未対応があるとき（withheld）は出さない */
   total: number | null;
   pending: (
-    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[] }
+    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[]; reason?: "note14_conflict" | "note8" | "declaration_conflict" }
     | { kind: "要選択"; id: string; text: string; options: { id: string; label: string }[]; blocks: string[] }
   )[];
   unsupported: { code: string; text: string }[];
@@ -53,12 +53,14 @@ export type ClaimPreview = {
 /** engine は、請求の判定（EngineResult）か試算（TrialResult）の、行ごとの点数・合計・指摘 */
 export function claimPreviewOf(derived: DeriveResult, engine: Pick<EngineResult, "byLine" | "total" | "findings">, rev: Revision): ClaimPreview {
   const nameOf = (kubun: string) => rev.points[kubun]?.name ?? kubun;
+  /** 施設の申告から来る値を使って立てた行には「（施設の申告による）」を添える（design.md §15-4。FR-191） */
+  const byDeclaration = (b: LineBasis) => (b.needs.some((n) => DECLARED_FACILITY_KEYS.some((k) => n === `facility.${k}`)) ? BY_DECLARATION_NOTE : "");
   const basisOf = (b: LineBasis | undefined): ClaimPreviewLine["basis"] =>
-    b ? { rule: DERIVE_TEXT[b.derive] ?? b.derive, events: b.events.map(eventText), needs: b.needs.map(needLabel), byChoice: b.choice !== undefined, tentative: b.tentative } : null;
+    b ? { rule: `${DERIVE_TEXT[b.derive] ?? b.derive}${byDeclaration(b)}`, events: b.events.map(eventText), needs: b.needs.map(needLabel), byChoice: b.choice !== undefined, tentative: b.tentative } : null;
   const pendingOf = (p: Pending): ClaimPreview["pending"][number] =>
     p.kind === "要選択"
       ? { kind: p.kind, id: p.id, text: p.question, options: p.options.map((o) => ({ id: o.id, label: o.label })), blocks: p.blocks.map(nameOf) }
-      : { kind: p.kind, id: p.id, text: `${needLabel(p.need)}${p.date ? `（${md(p.date)}）` : ""}`, target: p.target, blocks: p.blocks.map(nameOf) };
+      : { kind: p.kind, id: p.id, text: pendingText(p, md), target: p.target, blocks: p.blocks.map(nameOf), ...(p.reason ? { reason: p.reason } : {}) };
   /** その区分の最初の行に、摘要欄に書くことを記載（版の表の行）ごとにまとめて付ける */
   const commentsOf = (kubun: string, i: number): ClaimPreviewLine["comments"] => {
     if (derived.lines.findIndex((l) => l.kubun === kubun) !== i) return [];

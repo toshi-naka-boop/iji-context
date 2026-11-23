@@ -8,6 +8,7 @@ import type { UkeClaim, UkeFile, UkePatient, UkeReceipt } from "../../uke/types"
 import { parseUke, readStoredUke, readUke, UkeError } from "../../uke/uke";
 import { uploadClaimIdOf } from "../../uke/upload";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
+import { sameMonthKey as monthKeyOf } from "../../note14/count";
 import { badRequest, notFound } from "../errors";
 import type { Clerks } from "./clerks";
 import type { AppContext } from "./context";
@@ -99,10 +100,27 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     }
     throw notFound("UKE にないレセプトです");
   }
+  /**
+   * 取り込みの一覧にある全部のファイルのレセプトを、形式だけで読んだもの（版を見ない。コードと単位のまま）。注14 の計算の道具が SI の行を数えるのに使う（design.md §15-13）。
+   * いまの形式で読めないファイルは入れない
+   */
+  function parsedClaims(): UkeClaim[] {
+    const out: UkeClaim[] = [];
+    const samples = withSamples ? sampleBytes() : [];
+    for (const [i, u] of named().entries()) {
+      if (!u.file) continue;
+      try {
+        out.push(...parseUke(u.uploaded ? readFileSync(path.join(uploadDir(), u.name)) : samples[i]).claims);
+      } catch (e) {
+        if (!(e instanceof UkeError)) throw e;
+      }
+    }
+    return out;
+  }
   /** UKE の取り込み（利用者ごとに記録） */
   const importedUke = (clerkId: string): string[] => JSON.parse(setting(`uke:${clerkId}`) ?? "[]") as string[];
-  /** 同じ患者（氏名・生年月日・性別）の、同じ診療年月・同じレセプト種別のレセプトか、を比べる鍵 */
-  const sameMonthKey = (r: UkeFile["receipts"][number]) => [r.patient.name.replace(/\s/g, ""), r.patient.birth, r.patient.sex, r.yearMonth, r.patient.receiptType].join("|");
+  /** 同じ患者（氏名・生年月日・性別）の、同じ診療年月・同じレセプト種別のレセプトか、を比べる鍵（注14 の道具と同じ鍵。round-61 C-374） */
+  const sameMonthKey = (r: UkeFile["receipts"][number]) => monthKeyOf(r.patient, r.yearMonth);
   function ukeList(clerkId: string) {
     const done = importedUke(clerkId);
     const all = named();
@@ -223,7 +241,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return path.join(uploadDir(), name);
   }
 
-  return { ukeFiles, ukeReceipts, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
+  return { ukeFiles, ukeReceipts, parsedClaims, sameMonthKey, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
 }
 
 export type Uke = ReturnType<typeof createUke>;

@@ -2,7 +2,7 @@
 // 引くのは、診療年月に使う 1 枚（pickSnapshot）。世代の 1 枚がないマスターの分は、空のまま返す（近い世代で代用しない）
 import type { Revision } from "../engine/revisions/types";
 import type { Outside } from "../engine/types";
-import { checkReady, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
+import { checkReady, hasShisetsu, hasShisetsuGroups, nameOf, pickSnapshot, shinryoOf, sourcesOf, type MastersDb, type NamedMaster, type ShinryoRow } from "../masters/db";
 import type { GenericAbout } from "./types";
 
 const snapshotOf = (db: MastersDb, table: NamedMaster, about: GenericAbout): string | null => pickSnapshot(db, table, about.yearMonth, about.generation)?.snapshot ?? null;
@@ -13,20 +13,24 @@ const noLabel = (r: ShinryoRow): string | null => (/^[A-Z]$/.test(r.alpha) ? `${
 /**
  * 名称。items は診療行為・医薬品・特定器材のコード → 名称（診療行為は区分番号も）、comments はコメントコード → 定型文、diseases は傷病名コード → 傷病名。
  * マスターにないコードは載らない（画面はコードだけを出す）。todokede＝施設基準のある診療行為（指摘にはせず、名称に「届出が要ります」と添える。design.md §12-3 の G03。
- * 施設基準の列の読み方を確かめた masters.db〔G03 の準備ができている〕のときだけ付ける）
+ * 施設基準の列の読み方を確かめた masters.db〔G03 の準備ができている〕のときだけ付ける。施設基準のある行は、組ごとの 3 列のどれかが 0 でない行。design.md §15-3）。
+ * kijun＝G10 が動いたときの印（申告あり held／申告では持たない not／申告が分からない unknown。design.md §15-5）。marks（src/generic/g10.ts の g10MarksOf）を渡すと、
+ * G10 が判定した行は todokede の代わりに kijun を付ける（G10 が判定しない注14 の基準の行は todokede のまま）
  */
-export type RowNames = { items: Record<string, { name: string; no: string | null; todokede?: true }>; comments: Record<string, string>; diseases: Record<string, string> };
+export type RowNames = { items: Record<string, { name: string; no: string | null; todokede?: true; kijun?: "held" | "not" | "unknown" }>; comments: Record<string, string>; diseases: Record<string, string> };
 
-export function rowNamesOf(db: MastersDb, about: GenericAbout, codes: { items: { kind: "SI" | "IY" | "TO"; code: string }[]; comments: string[]; diseases: string[] }): RowNames {
+export function rowNamesOf(db: MastersDb, about: GenericAbout, codes: { items: { kind: "SI" | "IY" | "TO"; code: string }[]; comments: string[]; diseases: string[] }, marks?: Record<string, "held" | "not" | "unknown"> | null): RowNames {
   const out: RowNames = { items: {}, comments: {}, diseases: {} };
   const snap = { SI: snapshotOf(db, "shinryo", about), IY: snapshotOf(db, "iyakuhin", about), TO: snapshotOf(db, "tokutei", about), comment: snapshotOf(db, "comment", about), shobyo: snapshotOf(db, "shobyo", about) };
-  const todokede = checkReady(db, "G03")?.ready === true;
+  // 組ごとの列のない古い masters.db では印を付けず、G03 の点検の範囲と設定の画面に理由を出す（design.md §15-3。code M-8）
+  const todokede = checkReady(db, "G03")?.ready === true && hasShisetsuGroups(db);
   for (const { kind, code } of codes.items) {
     const s = snap[kind];
     if (s === null) continue;
     if (kind === "SI") {
       const r = shinryoOf(db, s, code);
-      if (r) out.items[code] = { name: r.name, no: noLabel(r), ...(todokede && r.shisetsu !== "" ? { todokede: true as const } : {}) };
+      const mark = marks?.[code];
+      if (r) out.items[code] = { name: r.name, no: noLabel(r), ...(mark ? { kijun: mark } : todokede && hasShisetsu(r) ? { todokede: true as const } : {}) };
     } else {
       const name = nameOf(db, kind === "IY" ? "iyakuhin" : "tokutei", s, code);
       if (name !== null) out.items[code] = { name, no: null };

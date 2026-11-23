@@ -2,11 +2,12 @@
 import { resolveRevision } from "../engine/revisions";
 import type { ClaimContext, ClaimEvent, Facts } from "../engine/types";
 import type { Chart } from "../uke/crosscheck";
+import type { StoredActs } from "./acts";
 import type { ChartNote, ExtractedFact } from "./extract";
 
 export type VisitKind = "訪問診療" | "往診";
-/** 本人が確かめた事実まで済んだカルテ */
-export type ConfirmedNote = { date: string; kind: VisitKind; note: ChartNote; facts: ExtractedFact[] };
+/** 本人が確かめた事実まで済んだカルテ。kind が「記録」は、取り込んだ請求に貼ったカルテ（出来事を作らない。design.md §15-8。段 18c） */
+export type ConfirmedNote = { date: string; kind: VisitKind | "記録"; note: ChartNote; facts: ExtractedFact[]; acts?: StoredActs | null };
 
 /**
  * カルテ→出来事（1 か所。訪問の記録と算定行の導出で共有する。design.md §2-8）。
@@ -16,6 +17,8 @@ export type ConfirmedNote = { date: string; kind: VisitKind; note: ChartNote; fa
  */
 export function eventsFromNotes(events: ClaimEvent[], facts: Facts, notes: ConfirmedNote[]): { events: ClaimEvent[]; facts: Facts } {
   const out = [...events];
+  // 貼ったカルテ（記録）は、訪問・往診の出来事を作らず、事実も重ねない（design.md §15-8。recordsKnown は偽のまま）
+  notes = notes.filter((n) => n.kind !== "記録");
   for (const n of notes) {
     const type = n.kind === "往診" ? "oushin" : "visit";
     if (out.some((e) => e.type === type && "date" in e && e.date === n.date)) continue;

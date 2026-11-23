@@ -32,7 +32,8 @@ export function manualIn(manual: ClaimLine[], rev: Revision): ClaimLine[] {
 type Derived = { rev: Revision; result: DeriveResult; sides: Side[] };
 
 function derive(input: DeriveInput, rev: Revision): Derived {
-  const result = deriveLines({ ...input, manual: manualIn(input.manual, rev) }, rev);
+  // 比べる版に注14 の減の行がなければ、原請求の注14 の側を「なし」として扱う（design.md §15-4。round-58 C-333）
+  const result = deriveLines({ ...input, manual: manualIn(input.manual, rev), claimNote14Side: rev.consts.kanri.note14Pairs ? input.claimNote14Side : "なし" }, rev);
   const held = new Set(result.pending.flatMap((p) => p.blocks));
   const sides: Side[] = [];
   result.lines.forEach((l, i) => {

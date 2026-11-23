@@ -25,7 +25,7 @@ export const targetOfNeed = (key: NeedKey): "doctor" | "clerk" => ((DOCTOR_FACTS
 
 /** 要る入力（患者の事実か、施設の設定）が分かっているか */
 function knownNeed(ctx: ClaimContext, key: NeedKey): boolean {
-  return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : ctx.facts[key as FactKey].known;
+  return key.startsWith("facility.") ? ctx.facility[key.slice("facility.".length) as FacilityFactKey].known : (ctx.facts[key as FactKey]?.known ?? false);
 }
 
 /**
@@ -66,6 +66,15 @@ export function partialBy(rule: Rule, rev: Revision, input: Pick<ClaimContext, "
   }
   const hit = input.outside.codes.filter((c) => !c.known || (c.no !== null && nos.has(c.no)));
   return hit.length > 0 ? hit : null;
+}
+
+/**
+ * 重なりの段（design.md §15-4。round-57 C-324・round-58 C-332）：同じ行に R19 の use_band が出たら、R18 の use_note14_reduced を外す
+ * （R19 の名称が注14 の側まで名指しするので、直し先を 2 つ出さない）。note14_conflict と facility.note14 の情報不足は外さない
+ */
+function overlapNote14(findings: Finding[]): Finding[] {
+  const band = new Set(findings.filter((f) => f.messageKey === "R19.use_band").flatMap((f) => f.lineRefs));
+  return findings.filter((f) => f.messageKey !== "R18.use_note14_reduced" || !f.lineRefs.every((k) => band.has(k)));
 }
 
 export function evaluate(input: ClaimContext, revs: Revision[] = REVISIONS): EngineResult {
@@ -111,6 +120,7 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
         missing: { target: targetOfNeed(unknown), field: unknown },
         messageKey: `${rule.id}.missing_fact`,
         reference: rule.reference,
+        ...(rule.needDays ? { days: rule.needDays(ctx) } : {}),
       });
       continue;
     }
@@ -131,5 +141,5 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
       });
     findings.push(...sound);
   }
-  return { claimId: input.claimId, revisionId: rev.id, total, ...(input.partial ? { subtotal: sum } : {}), byLine, findings, applied };
+  return { claimId: input.claimId, revisionId: rev.id, total, ...(input.partial ? { subtotal: sum } : {}), byLine, findings: overlapNote14(findings), applied };
 }

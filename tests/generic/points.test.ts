@@ -45,11 +45,12 @@ const MEMBERS = r2026.bundles[0].members;
 function masters(snapshot = SNAP): Database.Database {
   const db = smallMasters(":memory:", snapshot);
   const set = (c: string, row: Record<string, string | number>) => db.prepare(`UPDATE shinryo SET ${Object.keys(row).map((k) => `${k} = ?`).join(", ")} WHERE code = ?`).run(...Object.values(row), c);
-  const plain = { point_kind: "3", kokuji1: "1", nyugai: "0", hospital_clinic: "0", houkatsu_kensa: "0", kizami_kind: "0", age_lower: "00", age_upper: "00", changed_on: "20260601", shisetsu: "" };
-  for (const kubun of Object.keys(r2026.codes)) set(code(kubun), { ...plain, points: pts(kubun) });
+  const plain = { point_kind: "3", kokuji1: "1", nyugai: "0", hospital_clinic: "0", houkatsu_kensa: "0", kizami_kind: "0", age_lower: "00", age_upper: "00", changed_on: "20260601", shisetsu_g1: "0", shisetsu_g2: "0", shisetsu_g3: "0" };
+  // 点数未収載の区分（注8 の減算。マスターは点数識別 6 の 20）はマスターの値で置く
+  for (const kubun of Object.keys(r2026.codes)) set(code(kubun), pts(kubun) === null ? { ...plain, point_kind: "6", points: 20, kokuji1: "7" } : { ...plain, points: pts(kubun)! });
   set(KINKYU, { kokuji1: "7" });
   set(JINSOKU, { kizami_kind: "1", kizami_lower: 1, kizami_upper: 5, kizami_step: 1, kizami_points: 10, kizami_error: "1", alpha: "D", kubun_no: 0 });
-  set(code("C001_N13_DX"), { shisetsu: "4100" });
+  set(code("C001_N13_DX"), { shisetsu_g1: "4100" });
   const add = (c: string, row: Record<string, string | number>) => put(db, "shinryo", snapshot, { ...plain, code: c, name: `手作りの行 ${c}`, ...row });
   add(GENOME, { points: 44000 });
   add(GENOME_MINUS, { point_kind: "8", points: 2500, kokuji1: "7" });

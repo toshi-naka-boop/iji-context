@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
+import type { ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
 import { MAX_CHART_TEXT } from "../../src/chart/limits";
 import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
@@ -17,9 +18,10 @@ import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
 import { ClaimPreview } from "./claim-preview";
 import { NoteList } from "./note-list";
+import { ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "./acts-review";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
-type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
+type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[]; acts: ChartAct[]; rx: RxNote[]; actsDropped: { fact: unknown; why: string }[]; review: ActsReview };
 type Row = ExtractedFact & { keep: boolean };
 
 type Sample = { lacking: string; complete: string };
@@ -37,6 +39,9 @@ export default function Chart() {
   const [note, setNote] = useState<ChartNote>(EMPTY);
   const [ex, setEx] = useState<Extracted | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  /** 行ったこと（design.md §15-6）と、その日の院内・院外 */
+  const [actRows, setActRows] = useState<ActRow[]>([]);
+  const [rxChoice, setRxChoice] = useState<RxChoice | null>(null);
   const [busy, setBusy] = useState(false);
   /** 自由記述（SOAP に整える前） */
   const [free, setFree] = useState("");
@@ -56,6 +61,8 @@ export default function Chart() {
       const r = await postJson<Extracted>("/api/chart", { claimId: p.claimId, kind, note });
       setEx(r);
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
+      setActRows(rowsOf(r.acts, r.review));
+      setRxChoice(r.review.rxDefault);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -101,7 +108,14 @@ export default function Chart() {
     if (!ex || !p) return;
     setErr("");
     try {
-      const r = await postJson<{ claimId: string; date: string }>(`/api/chart/${ex.id}`, { facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f) });
+      // 事実と行ったことを、1 回の確かめで保存する（design.md §15-6）
+      const r = await postJson<{ claimId: string; date: string }>("/api/chart/acts", {
+        noteId: String(ex.id),
+        facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f),
+        acts: actsToSave(actRows),
+        rx: ex.rx,
+        rxChoice,
+      });
       setConfirmed(r);
     } catch (e) {
       setErr((e as Error).message);
@@ -235,6 +249,10 @@ export default function Chart() {
                 ))}
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
+                )}
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} />
+                {ex.actsDropped.length > 0 && (
+                  <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
                 )}
                 <div className="chips">
                   <button className="primary" onClick={hand}>これで確定する（{ex.date} の訪問）</button>

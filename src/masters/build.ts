@@ -17,7 +17,8 @@ export function createSchema(db: Database.Database): void {
   for (const l of LAYOUTS) {
     if (made.has(l.table)) continue;
     made.add(l.table);
-    const cols = [...Object.keys(l.fixed ?? {}).map((k) => `${k} INTEGER NOT NULL`), ...l.columns.map((x) => `${x.col} ${sqlType[x.type.as]} NOT NULL`)];
+    // 配列の項目は、つないだ文字の列
+    const cols = [...Object.keys(l.fixed ?? {}).map((k) => `${k} INTEGER NOT NULL`), ...l.columns.map((x) => `${x.col} ${Array.isArray(x.item) ? "TEXT" : sqlType[x.type.as]} NOT NULL`)];
     db.exec(`CREATE TABLE ${l.table} (snapshot TEXT NOT NULL, ${cols.join(", ")})`);
     l.index.forEach((ix, i) => db.exec(`CREATE ${i === 0 && l.unique ? "UNIQUE " : ""}INDEX ${l.table}_${i} ON ${l.table} (snapshot, ${ix.join(", ")})`));
   }
@@ -59,7 +60,11 @@ export function ingestFile(db: Database.Database, layout: TableLayout, file: str
         if (!col.type.check.test(v)) throw new MasterFormatError(`項番 ${item}（${col.name}）の値が仕様の形と違う`, line);
         return v;
       };
-      if (Array.isArray(col.item)) values.push(col.item.map(read).filter((v) => Number(v) !== 0).join(","));
+      if (Array.isArray(col.item)) {
+        const join = col.join ?? { sep: ",", empty: "" };
+        const kept = col.item.map(read).filter((v) => Number(v) !== 0);
+        values.push(kept.length > 0 ? kept.join(join.sep) : join.empty);
+      }
       else {
         const v = read(col.item);
         values.push(col.type.as === "text" ? v : Number(v));

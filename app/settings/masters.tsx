@@ -16,7 +16,7 @@ const TABLE_LABELS: Record<string, string> = {
   hojo: "電子点数表（補助マスター）", houkatsu: "電子点数表（包括）", haihan: "電子点数表（背反）", kaisu: "電子点数表（算定回数）",
   comment_kanren: "コメント関連テーブル", cm_tekio: "チェックマスタ（医薬品の適応）", cm_si_shobyo: "チェックマスタ（診療行為の適応）", cm_heiyo_kinki: "チェックマスタ（併用禁忌）",
 };
-const CHECK_LABELS: Record<string, string> = { G01: "コード", G02: "点数の検算", G03: "行の属性", G04: "包括", G05: "背反", G06: "算定回数", G07: "必須コメント", G08: "傷病名の要件", G09: "適応・併用" };
+const CHECK_LABELS: Record<string, string> = { G01: "コード", G02: "点数の検算", G03: "行の属性", G04: "包括", G05: "背反", G06: "算定回数", G07: "必須コメント", G08: "傷病名の要件", G09: "適応・併用", G10: "施設基準", G11: "取り忘れ" };
 
 const day = (s: string) => `${s.slice(0, 4)}/${s.slice(4, 6)}/${s.slice(6, 8)}`;
 const when = (iso: string) => new Date(iso).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -74,7 +74,7 @@ export function Masters() {
           <p className="muted">要るデータがそろい、読み方を原文で確かめてある点検だけが動きます。</p>
           <ul>
             {status.checks.map((c) => (
-              <li key={c.check}>{c.check} {CHECK_LABELS[c.check] ?? ""}：{c.ready ? "準備できています" : `動かしません（${c.reason}）`}</li>
+              <li key={c.check}>{c.check} {CHECK_LABELS[c.check] ?? ""}：{c.ready ? `準備できています${c.reason ? `（${c.reason}）` : ""}` : `動かしません（${c.reason}）`}</li>
             ))}
           </ul>
           {howTo}

@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
+import { applyKind } from "../../facility/seed";
 import { ruleKubun } from "../../engine";
 import { isKnownKubun } from "../../engine/revisions";
 import { hasRevision, SELECTABLE_REVISIONS } from "../../engine/revisions";
@@ -69,7 +70,10 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decide
   const kind: TenantStatus = opts.kind ?? "demo";
   const fresh = !existsSync(paths.dbFile);
   const sqlite = new Database(paths.dbFile);
-  migrate(sqlite, APP_MIGRATIONS);
+  const migratedAt = new Date().toISOString();
+  migrate(sqlite, APP_MIGRATIONS, { kind, at: migratedAt });
+  // 未定のクリニックで種類を選んだあと（開き直したとき）、申告をその種類に合わせる（一度だけ。design.md §15-2 の chooseKind の経路）
+  sqlite.transaction(() => applyKind(sqlite, kind, migratedAt)).immediate();
   // データの版の印：新しい置き場には今の印を付け、印が違う置き場は警告を記録して開く（止めない・作り直さない）
   const dataset = checkDataset(sqlite, fresh);
   const db = drizzle(sqlite);
@@ -83,7 +87,8 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decide
   const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
   const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
   // 既定の施設の設定（JSON の形のまま持つ。症例ごとの上書きを重ねて三値に変えるのは src/server/app/cases.ts の 1 か所）
-  const facility = json<FacilityJson>(cfg("facility.json"));
+  // デモの種（demoDeclaration）と知らせの日数・確かめ直す日の既定（か月。項目ごと）は、施設の設定の項目ではないので外す
+  const { demoDeclaration: _seed, recheckNoticeDays, recheckDefaultMonths, ...facility } = json<FacilityJson & { demoDeclaration: unknown; recheckNoticeDays: number; recheckDefaultMonths: Record<string, number> }>(cfg("facility.json"));
   // 公的情報レジストリ（official/）。形の違う文書があれば起動を止める。会議の整理（トリガー④）とローカルルール欄が同じものを使う
   const official = officialInputOf(paths.root);
   // demo 以外（real・未定）は、見本の請求の提出を整理の対象から外す（数え直し・議題・拾い直し。行は消さない）
@@ -103,7 +108,7 @@ export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decide
    */
   const hiddenClaim = (claimId: string | null | undefined): boolean => kind !== "demo" && !!claimId && isSampleClaim(claimId);
 
-  return { kind, hiddenClaim, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, official, deps, dataset, setting, setSetting };
+  return { kind, hiddenClaim, paths, sqlite, db, store, queryLog, businessDays, levelCfg, levels, choiceGroups, reviewCfg, facility, recheckNoticeDays, recheckDefaultMonths, official, deps, dataset, setting, setSetting };
 }
 
 export type AppContext = ReturnType<typeof openContext>;

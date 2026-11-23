@@ -3,7 +3,7 @@
 //    式の錨：原文の計算例（この行をこの数量で書くと、この点数）。点数の検算（G02）の式（src/generic/points.ts）で再計算して、原文の点数になること
 // 2. 件数：判定に使う列の、値ごとの件数。読み方を確かめた版と同じ 1 枚では一致（違えば失敗）、ほかの 1 枚では 1 割を超えて違えば警告
 // 3. 版の表との食い違い：Revision の points・codes と、診療年月に当たる 1 枚の医科診療行為マスター（src/masters/revision-check.ts）。1 件でもあれば失敗
-// 4. 点検の準備（checks_ready）：点検 G01〜G09 ごとに、要る表がそろい、判定に使う列の値に錨があるか。錨のない表・列を使う点検は動かさない
+// 4. 点検の準備（checks_ready）：点検 G01〜G11 ごとに、要る表がそろい、判定に使う列の値に錨があるか。錨のない表・列を使う点検は動かさない
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
@@ -23,7 +23,8 @@ export type Anchor = { id: string; table: string; where: Pairs; expect: Pairs };
 /** 件数：where に当たる行の数 */
 /** 式の錨：items の行を 1 つの単位として、診療識別 shikibetsu で再計算すると points 点になること（薬価・材料価格そのものでなく、式ごと縛る） */
 export type FormulaAnchor = { id: string; shikibetsu: string; items: RecalcItem[]; points: number };
-export type CountRow = { table: string; where: Pairs; count: number };
+/** not は「列≠値」（その値でない行。design.md §15-3） */
+export type CountRow = { table: string; where: Pairs; not?: Pairs; count: number };
 export type Em = {
   /** データ名 → 読み方を確かめた版（更新日） */
   verified: Record<string, string>;
@@ -34,19 +35,28 @@ export type Em = {
   names: Map<string, string>;
 };
 
-/** `列=値, 列=値`（または「—」）を読む。表にない列は、EM の書き誤りとして例外にする（SQL に書く名前は layout にあるものだけ） */
-function pairsOf(cell: string, table: string, where: string): Pairs {
-  const out: Pairs = {};
+/**
+ * `列=値, 列≠値`（または「—」）を読む。eq は「列=値」、ne は「列≠値」。表にない列は、EM の書き誤りとして例外にする（SQL に書く名前は layout にあるものだけ）。
+ * 「≠」は件数の表だけが使う（錨では断る。pairsOf）
+ */
+function condsOf(cell: string, table: string, where: string): { eq: Pairs; ne: Pairs } {
+  const out = { eq: {} as Pairs, ne: {} as Pairs };
   // 「—」は、値を決めない（件数の表では全部の行、錨では行があることだけ）
   if (cell === "—") return out;
   for (const part of cell.replace(/`/g, "").split(",")) {
     // 値は、区切りの「,」と「`」のほかの文字（名称も書ける）
-    const m = /^\s*([a-z_0-9]+)\s*=\s*(\S(?:.*\S)?)\s*$/.exec(part);
+    const m = /^\s*([a-z_0-9]+)\s*(=|≠)\s*(\S(?:.*\S)?)\s*$/.exec(part);
     if (!m) throw new Error(`EM §2-11 ${where}：「列=値」の形でない: ${part.trim()}`);
     if (!TABLE_COLUMNS[table]?.includes(m[1])) throw new Error(`EM §2-11 ${where}：表 ${table} にない列: ${m[1]}`);
-    out[m[1]] = m[2];
+    (m[2] === "=" ? out.eq : out.ne)[m[1]] = m[3];
   }
   return out;
+}
+
+function pairsOf(cell: string, table: string, where: string): Pairs {
+  const { eq, ne } = condsOf(cell, table, where);
+  if (Object.keys(ne).length > 0) throw new Error(`EM §2-11 ${where}：「≠」は件数の表だけで使える: ${cell}`);
+  return eq;
 }
 
 /**
@@ -86,7 +96,8 @@ export function parseEm(em: string): Em {
       out.formulas.push({ id: c[0], shikibetsu: c[1] === "—" ? "" : c[1], items, points: Number(c[3]) });
     } else if (c.length === 3 && /^`[a-z_]+`$/.test(c[0]) && /^[\d,]+$/.test(c[2])) {
       const table = tableOf(c[0], "件数");
-      out.counts.push({ table, where: pairsOf(c[1], table, "件数"), count: Number(c[2].replace(/,/g, "")) });
+      const { eq, ne } = condsOf(c[1], table, "件数");
+      out.counts.push({ table, where: eq, ...(Object.keys(ne).length > 0 ? { not: ne } : {}), count: Number(c[2].replace(/,/g, "")) });
     }
   }
   return out;
@@ -98,12 +109,16 @@ export const readEm = (root: string): Em => parseEm(readFileSync(path.join(root,
 type Need = { table: string; pairs: Record<string, string | null> };
 const need = (table: string, pairs: Record<string, string | null>): Need => ({ table, pairs });
 const each = (table: string, col: string, values: string[], more: Record<string, string> = {}): Need[] => values.map((v) => need(table, { ...more, [col]: v }));
+/** 施設基準の組ごとの 3 列（design.md §15-3。錨 A109〜A116） */
+const SHISETSU_NEEDS: Need[] = ["shisetsu_g1", "shisetsu_g2", "shisetsu_g3"].map((col) => need("shinryo", { [col]: null }));
+/** 医科診療行為マスターの区分番号の列（章・部・区分番号・枝番・項番。design.md §15-3。code M-1。錨 A70・A72・A73） */
+const KUBUN_NO_NEEDS: Need[] = ["sho", "bu", "kubun_no", "eda", "kou"].map((col) => need("shinryo", { [col]: null }));
 
-export const CHECK_IDS = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"] as const;
+export const CHECK_IDS = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11"] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
 /**
- * 点検（design.md §12-3）ごとの、判定に使う表・列・値。ここに挙げた組のそれぞれに、通った錨が 1 つ以上あるとき、その点検の準備ができている。
+ * 点検（design.md §12-3・§15-3）ごとの、判定に使う表・列・値。ここに挙げた組のそれぞれに、通った錨が 1 つ以上あるとき、その点検の準備ができている。
  * 値の区分で判定が分かれる列は値ごとに挙げる（C-106：値が 1 種類しかない列の隣を読み違えても通ってしまうのを防ぐ）
  */
 export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
@@ -125,7 +140,7 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
     label: "行の属性",
     // 作ったのは、入外・病院診療所・年齢の上下限（数字）と、施設基準のある行の「届出が要ります」。後期高齢者医療適用区分・実日数・点数欄集計先識別（診療識別）・注加算の付け先は、
     // 点検を作っていないので挙げない（後期高齢者医療適用区分 1・2 と実日数 1 は、原文で確かめられる例がなく、錨を置けていない。EM §2-11）
-    needs: [...each("shinryo", "nyugai", ["0", "1", "2"]), ...each("shinryo", "hospital_clinic", ["0", "1", "2"]), need("shinryo", { age_lower: null }), need("shinryo", { age_upper: null }), need("shinryo", { shisetsu: null })],
+    needs: [...each("shinryo", "nyugai", ["0", "1", "2"]), ...each("shinryo", "hospital_clinic", ["0", "1", "2"]), need("shinryo", { age_lower: null }), need("shinryo", { age_upper: null }), ...SHISETSU_NEEDS],
   },
   G04: {
     label: "包括",
@@ -133,7 +148,7 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
   },
   G05: {
     label: "背反",
-    needs: ["1", "2", "3", "4"].flatMap((tani) => [...each("haihan", "tokurei", ["0", "1"], { tani }), ...each("haihan", "kubun", ["1", "2", "3"], { tani })]),
+    needs: [...["1", "2", "3", "4"].flatMap((tani) => [...each("haihan", "tokurei", ["0", "1"], { tani }), ...each("haihan", "kubun", ["1", "2", "3"], { tani })]), ...KUBUN_NO_NEEDS],
   },
   G06: {
     label: "算定回数",
@@ -167,9 +182,20 @@ export const CHECK_NEEDS: Record<CheckId, { label: string; needs: Need[] }> = {
     // 変更区分 9（廃止）は、言わない側にだけ使う（廃止の行だけのコード・廃止の組は言わない）。値ごとの件数（EM §2-11 表 3）で読み方を縛る
     needs: [need("cm_tekio", { code: null, shobyo: null }), need("cm_si_shobyo", { code: null, shobyo: null }), ...each("cm_si_shobyo", "utagai", ["0", "1"]), need("cm_heiyo_kinki", { code_l: null, code_r: null })],
   },
+  G10: {
+    label: "施設基準",
+    // 組ごとの 3 列（グループの中は「どれか」、グループのあいだは「どれも」。design.md §15-3）と、同じ区分番号の行を引く区分番号の列（15-5 の正しい側。L-91）。点検そのものは段 17e で入る
+    needs: [...SHISETSU_NEEDS, ...KUBUN_NO_NEEDS],
+  },
+  G11: {
+    label: "取り忘れ",
+    // 施設基準の要る行為を見分けるのに 3 列を使う（design.md §15-8。C-232）。判断料の候補（M-1）に、検査等実施判断区分の 1（実施）・2（判断料）と判断グループを使う（錨 A120・A73・A74）。
+    // 単位の列（A117〜A119）は挙げない：単位の列のない古い masters.db でも G11 は止めず、量の比較だけを止める（design.md §15-3）
+    needs: [...SHISETSU_NEEDS, need("shinryo", { kensa_kind: "1", kensa_group: null }), need("shinryo", { kensa_kind: "2", kensa_group: null })],
+  },
 };
 
-const show = (p: Record<string, string | null>) => Object.entries(p).map(([k, v]) => (v === null ? k : `${k}=${v}`)).join(", ");
+const show = (p: Record<string, string | null>, ne: Pairs = {}) => [...Object.entries(p).map(([k, v]) => (v === null ? k : `${k}=${v}`)), ...Object.entries(ne).map(([k, v]) => `${k}≠${v}`)].join(", ");
 
 /** 表の名前 → データ名（config/masters.json の files の layout から） */
 function datasetOf(config: MastersConfig): Record<string, string> {
@@ -202,7 +228,7 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   // 確かめるのは、いまの世代の 1 枚だけ。前の世代から残した 1 枚（src/masters/build.ts の carryOver）は、その世代のときに確かめてある（design.md §14-4。X-125）
   const src = db.prepare("SELECT DISTINCT dataset, tbl, snapshot FROM sources WHERE generation = ? ORDER BY tbl, snapshot").all(config.generation) as { dataset: string; tbl: string; snapshot: string }[];
   const snapshotsOf = (table: string): string[] => src.filter((s) => s.tbl === table).map((s) => s.snapshot);
-  const where = (p: Pairs) => Object.keys(p).map((k) => `${k} = ?`).join(" AND ") || "1 = 1";
+  const where = (p: Pairs, ne: Pairs = {}) => [...Object.keys(p).map((k) => `${k} = ?`), ...Object.keys(ne).map((k) => `${k} != ?`)].join(" AND ") || "1 = 1";
 
   // 1. 錨
   const passed = new Set<string>();
@@ -247,13 +273,14 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
     const verified = em.verified[ds[c.table]];
     for (const s of snapshotsOf(c.table)) {
       countRuns++;
-      const n = (db.prepare(`SELECT count(*) AS n FROM ${c.table} WHERE snapshot = ? AND ${where(c.where)}`).get(s, ...Object.values(c.where)) as { n: number }).n;
+      const ne = c.not ?? {};
+      const n = (db.prepare(`SELECT count(*) AS n FROM ${c.table} WHERE snapshot = ? AND ${where(c.where, ne)}`).get(s, ...Object.values(c.where), ...Object.values(ne)) as { n: number }).n;
       if (s === verified && n !== c.count) {
         failures++;
-        lines.push(`件数が違う（${c.table} ${s}）：${show(c.where)} は ${n} 件、EM §2-11 は ${c.count} 件`);
+        lines.push(`件数が違う（${c.table} ${s}）：${show(c.where, ne)} は ${n} 件、EM §2-11 は ${c.count} 件`);
       } else if (s !== verified && Math.abs(n - c.count) > c.count * 0.1) {
         warnings++;
-        lines.push(`警告：件数が 1 割を超えて違う（${c.table} ${s}）：${show(c.where)} は ${n} 件、確かめた版（${verified ?? "なし"}）は ${c.count} 件`);
+        lines.push(`警告：件数が 1 割を超えて違う（${c.table} ${s}）：${show(c.where, ne)} は ${n} 件、確かめた版（${verified ?? "なし"}）は ${c.count} 件`);
       }
     }
   }

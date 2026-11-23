@@ -689,7 +689,9 @@ describe("版のない診療年月のレセプトと試算（GET /api/uke/claims
     expect(t8.lines[0]).toEqual({ kubun: "C001_1I", no: expect.any(String), name: expect.stringContaining("訪問診療料"), count: 2, dates: [`${OLD}-14`, `${OLD}-28`], points: 890 });
     // 小計は、その版の点数で数える：6,013 ＋ (890−888)×2 ＋ (79−28)×2。対象外の行はないので、合計も出る
     expect([t8.partial, t8.others, t8.subtotal, t8.total]).toEqual([false, [], 6013 + 2 * 2 + 51 * 2, 6119]);
-    // 指摘：コメントのない UKE なので、令和8年度の必須の記載（訪問日・算定開始日・包括的支援加算の状態）が記載もれとして出る。足りない事実は情報不足
+    // 指摘：コメントのない UKE なので、令和8年度の必須の記載（訪問日・算定開始日・包括的支援加算の状態）が記載もれとして出る。足りない事実は情報不足。
+    // 施設は、その診療年月の施設の申告で決まる（design.md §15-2）。デモの種の from_month・算定開始年月日は選べる版のうち最も早い版の開始月なので、
+    // 基準月より前の診療年月の試算でも、デモの架空クリニックは同じ施設（v28 と同じ R17 の 3 件だけ。段 17b の R12 の要件不足は作り物の日付から出ていた）
     expect(t8.findings.map((f) => [f.ruleId, f.kind, f.params?.rule]).sort()).toEqual([["R17", "記載もれ", "T176-date"], ["R17", "記載もれ", "T177-first"], ["R17", "記載もれ", "T178-state"]]);
     expect(t8.commentMissingCount).toBe(3);
     expect(t8.missing.length).toBeGreaterThan(0);

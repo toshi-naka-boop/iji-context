@@ -18,6 +18,10 @@ import { ensureWorkspace, workspaceSkillNames } from "../src/mentor/workspace";
 import { listQueries, validateQuery } from "../src/query/doctor-query";
 import { crosscheck, crosscheckSkills, type Chart } from "../src/uke/crosscheck";
 import type { UkePatient } from "../src/uke/types";
+import { tableKeyOfAct, tableKeyOfChild, type ChartAct, type TableKey } from "../src/chart/acts";
+import { extractFacts, type ChartNote } from "../src/chart/extract";
+import { matchItem, rowsFor } from "../src/chart/match";
+import { withMasters } from "../src/masters/db";
 
 type Expect = {
   noLeak?: boolean;
@@ -40,7 +44,10 @@ type Expect = {
 };
 type Case = {
   id: string;
-  kind: "mentor" | "doctor" | "scribe";
+  kind: "mentor" | "doctor" | "scribe" | "acts";
+  /** acts：略した書き方の合成カルテ（fixtures/charts/<chart>-abbrev.json）のその日の記載 */
+  chart?: string;
+  date?: string;
   title: string;
   case?: string;
   remove?: string[];
@@ -83,6 +90,44 @@ function crossOf(root: string, claimId: string) {
 
 const nums = (s: string) => new Set(s.match(/\d+/g) ?? []);
 
+/** 行ったことの候補出しの合格の線（設計の値。design.md §15-7・L-108）：正しいコードが候補の 20 件に入る行為の割合 */
+const ACTS_PASS_RATE = 0.8;
+/** 行ったことの評価の数（1 つの記載ごと）。lookup＝候補から選べる、unmatched＝候補に入らない。前に選んだもの・探して選んだは評価では起きない（前の対応を持たず、探さない） */
+type ActsCount = { total: number; in20: number; top5: number; name: number; lookup: number; unmatched: number };
+
+/**
+ * 略した書き方の合成カルテの記載から、本番と同じ取り出し（LLM）で行ったことを出し、手元でマスターに当てて、合成カルテの正しいコードが候補に入るかを数える。
+ * 取り出した行為のどれか（同じ表を引くもの）の初期値か候補に正しいコードがあれば入ったとする。マスターがなければ実行エラー
+ */
+async function runActs(root: string, c: Case, by: Sender): Promise<ActsCount> {
+  const chart = JSON.parse(readFileSync(path.join(root, "fixtures", "charts", `${c.chart}-abbrev.json`), "utf8")) as { entries: (ChartNote & { date: string; acts: ChartAct[] })[] };
+  const e = chart.entries.find((x) => x.date === c.date);
+  if (!e) throw new Error(`合成カルテに ${c.date} の記載がない`);
+  const note: ChartNote = { s: e.s, o: e.o, a: e.a, p: e.p, rx: e.rx };
+  const r = await extractFacts(by, note, modelFor("chartExtract"));
+  const ym = e.date.slice(0, 7);
+  return withMasters((db) => {
+    if (!db) throw new Error("masters.db がない（RESEMEN_MASTER_DIR）");
+    const got: { key: TableKey; m: ReturnType<typeof matchItem> }[] = r.acts.flatMap((a) => [
+      { key: tableKeyOfAct(a.category), m: matchItem(rowsFor(db, tableKeyOfAct(a.category), ym), tableKeyOfAct(a.category), a.written, a.lookup, null) },
+      ...(a.with ?? []).map((x) => ({ key: tableKeyOfChild(x.kind), m: matchItem(rowsFor(db, tableKeyOfChild(x.kind), ym), tableKeyOfChild(x.kind), x.written, x.lookup, null) })),
+    ]);
+    const want = e.acts.flatMap((a) => [a.match!, ...(a.with ?? []).map((x) => x.match!)]);
+    const n: ActsCount = { total: want.length, in20: 0, top5: 0, name: 0, lookup: 0, unmatched: 0 };
+    for (const w of want) {
+      const hit = (m: ReturnType<typeof matchItem>) => m.candidates.findIndex((x) => x.tbl === w.tbl && x.code === w.code);
+      const byName = got.some((g) => g.m.initial?.by === "name" && g.m.initial.code === w.code);
+      const ranks = got.map((g) => hit(g.m)).filter((i) => i >= 0);
+      if (byName) n.name++;
+      else if (ranks.length) n.lookup++;
+      else n.unmatched++;
+      if (byName || ranks.length) n.in20++;
+      if (byName || ranks.some((i) => i < 5)) n.top5++;
+    }
+    return n;
+  });
+}
+
 async function runCase(root: string, c: Case, by: Sender): Promise<Result> {
   const started = Date.now();
   const failures: Result["failures"] = [];
@@ -90,6 +135,12 @@ async function runCase(root: string, c: Case, by: Sender): Promise<Result> {
   const tmp = mkdtempSync(path.join(tmpdir(), "iji-eval-"));
   let output: unknown = null;
   try {
+    if (c.kind === "acts") {
+      const n = await runActs(root, c, by);
+      output = n;
+      if (n.in20 < n.total * ACTS_PASS_RATE) fail("acts:in20", "抽出漏れ", `正しいコードが候補の 20 件に入った行為 ${n.in20} / ${n.total}`);
+      return { id: c.id, title: c.title, pass: failures.length === 0, failures, output, ms: Date.now() - started };
+    }
     if (c.kind === "scribe") {
       const r = await tidy(by, c.input!, modelFor("scribe"));
       output = r;
@@ -194,6 +245,10 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
   const cats = new Map<string, number>();
   for (const r of results) for (const f of r.failures) cats.set(f.category, (cats.get(f.category) ?? 0) + 1);
   const regress = results.filter((r) => prevResults.get(r.id) === true && !r.pass).map((r) => r.id);
+  // 行ったことの候補出し（design.md §15-7・L-108）：全部の記載を合わせた割合と内訳
+  const acts = results.filter((r) => r.output && typeof r.output === "object" && "in20" in (r.output as object)).map((r) => r.output as ActsCount);
+  const sum = (k: keyof ActsCount) => acts.reduce((a, x) => a + x[k], 0);
+  const pct = (a: number) => (sum("total") ? `${Math.round((a / sum("total")) * 1000) / 10}%` : "-");
   const models = { mentor: modelFor("mentor", { level: 1 }), explain: modelFor("mentor", { level: 1, scene: "explain" }), scribe: modelFor("scribe") };
   const md = [
     `# prompt-eval ${runId}`,
@@ -202,6 +257,12 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
     `- モデル：メンター ${models.mentor.model}（ヒント ${models.mentor.effort ?? "既定"}・解説 ${models.explain.effort ?? "既定"}）、整文 ${models.scribe.model}`,
     `- 前回パス → 今回失敗：${regress.join("、") || "なし"}`,
     `- 失敗の種類：${[...cats.entries()].map(([k, v]) => `${k} ${v}`).join("、") || "なし"}`,
+    ...(acts.length
+      ? [
+          `- 行ったことの候補出し（略した書き方の合成カルテ ${acts.length} 記載・行為 ${sum("total")}）：正しいコードが候補の 20 件に入った ${sum("in20")}（${pct(sum("in20"))}。合格の線 ${ACTS_PASS_RATE * 100}%）、上位 5 件 ${sum("top5")}（${pct(sum("top5"))}。報告だけ）`,
+          `  - 内訳：名前で当たった ${sum("name")}・前に選んだもの 0・lookup の候補 ${sum("lookup")}・探して選んだ 0（評価では探さない）・当てられない ${sum("unmatched")}`,
+        ]
+      : []),
     "",
     "| id | 結果 | 内容 | 失敗 |",
     "|---|---|---|---|",

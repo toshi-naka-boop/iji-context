@@ -9,7 +9,9 @@ export const FINDING_TEXT: Record<string, string> = {
   "R01.no_visit": "訪問診療料のない月に、管理料が入っています",
   "R01.use_twice_or_more": "訪問診療料が月 2 回以上なのに、月 1 回の区分になっています",
   "R01.use_once": "訪問診療料が月 1 回なのに、月 2 回以上の区分になっています",
-  "R01.note16_once_rate": "この施設は注16 の基準を満たしていないので、月 2 回以上でも月 1 回の区分（2ニ）で算定します",
+  "R01.note16_once_rate": "この施設は注16 の基準を満たしていないので、月 2 回以上でも月 1 回の区分で算定します",
+  // 申告だけを根拠に点数の高い区分へ直さない（design.md §15-4。round-51 C-251）。情報不足として出す
+  "R01.declaration_conflict": "申告（注16 の基準を満たす）と請求が食い違っています。申告を確かめてください",
   "R02.use_severe": "別表第八の二に当たる患者なのに、重症区分になっていません",
   "R02.not_severe": "別表第八の二に当たらないのに、重症区分になっています",
   "R02.severe_with_hokatsu": "重症区分で算定する月に、包括的支援加算が入っています。加算の行を外してください",
@@ -57,7 +59,49 @@ export const FINDING_TEXT: Record<string, string> = {
   "R17.comment_mismatch_deathDate": "摘要欄の死亡年月日が、死亡の記録の日と合いません",
   "R17.comment_mismatch_hokatsuState": "摘要欄の包括的支援加算の状態の記載が、確かめた要介護度・障害支援区分と合いません",
   "R17.comment_mismatch_ikouStart": "摘要欄の初回の管理料を算定した年月日が、管理料の算定開始月と合いません",
+  // R18 施設の種別（design.md §15-4）。{fixName} は正しい側の区分の名前、{note} は連携型の申告のときの経過措置の断り（docs M-8）
+  "R18.use_grade": "施設の種別と行の区分の種別が違います。施設の種別に合う区分は「{fixName}」です{note}",
+  "R18.iko_grade3_only": "在宅療養移行加算は、在宅療養支援診療所以外の診療所（管理料の 3 の区分を算定する患者）に限ります{note}",
+  "R18.use_baseup_note5": "ベースアップ評価料(Ⅰ)の注5 の届出があるので、「{fixName}」で算定します{note}",
+  "R18.use_baseup_normal": "ベースアップ評価料(Ⅰ)の注5 の届出がないので、「{fixName}」で算定します{note}",
+  // 注14（段 17h）。{fixName} は減の行の名称（1 つに決まらないときは両方と注8 の断り）
+  "R18.use_note14_reduced": "10 人以上の区分を減算の点数で算定していると申告されています。減算の区分は「{fixName}」です{note8}{note}",
+  "R18.note14_conflict": "申告（10 人以上の区分を通常の点数で算定）と請求が食い違っています。申告を確かめてください",
+  // R19 単一建物の人数（design.md §15-4。段 17f）。{fixName} はその患者の人数の区分に合う区分の名前
+  "R19.use_band": "単一建物診療患者の人数の区分が、行の区分と違います。{fixText}",
+  "R19.declaration_conflict": "申告（2 人以上の建物はない）と請求が食い違っています。申告を確かめてください",
 };
+
+/**
+ * 施設の申告から来る値（施設の種別・在支診か・注16・DX の届出の区分・ベースアップ評価料の届出の区分）で結論が変わる指摘の種類（design.md §15-4 の「施設の申告による」。FR-191）。
+ * 画面は、文の後ろに BY_DECLARATION_NOTE を添える。漏れは tests/engine/by-declaration.test.ts が縛る（同梱の症例と練習問題の入力で、申告の値を 1 つずつ変えて出る種類が変わるなら、ここに載っていなければならない）
+ */
+export const BY_DECLARATION = new Set<string>([
+  "R01.use_twice_or_more",
+  "R01.note16_once_rate",
+  "R01.declaration_conflict",
+  "R10.same_day_as_visit",
+  "R10.visit_day_after_oushin",
+  "R12.dx_tier",
+  "R12.dx_not_notified",
+  "R18.use_grade",
+  "R18.iko_grade3_only",
+  "R18.use_baseup_note5",
+  "R18.use_baseup_normal",
+  "R18.use_note14_reduced",
+  "R18.note14_conflict",
+  "R19.use_band",
+  "R19.declaration_conflict",
+]);
+export const BY_DECLARATION_NOTE = "（施設の申告による）";
+/** 施設の申告で決まる施設の設定（情報不足のとき、施設の申告の画面へ案内する。design.md §15-4） */
+export const DECLARED_FACILITY_KEYS: FacilityFactKey[] = ["grade", "note16Met", "dxTier", "baseUp", "building", "note14"];
+/**
+ * 単一建物の人数の入力の案内（design.md §15-4。V-4・V-3）。人数の数え方は EM R8-94 の読み（明文なし。U-22）
+ */
+export const BUILDING_BAND_GUIDE = "その月に、この建物で在医総管か施医総管を算定する人の数（月の途中で亡くなった人・入居した人も、その月に算定するなら数えます）で、みなしを当てたあとの、請求に使う区分を入れてください（読み〔明文なし〕）";
+/** 施設の申告の画面への案内（宛先の値は増やさない。§6-1 の L-44） */
+const DECLARATION_GUIDE = "施設の申告の画面で確かめてください（事務長でなければ、事務長に施設の申告を頼んでください）";
 
 /**
  * データで動く点検（G01〜。design.md §12-2）の指摘の文。定型文と値だけ（{code} はコード、{what} は行の種類）。公開元の文章は写さない。
@@ -82,6 +126,10 @@ export const GENERIC_TEXT: Record<string, string> = {
   "G09.iy_no_disease": "コード {code}（{name}）：レセプトの傷病名に、審査支払機関のチェック用の表にある傷病名が見当たりません（表の傷病名は {count} 件：{diseases}）。傷病名のもれか、表にない使い方かを確かめてください",
   "G09.si_no_disease": "コード {code}（{name}）：レセプトの傷病名に、審査支払機関のチェック用の表にある傷病名が見当たりません（表の傷病名は {count} 件：{diseases}）。傷病名のもれか、表にない場合の算定かを確かめてください",
   "G09.si_suspected": "コード {code}（{name}）：審査支払機関のチェック用の表にある傷病名が、レセプトには疑い病名としてだけあります（{found}）。表は、この項目には確定病名を対象にしています（表の傷病名は {count} 件）。傷病名の記載を確かめてください",
+  // G10（段 17e。design.md §15-5）。{kijun} は施設基準の名称（表 4）とコード、{reason} は申告の三値の理由、{side} は同じ区分番号で申告を満たす行（L-91。ちょうど 1 行のときだけ）。
+  // 「問題なし」とは言わない（FR-190）。言い切りの文を持たない（L-101）
+  "G10.not_held": "{name}（コード {code}）は、施設基準{kijun}が要ります。施設の申告では{reason}です（施設の申告による）{side}{later}",
+  "G10.unknown": "{name}（コード {code}）に要る施設基準{kijun}の申告が{reason}ので、算定できるかは言えません。施設の申告で入れてください（施設の申告による）{later}",
   "G09.heiyo_kinki": "コード {a}（{nameA}）と {b}（{nameB}）は、審査支払機関の併用のチェック用の表にある組で、同じ日（{days}日）に両方あります。併用禁忌・併用注意などのどれに当たる組かは、表からは分かりません。処方の内容を確かめてください",
 };
 /** 言い切り（確定）に上げた指摘は、言い切りの文（GENERIC_TEXT_CERTAIN）があればそれを使う。ほかは、言い切らない文 */
@@ -187,8 +235,9 @@ export const COMMENT_CHECK_SCOPE = {
     "在宅酸素療法指導管理料の、動脈血酸素分圧又は飽和度",
     "訪問診療と同じ日の往診の理由",
     "急性増悪で週 4 回以上訪問したときの、必要性と日付",
+    "単一建物 2 人以上の区分の管理料の、単一建物診療患者の人数",
   ],
-  uncheckedCount: 19,
+  uncheckedCount: 18,
 };
 /** 画面の点検の説明に出す文 */
 export const COMMENT_CHECK_NOTE = `摘要欄の必須の記載のうち、点検しているのは次の ${COMMENT_CHECK_SCOPE.checked.length} 項目です：${COMMENT_CHECK_SCOPE.checked.join("／")}。記載要領の別表Ⅰ に定めがあっても、点検していない項目が ${COMMENT_CHECK_SCOPE.uncheckedCount} 件あります。`;
@@ -223,14 +272,18 @@ export const FACT_LABEL: Record<FactKey, string> = {
   rxLongPsychotropic: "その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか",
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
+  buildingBand: "単一建物診療患者の人数の区分（みなしを当てたあとの、請求に使う区分）",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
 export const FACILITY_LABEL: Record<FacilityFactKey, string> = {
+  grade: "施設の種別（在宅療養支援診療所の区分）",
   dxTier: "在宅医療DX情報活用加算の届出の区分",
   baseUp: "ベースアップ評価料の届出の区分",
   priceResponse: "物価対応料を算定するか",
   note16Met: "管理料の注16 の基準を満たしているか",
+  building: "同じ建物で同じ月に 2 人以上を診ている建物があるか",
+  note14: "注14（単一建物 10 人以上の区分の減算）の点数で算定しているか",
   revisitBaseUpSameDay: "訪問診療料と往診料の両方がある日に、再診時等のベースアップ評価料を重ねて算定できるか",
   revisitPriceSameDay: "訪問診療料と往診料の両方がある日に、再診時等の物価対応料を重ねて算定できるか",
 };
@@ -258,10 +311,18 @@ export const DERIVE_TEXT: Record<string, string> = {
 /** 確認してほしい点の文。情報不足は「どこを確かめるか」を添える（医療事務あては本人、医師あては医師確認） */
 export function findingText(f: Finding): string {
   if (f.kind === "情報不足" && f.missing) {
-    if (f.missing.field.startsWith("facility.")) {
-      const label = FACILITY_LABEL[f.missing.field.slice("facility.".length) as FacilityFactKey] ?? f.missing.field;
+    const facilityKey = f.missing.field.startsWith("facility.") ? (f.missing.field.slice("facility.".length) as FacilityFactKey) : null;
+    const declared = facilityKey !== null && DECLARED_FACILITY_KEYS.includes(facilityKey);
+    // 文を持つ情報不足（申告と請求の食い違い。design.md §15-4）
+    if (!f.messageKey.endsWith(".missing_fact") && FINDING_TEXT[f.messageKey]) return `${FINDING_TEXT[f.messageKey]}${declared ? `。${DECLARATION_GUIDE}` : ""}${BY_DECLARATION.has(f.messageKey) ? BY_DECLARATION_NOTE : ""}`;
+    if (declared) return `施設の申告「${FACILITY_LABEL[facilityKey]}」が分かりません（申告がない・確かめ直す日を過ぎたなど）。${DECLARATION_GUIDE}`;
+    if (facilityKey !== null) {
+      const label = FACILITY_LABEL[facilityKey] ?? f.missing.field;
       return `施設の設定「${label}」が入っていません。事務長か責任者に確かめて、施設の設定に入力してください`;
     }
+    // 単一建物の人数：施設の申告（building）も分からないときは、施設の申告の画面への案内を先に出す（1 項目で全患者が決まりうるため。design.md §15-4）
+    if (f.missing.field === "buildingBand")
+      return `${f.params?.facilityFirst ? `施設の申告「${FACILITY_LABEL.building}」が分かりません。${DECLARATION_GUIDE}。「ない」と申告すれば、患者ごとには入れなくて済みます。そうでなければ、` : ""}${FACT_LABEL.buildingBand}が入っていません。${BUILDING_BAND_GUIDE}`;
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
     // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
     if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
@@ -274,7 +335,7 @@ export function findingText(f: Finding): string {
       ? `${label}${day}がカルテから分かりません。医師確認で確かめましょう`
       : `${label}${day}が入っていません。${f.missing.field === "careLevel" ? "介護保険証で" : f.missing.field === "disabilitySupportLevel" ? "受給者証で" : ""}確かめて入力してください`;
   }
-  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "");
+  const text = (FINDING_TEXT[f.messageKey] ?? f.messageKey).replace(/\{(\w+)\}/g, (_, k: string) => f.params?.[k] ?? "") + (BY_DECLARATION.has(f.messageKey) ? BY_DECLARATION_NOTE : "");
   // 日付の食い違い（R17）：足りない日・多い日を添える
   const days = (v: string | undefined) => (v ? v.split(",").map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、") : "");
   const detail = [f.params?.lacking ? `記載のない日：${days(f.params.lacking)}` : "", f.params?.extra ? `算定のない日：${days(f.params.extra)}` : ""].filter(Boolean).join("。");
@@ -402,4 +463,15 @@ export function eventText(event: string, trigger?: string): string {
   const extra = trigger ? triggerLabel(trigger) : "";
   if (base === "") return extra;
   return extra !== "" && extra !== base ? `${base}（${extra}）` : base;
+}
+
+/**
+ * 導出の保留（事実不足）の文（src/chart/claim.ts）。reason のある保留は、事実がないのではなく決められない理由の文（段 17h）：
+ * note14_conflict は R18.note14_conflict と同じ文と、施設の申告の画面への案内（round-58 C-330＝X-181）。declaration_conflict は R19.declaration_conflict と同じ文と同じ案内（round-61 X-200）。note8 は注8 を見ていないので減の行を決められないこと（round-57 X-171）
+ */
+export function pendingText(p: { need: NeedKey; date?: string; reason?: "note14_conflict" | "note8" | "declaration_conflict" }, md: (d: string) => string): string {
+  if (p.reason === "note14_conflict") return `${FINDING_TEXT["R18.note14_conflict"]}。${DECLARATION_GUIDE}`;
+  if (p.reason === "declaration_conflict") return `${FINDING_TEXT["R19.declaration_conflict"]}。${DECLARATION_GUIDE}`;
+  if (p.reason === "note8") return "注8 の減算に当たるかを見ていないので、減の行を 1 つに決められません";
+  return `${needLabel(p.need)}${p.date ? `（${md(p.date)}）` : ""}`;
 }

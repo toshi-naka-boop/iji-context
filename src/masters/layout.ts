@@ -30,9 +30,13 @@ const change = oneOf("0", "1", "2", "3", "5", "9");
 /** チェックマスタの年齢（[チ] p18 項番6・7）：XXX.XX。下限なし 000.00、上限なし 999.99 */
 const ageDecimal: ColType = { check: /^\d{3}\.\d{2}$/, as: "real" };
 
-/** 取り込む項目。item は仕様書の項番（1 起算。配列は繰り返しの項目で、0 でない値を "," でつないで 1 列にする） */
-export type Column = { item: number | number[]; col: string; name: string; type: ColType };
-const c = (item: number | number[], col: string, name: string, type: ColType): Column => ({ item, col, name, type });
+/** 配列の項目のつなぎ方：0 でない値を sep でつなぎ、どれも 0 なら empty。join を省いた配列の項目は "," でつなぎ、どれも 0 なら空 */
+export type ArrayJoin = { sep: string; empty: string };
+/** 取り込む項目。item は仕様書の項番（1 起算。配列は繰り返しの項目で、0 でない値を項番の順につないで 1 列〔文字〕にする） */
+export type Column = { item: number | number[]; col: string; name: string; type: ColType; join?: ArrayJoin };
+const c = (item: number | number[], col: string, name: string, type: ColType, join?: ArrayJoin): Column => ({ item, col, name, type, ...(join ? { join } : {}) });
+/** 施設基準の組の列のつなぎ方（design.md §15-3） */
+const SHISETSU_JOIN: ArrayJoin = { sep: "/", empty: "0" };
 
 export type TableLayout = {
   /** config/masters.json の files の layout が指す名前（ファイル名の形・項目数・文字コードは config の側で持つ） */
@@ -66,6 +70,10 @@ const shinryo: TableLayout = {
     c(1, "change", "変更区分", change), // p27
     c(3, "code", "診療行為コード", code(9)), // p27。先頭は 1
     c(5, "name", "省略漢字名称", text), // p27
+    // データ規格コード：数量データの単位（量の単位なしは 0）とその名前（漢字名称）。原本の CSV で 114001470 は 1・「分」（design.md §15-3。round-52 C-262）。
+    // ページは、錨を EM に写すとき（E-8）に［基］で確かめて書く
+    c(8, "unit_code", "データ規格コード", int),
+    c(10, "unit_name", "データ規格名（漢字名称）", text),
     // p28。1 金額／3 点数（プラス）／4 購入価格（点数）／5 ％加算／6 ％減算／7 減点診療行為／8 点数（マイナス）。詳細は別紙7-1
     c(11, "point_kind", "点数識別", oneOf("1", "3", "4", "5", "6", "7", "8")),
     c(12, "points", "新又は現点数", num), // p28。整数部 7 桁＋小数部 2 桁
@@ -99,7 +107,11 @@ const shinryo: TableLayout = {
     c(51, "kensa_group", "検査等実施判断グループ区分", int),
     c(68, "kokuji1", "告示等識別区分（１）", oneOf("1", "3", "5", "7", "9")), // p41。1 基本項目／3 合成項目／5 準用項目／7 加算項目／9 通則加算項目
     c(69, "kokuji2", "告示等識別区分（２）", oneOf("1", "3", "7")), // p41。1 基本項目／3 合成項目／7 加算項目
-    c([72, 73, 74, 75, 76, 77, 78, 79, 80, 81], "shisetsu", "施設基準①〜⑩", int), // p41（別紙7-8）。その行に要る施設基準コード。未使用は 0
+    // p41（別紙7-8）・p172〜173（設定要領）。その行に要る施設基準コード。未使用は 0。組の中は「どれか」、組のあいだは「どれも」なので、組ごとに 1 列にする（design.md §15-3。J-3）。
+    // 0 でないコードを項番の順に「/」でつなぎ、全部 0 なら "0"（EM §2-11 の錨の書き方と同じ文字列）
+    c([72, 73, 74, 75, 76, 77], "shisetsu_g1", "施設基準①〜⑥（グループ①）", int, SHISETSU_JOIN),
+    c([78, 79, 80], "shisetsu_g2", "施設基準⑦〜⑨（グループ②）", int, SHISETSU_JOIN),
+    c([81], "shisetsu_g3", "施設基準⑩（グループ③）", int, SHISETSU_JOIN),
     c(85, "alpha", "コード表用番号（アルファベット部）", { check: /^[A-Z*\-－＊]?$/, as: "text" }), // p42。区分番号のアルファベット。区分番号のない行為は *、点数表の外は -
     c(87, "changed_on", "変更年月日", date), // p42。情報に変更が生じたときに適用となる日（使い始めの日ではない。design.md §12-1）
     c(88, "abolished_on", "廃止年月日", date), // p42。使える最後の日。廃止していなければ 99999999
@@ -111,7 +123,8 @@ const shinryo: TableLayout = {
   ],
   unique: true,
   index: [["code"]],
-  loose: ["kouki", "shukei_gai", "jitsunissu", "nissu_kaisu", "limit_error", "chu_code", "chu_seq", "tsusoku_age", "time_kasan", "kensa_kind", "kensa_group", "kokuji2", "kou"],
+  // kou（区分番号の項番）は G05・G10 の準備に入れたので、形を見る（design.md §15-3。code M-1）
+  loose: ["kouki", "shukei_gai", "jitsunissu", "nissu_kaisu", "limit_error", "chu_code", "chu_seq", "tsusoku_age", "time_kasan", "kensa_kind", "kensa_group", "kokuji2"],
 };
 
 /** 医薬品マスター（[基] p16〜19。42 項目） */
@@ -123,6 +136,7 @@ const iyakuhin: TableLayout = {
     c(3, "code", "医薬品コード", code(9)), // p16。先頭は 6
     c(5, "name", "漢字名称", text), // p16。医薬品名・規格名
     c(8, "unit_code", "単位コード", int), // p16（別紙4-1）。単位なしは 0
+    c(10, "unit_name", "単位（漢字名称）", text), // 原本の CSV で 620008991 は 33・「ｇ」（design.md §15-3。round-52 C-262。ページは E-8 で確かめる）
     c(11, "price_kind", "金額種別", oneOf("1", "3", "7")), // p16（別紙4-2）。1 金額／3 薬剤使用量省略（歯科）／7 減点
     c(12, "price", "新又は現金額", num), // p17。規格単位を最小単位にした金額（薬価）
     c(28, "zaikei", "剤形", oneOf("1", "3", "4", "6", "8")), // p18。1 内用薬／3 その他／4 注射薬／6 外用薬／8 歯科用薬剤
@@ -144,6 +158,7 @@ const tokutei: TableLayout = {
     c(3, "code", "特定器材コード", code(9)), // p21。先頭は 7
     c(5, "name", "漢字名称", text), // p21
     c(8, "unit_code", "単位コード", int), // p21（別紙4-1）。単位なしは 0
+    c(10, "unit_name", "単位（漢字名称）", text), // 原本の CSV で 739210000 は 37・「Ｌ」（design.md §15-3。round-52 C-262。ページは E-8 で確かめる）
     c(11, "price_kind", "金額種別", oneOf("1", "2", "5", "9")), // p21（別紙5-1）。1 金額／2 購入価格／5 ％加算／9 乗算割合
     c(12, "price", "新又は現金額", num), // p22
     // p22。0 酸素・窒素でない器材／1 酸素補正率・高気圧酸素加算／2 定置式液化酸素貯槽（ＣＥ）／3 可搬式液化酸素容器（ＬＧＣ）／4 大型ボンベ／5 小型ボンベ／9 窒素。

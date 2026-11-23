@@ -119,7 +119,7 @@ describe("K5（看取り）", () => {
     const r = derive(K5);
     expect(r.pending).toEqual([]);
     expect(judge(K5, r).findings).toEqual([]);
-    for (const k of [C.terminal.mitori, C.terminal.terminal]) expect(r.basis.find((b) => b.kubun === k)?.choice).toBeDefined();
+    for (const k of [C.terminal.mitori, C.terminal.terminal["2"]!]) expect(r.basis.find((b) => b.kubun === k)?.choice).toBeDefined();
     // 症例の行（EM §5-2 の小計 10,175）との差は、往診の日の再診料と「再診時等」の区分だけ（L-40。EM は K5 の合計を決めていない）
     const extra = r.lines.filter((l) => !K5.lines.some((x) => x.kubun === l.kubun));
     expect(extra.map((l) => l.kubun).sort()).toEqual([C.oushin.revisit, C.baseUp.revisit, C.price.revisit].sort());
@@ -135,7 +135,7 @@ describe("K5（看取り）", () => {
     expect(none.pending).toEqual([]);
     expect(kubunOf(none)).not.toContain(C.terminal.mitori);
     expect(kubunOf(none)).not.toContain(C.terminal.shibou);
-    expect(kubunOf(none)).not.toContain(C.terminal.terminal);
+    expect(kubunOf(none)).not.toContain(C.terminal.terminal["2"]!);
   });
   it("看取りの場所が不明なら、ターミナルケア加算は事実不足（宛先は医師）", () => {
     const r = derive(withFact(K5, "deathPlace", unknown));
@@ -330,9 +330,9 @@ describe("同じ日・翌日の訪問診療と往診（§2-3-4）", () => {
   });
   it("緊急の往診は、対象の患者と確かめたときだけ緊急往診加算を立てる。不明なら事実不足（医療事務）", () => {
     const c = withEvents(K2, { type: "oushin", date: day(20), kind: "emergency" });
-    expect(datesOf(derive(c), C.oushin.kinkyu)).toEqual([day(20)]);
+    expect(datesOf(derive(c), C.oushin.kinkyu["2"]!)).toEqual([day(20)]);
     expect(judge(c, derive(c)).findings).toEqual([]);
-    expect(kubunOf(derive(withFact(c, "emergencyEligible", no)))).not.toContain(C.oushin.kinkyu);
+    expect(kubunOf(derive(withFact(c, "emergencyEligible", no)))).not.toContain(C.oushin.kinkyu["2"]!);
     expect(derive(withFact(c, "emergencyEligible", unknown)).pending).toEqual([expect.objectContaining({ kind: "事実不足", need: "emergencyEligible", target: "clerk" })]);
   });
 });
@@ -422,19 +422,27 @@ describe("管理料・保留・未対応・見込み", () => {
     expect(r.pending.map((p) => p.kind === "事実不足" && [p.need, p.target])).toEqual([["facility.dxTier", "clerk"], ["facility.baseUp", "clerk"], ["facility.priceResponse", "clerk"]]);
     expect(kubunOf(r)).toContain("C002_2RO1");
   });
-  it("機能強化型・同一建物 2 人以上の訪問・ベースアップ評価料の注5・表にない検査の項目は unsupported で、合計を出さない", () => {
-    const kyoka = derive(withFacility(K2, { kyokagata: true }));
-    expect(kyoka.unsupported.map((u) => u.code)).toEqual(["kyokagata"]);
-    expect(kubunOf(kyoka).some((k) => k.startsWith("C002"))).toBe(false);
-    const multi = derive({ ...K2, events: K2.events.map((e) => (e.type === "visit" ? { ...e, sameBuildingCount: 3 } : e)) });
-    expect(multi.unsupported.map((u) => u.code)).toEqual(["single_building_multi"]);
+  it("表にない検査の項目は unsupported で、合計を出さない（機能強化型と注5 は段 17d、単一建物 2 人以上は段 17f で導出する）", () => {
+    const kyoka = derive(withFacility(K2, { grade: { known: true, value: "1N" }, kyokagata: true }));
+    expect(kyoka.unsupported).toEqual([]);
+    expect(kubunOf(kyoka)).toContain("C002_1N_RO1");
+    // 同一建物居住者の訪問で、患者ごとの人数の区分を 2〜9 人と確かめた：人数の区分の管理料を立てる（段 17f。design.md §15-4）
+    const multi = derive({
+      ...withFacility(K2, { building: { known: true, value: "some" } }),
+      facts: { ...K2.facts, buildingBand: { known: true, value: "2-9" } },
+      events: K2.events.map((e) => (e.type === "visit" ? { ...e, sameBuildingCount: 3 } : e)),
+    });
+    expect(multi.unsupported).toEqual([]);
     expect(kubunOf(multi)).toContain(C.visitKubun[1]);
     expect(kubunOf(multi)).toContain(C.baseUp.visit[1]);
+    expect(kubunOf(multi)).toContain("C002_2RO2");
     const note5 = derive(withFacility(K2, { baseUp: { known: true, value: "注5" } }));
-    expect(note5.unsupported.map((u) => u.code)).toEqual(["baseup_note5"]);
+    expect(note5.unsupported).toEqual([]);
+    expect(kubunOf(note5)).toContain("O001_3I_N5");
     const item = derive(withEvents(K2, { type: "test", date: day(28), items: ["表にない検査"] }));
     expect(item.unsupported).toEqual([{ code: "unmapped_test_item", detail: "表にない検査" }]);
-    for (const r of [kyoka, multi, note5, item]) expect(r.totalStatus).toBe("withheld");
+    expect(item.totalStatus).toBe("withheld");
+    for (const r of [kyoka, note5, multi]) expect(r.totalStatus).toBe("ok");
   });
   it("asOf を渡すと、管理料とそれに付く加算の行が見込み（tentative）になり、totalStatus も tentative", () => {
     const mid = contextAsOf(K2, day(14));
@@ -565,7 +573,7 @@ describe("不変条件：段 5 で足した事実の全組み合わせ（design.
               const c = { ...base, facts };
               const r = check(c, choices, label);
               // ターミナルケア加算を立てたなら、保留が残っていても、検証で要件不足にならない（導出と R09 が同じ述語を使う）
-              if (kubunOf(r).includes(C.terminal.terminal)) {
+              if (kubunOf(r).includes(C.terminal.terminal["2"]!)) {
                 billed++;
                 expect(judge(c, r).findings.filter((f) => f.ruleId === "R09"), label).toEqual([]);
               }
@@ -577,7 +585,7 @@ describe("不変条件：段 5 で足した事実の全組み合わせ（design.
 describe("ターミナルケア加算の回数：同じ日の訪問診療と往診（X-73）", () => {
   const D = day(21);
   const DEATH = day(22);
-  const TERMINAL = C.terminal.terminal;
+  const TERMINAL = C.terminal.terminal["2"]!;
   const tid = `D12-terminal:${DEATH}`;
   /** 21 日に訪問診療と往診の出来事、22 日に在宅で死亡。ほかの訪問はない。退院時共同指導料1 は算定していない */
   const ONE_DAY: ClaimContext = {

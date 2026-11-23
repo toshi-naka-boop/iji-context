@@ -78,8 +78,10 @@ describe("段 13：実データの masters.db で", () => {
         claims++;
         const r = checkUke(c, db);
         expect(r.result.ran.map((x) => x.check)).toEqual(expect.arrayContaining(["G07", "G08"]));
-        expect([name, i, r.shown]).toEqual([name, i, []]);
-        for (const f of r.generic) raw.push(`${name} #${i + 1} ${f.check} ${f.codes.join()} 項番${f.params.kouban ?? ""}`);
+        // torikawasure.UKE（K8〜K11。段 18b）の K9 の超音波は、作成手引きの記録例に領域のコメントがないので入れていない（作らない）。その 1 件だけは出る
+        const known = (f: { codes: string[] }) => name === "torikawasure.UKE" && f.codes.join() === "160072210";
+        expect([name, i, r.shown.filter((f) => !known(f))]).toEqual([name, i, []]);
+        for (const f of r.generic.filter((f) => !known(f))) raw.push(`${name} #${i + 1} ${f.check} ${f.codes.join()} 項番${f.params.kouban ?? ""}`);
         if (name === "kisaimore.UKE") {
           // R17 が 1 件、G07 の同じ記載（在宅酸素の飽和度）は「手書きの指摘と同じ内容」として出さない
           expect(r.hand.findings.filter((f) => f.kind === "記載もれ").map((f) => f.messageKey)).toEqual(["R17.comment_missing"]);
@@ -107,8 +109,14 @@ describe("段 13：実データの masters.db で", () => {
           else only.push(`${kubun} ${code} 項番${g.kouban} ${g.comments.join()}`);
         }
       }
-    // 食い違う組が出たら、関連テーブルの行が本当に「算定すれば必ず」かを、別表Ⅰ の原文で確かめる（黙って通さない）
-    expect(only).toEqual([]);
+    // 食い違う組が出たら、関連テーブルの行が本当に「算定すれば必ず」かを、別表Ⅰ の原文で確かめる（黙って通さない）。
+    // 段 17d で足した種別ごとの区分（管理料・在宅ターミナルケア加算）は、EM §2-10 表 1（T176-date・T169-death）の区分キーに入っていない。EM の追記を待つあいだは G07 だけが言う（この組だけを許し、ほかの組は今までどおり落とす）
+    // 段 17f で足した単一建物 2 人以上の区分（96 区分）も、T176-date（訪問診療の年月日）の区分キーに入っていない（EM §2-10 表 1 は 2 人以上の区分に T176-band〔人数〕だけを足した）。同じく EM の追記を待つ
+    // 段 17h で足した注14 の減の行（90 区分）も、T176-date（年月日）と T176-band（人数。EM の区分キーは R8-95〜R8-190 の 96 区分だけ）の区分キーに入っていない。同じく EM の追記を待つ（90 区分 × 2 組）
+    const awaitingEm = (s: string) =>
+      /^(C002(-2)?_(1B_|1N_|3)(I1|RO1|NI1) \d{9} 項番0176 85010010[67]|C002(-2)?_(1B_|1N_|2|3)(I|RO|NI)[2-5] \d{9} 項番0176 85010010[67]|C002(-2)?_(1B_|1N_|2|3)(I|RO|NI)[3-5]_N(14|8N14) \d{9} 項番0176 (85010010[67]|84210003[56])|C001_N6_TERMINAL_(1B|1N|3) \d{9} 項番0169 850100098)$/.test(s);
+    expect(only.filter((s) => !awaitingEm(s))).toEqual([]);
+    expect(only.filter(awaitingEm)).toHaveLength(24 + 96 + 180);
     expect(covered).toBeGreaterThanOrEqual(8);
     note(`R17 の表と関連テーブル：版の表のコードで G07 が使う組 ${covered}。どれも R17 の「算定すれば必ず」の行と同じ記載`);
     db.close();

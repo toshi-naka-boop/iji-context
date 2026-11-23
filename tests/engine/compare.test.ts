@@ -106,7 +106,7 @@ describe("令和6年度の版（r2024）の持ち方", () => {
 
   it("定数が指す区分は、物価対応料（令和8年度で新設）のほかは自分の点数表にある", () => {
     const c = r2024.consts;
-    const refs = [...c.visitKubun, ...Object.values(c.kanri.table).flatMap((t) => Object.values(t)), c.hokatsu.kubun, c.rx.many, c.rx.other, ...c.baseUp.visit, c.baseUp.revisit, ...Object.values(c.terminal).filter((v) => typeof v === "string"), ...Object.values(c.oushin), ...c.tests.judgement, c.tests.bloodDraw, ...Object.values(c.testItems).flatMap((t) => [t.kubun, t.judgement]), ...Object.values(c.dx.tiers), c.ikou.kubun];
+    const refs = [...c.visitKubun, ...c.kanri.rows.map((r) => r.kubun), c.hokatsu.kubun, c.rx.many, c.rx.other, ...c.baseUp.visit, c.baseUp.revisit, c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal), c.oushin.kubun, c.oushin.revisit, ...Object.values(c.oushin.kinkyu), ...c.tests.judgement, c.tests.bloodDraw, ...Object.values(c.testItems).flatMap((t) => [t.kubun, t.judgement]), ...Object.values(c.dx.tiers), c.ikou.kubun];
     expect(refs.filter((k) => !Object.hasOwn(r2024.points, k))).toEqual([]);
     expect([...c.price.visit, c.price.revisit].filter((k) => Object.hasOwn(r2024.points, k))).toEqual([]);
   });
@@ -167,7 +167,7 @@ describe("注16 の有無を版の定数に通す（note16.enabled）", () => {
       expect(expectedKanri(c, r2024.consts).tier).toEqual({ known: true, value: "ロ" });
       const d = deriveLines(inputOf(c), r2024);
       expect(d.pending).toEqual([]);
-      expect(d.basis.find((b) => b.kubun === "C002_2RO1")?.needs).toEqual(["comprehensiveCare", "residence", "table8_2"]);
+      expect(d.basis.find((b) => b.kubun === "C002_2RO1")?.needs).toEqual(["comprehensiveCare", "residence", "facility.grade", "facility.building", "table8_2"]);
     }
   });
 

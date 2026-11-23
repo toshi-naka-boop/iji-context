@@ -1,6 +1,8 @@
 // 訪問カルテの入力。書いた人は受け取らない（セッションの本人から決める）
 import { z } from "zod";
 import { FACT_KINDS } from "../../chart/extract";
+import { ACT_CATEGORIES, CHILD_KINDS, MASTER_TABLES, MAX_LOOKUP, TABLE_KEYS } from "../../chart/acts";
+import { YEAR_MONTH } from "../../demo/period";
 import { SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { MAX_IMAGE_BYTES } from "../../chart/image";
 import { MAX_CHART_TEXT } from "../../chart/limits";
@@ -14,6 +16,17 @@ export const chartBody = z.strictObject({
   kind: z.enum(["訪問診療", "往診"]),
   note: z.strictObject({ s: field, o: field, a: field, p: field, rx: field }),
 });
+/** 取り込んだ請求に貼るカルテ（design.md §15-9 の POST /api/uke/claims/[claimId]/notes）。日付は暦にある日で（反証 round-55 C-301）、その請求の診療年月の日（処理の中で確かめる） */
+export const recordBody = z.strictObject({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((s) => {
+      const d = new Date(`${s}T00:00:00Z`);
+      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+    }),
+  note: chartBody.shape.note,
+});
 /** カルテを書く本文（JSON）の上限（バイト）：5 欄 × 上限の字数 × 3 バイト（日本語の UTF-8）と、JSON の枠・改行の分 */
 export const CHART_BODY_BYTES = 5 * MAX_CHART_TEXT * 3 + 4096;
 
@@ -22,6 +35,38 @@ export const noteParams = z.strictObject({ id: z.string().regex(/^[1-9][0-9]{0,9
 export const confirmBody = z.strictObject({
   facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
 });
+
+/** 行ったこと（design.md §15-6・15-7）。当てたコードは処理の中で、診療年月の 1 枚に実在するかを確かめる */
+const name200 = z.string().max(200);
+const lookup = z.array(z.string().max(100)).max(MAX_LOOKUP);
+const actMatch = z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["name", "alias", "candidate", "search"]) }).nullable().optional();
+const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch });
+const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch });
+/** 事実と行ったことを、確かめた 1 回の操作で保存する本文（POST /api/chart/acts） */
+export const actsBody = z.strictObject({
+  noteId: noteParams.shape.id,
+  facts: confirmBody.shape.facts,
+  acts: z.array(act).max(100),
+  rx: z.array(z.strictObject({ quote: z.string().max(MAX_CHART_TEXT) })).max(20),
+  rxChoice: z.enum(["outside", "inside", "unknown"]).nullable().optional(),
+});
+/**
+ * 確かめて残したカルテの当てられない行為を、選んで当てる本文（POST /api/chart/acts の別の形。design.md §15-9 の「当てられない行為（候補から選ぶ入口）」。X-157）。
+ * child は、その行為で使った薬・器材（with）の位置（子を当てるとき。X-161）
+ */
+export const pickBody = z.strictObject({
+  noteId: noteParams.shape.id,
+  index: z.number().int().min(0).max(99),
+  child: z.number().int().min(0).max(19).optional(),
+  match: z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["alias", "candidate", "search"]) }),
+});
+/** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */
+export const actsOrPickBody = z.union([actsBody, pickBody]);
+const ym = z.string().regex(YEAR_MONTH);
+/** 候補（GET /api/chart/acts/candidates）。lookup は「|」で区切った語（5 個まで） */
+export const candidatesQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, written: z.string().min(1).max(200), lookup: z.string().max(600).optional() });
+/** マスターを名前で探す（GET /api/masters/search） */
+export const mastersSearchQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, q: z.string().min(1).max(100) });
 
 /** 選べる版の id（比較と試算。請求の判定に使う版と、比較用の版） */
 export const revisionId = z.enum(SELECTABLE_REVISIONS.map((r) => r.id));

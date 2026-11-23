@@ -42,8 +42,8 @@ describe("各ルールの申告（covers）", () => {
     expect(covers.R09).toEqual({ kind: "背反", finding: "mitori_with_shibou", kubun: [["C001_N7_MITORI", "C001_N8_SHIBOU"]] });
     expect(covers.R11).toEqual({ kind: "回数", finding: "judgement_once_a_month", kubun: [["D026_3"], ["D026_4"], ["D026_5"]] });
     expect(covers.R12).toEqual({ kind: "背反", finding: "same_month", kubun: [["C001_N13_DX", "A_DENSHI_RENKEI"], ["C001_N13_DX2", "A_DENSHI_RENKEI"]] });
-    // R05：管理料 6 区分 × 含まれる項目 5 区分
-    expect([covers.R05.kind, covers.R05.finding, covers.R05.kubun.length]).toEqual(["包括", "bundled", 30]);
+    // R05：管理料 210 区分（族 2 × 種別 4 × 区分 3 の 24 区分〔段 17d〕、人数の区分の 96 区分〔段 17f〕、注14 の減の行の 90 区分〔段 17h〕）× 含まれる項目 5 区分
+    expect([covers.R05.kind, covers.R05.finding, covers.R05.kubun.length]).toEqual(["包括", "bundled", 1050]);
     expect(covers.R05.kubun).toContainEqual(["C002_2I1", "F400_3"]);
     expect(covers.R05.kubun).toContainEqual(["C002-2_2NI1", "F400_N6_1"]);
   });

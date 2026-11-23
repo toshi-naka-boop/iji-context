@@ -17,8 +17,14 @@ export type GenericAsk = { kind: "choice"; hx: string; key: string; dates: strin
  */
 export type GenericLocal = { mode: LocalAttach["mode"]; pair: LocalAttach["pair"]; ids: string[]; texts: string[]; press: { key: string; date: string | null }[] };
 
+/**
+ * 施設基準（G10）の指摘から、施設の申告の画面へつなぐ入口（design.md §15-9）。month は請求の診療年月、items は申告の項目（grade・code:〇〇）。
+ * reconfirm が真の項目（確かめ直す日を過ぎた）は、その診療月で効く行を選んだ「変わりなし」を開ける（事務長・責任者。round-53 C-274）
+ */
+export type GenericDeclaration = { month: string; items: { item: string; reconfirm: boolean }[] };
+
 export type GenericView = {
-  findings: { check: string; kind: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string }; asks?: GenericAsk[]; local?: GenericLocal; localPair?: LocalAttach["pair"] }[];
+  findings: { check: string; kind: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string }; asks?: GenericAsk[]; local?: GenericLocal; localPair?: LocalAttach["pair"]; declaration?: GenericDeclaration }[];
   /** 動いた点検。「指摘なし」は、ここにある点検についてだけ言える */
   ran: { check: string; kind: string }[];
   /** 動かさなかった点検と理由。reason は、データがない（noMasters・noSnapshot）／準備ができていない（notReady）／まだ入っていない（notBuilt） */
@@ -43,6 +49,7 @@ export function genericView(result: GenericResult, names: RowNames | null): Gene
       ...(f.params.local ? { local: localOf(f.params.local) } : {}),
       // 院内の知識を添える対象の組（design.md §14-2：取り込んだレセプトの点検は、ここに作る入口を出す）
       ...(f.params.localPair ? { localPair: JSON.parse(f.params.localPair) as LocalAttach["pair"] } : {}),
+      ...(f.params.decl ? { declaration: JSON.parse(f.params.decl) as GenericDeclaration } : {}),
     })),
     ran: result.ran,
     notRun: result.notRun.map((n) => ({ check: n.check, kind: n.kind, reason: n.reason, text: genericNotRunText(n) })),

@@ -52,7 +52,7 @@ export const g04: GenericCheck = {
           if (p.code === code) continue;
           const unit = UNITS[p.unit1];
           if (unit.by === "day" && (masks.get(p.code)! & masks.get(code)!) === 0) continue;
-          if (out.length >= FINDING_LIMIT) {
+          if (out.length >= (about.findingLimit ?? FINDING_LIMIT)) {
             more++;
             continue;
           }

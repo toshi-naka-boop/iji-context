@@ -6,7 +6,10 @@
 //   (2) そのルールが「確かめてください」（情報不足）で止まった → データの指摘は出す（1 つの不明と関係なく、データから言えることは言える）
 //   (3) そのルールが判定して黙った → 当たる単位が全部エンジンに渡っていて、ルールが動き、情報不足を返さず、記録があるか、その判定が出来事を読まない、の全部を満たす組だけ止める（数を返す）
 //   (4) それ以外（申告のない組、対象外の単位のコードを含む組）→ そのまま出す
+// 施設基準（G10）は covers ではなく、施設基準コードの担当の表（src/facility/codes.ts の KIJUN_OWNERS。design.md §15-5。C-216）で決める：
+//   その行について担当のルールが申告の値で言った（区分誤り・要件不足の指摘か、担当の申告の値の情報不足）→ G10 は出さない（手書きのルールが判定済みに数える）。ほかは出す
 import type { Revision } from "../engine/revisions/types";
+import { HOSPITAL_CODES, HOSPITAL_SIDE_CODES, KIJUN_OWNERS } from "../facility/codes";
 import type { ClaimLine, EngineResult } from "../engine/types";
 import type { TimedClaim } from "./tensuhyo";
 import type { GenericFinding } from "./types";
@@ -55,6 +58,17 @@ export function groupSameChild<T extends { check: string; certainty: string; cod
   return [...groups.values()];
 }
 
+/**
+ * G10 の指摘の組（params.kijunCodes）を担当する手書きのルール。在支病・病院の側のコードは除いて、残りが全部同じ担当の行にあるときだけ（表にないコードを含む組は G10 だけが言う）
+ */
+function ownerOf(kijunCodes: string): (typeof KIJUN_OWNERS)[number] | null {
+  const hospital = [...HOSPITAL_CODES, ...HOSPITAL_SIDE_CODES] as string[];
+  const codes = kijunCodes.split("/").filter((c) => c !== "" && !hospital.includes(c));
+  if (codes.length === 0) return null;
+  const owner = KIJUN_OWNERS.find((o) => o.codes.includes(codes[0]));
+  return owner && codes.every((c) => owner.codes.includes(c)) ? owner : null;
+}
+
 /** findings＝出す指摘／duplicate＝手書きの指摘と重なるので出さなかった数（1）／judged＝手書きのルールが判定済みなので止めた数（3） */
 export type Overlap = { findings: GenericFinding[]; duplicate: number; judged: number };
 
@@ -79,6 +93,18 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
   };
   const out: Overlap = { findings: [], duplicate: 0, judged: 0 };
   for (const g of generic) {
+    // 施設基準（G10）：担当のルールが、その行について申告の値で言ったときだけ出さない（手書きのルールの側を残す。§0-12）
+    if (g.check === "G10") {
+      const owner = ownerOf(g.params.kijunCodes ?? "");
+      const k = kubunOf.get(g.codes[0]);
+      const said =
+        owner !== null &&
+        k !== undefined &&
+        hand.findings.some((f) => f.ruleId === owner.rule && f.lineRefs.includes(k) && (f.kind === "情報不足" ? f.missing !== undefined && owner.fields.includes(f.missing.field) : owner.keys.includes(f.messageKey)));
+      if (said) out.judged++;
+      else out.findings.push(g);
+      continue;
+    }
     // 背反の特例の例外に当たる場合の記載（G05.exception_needs_comment。design.md §13-2 の 2。C-119・X-108）：covers には頼らず、
     // 同じ請求で手書きの R17 が同じコメントコードの記載もれ（情報不足でないもの）を出していれば出さない。R17 が止まった・情報不足を返した・出していないときは出す
     if (g.messageKey === "G05.exception_needs_comment") {

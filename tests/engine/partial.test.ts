@@ -79,6 +79,15 @@ const INPUTS: { name: string; ctx: ClaimContext }[] = [
   { name: "K5＋死亡診断加算", ctx: withLines(K5, line("C001_N8_SHIBOU", 1, K5.lines.find((l) => l.kubun === "C001_N7_MITORI")!.dates)) },
   { name: "K1＋対象外の主病の特定疾患処方管理加算", ctx: withFact(withLines(without(K1, "C002_2I1", "C002_N15_RENKEI"), line("F400_N4")), "mainDisease", { known: true, value: "糖尿病" }) },
   { name: "K1＋対象でない患者の緊急往診加算", ctx: withFact(withLines(K1, line("C000", 1, [day(20)]), line("C000_N1_KINKYU", 1, [day(20)])), "emergencyEligible", { known: true, value: false }) },
+  // R18：施設の種別・在宅療養移行加算・ベースアップ評価料(Ⅰ) の通常／注5（design.md §15-4）
+  { name: "K1＋機能強化型の申告", ctx: { ...K1, facility: { ...K1.facility, grade: { known: true, value: "1B" }, kyokagata: true, hasBeds: true } } },
+  { name: "K1＋在宅療養移行加算（在支診）", ctx: withLines(K1, line("C002_N9_IKO1", 1, K1.lines.find((l) => l.kubun === "C002_2I1")!.dates)) },
+  { name: "K1＋注5 の申告", ctx: { ...K1, facility: { ...K1.facility, baseUp: { known: true, value: "注5" } } } },
+  { name: "K1＋注5 の行（通常の申告）", ctx: { ...K1, lines: K1.lines.map((l) => (l.kubun === "O001_3I" ? { ...l, kubun: "O001_3I_N5" } : l)) } },
+  // R19：単一建物の人数（design.md §15-4。段 17f）。患者ごとの人数の区分を 2〜9 人と確かめた（施設の申告 building は「ある」）のに、管理料が 1 人の区分
+  // R18 の注14（段 17h）：注14 の申告が「減算」なのに、10 人以上の区分の通常の行（患者の人数の区分も 10〜19 人と確かめた）
+  { name: "K1＋10 人以上の通常の行（減算の申告）", ctx: { ...K1, lines: K1.lines.map((l) => (l.kubun === "C002_2I1" ? { ...l, kubun: "C002_2I3" } : l)), facility: { ...K1.facility, building: { known: true, value: "some" }, note14: { known: true, value: "減算" } }, facts: { ...K1.facts, buildingBand: { known: true, value: "10-19" } } } },
+  { name: "K1＋人数の区分 2〜9 人", ctx: { ...K1, facility: { ...K1.facility, building: { known: true, value: "some" } }, facts: { ...K1.facts, buildingBand: { known: true, value: "2-9" } } } },
   { name: "K2＋要介護2", ctx: withFact(withFact(withFact(loadCase("K2"), "careLevel", { known: true, value: 2 }), "disabilitySupportLevel", { known: true, value: 0 }), "table8_3Other", { known: true, value: false }) },
   { name: "K2（UKE）記載を 1 つ消す", ctx: { ...ukeCase("K2"), comments: ukeCase("K2").comments!.slice(1) } },
   { name: "K1（UKE）記載をすべて消す", ctx: { ...ukeCase("K1"), comments: [] } },
@@ -107,6 +116,14 @@ describe("申告を縛る：partial で出た指摘は、行を移す前の入�
       "R17.comment_format",
       "R17.comment_mismatch_hokatsuState",
       "R17.comment_missing",
+      "R18.iko_grade3_only",
+      "R18.use_baseup_normal",
+      "R18.use_baseup_note5",
+      "R18.use_grade",
+      // 段 17h（design.md §15-4）
+      "R18.use_note14_reduced",
+      // 段 17f（design.md §15-4）
+      "R19.use_band",
     ]);
   });
 

@@ -3,6 +3,7 @@
 import { eventsFromNotes } from "../../chart/notes";
 import { compareRevisions } from "../../engine/compare";
 import { manualLinesOf } from "../../engine/derive";
+import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { hasRevision, resolveRevision, revisionById, revisionChoices, SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
@@ -30,7 +31,11 @@ export function createRevision(uke: Uke, casesOf: Cases, notes: Notes) {
     const { events, facts } = eventsFromNotes(base.events, base.facts, notes.confirmedNotes(claimId, clerkId));
     // 手入力の行は、請求の行のうち、請求の版（なければ後の版）が導出しない区分のもの。版ごとの絞り込みは compareRevisions がする
     const manual = manualLinesOf(base.lines, own ?? to);
-    const result = compareRevisions({ yearMonth: base.yearMonth, facility: base.facility, facts, events, history: base.history, manual, choices: {} }, from, to);
+    // 原請求の注14 の側は、請求の全部の行から（round-58 C-333）。版ごとに、減の行を持たない版では「なし」として扱う（src/engine/compare.ts）
+    const claimNote14Side = claimNote14SideOf(base.lines, (own ?? to).consts);
+    // 原請求の 2 人以上の区分の行も、請求の全部の行から（round-61 X-200）
+    const claimMultiBand = claimMultiBandOf(base.lines, (own ?? to).consts);
+    const result = compareRevisions({ yearMonth: base.yearMonth, facility: base.facility, facts, events, history: base.history, manual, choices: {}, claimNote14Side, claimMultiBand }, from, to);
     return { claims, revisions, result: { claimId, yearMonth: base.yearMonth, from: { id: from.id, label: from.label }, to: { id: to.id, label: to.label }, ...result } };
   }
 

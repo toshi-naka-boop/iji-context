@@ -1,12 +1,16 @@
 // 点検の範囲の説明に足すもの（design.md §12-5・§12-6）：検算（G02）の数と対象外の理由、G02〜G09 が点検していないこと（G04〜G06 は src/messages.ts の GENERIC_SCOPE_NOTE）。
 // 「指摘なし」は、ここに挙げた「していない」ことについては言えない
-import type { MastersDb } from "../masters/db";
+import type { Revision } from "../engine/revisions/types";
+import { minashiOneLines } from "../engine/rules/r19";
+import type { ClaimContext, ClaimLine } from "../engine/types";
+import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, pickSnapshot, shinryoOf, type MastersDb } from "../masters/db";
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
 import { g07NotDone } from "./g07";
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
+import { g10NotDone } from "./g10";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
 /** recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す） */
@@ -20,7 +24,7 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
     if (Array.isArray(list) && list.length > 0) out.recalc = recalcSummary(list);
     else out.notDone.push("点数の検算は、点数の書いてある単位（取り込んだレセプトの単位）にだけ掛けます。ここの行には点数が書いていないので、検算していません");
   }
-  if (ran("G03")) out.notDone.push(...g03NotDone(about));
+  if (ran("G03")) out.notDone.push(...g03NotDone(about), ...(masters !== null && !hasShisetsuGroups(masters) ? [OLD_SHISETSU_G03_REASON] : []));
   // 背反の特例条件の例外に当たるので出していない組（design.md §13-2 の 2。消えたことが分かるように、数と例外の id を出す）
   if ((result.silenced ?? []).length > 0) out.notDone.push(`特例の例外に当たるので出していない：${result.silenced!.reduce((s, x) => s + x.count, 0)} 件（${result.silenced!.map((x) => x.hx).join("・")}）`);
   // 院内の知識で「この請求も条件に当たる」と押したので出していない組と日（design.md §14-3。数と知識の id）
@@ -30,5 +34,43 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G07")) out.notDone.push(...g07NotDone(claim, masters, about));
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
+  if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));
+  return out;
+}
+
+/**
+ * C〜I の手順に回した区分（在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算。版の定数 deferred）と、注8 の減算の対象になる管理料（在支診以外〔種別 3〕の管理料）の行の数を、
+ * 点検の範囲に出す文（design.md §15-4。L-92）。算定の要件と取り忘れは見ていない（黙って通さない）。行がなければ null。
+ * 届出の有無は G10 が見ている（design.md §15-4）
+ */
+export function deferredNote(lines: ClaimLine[], rev: Revision): string | null {
+  const deferred = new Set([...(rev.consts.deferred ?? []), ...rev.consts.kanri.rows.filter((r) => r.grade === "3").map((r) => r.kubun)]);
+  const n = lines.filter((l) => l.count > 0 && deferred.has(l.kubun)).length;
+  return n > 0 ? `在宅医療充実体制加算・在宅療養実績加算・在宅療養移行加算・注8 の減算の算定の要件と取り忘れは見ていません（届出の有無だけ G10 が見ています）：${n} 行` : null;
+}
+
+/** 情報通信機器を用いた診療に係る基準（EM §2-11 表 4。3825） */
+const ICT_KIJUN = "3825";
+
+/**
+ * 単一建物の人数の次元で、点検の範囲に出す文（design.md §15-4。段 17f）：
+ * 戸数によるみなしのコメントで 1 人と読んだ在医総管の行（R19 が何も言わない行。V-3）と、情報通信機器の区分（ハ・ホ）の管理料の行（対象外の単位のまま見ていない。L-110）。
+ * 情報通信機器の区分は版の区分になく EM にコードを持たないので、基本マスターの行（在医総管・施医総管の区分番号で、施設基準の組に 3825 を持つもの）で数える。マスターがなければ数えない
+ */
+export function buildingScopeNotes(ctx: ClaimContext, rev: Revision, claim: GenericClaim | null, db: MastersDb | null, about: GenericAbout | null): string[] {
+  const out: string[] = [];
+  const minashi = minashiOneLines(ctx, rev.consts).length;
+  if (minashi > 0) out.push(`みなしのコメントで 1 人と読んだ行：${minashi} 行`);
+  if (claim && db && about) {
+    const snap = pickSnapshot(db, "shinryo", about.yearMonth, about.generation)?.snapshot;
+    if (snap) {
+      const ict = (code: string) => {
+        const r = shinryoOf(db, snap, code);
+        return !!r && r.sho === 2 && r.bu === 2 && r.kubun_no === 2 && (r.eda === 0 || r.eda === 2) && [r.shisetsu_g1, r.shisetsu_g2, r.shisetsu_g3].some((g) => (g ?? "").split("/").includes(ICT_KIJUN));
+      };
+      const n = claim.units.filter((u) => u.items.some((it) => it.kind === "SI" && ict(it.code))).length;
+      if (n > 0) out.push(`情報通信機器の区分は見ていません：${n} 行`);
+    }
+  }
   return out;
 }

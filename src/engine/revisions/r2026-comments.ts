@@ -1,5 +1,6 @@
 // 令和8年度改定後の版の、摘要欄に要る記載（design.md §11-13）。値は evidence-master（EM）§2-10 表 1・表 1-a の行だけ。
 // 表 2 の行（別表Ⅰ に定めがあるが、条件を決める事実をアプリが持たないもの）は入れない。コメント関連テーブルは写さない
+import { bandRows } from "./r2026-band";
 import type { CommentCodeNote, CommentRule } from "./types";
 
 const em = (row: string) => `EM §2-10 表 1 ${row}`;
@@ -60,6 +61,8 @@ export const comments: CommentRule[] = [
     summary: "週 4 回以上の訪問診療の必要性、必要を認めた診療年月日、訪問診療を行った年月日（日ごとに 1 件）",
     em: em("T167-acute"),
   },
+  // 単一建物 2 人以上の区分（EM R8-95〜R8-190 の 96 区分。段 17f）の行に、その人数（2026-11-23 承認）
+  { id: "T176-band", kubun: bandRows.map((r) => r.kubun), codes: ["842100035", "842100036"], need: "any", when: "always", summary: "単一建物診療患者の人数（数字）", em: em("T176-band") },
 ];
 
 export const commentCodes: Record<string, CommentCodeNote> = {
@@ -68,6 +71,9 @@ export const commentCodes: Record<string, CommentCodeNote> = {
   "850100107": { family: "施設総管" },
   "850100108": { family: "在医総管" },
   "850100109": { family: "施設総管" },
+  // 単一建物診療患者数（T176-band）
+  "842100035": { family: "在医総管" },
+  "842100036": { family: "施設総管" },
   // 包括的支援加算の状態のうち、確かめた事実と比べられるもの（表 1-a の「比べる」の行）
   "820100626": { careLevel: 3 },
   "820100627": { careLevel: 4 },

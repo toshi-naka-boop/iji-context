@@ -13,11 +13,17 @@ import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
 import { GenericFindings } from "../../generic-findings";
+import { Torikawasure, type TorikawasureView } from "../../torikawasure";
+import { RecordPaste } from "../record-paste";
 import { LocalReturn } from "../../local-pair";
 import { returnsOutside } from "../../../src/generic/local-pair";
 import { getJson } from "../../get-json";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
+
+/** 施設基準の印（design.md §15-5）。G10 が動いたときは申告の三値、動かないときは「届出が要ります」 */
+const KIJUN_MARK = { held: "申告あり", not: "申告では持たない", unknown: "申告が分からない" } as const;
+const kijunMark = (n: { todokede?: true; kijun?: keyof typeof KIJUN_MARK } | undefined): string => (n?.kijun ? `　施設基準：${KIJUN_MARK[n.kijun]}` : n?.todokede ? "　届出が要ります" : "");
 
 type Line = { kubun: string; no: string; name: string; count: number; dates: string[]; points: number | null };
 type Check = {
@@ -54,6 +60,10 @@ type Check = {
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
   /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
   localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
+  /** 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。確かめていなければ null。design.md §14-3・段 17g） */
+  reviewed?: { at: string } | null;
+  /** B の欄（取り忘れ。G11。design.md §15-9）。貼ったカルテで動く */
+  torikawasure?: TorikawasureView;
 };
 /** deduction は点数を請求の合計から引く単位（薬剤料の逓減など。points は UKE のまま正の数） */
 type Row = { unit: number; items: { code: string; no: string | null; name: string | null }[]; kubun: string[]; count: number; dates: string[]; points: number; deduction?: boolean; checkedBy: "rules+generic" | "rules" | "generic" | "none" };
@@ -99,6 +109,7 @@ export default function UkeClaimCheck() {
   /** 選んでいる版。診療年月の版なら点検、ほかの版なら試算 */
   const [rev, setRev] = useState("");
   const [trial, setTrial] = useState<Trial | null>(null);
+  const [reviewMsg, setReviewMsg] = useState("");
   useEffect(() => {
     if (!user) return;
     getJson<Check>(`/api/uke/claims/${encodeURIComponent(claimId)}/check`)
@@ -117,6 +128,15 @@ export default function UkeClaimCheck() {
     setErr("");
     getJson<Trial>(`/api/uke/claims/${encodeURIComponent(claimId)}/trial?rev=${encodeURIComponent(rev)}`).then(setTrial).catch((e: Error) => setErr(e.message));
   }, [user, claimId, check, rev, tick]);
+
+  /** 「この請求の点検を確かめた」（実在用のクリニックで、本人の処理件数に 1 件数える。同じ請求は 1 回だけ） */
+  async function sendReviewed() {
+    setReviewMsg("");
+    const r = await fetch(`/api/uke/claims/${encodeURIComponent(claimId)}/reviewed`, { method: "POST" });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) return setReviewMsg(d?.error ?? "エラー");
+    setTick((t) => t + 1);
+  }
 
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -160,10 +180,13 @@ export default function UkeClaimCheck() {
     if (same) same.ruleIds.push(s.ruleId);
     else stoppedGroups.push({ ruleIds: [s.ruleId], all: s.all, codes: s.codes });
   }
-  /** コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ。施設基準のある行には「届出が要ります」と添える（指摘ではない） */
+  /**
+   * コードに、マスターの名称（診療行為は区分番号も）を添える。マスターがない・マスターにないコードは、コードだけ。
+   * 施設基準のある行には、G10 が動いたときは申告の印（申告あり／申告では持たない／申告が分からない）、動かないときは「届出が要ります」と添える（指摘ではない。design.md §15-5）
+   */
   const coded = (code: string) => {
     const n = c?.names?.items[code];
-    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}${n.todokede ? "　届出が要ります" : ""}` : code;
+    return n ? `${code} ${n.name}${n.no ? `（${n.no}）` : ""}${kijunMark(n)}` : code;
   };
   return (
     <main className="shell">
@@ -242,6 +265,7 @@ export default function UkeClaimCheck() {
                   {findings.filter((f) => f.kind === k).map((f, i) => (
                     <div key={i} className="notice warn">
                       <span className="badge warn">{f.kind}</span> {findingText(f)}
+                      {f.params?.g11First && <div className="muted">（条件つき）{f.params.g11First}</div>}
                       {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map((k, n) => <span key={n}>{n > 0 && "、"}{unitHref(k) ? <a href={unitHref(k)}>{nameOf(k)}</a> : nameOf(k)}</span>)}</div>}
                     </div>
                   ))}
@@ -265,6 +289,13 @@ export default function UkeClaimCheck() {
                   />
                   {/* その組の G05 の指摘がない（押して条件に当たるにした）組だけ、ここに出す（指摘があれば、指摘のカードの中。design.md §14-4） */}
                   {!trial && returnsOutside(check?.localReturns ?? [], c.generic.findings.filter((f) => f.check === "G05").map((f) => f.localPair)).map((p) => <LocalReturn key={`${p.a}:${p.b}:${p.tani}`} claimId={c.claimId} pair={p} names={{ a: rowName(p.a), b: rowName(p.b) }} onSaved={() => setTick((t) => t + 1)} />)}
+                </>
+              )}
+
+              {!trial && (
+                <>
+                  <Torikawasure data={check?.torikawasure} />
+                  <RecordPaste claimId={c.claimId} yearMonth={c.yearMonth} onSaved={() => setTick((t) => t + 1)} />
                 </>
               )}
 
@@ -305,7 +336,7 @@ export default function UkeClaimCheck() {
                     return (
                       <tr key={r.unit} id={`uke-unit-${r.unit}`}>
                         <td>{r.items.map((it, n) => <div key={n}>{it.no ?? "—"}</div>)}</td>
-                        <td>{r.deduction && <span className="badge warn">減点</span>}{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{c.names?.items[it.code]?.todokede ? "　届出が要ります" : ""}</div>)}</td>
+                        <td>{r.deduction && <span className="badge warn">減点</span>}{r.items.map((it, n) => <div key={n}>{it.name ?? it.code}{kijunMark(c.names?.items[it.code])}</div>)}</td>
                         <td>{r.count}</td>
                         <td>{days(r.dates)}</td>
                         <td>{r.deduction ? `−${num(r.points)}` : num(r.points)}</td>
@@ -359,6 +390,18 @@ export default function UkeClaimCheck() {
                   {(c.patientFindings ?? []).map((f, i) => (
                     <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
                   ))}
+                  {check?.reviewed !== undefined && (
+                    <div className="notice">
+                      {check.reviewed ? (
+                        <span>この請求の点検を確かめました（{days([check.reviewed.at.slice(0, 10)])}）。あなたの処理件数に数えています。</span>
+                      ) : (
+                        <>
+                          <div className="muted">ここまでの点検を確かめたら押してください。あなたの処理件数に 1 件数えます（同じ請求は 1 回だけ。指摘の数や結果では数えません）。</div>
+                          <span><button onClick={() => void sendReviewed()}>この請求の点検を確かめた</button> {reviewMsg && <span className="notice warn">{reviewMsg}</span>}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </>

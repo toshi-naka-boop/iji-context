@@ -49,6 +49,18 @@ export const POLICY = {
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
   "GET /api/facility": row(["manager", "veteran"], "none", false),
   "POST /api/facility": row(["manager", "veteran"], "none", false),
+  // 施設の申告（design.md §15-9）：読むのはどのロールも（指摘の根拠を見られるように）、残すのは事務長と責任者
+  "GET /api/facility/declaration": row(ALL, "none", false),
+  "POST /api/facility/declaration": row(["manager", "veteran"], "none", false),
+  "GET /api/facility/declaration/history": row(ALL, "none", false),
+  // まとめて「変わりなし」（design.md §15-2）：残すのは事務長と責任者。初期の選択を読むのも同じ
+  "GET /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
+  "POST /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
+  // 注14 の計算の道具（design.md §15-13・§15-9 の権限表。round-61 C-370）：読むのはどのロールも、結果を残す・下書きを開くのは事務長と責任者（申告と同じ）。
+  // 応答・記録は集計の数と出どころだけ（患者の氏名・番号・鍵を返さない）なので patientData は偽
+  "GET /api/note14": row(ALL, "none", false),
+  "POST /api/note14/worksheets": row(["manager", "veteran"], "none", false),
+  "GET /api/note14/worksheets/[id]/draft": row(["manager", "veteran"], "none", false),
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),
@@ -85,6 +97,12 @@ export const POLICY = {
   // 訪問カルテの一覧（消す相手を選ぶため）。消せる人と同じ役割。見えるのは、事務長には全部、ほかの人には自分が書いた分（src/server/app/notes.ts の listNotes）。本文は返さない
   "GET /api/chart": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/chart/[id]": row(WORK, "none", true),
+  // 事実と行ったことを、確かめた 1 回の操作で保存する（design.md §15-6）。カルテの保存と同じ
+  "POST /api/chart/acts": row(WORK, "none", true),
+  // 行ったことの候補（design.md §15-7）。読むだけ。書かれた名前（カルテの語）を受け取るので、患者の情報として扱う
+  "GET /api/chart/acts/candidates": row(WORK, "none", true),
+  // 基本マスターを名前で探す（design.md §15-7）。読むだけ。返すのは公開データの表・コード・名称だけ
+  "GET /api/masters/search": row(WORK, "none", false),
   // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
   "DELETE /api/chart/[id]": row(["clerk", "veteran", "manager"], "none", false),
   // 確定したカルテの算定プレビュー（FR-101）。点数が出るので、算定の仕事をする人だけ
@@ -117,6 +135,10 @@ export const POLICY = {
   "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだレセプトの試算（design.md §11-12）：版を選んで、その場で計算して返す。保存しない。点検と同じ役割
   "GET /api/uke/claims/[claimId]/trial": row(["clerk", "veteran", "manager"], "none", true),
+  // 「この請求の点検を確かめた」（design.md §14-3・段 17g）：実在用のクリニックで F10 の処理件数に数える。点検を見られる役割と同じ（役割では分けない。C-184）
+  "POST /api/uke/claims/[claimId]/reviewed": row(["clerk", "veteran", "manager"], "none", true),
+  // 取り込んだ請求にカルテの文を貼る（design.md §15-9。段 18c）。カルテの保存と同じ（AI が行ったことを取り出す）
+  "POST /api/uke/claims/[claimId]/notes": row(WORK, "ai", true),
   // 取り込んだファイルを消す（design.md §11-11）。事務長とベテラン。消す操作は同意を条件にしない（同意していない人も、データを消せる）
   "DELETE /api/uke/uploads/[sha256]": row(["veteran", "manager"], "none", false),
 

@@ -7,6 +7,7 @@ import { postJson } from "../get-json";
 import type { GenericView } from "../../src/generic/view";
 import { COMMENT_CHECK_NOTE } from "../../src/messages";
 import { GenericFindings } from "../generic-findings";
+import { Torikawasure, type TorikawasureView } from "../torikawasure";
 
 type PatientFinding = { checkId: string; kind: string; text: string };
 /** trial・rulesAvailable・notInRevision は、版を選んだ試算のときだけ付く（design.md §11-12） */
@@ -21,6 +22,8 @@ type Claim = Preview & {
   notInRevision?: string[];
   /** データで動く点検（G01〜）を、導出した行の区分をコードに直して掛けた結果（design.md §12-5） */
   generic: GenericView & { skippedLines: number };
+  /** B の欄（取り忘れ。G11。design.md §15-9） */
+  torikawasure?: TorikawasureView;
 };
 type Rev = { id: string; label: string; own: boolean };
 
@@ -200,8 +203,8 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       {claim.staleChoices.length > 0 && <div className="notice warn">前の答えは使っていません（日付が変わったか、ほかの答えや確かめた事実で、その問いがなくなったため）。</div>}
       {lacks.map((p) => p.kind === "事実不足" && (
         <div key={p.id} className="notice warn">
-          <div><strong>確かめる事実：</strong>{p.text}</div>
-          <div>{p.target === "doctor" ? "医師確認で確かめます。" : p.text.startsWith("施設の設定") ? "事務長か責任者に確かめて、施設の設定に入力します。" : "医療事務が確かめて、患者情報に入力します。"}</div>
+          <div><strong>{p.reason ? "決められないこと：" : "確かめる事実："}</strong>{p.text}</div>
+          {p.reason === "note14_conflict" || p.reason === "declaration_conflict" ? <div><a href={`/settings#declaration-${p.reason === "note14_conflict" ? "note14" : "building"}`}>施設の申告を見る</a></div> : p.reason ? null : <div>{p.target === "doctor" ? "医師確認で確かめます。" : p.text.startsWith("施設の設定") ? "事務長か責任者に確かめて、施設の設定に入力します。" : "医療事務が確かめて、患者情報に入力します。"}</div>}
           {p.blocks.length > 0 && <div className="muted">決まるまで行にしないもの：{p.blocks.join("、")}</div>}
         </div>
       ))}
@@ -225,6 +228,7 @@ export function ClaimPreview({ noteId, localRules }: { noteId: number; localRule
       ))}
 
       <GenericFindings generic={claim.generic} scope="line" skippedLines={claim.generic.skippedLines} />
+      <Torikawasure data={claim.torikawasure} />
 
       <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
       {claim.patientFindings.length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}

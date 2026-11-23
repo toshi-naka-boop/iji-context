@@ -1,26 +1,117 @@
 // 導出と検証が共有する述語（design.md §2-8・§2-3-3・§2-3-4）
 import { addDays, eventsOf, fact } from "./rules/util";
-import type { KanriFamily, KanriTierKey, RevisionConsts } from "./revisions/types";
-import type { ClaimContext, Fact } from "./types";
+import type { ByGrade, KanriFamily, KanriRow, KanriTierKey, RevisionConsts } from "./revisions/types";
+import { NOTE14_BANDS, type BuildingBand, type ClaimContext, type Fact, type FacilityGrade } from "./types";
 
-/** 版の管理料の区分をすべて（在医総管・施設総管の 2イ・2ロ・2ニ） */
+/** 版の管理料の区分をすべて（在医総管・施設総管の、種別×区分〔×人数〕の全部） */
 export function kanriKubun(c: RevisionConsts): string[] {
-  return Object.values(c.kanri.table).flatMap((t) => Object.values(t));
+  return c.kanri.rows.map((r) => r.kubun);
 }
 
-/** 管理料の区分のキーから、族と区分を引く */
-export function kanriOf(c: RevisionConsts, kubun: string): { family: KanriFamily; tier: KanriTierKey } | undefined {
-  for (const [family, tiers] of Object.entries(c.kanri.table) as [KanriFamily, Record<KanriTierKey, string>][])
-    for (const [tier, k] of Object.entries(tiers) as [KanriTierKey, string][]) if (k === kubun) return { family, tier };
-  return undefined;
+/** 管理料の区分のキーから、族・種別・区分（と人数の区分）を引く */
+export function kanriOf(c: RevisionConsts, kubun: string): Omit<KanriRow, "kubun"> | undefined {
+  const row = c.kanri.rows.find((r) => r.kubun === kubun);
+  if (!row) return undefined;
+  const { kubun: _, ...rest } = row;
+  return rest;
 }
 
-/** 算定している管理料の行（回数 1 以上）を、族と区分つきで */
-export function kanriLines(ctx: ClaimContext, c: RevisionConsts): { kubun: string; family: KanriFamily; tier: KanriTierKey }[] {
+/** 族×種別×区分×人数の区分の管理料の区分（人数の区分を省けば単一建物 1 人の区分）。その版にない組は undefined */
+export function kanriKubunOf(c: RevisionConsts, family: KanriFamily, grade: FacilityGrade, tier: KanriTierKey, band: BuildingBand = "1"): string | undefined {
+  return c.kanri.rows.find((r) => r.family === family && r.grade === grade && r.tier === tier && (r.band ?? "1") === band && r.note14 === undefined)?.kubun;
+}
+
+/** 通常の区分の、注14 の減の行（注14 だけの行と、在支診以外では注8 と重ねた行。design.md §15-4。X-171）。持たない区分・版は空 */
+export const reducedOf = (c: RevisionConsts, normal: string): string[] => Object.entries(c.kanri.note14Pairs ?? {}).filter(([, n]) => n === normal).map(([k]) => k);
+
+/** 管理料の行が 10 人以上の人数の区分か（通常の行・減の行とも） */
+export const isNote14Band = (c: RevisionConsts, kubun: string): boolean => {
+  const b = kanriBandOf(c, kubun);
+  return b !== undefined && NOTE14_BANDS.includes(b);
+};
+
+/**
+ * 請求の 10 人以上の管理料の注14 の側（design.md §15-4。round-57 X-172）：減の行があれば 減、通常の行があれば 通常、どちらもなければ なし。
+ * 版に note14Pairs がなければ なし。算定プレビューは、日で絞る前・導出する区分を外す前の請求の全部の行から求めて導出に渡す（C-333）
+ */
+export function claimNote14SideOf(lines: { kubun: string; count: number }[], c: RevisionConsts): "減" | "通常" | "なし" {
+  if (!c.kanri.note14Pairs) return "なし";
+  const tenPlus = lines.filter((l) => l.count > 0 && isNote14Band(c, l.kubun));
+  if (tenPlus.some((l) => c.kanri.rows.find((r) => r.kubun === l.kubun)?.note14 !== undefined)) return "減";
+  return tenPlus.length ? "通常" : "なし";
+}
+
+/**
+ * 請求に 2 人以上の人数の区分の管理料の行（通常の行・減の行とも）があるか（design.md §15-4。round-61 X-200）。
+ * 施設の申告 building が「ない」でも、原請求にこの行があれば D03 は 1 人の区分を立てない（申告と請求の食い違い。R19.declaration_conflict と同じ理由）
+ */
+export const claimMultiBandOf = (lines: { kubun: string; count: number }[], c: RevisionConsts): boolean => lines.some((l) => l.count > 0 && (kanriBandOf(c, l.kubun) ?? "1") !== "1");
+
+/** 管理料の行の人数の区分（1 人の区分の行は "1"）。管理料の区分でなければ undefined */
+export const kanriBandOf = (c: RevisionConsts, kubun: string): BuildingBand | undefined => {
+  const row = c.kanri.rows.find((r) => r.kubun === kubun);
+  return row ? (row.band ?? "1") : undefined;
+};
+
+/**
+ * 単一建物診療患者の人数の区分の決め方（design.md §15-4。C-242）：施設の申告 building が「ない」→ どの患者も 1 人の区分（byDeclaration は、その値が施設の申告から来たか）。
+ * 「ある」「分からない」→ 患者ごとの事実 buildingBand。効かなければ分からない（facilityFirst は building も分からないとき。施設の申告の画面への案内を先に出す）
+ */
+export type BandRead = { known: true; value: BuildingBand; byDeclaration: boolean } | { known: false; facilityFirst: boolean };
+export function buildingBandOf(ctx: Pick<ClaimContext, "facility" | "facts" | "facilityBasis">): BandRead {
+  const b = ctx.facility.building;
+  if (b.known && b.value === "none") return { known: true, value: "1", byDeclaration: ctx.facilityBasis?.building === "declaration" };
+  const f = ctx.facts.buildingBand;
+  if (f?.known) return { known: true, value: f.value, byDeclaration: false };
+  return { known: false, facilityFirst: !b.known };
+}
+
+/** 算定している管理料の行（回数 1 以上）を、族・種別・区分つきで */
+export function kanriLines(ctx: ClaimContext, c: RevisionConsts): ({ kubun: string } & Omit<KanriRow, "kubun">)[] {
   return ctx.lines.flatMap((l) => {
     const k = l.count > 0 ? kanriOf(c, l.kubun) : undefined;
     return k ? [{ kubun: l.kubun, ...k }] : [];
   });
+}
+
+/**
+ * 施設の種別で分かれる区分の表（design.md §15-4。R18 と derivedKubun・kubunFamily が引く 1 か所）：
+ * kubun → 種別と、種別だけが違う区分を同じにする鍵（slot）。管理料は族×区分（×人数）、在宅ターミナルケア加算・緊急往診加算はそれぞれ 1 つ
+ */
+export function gradeSlots(c: RevisionConsts): { kubun: string; grade: FacilityGrade; slot: string }[] {
+  const byGrade = (slot: string, t: ByGrade) => (Object.entries(t) as [FacilityGrade, string][]).map(([grade, kubun]) => ({ kubun, grade, slot }));
+  return [
+    ...c.kanri.rows.map((r) => ({ kubun: r.kubun, grade: r.grade, slot: `${r.family}/${r.tier}/${r.band ?? ""}/${r.note14 ?? ""}` })),
+    ...byGrade("在宅ターミナルケア加算", c.terminal.terminal),
+    ...byGrade("緊急往診加算", c.oushin.kinkyu),
+  ];
+}
+
+/**
+ * 同じ族の表（design.md §15-8。round-51 C-250）：kubun → 族の名前。区分誤りの直し先が同じ族なら、G11 は取り忘れを抑えない（段 18b が使う）。
+ * 族は、在医総管・施設総管（それぞれ種別×区分×人数を通して 1 族）、緊急往診加算・在宅ターミナルケア加算（それぞれ種別の区分）、
+ * ベースアップ評価料(Ⅰ)（R08 の訪問診療時・再診時等と、同じ区分の通常・注5）と、その初診時（通常・注5）。gradeSlots と版の定数から作り、手で並べない
+ */
+export function kubunFamily(c: RevisionConsts): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of c.kanri.rows) out[r.kubun] = r.family;
+  for (const k of Object.values(c.terminal.terminal)) out[k] = "在宅ターミナルケア加算";
+  for (const k of Object.values(c.oushin.kinkyu)) out[k] = "緊急往診加算";
+  const dayType = [...c.baseUp.visit, c.baseUp.revisit];
+  for (const k of dayType) out[k] = "ベースアップ評価料(Ⅰ)";
+  for (const [normal, note5] of Object.entries(c.baseUp.note5 ?? {})) {
+    const family = dayType.includes(normal) ? "ベースアップ評価料(Ⅰ)" : `ベースアップ評価料(Ⅰ) ${normal}`;
+    out[normal] = family;
+    out[note5] = family;
+  }
+  return out;
+}
+
+/** ベースアップ評価料(Ⅰ) の、R08 が見る訪問診療時と再診時等の区分（通常と注5）。注5 の表を持たない版は通常だけ */
+export function baseUpDayKubun(c: RevisionConsts): { visit: string[]; revisit: string[] } {
+  const n5 = c.baseUp.note5 ?? {};
+  const withN5 = (ks: string[]) => [...ks, ...ks.flatMap((k) => (n5[k] ? [n5[k]] : []))];
+  return { visit: withN5(c.baseUp.visit), revisit: withN5([c.baseUp.revisit]) };
 }
 
 /** 行の日付（回数 1 以上の行だけ）。重複は除いて昇順 */
@@ -68,11 +159,13 @@ export type KanriExpect = {
   visits: number;
   /** 居住の場所から決まる族。不明なら known:false */
   family: Fact<KanriFamily>;
+  /** 施設の種別（施設の申告から。facility.grade）。区分（tier）の決め方には使わない */
+  grade: Fact<FacilityGrade>;
   tier: { known: true; value: KanriTier } | { known: false; need: "table8_2" | "facility.note16Met"; candidates: KanriTier[] };
 };
 
 /**
- * 管理料の期待される族と区分（§2-3-3）。R01・R02・R03・R16 が同じ答えを使う。
+ * 管理料の期待される族・種別・区分（§2-3-3・§15-4）。R01・R02・R03・R16 と導出の D03 が同じ答えを使う。区分の決め方は種別によらない。
  * 区分を決める順は 回数 → 重症 → 注16。不明な事実を聞くのは、その答えで区分が変わるときだけ。
  * 注16 のない版（note16.enabled が偽）では、施設の設定を読まず、月 2 回以上は 2ロ（design.md §11-2）
  */
@@ -92,7 +185,7 @@ export function expectedKanri(ctx: ClaimContext, c: RevisionConsts): KanriExpect
     if (!met.known) return { known: false, need: "facility.note16Met", candidates: [from, to] };
     return { known: true, value: met.value ? from : to };
   })();
-  return { visits, family, tier };
+  return { visits, family, grade: ctx.facility.grade, tier };
 }
 
 /** 包括的支援加算を見る月か（期待される区分が加算の対象の区分。注16 だけが未定のときは、どちらの候補も対象なので見る） */
@@ -124,13 +217,18 @@ export function hokatsuEligible(
 
 /**
  * 往診料を算定した日・その翌日の訪問診療料を算定できるか（§2-3-4 の「制限の判定」）。
- * 在支診で文書提供済みなら真、文書提供が不明なら "unknown"、それ以外は偽
+ * 在支診で文書提供済みなら真、文書提供が不明なら "unknown"、それ以外は偽。施設の種別が分からない（zaishishin が null）ときも "unknown"
+ * （聞く事実は facility.grade。visitBillableNeed）
  */
 export function visitBillable(ctx: ClaimContext): boolean | "unknown" {
+  if (ctx.facility.zaishishin === null) return "unknown";
   if (!ctx.facility.zaishishin) return false;
   const doc = ctx.facts.contactDocProvided;
   return doc.known ? doc.value : "unknown";
 }
+
+/** visitBillable が "unknown" のとき、聞く事実（種別が分からなければ施設の種別、分かれば連携先への文書提供） */
+export const visitBillableNeed = (ctx: ClaimContext): "facility.grade" | "contactDocProvided" => (ctx.facility.zaishishin === null ? "facility.grade" : "contactDocProvided");
 
 /** 日付ごとの事実の、その日の答え（載っていない日・事実が丸ごと不明なら undefined） */
 const answerOn = (f: Fact<Record<string, boolean>>, day: string): boolean | undefined => (f.known ? f.value[day] : undefined);

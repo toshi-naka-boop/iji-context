@@ -1,6 +1,6 @@
 // 版の表（Revision.points・codes・bundles）と、医科診療行為マスターの 1 枚の突き合わせ（design.md §11-1・§12-1）。
 // どちらかを黙って優先しない：食い違いを全部並べ、masters.db を作る側（src/masters/verify.ts）が失敗にする。
-// 見ること：コードがマスターにある／省略漢字名称が EM §2-8 の「マスターの名称」と同じ（primary と包括の対象）／点数識別が 3（点数）で、新又は現点数が版の点数表と同じ（kind が「改定」の版だけ）／
+// 見ること：コードがマスターにある／省略漢字名称が EM §2-8 の「マスターの名称」と同じ（primary と包括の対象）／点数識別が 3（点数）で、新又は現点数が版の点数表と同じ（kind が「改定」の版だけ。版で点数未収載の区分は比べない）／
 // 変更年月日〜廃止年月日が版の適用期間に掛かっている／包括の検査の項目は「包括対象検査」が 0 でない
 import { REVISIONS } from "../engine/revisions";
 import type { Revision } from "../engine/revisions/types";
@@ -42,7 +42,8 @@ export function checkCodes(master: Map<string, MasterRow>, names: Map<string, st
     for (const [kubun, def] of Object.entries(rev.codes)) {
       for (const code of [def.primary, ...def.accept]) {
         const row = common(code, kubun);
-        if (!row || rev.kind !== "改定") continue;
+        // 点数未収載の区分（注8 の減算。所定点数の割合で決まり、マスターは点数識別 6）は、版の点数表に比べる点数がない
+        if (!row || rev.kind !== "改定" || rev.points[kubun].points === null) continue;
         if (row.pointKind !== "3") out.push(`${rev.id} ${kubun} ${code}：点数識別が 3（点数）でない`);
         else if (row.points !== rev.points[kubun].points) out.push(`${rev.id} ${kubun} ${code}：点数が違う（マスター ${row.points}／点数表 ${rev.points[kubun].points}）`);
       }

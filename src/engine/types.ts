@@ -6,12 +6,29 @@ export type Fact<T> = { known: true; value: T } | { known: false };
 
 export type Payer = "支払基金" | "国保連";
 
+/** 施設の種別（design.md §15-2）：1B＝機能強化型・病床あり／1N＝機能強化型・病床なし／2＝在支診（(2)イ・(3)）／3＝在支診以外 */
+export type FacilityGrade = "1B" | "1N" | "2" | "3";
+
+/** 単一建物診療患者の人数の区分（EM §2-2 R8-94 の 5 区分：1 人／2〜9 人／10〜19 人／20〜49 人／50 人以上。design.md §15-4） */
+export type BuildingBand = "1" | "2-9" | "10-19" | "20-49" | "50+";
+export const BUILDING_BANDS = ["1", "2-9", "10-19", "20-49", "50+"] as const satisfies readonly BuildingBand[];
+/** 10 人以上の人数の区分（注14 の減算の対象。EM R8-191） */
+export const NOTE14_BANDS: readonly BuildingBand[] = ["10-19", "20-49", "50+"];
+
 export type Facility = {
-  /** 在宅療養支援診療所か */
-  zaishishin: boolean;
-  /** 機能強化型か */
-  kyokagata: boolean;
-  hasBeds: boolean;
+  /** 施設の種別（施設の申告から決める。管理料・在宅ターミナルケア加算・緊急往診加算の区分と R18 が読む。design.md §15-4） */
+  grade: Fact<FacilityGrade>;
+  /**
+   * 種別の申告で選んだ選択肢の id（src/facility/codes.ts の GRADE_CHOICES。申告から来たときだけ持つ）。
+   * 連携型（(2)ア・(2)イ）の申告で R18 の指摘に経過措置の断りを添えるのに使う（design.md §15-2。docs M-8）
+   */
+  gradeChoice?: string | null;
+  /** 在宅療養支援診療所か。null は施設の種別が分からない（申告がない・確かめ直す日を過ぎたなど。design.md §15-2） */
+  zaishishin: boolean | null;
+  /** 機能強化型か（null は種別が分からない） */
+  kyokagata: boolean | null;
+  /** 病床があるか（null は種別が分からない） */
+  hasBeds: boolean | null;
   prefecture: string;
   /** 届出の有無（区分番号→届出済みか） */
   notifications: Record<string, boolean>;
@@ -23,14 +40,24 @@ export type Facility = {
   priceResponse: Fact<boolean>;
   /** 管理料の注16 の基準を満たすか（施設に 1 つ。在医総管と施設総管の両方に効く） */
   note16Met: Fact<boolean>;
+  /**
+   * 同じ建物で同じ月に 2 人以上を診ている建物があるか（施設の申告 building。design.md §15-2。C-242）。none なら、どの患者も単一建物 1 人の区分。
+   * some・分からないなら、患者ごとの事実 buildingBand を使う。判定のルールと導出には直接渡さず、人数の区分の決め方（buildingBandOf）にだけ使う
+   */
+  building: Fact<"none" | "some">;
+  /** 注14（10 人以上の区分の減算。EM R8-191）：通常の点数で算定している（基準に当たる）／減算の点数で算定している（施設の申告 note14。design.md §15-2。段 17h） */
+  note14: Fact<"通常" | "減算">;
   /** 訪問診療料と往診料の両方を算定した日に、ベースアップ評価料(Ⅰ)の「再診時等」を重ねて算定できると確かめたか（R08 だけが読む） */
   revisitBaseUpSameDay: Fact<boolean>;
   /** 同じことを物価対応料について確かめたか（R15 だけが読む） */
   revisitPriceSameDay: Fact<boolean>;
 };
 
+/** 施設の設定の値の出どころ（ClaimContext.facilityBasis） */
+export type FacilityBasis = "declaration" | "case" | "config";
+
 /** 三値で持つ施設の設定のキー（不明なら、それに依存するルールは情報不足になる。design.md §2-7） */
-export type FacilityFactKey = "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
+export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "building" | "note14" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
 
 /** 患者の居住の場所。管理料の族（在医総管／施設総管）を決める */
 export type Residence = "居宅" | "施設入居等";
@@ -83,6 +110,11 @@ export type Facts = {
   rapidSameDayDocumented: Fact<boolean>;
   /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
   comprehensiveCare: Fact<boolean>;
+  /**
+   * 単一建物診療患者の人数の区分（その診療年月で効く、患者ごとの値。design.md §15-4）。医療事務が入れる「みなしを当てたあとの、請求に使う区分」（V-3）。
+   * 施設の申告 building が none のときは使わない（どの患者も 1 人の区分）。持たない請求（同梱の症例・練習問題）は「分からない」
+   */
+  buildingBand?: Fact<BuildingBand>;
 };
 
 export type FactKey = keyof Facts;
@@ -151,6 +183,12 @@ export type ClaimContext = {
    * 持つ請求では、止めるかどうかをルールごとに決める（src/engine/index.ts の partialBy）。持たない請求は、対象外の単位が 1 つでもあれば、どのルールも止める（v23 のまま）
    */
   outside?: Outside;
+  /**
+   * 施設の設定の値ごとの出どころ（design.md §15-4。round-51 C-251）：declaration＝施設の申告／case＝症例ごとの上書き／config＝設定ファイル・設定の画面。
+   * 載っていない値は declaration でないとして扱う（エンジンの単体テストで facility を直接渡すときは省く）。
+   * 「申告だけを根拠に点数の高い区分へ直さない」決まりは、出どころが declaration の値にだけ掛ける
+   */
+  facilityBasis?: Partial<Record<FacilityFactKey, FacilityBasis>>;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
 };
@@ -177,6 +215,11 @@ export type Finding = {
   /** 文言に埋める値（R17：何の記載か、足りない日・多い日） */
   params?: Record<string, string>;
   reference: string;
+  /**
+   * その指摘が関わる算定日（内部の欄で、文には出さない。design.md §15-8。round-52 C-260・round-53 C-272）。
+   * 日・週で決まる指摘を出す R10・R13 だけが入れる。G11 が添え書きを関わる日の候補だけに付けるのに使う
+   */
+  days?: string[];
 };
 
 export type EngineResult = {
@@ -224,5 +267,7 @@ export type Rule = {
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
   needs(ctx: ClaimContext): NeedKey[];
+  /** needs の情報不足が関わる算定日（R13：上限を超えた週の訪問診療料の算定日。design.md §15-8 C-272）。持たないルールは日を持たない */
+  needDays?(ctx: ClaimContext): string[];
   check(ctx: ClaimContext): Finding[];
 };

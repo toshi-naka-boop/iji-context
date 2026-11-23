@@ -3,6 +3,7 @@
 // 取り出した結果は本人が確かめて直してから使う。判定はユスティだけが行う（AI は判定しない）
 import { modelOptions, type ModelChoice } from "../mentor/models";
 import { runOnce, type Sender } from "../llm/outbound";
+import { ACT_CATEGORIES, CHILD_KINDS, MAX_LOOKUP, validateActs } from "./acts";
 
 /** 本人が書くカルテ（1 回の訪問） */
 export type ChartNote = { s: string; o: string; a: string; p: string; rx: string };
@@ -22,6 +23,8 @@ export const FACT_KINDS = ["処方", "病名の記載", "急性増悪", "不安�
 /** 「不安・不眠の薬」の値 */
 export const PSYCHOTROPIC_VALUES = ["あり", "なし"];
 
+const LOOKUP_SCHEMA = { type: "array", items: { type: "string" }, maxItems: MAX_LOOKUP } as const;
+
 export const EXTRACT_SCHEMA = {
   type: "object",
   properties: {
@@ -34,20 +37,49 @@ export const EXTRACT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // 行ったこと（design.md §15-6。FR-192）。同じ 1 回の呼び出しで出す
+    acts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: [...ACT_CATEGORIES] },
+          written: { type: "string" },
+          lookup: LOOKUP_SCHEMA,
+          quantity: { type: "string" },
+          quote: { type: "string" },
+          with: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { kind: { type: "string", enum: [...CHILD_KINDS] }, written: { type: "string" }, lookup: LOOKUP_SCHEMA, quantity: { type: "string" }, quote: { type: "string" } },
+              required: ["kind", "written", "lookup", "quote"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["category", "written", "lookup", "quote"],
+        additionalProperties: false,
+      },
+    },
+    // その日の処方の記載（文を写すだけ。院内か院外かは分けさせない。C-231）
+    rx: { type: "array", items: { type: "object", properties: { quote: { type: "string" } }, required: ["quote"], additionalProperties: false } },
   },
-  required: ["facts"],
+  required: ["facts", "acts", "rx"],
   additionalProperties: false,
 } as const;
 
 export const EXTRACT_PROMPT = [
   "あなたは在宅医療のカルテから、医療事務が算定に使う事実を取り出します。判定や助言はしない。",
-  "取り出すのは次の 4 種類だけ：",
+  "事実（facts）として取り出すのは次の 4 種類だけ：",
   "- 処方：処方されている薬の分類名（例：DOAC、利尿薬、インスリン）。薬の名前で書かれていても分類名で value に入れる",
   "- 病名の記載：A（評価）などに書かれた病名や略語。value は書かれたとおり（略語を言い換えない）",
   "- 急性増悪：急性増悪・急変と書かれているときだけ。value は「あり」",
   "- 不安・不眠の薬：処方の欄に薬が書かれているときだけ。その日の処方に、不安や不眠に対して出される薬が含まれていれば value は「あり」、書かれている薬のどれも当たらなければ「なし」。quote は、もとにした処方の記載。いつから続いているか（長期の処方か）は判断しない",
   "どの事実にも quote を付ける。quote はカルテに書かれた文字をそのまま写した短い部分（言い換え・要約をしない）。",
   "書かれていないことは出さない。推測で病名・病型・処方を足さない。何もなければ facts は空にする。",
+  "行ったこと（acts）：カルテに書かれた診療行為・検査・処置・注射・投薬・器材を、書かれた名前のまま written に出す。使った薬・器材の量が書かれていれば、書かれたとおり quantity に写す。その行為で使った薬・器材は with に出す。書かれていない行為を足さない。時間や回数から加算を推し量らない。算定できるかは判断しない。名前ごとに、基本マスターの名称にありそうな言い方を 5 個まで lookup に挙げる（コードは書かない）。どの行為にも quote を付ける。何もなければ acts は空にする。",
+  "処方（rx）：処方の記載があれば、その文をそのまま quote に出す。院内か院外かは分けない。書かれていなければ出さない（rx は空にする）。",
 ].join("\n");
 
 /** カルテを 1 つの文章にする（AI に渡す形） */
@@ -78,7 +110,7 @@ export function validateFacts(raw: unknown, note: ChartNote): { facts: Extracted
   return { facts, dropped };
 }
 
-/** カルテから事実を取り出す（LLM）。出力は validateFacts を通してから返す */
+/** カルテから事実と行ったこと・処方の記載を取り出す（LLM。1 回の呼び出し）。出力は validateFacts・validateActs を通してから返す */
 export async function extractFacts(by: Sender, note: ChartNote, model?: ModelChoice) {
   const r = await runOnce(by, "chartExtract", noteText(note), {
     systemPrompt: EXTRACT_PROMPT,
@@ -89,5 +121,7 @@ export async function extractFacts(by: Sender, note: ChartNote, model?: ModelCho
     maxTurns: 2,
     ...modelOptions(model),
   });
-  return validateFacts(r.structured, note);
+  const f = validateFacts(r.structured, note);
+  const a = validateActs(r.structured, noteText(note));
+  return { facts: f.facts, dropped: f.dropped, acts: a.acts, rx: a.rx, actsDropped: a.dropped };
 }

@@ -1,10 +1,14 @@
 // 表の作成と変更（マイグレーション）。どこまで適用したかは SQLite の PRAGMA user_version に持つ。
 // 表を変えるときは、下の列の末尾に次の番号を足す。適用済みの番号の SQL は書き換えない
 import type Database from "better-sqlite3";
+import { applyKind, becomeDemo } from "../facility/seed";
 import { CREATE_SQL } from "./schema";
 
+/** マイグレーションに渡す、開くクリニックのこと（run が種類で分かれるときに使う）。渡さなければ未定（何も入れない側） */
+export type MigrationEnv = { kind: "demo" | "real" | "undecided"; at: string };
+
 /** sql を流したあと、run があれば続けて呼ぶ（同じトランザクションの中。表の形で分かれる直しに使う） */
-export type Migration = { version: number; sql: string; run?: (sqlite: Database.Database) => void };
+export type Migration = { version: number; sql: string; run?: (sqlite: Database.Database, env: MigrationEnv) => void };
 
 /** クリニックの種類の書き換えを止めるトリガー（未定 → demo／real の 1 回だけを許す） */
 const TENANTS_KIND_TRIGGER = "CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants WHEN NOT (OLD.kind = 'undecided' AND NEW.kind IN ('demo', 'real')) BEGIN SELECT RAISE(ABORT, 'tenant kind is fixed'); END;";
@@ -120,6 +124,57 @@ ALTER TABLE digest_items ADD COLUMN polarity TEXT;
 ALTER TABLE digest_items ADD COLUMN condition_note TEXT;
 `,
   },
+  {
+    // 施設の申告（design.md §15-2。FR-188）：追記だけの表。項目ごとに、算定開始年月日つきの履歴から効く行を選ぶ（C-215）。前の行が変更の記録になる。
+    // run はクリニックの種類で分ける（C-214）：real は v28 の施設の設定を申告に移し、demo は種を入れる（C-222）、未定は何もしない（選んだときに開き直して入れる）
+    version: 12,
+    sql: `
+CREATE TABLE facility_declarations (id INTEGER PRIMARY KEY AUTOINCREMENT, item_key TEXT NOT NULL, notified TEXT NOT NULL, notified_on TEXT, start_on TEXT, requirement TEXT NOT NULL, choice TEXT, checked_by TEXT NOT NULL, checked_role TEXT NOT NULL, checked_on TEXT, recheck_on TEXT, source TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX facility_declarations_item ON facility_declarations (item_key, id);
+`,
+    // 種と移し替えは、行に from_month が要るので 13 の run で行う（12 の SQL は書き換えない。12 と 13 は同じ migrate の中で続けて当たる）
+  },
+  {
+    // 施設の申告に「いつの診療月から」（from_month）を足す（design.md §15-2。P-2・docs H-1）。効く行は、その診療年月以前で from_month が最大の組の最新の行。
+    // run：種（source: seed）の行は、種の from_month と算定開始年月日で新しい行を追記して直す（becomeDemo）。input・migrated の行は空のまま残す（推し量って埋めない。
+    // 空の行は効く行に選ばれず「分からない」）。続けて、クリニックの種類が決まっていれば申告をその種類に合わせる（12 の run だったもの）
+    version: 13,
+    sql: `
+ALTER TABLE facility_declarations ADD COLUMN from_month TEXT;
+`,
+    run: (sqlite, env) => {
+      if (sqlite.prepare("SELECT 1 FROM facility_declarations WHERE source = 'seed' LIMIT 1").get()) becomeDemo(sqlite, env.at);
+      applyKind(sqlite, env.kind, env.at);
+    },
+  },
+  {
+    // 取り込んだレセプトの点検で、本人が「この請求の点検を確かめた」を押した記録（design.md §14-3・段 17g。L-123）。実在用のクリニックで F10 の処理件数に数える。
+    // 同じ請求・同じ本人は 1 件だけ（主キー）。押した日（reviewed_at）を残す。指摘の数や結果は持たない
+    version: 14,
+    sql: `
+CREATE TABLE claim_reviews (claim_id TEXT NOT NULL, clerk_id TEXT NOT NULL, reviewed_at TEXT NOT NULL, PRIMARY KEY (claim_id, clerk_id));
+`,
+  },
+  {
+    // カルテの「行ったこと」（design.md §15-6・15-7。段 18a。設計の「マイグレーション 14」を、段 17g が 14 を使ったので 15 にした）。
+    // acts：本人が確かめた行為と処方の記載の JSON（当てた結果・その日の院内・院外を含む）。NULL＝行ったことを確かめていない。本文と同じく、ログ・監査ログ・AI に送る文脈には出さない。
+    // chart_act_aliases：本人が選んだ「書かれた名前 → コード」（クリニックごと。前に選んだ対応。L-95）。区分誤りの出た対応は点検を呼んだ側が行を消す（C-250）
+    version: 15,
+    sql: `
+ALTER TABLE chart_notes ADD COLUMN acts TEXT;
+CREATE TABLE chart_act_aliases (written_norm TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (written_norm, tbl));
+`,
+  },
+  {
+    // 注14 の計算の道具の結果（design.md §15-13。段 17i）。追記だけ。使った期間（3 か月と 1 年の初めと終わりの月。C-325）を列に持つ。
+    // inputs は入力の数と出どころ（自動・手入力）の JSON、outcomes は読みの組み合わせごとの結果、splits は割れた軸の一覧。集計の数だけで、患者の氏名・生年月日・番号・鍵は持たない。
+    // result は meets・not_meets・undecided。判定（R01〜R19・G01〜G11）はこの表を読まない
+    version: 16,
+    sql: `
+CREATE TABLE note14_worksheets (id INTEGER PRIMARY KEY AUTOINCREMENT, check_month TEXT NOT NULL, period_3m_from TEXT NOT NULL, period_3m_to TEXT NOT NULL, period_12m_from TEXT NOT NULL, period_12m_to TEXT NOT NULL, inputs TEXT NOT NULL, outcomes TEXT NOT NULL, result TEXT NOT NULL, splits TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX note14_worksheets_month ON note14_worksheets (check_month, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */
@@ -206,7 +261,7 @@ const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", {
  * まだ適用していない番号を、1 つのトランザクションの中で順に適用する。適用後のバージョンを返す。
  * 途中で失敗したら全部を巻き戻し、バージョンも進めない。DB のほうが新しいとき（古いコードで開いたとき）は、知らない表を壊さないよう止める
  */
-export function migrate(sqlite: Database.Database, migrations: Migration[]): number {
+export function migrate(sqlite: Database.Database, migrations: Migration[], env: MigrationEnv = { kind: "undecided", at: new Date().toISOString() }): number {
   migrations.forEach((m, i) => {
     if (m.version !== i + 1) throw new Error(`マイグレーションの番号が連番でない: ${i + 1} 番目が ${m.version}`);
   });
@@ -218,7 +273,7 @@ export function migrate(sqlite: Database.Database, migrations: Migration[]): num
       // ほかのプロセスが先に適用していることがあるので、書き込みのロックを取ってから読み直す
       for (const m of migrations.slice(versionOf(sqlite))) {
         if (m.sql) sqlite.exec(m.sql);
-        m.run?.(sqlite);
+        m.run?.(sqlite, env);
         sqlite.pragma(`user_version = ${m.version}`);
       }
       return versionOf(sqlite);
