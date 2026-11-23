@@ -18,7 +18,7 @@ import { g05 } from "./g05";
 import { g10, g10Blocking } from "./g10";
 import type { Finding } from "../engine/types";
 import { KIJUN_OWNERS } from "../facility/codes";
-import { tensuhyoOf, type Dated } from "./tensuhyo";
+import { TABLE, tensuhyoOf, type Dated } from "./tensuhyo";
 import type { GenericAbout, GenericAboutMore, GenericCheck, GenericCheckId, GenericFinding } from "./types";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -136,11 +136,15 @@ type Cand = {
   parent?: string;
   /** act：組ごと隠したときに言わなかった一覧に添える、手技で使った薬・器材の書かれた名前（with） */
   withNames?: string[];
-  derived?: { what: string; basis: string; name: string };
+  /** fromClaim：請求にある項目だけから決まった（文を「請求（n日）に」で始める。X-158） */
+  derived?: { what: string; basis: string; name: string; fromClaim?: boolean };
   qty?: { key: "G11.quantity_less" | "G11.quantity_more"; chart: string; claim: string; child?: string };
   /** 手順 1〜3 の添え書き */
   notes: Note[];
 };
+
+/** 同じ日・同じ親の区分の中の同じ子の区分ごとの、子の量（X-156） */
+type ChildGroups = Map<string, { kind: G11Item["kind"]; code: string; parent: string; child: string; items: { quantity?: string; quote: string; noteId?: number }[] }>;
 
 /** 請求の中の、コードの日ごとの回数（SI・IY・TO）と、量の合計（日ごと） */
 type Index = { days: Map<string, number[]>; untimed: Set<string>; qty: Map<string, number[]> };
@@ -202,7 +206,8 @@ export function unitKey(name: string, collide: ReadonlySet<string>): string {
 // ───────────────────────────────────────────────────────────────────────────
 // 抑え（手順 1・2）。足した単位に結び付いた違反を、点検の上限を掛けずに全部見る（X-138）
 
-type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string; exception?: { hxText: string; month: boolean }; kijunCodes?: string };
+/** exception.unit：例外を名指しする添え書きの、表の単位（同一月＝月、1 日＝日、1 週間＝週、同時＝同時。C-295） */
+type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string; exception?: { hxText: string; unit: "月" | "日" | "週" | "同時" }; kijunCodes?: string };
 
 /** 指摘が参照する単位に、足した単位が入るか。日で決まる指摘は、その日が足した単位の算定日か（X-137） */
 function touches(f: GenericFinding, added: Map<number, AddedUnit>, code: string): AddedUnit[] {
@@ -215,15 +220,34 @@ function touches(f: GenericFinding, added: Map<number, AddedUnit>, code: string)
   });
 }
 
-/** 指摘 1 件のうち、算定できない側（X-140）。包括は含まれる側、背反の区分 1・2 は表が算定しない側。区分 3 は null（どちらか一方） */
-function loserOf(f: GenericFinding): { loser: string; partner: string } | null {
-  if (f.check === "G04") return { loser: f.codes[1], partner: f.codes[0] };
+/** 特例条件ありの背反の指摘か（G05 の _cond・例外・院内の知識の形。whyOf の「特例条件あり」と同じ見分け） */
+const markedG05 = (f: GenericFinding) => f.messageKey.endsWith("_cond") || f.messageKey.startsWith("G05.exception") || f.messageKey.startsWith("G05.local");
+
+/**
+ * 指摘 1 件のうち、算定できない側（X-140）。包括は含まれる側、背反の区分 1・2 は表が算定しない側。
+ * 区分 3（どちらか一方）は、特例条件のない組は空（手順 1 の前に外す・手順 2 で 1 件にまとめる）。特例条件のある組は両側（C-291。条件つき・例外の扱いは区分 1・2 と同じ）。
+ * ただし eitherSkip の組（往診料と訪問診療料。R10 が日つきの添え書きで扱う）は空のまま
+ */
+function losersOf(f: GenericFinding, eitherSkip: (a: string, b: string) => boolean): { loser: string; partner: string }[] {
+  if (f.check === "G04") return [{ loser: f.codes[1], partner: f.codes[0] }];
   if (f.check === "G05") {
     const keep = f.params.keep;
-    if (keep !== f.codes[0] && keep !== f.codes[1]) return null;
-    return keep === f.codes[0] ? { loser: f.codes[1], partner: f.codes[0] } : { loser: f.codes[0], partner: f.codes[1] };
+    if (keep === f.codes[0]) return [{ loser: f.codes[1], partner: f.codes[0] }];
+    if (keep === f.codes[1]) return [{ loser: f.codes[0], partner: f.codes[1] }];
+    if (!markedG05(f) || eitherSkip(f.codes[0], f.codes[1])) return [];
+    return [
+      { loser: f.codes[0], partner: f.codes[1] },
+      { loser: f.codes[1], partner: f.codes[0] },
+    ];
   }
-  return { loser: f.codes[0], partner: f.codes[0] };
+  return [{ loser: f.codes[0], partner: f.codes[0] }];
+}
+/** 例外の添え書きの表の単位（指摘の出どころの表の名前と、同時の表の where から決める。C-295） */
+function unitOfException(f: GenericFinding): "月" | "日" | "週" | "同時" {
+  if (f.params.where === "同じレセプト") return "月";
+  if (f.source.data === TABLE.haihan[3]) return "同時";
+  if (f.source.data === TABLE.haihan[4]) return "週";
+  return "日";
 }
 
 /**
@@ -237,7 +261,7 @@ const certainShape = (f: GenericFinding) => f.certainty === "確定" && (receipt
 const OPEN_EXCEPTION = new Set(["G05.exception_check", "G05.exception_ask", "G05.exception_split"]);
 /** 条件つきの理由 */
 function whyOf(f: GenericFinding): string {
-  if (f.messageKey.endsWith("_cond") || f.messageKey.startsWith("G05.exception") || f.messageKey.startsWith("G05.local")) return "特例条件あり";
+  if (markedG05(f)) return "特例条件あり";
   if (f.messageKey === "G05.week" || f.messageKey.startsWith("G06.week")) return "1 週間の数え方";
   if (f.messageKey === "G05.same_day") return "別の単位の同時";
   if (f.messageKey.startsWith("G04.same") || f.messageKey.startsWith("G04.surgery")) return "同時・1 手術の単位";
@@ -245,7 +269,8 @@ function whyOf(f: GenericFinding): string {
   return "診療年月より後のマスター";
 }
 
-type Ctx = { db: MastersDb; about: G11About; snapshot: { si: string; iy: string | null; to: string | null } };
+/** eitherSkip：背反区分 3・特例条件ありでも G05 の抑えにしない組（往診料と訪問診療料。R10 の担当） */
+type Ctx = { db: MastersDb; about: G11About; snapshot: { si: string; iy: string | null; to: string | null }; eitherSkip: (a: string, b: string) => boolean };
 
 const nameOfCode = (c: Ctx, code: string): string =>
   shinryoOf(c.db, c.snapshot.si, code)?.name ?? (c.snapshot.iy ? iyakuhinOf(c.db, c.snapshot.iy, code)?.name : undefined) ?? (c.snapshot.to ? tokuteiOf(c.db, c.snapshot.to, code)?.name : undefined) ?? code;
@@ -289,8 +314,7 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
     if (!Array.isArray(found)) continue;
     for (const f of found) {
       if (f.check === "G10" && f.messageKey !== "G10.not_held" && f.messageKey !== "G10.unknown") continue;
-      const lp = loserOf(f);
-      if (!lp) continue;
+      for (const lp of losersOf(f, c.eitherSkip))
       for (const a of touches(f, added, lp.loser)) {
         const u = [...added].find(([, v]) => v === a)![0];
         // 相手の単位（手順 2 で、相手が別の候補かを決める）：相手のコードを持つ足した単位
@@ -302,7 +326,7 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
           why: whyOf(f),
           ...(f.check === "G10" && f.messageKey === "G10.unknown" ? { byDeclaration: f.params.kijun ?? "" } : {}),
           ...(f.check === "G10" && f.params.kijunCodes ? { kijunCodes: f.params.kijunCodes } : {}),
-          ...(OPEN_EXCEPTION.has(f.messageKey) && f.params.hxText ? { exception: { hxText: f.params.hxText, month: f.params.where === "同じレセプト" } } : {}),
+          ...(OPEN_EXCEPTION.has(f.messageKey) && f.params.hxText ? { exception: { hxText: f.params.hxText, unit: unitOfException(f) } } : {}),
           ...(partnerUnit !== undefined ? { partnerUnit } : {}),
         };
         push(candOf.get(u)!, b);
@@ -331,9 +355,13 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   if (!about.declaration) return { skip: "G10（施設基準）が動いていないので、算定できるかを確かめられず、取り忘れは見ていません" };
   const si = pickSnapshot(db, "shinryo", about.yearMonth, about.generation);
   if (!si || !tensuhyoOf(db, about)) return { skip: `診療年月の世代（${about.generation}）のマスターがないので、取り忘れは見ていません` };
-  const c: Ctx = { db, about, snapshot: { si: si.snapshot, iy: pickSnapshot(db, "iyakuhin", about.yearMonth, about.generation)?.snapshot ?? null, to: pickSnapshot(db, "tokutei", about.yearMonth, about.generation)?.snapshot ?? null } };
-  const checks = opt.checks ?? [g03, g04, g05, g10];
   const info = revInfo(rev);
+  // 往診料と訪問診療料の組（背反区分 3・特例条件あり）は R10 が日つきの添え書きで扱うので、G05 の抑えにしない（段 18c のまま。C-291）
+  const isOushin = (code: string) => info.kubunOf(code) === rev.consts.oushin.kubun;
+  const isVisit = (code: string) => rev.consts.visitKubun.includes(info.kubunOf(code) ?? "");
+  const eitherSkip = (a: string, b: string) => (isOushin(a) && isVisit(b)) || (isOushin(b) && isVisit(a));
+  const c: Ctx = { db, about, snapshot: { si: si.snapshot, iy: pickSnapshot(db, "iyakuhin", about.yearMonth, about.generation)?.snapshot ?? null, to: pickSnapshot(db, "tokutei", about.yearMonth, about.generation)?.snapshot ?? null }, eitherSkip };
+  const checks = opt.checks ?? [g03, g04, g05, g10];
   const idx = indexOf(claim);
   const firstDow = new Date(`${about.yearMonth}-01T00:00:00Z`).getUTCDay();
 
@@ -424,8 +452,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const r = rxDay.get(date);
     const drugs: ConfirmedAct[] = [];
     const procs: ConfirmedAct[] = [];
-    // 同じ日・同じ区分の量を合計するため、先に集める
+    // 同じ日・同じ区分の量を合計するため、先に集める（子は、同じ親の区分の中の同じ子の区分ごと。X-146・X-156）
     const qtyGroups = new Map<string, { kind: G11Item["kind"]; code: string; acts: ConfirmedAct[] }>();
+    const childGroups: ChildGroups = new Map();
     for (const a of list) {
       const m = a.act.match;
       if (!m) {
@@ -449,11 +478,11 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
         else if (m.tbl === "shinryo") {
           // 処方箋料は、院内・院外の分け方に掛けない行為として見る（書かれた処方箋料。院内か院外かが分からない施設では見ない）
           if (about.dispensing === "unknown") tally(UNKNOWN_DISPENSING[0], 1, UNKNOWN_DISPENSING[1]);
-          else regular(a, date, day, qtyGroups);
+          else regular(a, date, day, qtyGroups, childGroups);
         }
         continue;
       }
-      regular(a, date, day, qtyGroups);
+      regular(a, date, day, qtyGroups, childGroups);
     }
     for (const g of qtyGroups.values()) {
       const head = g.acts[0];
@@ -464,19 +493,21 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const n = drugs.length + procs.length;
       if (about.dispensing === "outside") {
         if (drugs.length > 0) tally("院外処方の施設なので薬は見ていません", drugs.length);
-        for (const p of procs) regular(p, date, day, new Map());
+        for (const p of procs) regular(p, date, day, new Map(), childGroups);
       } else if (about.dispensing === "unknown") tally(UNKNOWN_DISPENSING[0], n, UNKNOWN_DISPENSING[1]);
       else if (!r || !r.rx) tally(`${Number(date.slice(5, 7))}月${md(date)}日は処方の記載がないので薬は見ていません`, n);
       else if (r.choice === "outside") {
         if (drugs.length > 0) tally("院外処方箋の日なので薬は見ていません", drugs.length);
-        for (const p of procs) regular(p, date, day, new Map());
+        for (const p of procs) regular(p, date, day, new Map(), childGroups);
       } else if (r.choice !== "inside") undecidedDays.add(date);
       else drugGroup(date, day, drugs, procs);
     }
+    for (const g of childGroups.values())
+      compare(g.kind, g.code, date, g.items.map((x) => x.quantity), { written: g.parent, child: g.child, quote: [...new Set(g.items.map((x) => x.quote))].sort().join("／"), noteIds: g.items.map((x) => x.noteId) });
   }
 
   /** 投薬でない行為（と、院外の日の投薬の手技）：請求にないなら候補、あれば with の子と量を見る */
-  function regular(a: ConfirmedAct, date: string, day: number, qtyGroups: Map<string, { kind: G11Item["kind"]; code: string; acts: ConfirmedAct[] }>) {
+  function regular(a: ConfirmedAct, date: string, day: number, qtyGroups: Map<string, { kind: G11Item["kind"]; code: string; acts: ConfirmedAct[] }>, childGroups: ChildGroups) {
     const m = a.act.match!;
     const kind: G11Item["kind"] = m.tbl === "shinryo" ? "SI" : m.tbl === "iyakuhin" ? "IY" : "TO";
     const children = (a.act.with ?? []).filter((x) => x.match);
@@ -495,7 +526,13 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     for (const x of children) {
       const ck: G11Item["kind"] = x.match!.tbl === "iyakuhin" ? "IY" : "TO";
       if (!present(x.match!.code, day)) add({ kind: "with", date, day, units: [unitOn([{ kind: ck, code: x.match!.code }], day)], report: [rep(x.match!.code, x.written, x.quote)], parent: a.act.written });
-      else compare(ck, x.match!.code, date, [x.quantity], { written: a.act.written, child: x.written, quote: x.quote, noteIds: [a.noteId] });
+      else {
+        // 量は、同じ日・同じ親の区分の中の同じ子の区分ごとに合計してから比べる（X-156）
+        const k = `${key}|${ck}|${info.same(x.match!.code).sort().join(",")}`;
+        const cg = childGroups.get(k) ?? { kind: ck, code: x.match!.code, parent: a.act.written, child: x.written, items: [] };
+        cg.items.push({ quantity: x.quantity, quote: x.quote, noteId: a.noteId });
+        childGroups.set(k, cg);
+      }
     }
   }
 
@@ -528,13 +565,27 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 2. 決まった規則で足す候補（M-1。X-147）：判断料と処方箋料
   {
     const kensa = db.prepare("SELECT code FROM shinryo WHERE snapshot = ? AND kensa_kind = '2' AND kensa_group = ?");
-    const groups = new Map<number, { acts: ConfirmedAct[] }>();
+    // 根拠は、その月の請求と確かめた行為にある検体検査の項目（X-158）。claim は請求にある項目（コードと最初の算定日）
+    const groups = new Map<number, { acts: ConfirmedAct[]; claim: { code: string; day: number }[] }>();
+    const groupOf = (code: string): number | null => {
+      const r = shinryoOf(db, c.snapshot.si, code);
+      return r && r.kensa_kind === "1" && JUDGEMENT_GROUPS.includes(r.kensa_group) ? r.kensa_group : null;
+    };
+    const groupEntry = (g: number) => groups.get(g) ?? { acts: [], claim: [] };
     for (const a of acts) {
       const m = a.act.match;
       if (!m || m.tbl !== "shinryo") continue;
-      const r = shinryoOf(db, c.snapshot.si, m.code);
-      if (!r || r.kensa_kind !== "1" || !JUDGEMENT_GROUPS.includes(r.kensa_group)) continue;
-      groups.set(r.kensa_group, { acts: [...(groups.get(r.kensa_group)?.acts ?? []), a] });
+      const g = groupOf(m.code);
+      if (g === null) continue;
+      const e = groupEntry(g);
+      groups.set(g, { ...e, acts: [...e.acts, a] });
+    }
+    for (const code of [...new Set([...idx.days.keys(), ...idx.untimed])].sort()) {
+      const g = groupOf(code);
+      if (g === null) continue;
+      const first = (idx.days.get(code) ?? []).findIndex((n) => n > 0);
+      const e = groupEntry(g);
+      groups.set(g, { ...e, claim: [...e.claim, { code, day: first >= 0 ? first + 1 : 1 }] });
     }
     let undecided = 0;
     for (const [group, g] of groups) {
@@ -547,8 +598,15 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const sameAsCode = new Set(info.same(code));
       // 請求か確かめた行為に同じ区分が月の中にあれば立てない
       if (present(code, 1, true) || acts.some((a) => a.act.match && sameAsCode.has(a.act.match.code))) continue;
-      const first = g.acts.map((a) => a.date).sort()[0];
       const name = nameOfCode(c, code);
+      if (g.acts.length === 0) {
+        // 請求にある項目だけから決まる判断料（X-158）：日は請求の最初の算定日、引用はない
+        const day = Math.min(...g.claim.map((x) => x.day));
+        const date = `${about.yearMonth}-${String(day).padStart(2, "0")}`;
+        add({ kind: "derived", date, day, units: [unitOn([{ kind: "SI", code }], day)], report: [{ code, written: name, quote: "", name }], derived: { what: [...new Set(g.claim.map((x) => `『${nameOfCode(c, x.code)}』`))].join("・"), basis: "マスターの検査のグループ", name, fromClaim: true } });
+        continue;
+      }
+      const first = g.acts.map((a) => a.date).sort()[0];
       add({
         kind: "derived",
         date: first,
@@ -626,8 +684,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       if (b.certain) continue; // 同じ族の例外で通した届出なし（添え書きは上で付けた）
       if (b.byDeclaration !== undefined) x.notes.push({ reason: "施設基準の申告が分からない", text: `施設基準${b.byDeclaration}の申告が分からないので、算定できるかは施設の申告しだいです（施設の申告による）` });
       else if (b.exception)
-        // 例外を名指しする（EM §2-12 の HX の一言をそのまま使う。文を作らない）。同一月の表は「月」、1 日・同時の表は「日」
-        x.notes.push({ reason: "データの点検の条件つきの違反", text: `${b.partner}を算定する${b.exception.month ? "月" : "日"}は、原則として算定できません。例外：${b.exception.hxText}。当たらなければ、請求にないままで合っています` });
+        // 例外を名指しする（EM §2-12 の HX の一言をそのまま使う。文を作らない）。表の単位で言い分ける：同一月は「月」、1 日は「日」、1 週間は「週」、同時の表は「同時に行うとき」（C-295）
+        x.notes.push({ reason: "データの点検の条件つきの違反", text: `${b.partner}${b.exception.unit === "同時" ? "と同時に行うとき" : `を算定する${b.exception.unit}`}は、原則として算定できません。例外：${b.exception.hxText}。当たらなければ、請求にないままで合っています` });
       else if (b.check !== "G10") x.notes.push({ reason: "データの点検の条件つきの違反", text: `${CHECK_NAME[b.check]}の表では、条件によっては算定できません（相手：${b.partner}。${b.why}）。告示・通知を確かめてください` });
     }
     passed.push(x);
@@ -666,12 +724,23 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
                 if (r.kubun === "1") note(b, a, "背反");
                 else if (r.kubun === "2") note(a, b, "背反");
                 else if (r.kubun === "3" && r.tokurei === "0") either.push([a, b]);
+                else if (r.kubun === "3" && !eitherSkip(ca, cb)) {
+                  // 特例条件ありの「どちらか一方」は 1 件にまとめず、両方の候補に添え書き（C-291）
+                  note(a, b, "背反");
+                  note(b, a, "背反");
+                }
               }
         }
-      // 背反区分 3（どちらか一方）が候補どうしで成り立つ組（L-113）。1 つの候補は 1 つの組にだけ入れる（コードの順に決める。並べ方に依らない）
+      // 背反区分 3（どちらか一方）が候補どうしで成り立つ組（L-113）。1 つの候補は 1 つの組にだけ入れる（コードの順に決める。並べ方に依らない）。
+      // 組に入れなかった関係は、両側の候補に添え書きを付ける（組のほかの関係。C-294・X-155）
       const key = (x: Cand) => `${x.date}|${x.report[0]?.code ?? ""}`;
       for (const [a, b] of either.map(([a, b]) => (key(a) < key(b) ? [a, b] : [b, a])).sort((p, q) => (key(p[0]) + key(p[1]) < key(q[0]) + key(q[1]) ? -1 : 1))) {
-        if (pairs.some(([p, q]) => [p.id, q.id].includes(a.id) || [p.id, q.id].includes(b.id))) continue;
+        if (pairs.some(([p, q]) => (p.id === a.id && q.id === b.id) || (p.id === b.id && q.id === a.id))) continue;
+        if (pairs.some(([p, q]) => [p.id, q.id].includes(a.id) || [p.id, q.id].includes(b.id))) {
+          note(a, b, "背反");
+          note(b, a, "背反");
+          continue;
+        }
         pairs.push([a, b]);
       }
     }
@@ -718,7 +787,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       g.key === "G11.missing_with"
         ? `カルテ（${daysText(dates)}日）の『${first.cand.parent}』で使った『${first.r.written}』が、請求にありません。確かめてください`
         : g.key === "G11.missing_derived"
-          ? `カルテ（${daysText(dates)}日）に${first.cand.derived!.what}があり、${first.cand.derived!.name}が請求にありません。${first.cand.derived!.basis}から決まる項目です。算定できるか確かめてください`
+          ? `${first.cand.derived!.fromClaim ? "請求" : "カルテ"}（${daysText(dates)}日）に${first.cand.derived!.what}があり、${first.cand.derived!.name}が請求にありません。${first.cand.derived!.basis}から決まる項目です。算定できるか確かめてください`
           : `カルテ（${daysText(dates)}日）に『${first.r.written}』（${first.r.name}）がありますが、請求にありません。カルテに記録された行為です。算定できるか確かめてください`;
     // 同じ日の行為（同じコードの 2 回など）は 1 つの日の行にまとめる（引用は文の順に並べ、添え書きは重ねない）
     const byDate = new Map<string, { quotes: string[]; notes: Note[] }>();

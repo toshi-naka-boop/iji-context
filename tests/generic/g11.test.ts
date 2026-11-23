@@ -456,3 +456,97 @@ describe("手順 3（R18 だけ。段 18b）", () => {
     expect(s3.scope.find((s) => s.startsWith("注意つき"))).toBe("注意つきで出したもの：1 件（情報不足 1）");
   });
 });
+
+// 反証 round-55（v30 の実装）で受理した G11 の指摘。作り物の表で、直す前に落ちることを確かめてから直した
+describe("反証 round-55", () => {
+  const RECEIPT: HaihanException = { id: "HX-T1", text: "入院中の患者に行ったもの", kind: "receipt", allow: { receiptKind: "入院" } };
+  const ASK: HaihanException = {
+    id: "HX-T3",
+    text: "短期入所中の患者に行ったもの",
+    kind: "fact",
+    ask: { factKey: "haihan:HX-T3", scope: "day", askOn: "b", question: "短期入所中でしたか", choices: [{ label: "はい", means: "当たる" }, { label: "いいえ", means: "当たらない" }, { label: "その他", means: "決まらない" }, { label: "判定不能", means: "決まらない" }] },
+  };
+
+  it("C-291：背反区分 3・特例条件ありの組は、相手が元の請求にあれば条件つきの違反の添え書きで、両方が候補なら候補どうしの添え書きで、注意つきで出る（添え書きのない取り忘れにしない）", () => {
+    const db = g11Db();
+    putHaihan(db, SNAP, 1, C.nail, C.bio, "3", "1");
+    const inClaim = both(db, { units: [unit([C.bio], 10)] }, about([act(10, C.nail, "爪甲除去術")]));
+    expect(keys(inClaim.findings)).toEqual(["G11.missing 150054110 10 注意つき"]);
+    expect(notesOf(inClaim.findings[0])).toEqual(["背反の表では、条件によっては算定できません（相手：生物学的製剤注射加算。特例条件あり）。告示・通知を確かめてください"]);
+    const cands = both(db, { units: [] }, about([act(10, C.nail, "爪甲除去術"), act(10, C.bio, "生物学的製剤注射加算")]));
+    expect(keys(cands.findings)).toEqual(["G11.missing 130000110 10 注意つき", "G11.missing 150054110 10 注意つき"]);
+    expect(notesOf(cands.findings[0])).toEqual(["『爪甲除去術』（これも取り忘れの候補）を算定すると、背反で算定できません。どちらを算定するか確かめてください"]);
+  });
+
+  it("C-291：背反区分 3・特例条件ありで例外の決まりがある組は C-280 の直しと同じ。例外が全部 分類ア で当たらないと決まれば隠し、分類イがあれば例外を名指しした注意つき", () => {
+    const config = (ids: string[]): HaihanConfig => ({ patterns: [{ id: "HP-T2", a: { codes: [C.bio] }, b: { codes: [C.nail] }, tani: [1], exceptions: ids }], exceptions: [RECEIPT, ASK] });
+    const run = (ids: string[]) => {
+      const db = g11Db();
+      putHaihan(db, SNAP, 1, C.bio, C.nail, "3", "1");
+      return ok(evaluateG11({ units: [unit([C.bio], 10)] }, db, about([act(10, C.nail, "爪甲除去術")]), rev, { checks: [g03, g04, makeG05(config(ids)), g10] }));
+    };
+    const a = run(["HX-T1"]);
+    expect(keys(a.findings)).toEqual([]);
+    expect(a.hidden).toEqual([{ written: "爪甲除去術", date: date(10), reason: "背反", check: "G05", partner: "生物学的製剤注射加算" }]);
+    const b = run(["HX-T1", "HX-T3"]);
+    expect(keys(b.findings)).toEqual(["G11.missing 150054110 10 注意つき"]);
+    expect(notesOf(b.findings[0])).toEqual(["生物学的製剤注射加算を算定する日は、原則として算定できません。例外：短期入所中の患者に行ったもの。当たらなければ、請求にないままで合っています"]);
+  });
+
+  it("C-291：往診料と訪問診療料の組（背反区分 3・特例条件あり）は、今までどおり G05 の添え書きを付けない（R10 が日つきの添え書きで扱う）", () => {
+    const db = g11Db();
+    const oushin = rev.codes[rev.consts.oushin.kubun].primary;
+    const visit = rev.codes[rev.consts.visitKubun[0]].primary;
+    putHaihan(db, SNAP, 1, oushin, visit, "3", "1");
+    const r = both(db, { units: [unit([visit], 10)] }, about([act(10, oushin, "往診料", { category: "診療行為" })]));
+    expect(keys(r.findings)).toEqual([`G11.missing ${oushin} 10`]);
+  });
+
+  it("C-294・X-155：背反区分 3 の関係が候補どうしで 3 つ以上つながると、組に入らなかった関係の両側に添え書きが付く（A・B の組と、A・C の関係）", () => {
+    const db = g11Db();
+    putHaihan(db, SNAP, 1, C.nail, C.bio, "3", "0");
+    putHaihan(db, SNAP, 1, C.nail, C.wound, "3", "0");
+    const r = both(db, { units: [] }, about([act(10, C.nail, "爪甲除去術"), act(10, C.bio, "生物学的製剤注射加算"), act(10, C.wound, "創傷処置")]));
+    expect(keys(r.findings)).toEqual(["G11.missing_either 130000110+150054110 10 注意つき", "G11.missing 140000610 10 注意つき"]);
+    expect(notesOf(r.findings[0])).toEqual(["『創傷処置』（これも取り忘れの候補）を算定すると、背反で算定できません。どちらを算定するか確かめてください"]);
+    expect(notesOf(r.findings[1])).toEqual(["『爪甲除去術』（これも取り忘れの候補）を算定すると、背反で算定できません。どちらを算定するか確かめてください"]);
+  });
+
+  it("C-295：例外を名指しする添え書きは表の単位で言い分ける（同一月は「月」、1 日は「日」、同時の表は「同時に行うときは」）", () => {
+    const config: HaihanConfig = { patterns: [{ id: "HP-T3", a: { codes: [C.bio] }, b: { codes: [C.nail] }, tani: [3], exceptions: ["HX-T3"] }], exceptions: [ASK] };
+    const db = g11Db();
+    putHaihan(db, SNAP, 3, C.bio, C.nail, "1", "1");
+    const r = ok(evaluateG11({ units: [unit([C.bio], 10)] }, db, about([act(10, C.nail, "爪甲除去術")]), rev, { checks: [g03, g04, makeG05(config), g10] }));
+    expect(keys(r.findings)).toEqual(["G11.missing 150054110 10 注意つき"]);
+    expect(notesOf(r.findings[0])).toEqual(["生物学的製剤注射加算と同時に行うときは、原則として算定できません。例外：短期入所中の患者に行ったもの。当たらなければ、請求にないままで合っています"]);
+  });
+
+  it("C-292・X-154：施設基準の抑えは足した単位の日だけで決める。算定開始が 15 日で、元の請求の 5 日が開始の前でも、20 日の候補は隠れない", () => {
+    const db = g11Db();
+    db.prepare("UPDATE shinryo SET shisetsu_g1 = '721' WHERE snapshot = ? AND code = ?").run(SNAP, C.nail);
+    const decl: DeclarationView = { held: (k, on) => (k === "721" && on.day !== undefined && on.day < date(15) ? { v: "not", reason: "before_start", startOn: date(15) } : { v: "held" }), nameOf: () => null };
+    const r = both(db, { units: [unit([C.nail], 5)] }, about([act(20, C.nail, "爪甲除去術")], { declaration: decl }));
+    expect(keys(r.findings)).toEqual(["G11.missing 150054110 20"]);
+    expect(r.hidden).toEqual([]);
+    // 足した単位の日が開始の前なら隠れる
+    const early = both(db, { units: [] }, about([act(10, C.nail, "爪甲除去術")], { declaration: decl }));
+    expect(early.hidden.map((h) => `${h.date.slice(8)} ${h.reason}`)).toEqual(["10 施設基準"]);
+  });
+
+  it("X-156：同じ日・同じ親の区分の同じ子の量は合計して請求と比べる（10g ずつ 2 行と請求の 20 は合っている）", () => {
+    const db = g11Db();
+    const claim = { units: [{ items: [{ kind: "SI" as const, code: C.burn }, { kind: "IY" as const, code: D.geben, quantity: "20" }], count: 1, days: dayArr(14) }] };
+    const kid: [ChildKind, string, string, string?][] = [["薬", D.geben, "ゲーベンクリーム１％", "10g"]];
+    const r = both(db, claim, about([act(14, C.burn, "熱傷処置", { kids: kid }), act(14, C.burn, "熱傷処置", { kids: kid })]));
+    expect(keys(r.findings)).toEqual([]);
+    const less = both(db, { units: [{ ...claim.units[0], items: [claim.units[0].items[0], { ...claim.units[0].items[1], quantity: "10" }] }] }, about([act(14, C.burn, "熱傷処置", { kids: kid }), act(14, C.burn, "熱傷処置", { kids: kid })]));
+    expect(keys(less.findings)).toEqual(["G11.quantity_less 620008991 14"]);
+  });
+
+  it("X-158：判断料の候補は、請求にある検査の項目からも立てる（請求に ＰＴ があって判断料がなく、カルテには別の処置だけ）", () => {
+    const db = g11Db();
+    const r = both(db, { units: [unit([C.pt], 14)] }, about([act(14, C.wound, "創傷処置")]));
+    expect(keys(r.findings)).toEqual(["G11.missing_derived 160061810 14", "G11.missing 140000610 14"]);
+    expect(r.findings[0].text).toBe("請求（14日）に『ＰＴ』があり、血液学的検査判断料が請求にありません。マスターの検査のグループから決まる項目です。算定できるか確かめてください");
+  });
+});

@@ -205,10 +205,11 @@ export const g10: GenericCheck = {
  * これで、在宅医療DX情報活用加算の届出なし（4100）も、R12 に頼らずに G11 の手順 1 で隠れる
  */
 export function g10Blocking(claim: GenericClaim, masters: MastersDb, about: GenericAbout, added: number[]): GenericFinding[] {
-  const found = g10.run(claim, masters, about);
-  if (!Array.isArray(found)) return [];
-  const set = new Set(added);
-  return found.filter((f) => f.units.some((u) => set.has(u)));
+  // 足した単位ごとに、その単位の算定日だけで判定する（元の請求の別の日の「持たない」を足した単位に移さない。C-292・X-154。施設基準の判定はコードと日だけで決まり、ほかの単位に依らない）
+  return added.flatMap((u) => {
+    const found = g10.run({ units: [claim.units[u]] }, masters, about);
+    return Array.isArray(found) ? found.map((f) => ({ ...f, units: [u] })) : [];
+  });
 }
 
 /** 点検の範囲に出す文（G10 が動いたときだけ）：施設基準の要る行の数と三値の内訳、注14 の基準の行、正しい側を探していない行 */
