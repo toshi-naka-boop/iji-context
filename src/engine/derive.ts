@@ -139,7 +139,7 @@ export function g11Owners(c: RevisionConsts): { kubun: string[]; rules: string[]
   return [
     { kubun: [...c.visitKubun], rules: ["R01", "R10", "R13"] },
     { kubun: [c.oushin.kubun, c.oushin.revisit, ...Object.values(c.oushin.kinkyu)], rules: ["R10", "R18"] },
-    { kubun: kanriKubun(c), rules: ["R01", "R02", "R16", "R18"] },
+    { kubun: kanriKubun(c), rules: ["R01", "R02", "R16", "R18", "R19"] },
     { kubun: [c.hokatsu.kubun, c.ikou.kubun], rules: ["R03", "R14"] },
     { kubun: Object.values(c.dx.tiers), rules: ["R12"] },
     { kubun: [...baseUp.visit, ...baseUp.revisit], rules: ["R08", "R18"] },

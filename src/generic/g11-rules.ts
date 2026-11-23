@@ -30,6 +30,7 @@ const RULE_NAME: Record<string, string> = {
   R15: "物価対応料の日の区分",
   R16: "管理料の族",
   R18: "施設の種別",
+  R19: "単一建物の人数",
 };
 const ruleName = (id: string) => `${RULE_NAME[id] ?? "手書きのルール"}（${id}）`;
 /** 日で決まるルール（日を持たない情報不足は、点検の範囲に 1 行で出す。C-282） */

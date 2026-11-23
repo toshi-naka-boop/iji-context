@@ -282,3 +282,16 @@ describe("約束の 3 つ目（手書きのルールの側）", () => {
     }
   });
 });
+
+describe("管理料の候補の人数と注14 の側（round-61 X-203・X-204）", () => {
+  /** 候補 1 つに手順 3 を掛けた添え書き */
+  const notesOf = (base: ClaimContext, kubun: string, d: number) => rulesStep3(base, rev, db18c())([{ id: 1, date: date(d), units: [{ items: [{ kind: "SI", code: code(kubun) }], count: 1 }] }]).notes.get(1) ?? [];
+  const some = (n14: "通常" | "減算"): Partial<ClaimContext["facility"]> => ({ building: { known: true, value: "some" }, note14: { known: true, value: n14 } });
+
+  it("X-203：building「ある」・人数 50 人以上・通常の申告で、1 人の区分の管理料の候補には、R19 の人数の区分（50 人以上の区分）を名指しする添え書きが付く", () => {
+    const base = baseOf([line(K.visit, 14, 28)], { buildingBand: { known: true, value: "50+" } }, some("通常"));
+    const notes = notesOf(base, K.kanriRO, 28);
+    expect(notes.map((n) => n.rule)).toContain("R19");
+    expect(notes.find((n) => n.rule === "R19")!.text).toContain(name("C002_2RO5"));
+  });
+});
