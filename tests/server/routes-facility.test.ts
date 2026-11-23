@@ -147,6 +147,31 @@ describe("施設の設定のルート", () => {
     expect(log.map((l) => l.target).reverse()).toEqual(["revisitBaseUpSameDay", "revisitBaseUpSameDay", "revisitBaseUpSameDay", "priceResponse", "priceResponse"]);
   });
 
+  it("C-380：申告の項目（建物・注14 を含む）は設定の画面に出さず、設定の入口でも受け取らない（400）。設定に残っていた建物・注14 の値は判定に効かない（申告だけが効く）", async () => {
+    setRole("manager");
+    const res = await (await routes()).GET(get(cookie));
+    const keys = ((await res.json()) as { items: { key: string }[] }).items.map((i) => i.key);
+    for (const k of ["grade", "note16Met", "dxTier", "baseUp", "building", "note14"]) expect([k, keys.includes(k)]).toEqual([k, false]);
+    expect(keys).toEqual(["priceResponse", "revisitBaseUpSameDay", "revisitPriceSameDay"]);
+    for (const body of [
+      { key: "building", value: "none" },
+      { key: "building", value: false },
+      { key: "note14", value: "減算" },
+      { key: "note14", value: true },
+    ]) expect([JSON.stringify(body), (await (await routes()).POST(post(cookie, body))).status]).toEqual([JSON.stringify(body), 400]);
+    // 前の版で設定に残った値（申告とは違う値）があっても、判定に渡す施設の値は申告から決まる
+    const facility = () => instance.runAs(owner, () => instance.getApp().caseOf(claimId("K1")).facility);
+    const before = facility();
+    instance.runAs(owner, () => {
+      const a = instance.getApp();
+      const raw = a.setting("facility");
+      a.setSetting("facility", JSON.stringify({ ...(raw === null ? {} : JSON.parse(raw)), building: "some", note14: "減算" }));
+    });
+    expect([facility().building, facility().note14]).toEqual([before.building, before.note14]);
+    expect(facility().note14).not.toEqual({ known: true, value: "減算" });
+    expect((await itemOf("building")) ?? null).toBeNull();
+  });
+
   it("症例ごとの上書きは、クリニックの申告より優先する（K7 は note16Met を偽に上書きしている）", async () => {
     setRole("manager");
     const decl = await import("../../app/api/facility/declaration/route");

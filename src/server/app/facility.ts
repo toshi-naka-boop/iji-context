@@ -18,6 +18,7 @@ import {
   note14Tri,
   codeKey,
   declarationView,
+  DECLARED_KEYS,
   DISPENSING_KEY,
   dispensingTri,
   effectiveRow,
@@ -40,7 +41,7 @@ import {
   type Requirement,
   type Tri,
 } from "../../facility/declaration";
-import { insertDeclaration, MOVED_SETTING_KEYS, readDeclarations } from "../../facility/seed";
+import { insertDeclaration, readDeclarations } from "../../facility/seed";
 import { NOTE14_TOOL_TEXT, note14ResultsFromDb } from "./note14";
 import { pickSnapshot, shinryoOf, withMasters } from "../../masters/db";
 import type { User } from "../auth";
@@ -49,8 +50,8 @@ import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Uke } from "./uke";
 
-/** 申告に移さない、設定のままの項目 */
-export const SETTING_KEYS = FACT_KEYS.filter((k) => k !== "grade" && !(MOVED_SETTING_KEYS as readonly string[]).includes(k));
+/** 申告に移さない、設定のままの項目（申告の項目 DECLARED_KEYS は設定の画面に出さず、残っていた値も使わない。round-62 C-380） */
+export const SETTING_KEYS = FACT_KEYS.filter((k) => !(DECLARED_KEYS as readonly string[]).includes(k));
 type Saved = Partial<Pick<FacilityJson, FacilityFactKey>>;
 
 const SETTING_KEY = "facility";
