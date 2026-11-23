@@ -35,8 +35,13 @@ const run = (claim: G11Claim, about: G11About): Extract<G11Result, { findings: u
   }
 };
 const keys = (fs: G11Finding[]) => fs.map((f) => `${f.messageKey} ${f.codes.join("+")} ${f.days.map((d) => d.date.slice(8)).join(",")}${f.caution ? " 注意つき" : ""}`);
-/** 正しい請求でも出る、特例条件のある背反の注意つき（C-280。段の報告の外れ） */
-const CONDITIONAL: Record<string, string[]> = { K8: [], K9: ["G11.missing 130004410 28 注意つき"], K10: ["G11.missing 140005610 28 注意つき"], K11: [] };
+/**
+ * 正しい請求でも出る注意つき：K9 の中心静脈注射だけ（医療事務の答えが要る例外 HX-21 が決まらないため。C-280 の直し。2026-11-23 利用者の判断）。
+ * 例外が全部 分類ア の K10 の酸素吸入は、言い切りの形として隠れる
+ */
+const CONDITIONAL: Record<string, string[]> = { K8: [], K9: ["G11.missing 130004410 28 注意つき"], K10: [], K11: [] };
+/** 例外を名指しした K9 の中心静脈注射の添え書き（EM §2-12 HX-21 の一言） */
+const K9_NOTE = "在宅中心静脈栄養法指導管理料を算定する月は、原則として算定できません。例外：医療型短期入所サービス費等を算定している短期入所中の患者に行ったもの。当たらなければ、請求にないままで合っています";
 const owned = new Set(g11Owned(rev.consts));
 /** 症例の「出るべき」行為のコード（請求の診療行為・医薬品のうち、版の区分の行と g11Owned でないもの） */
 const shouldCodes = (k: string): string[] => {
@@ -45,15 +50,24 @@ const shouldCodes = (k: string): string[] => {
 };
 
 describe("段 18b：実データの masters.db で G11（K8〜K11）", () => {
-  withData("正しい請求（torikawasure.UKE）で G11 の指摘は、特例条件のある背反の注意つき（K9 の中心静脈注射・K10 の酸素吸入）だけ。対照の包括（創傷処置・湿布・院内の投薬・処方箋料）は言わなかった一覧に包括で並ぶ", () => {
+  withData("正しい請求（torikawasure.UKE）で、添え書きのない指摘が 0 件。注意つきは K9 の中心静脈注射 1 件だけで、例外（医療型短期入所中）を名指しする。K8 の創傷処置・湿布、K10 の酸素吸入と酸素、K11 の院内の投薬は言わなかった一覧に並ぶ", () => {
     for (const k of G11_CASES) {
       const r = run(ukeClaimOf(k), aboutOf(k));
       expect([k, keys(r.findings)]).toEqual([k, CONDITIONAL[k]]);
+      expect([k, r.findings.filter((f) => !f.caution).length]).toEqual([k, 0]);
       expect(r.findings.every((f) => f.certainty === "条件つき" && !/点|円/.test(f.text.replace(/時点|点検/g, "")))).toBe(true);
       console.log(`${k} 正しい請求：取り出した ${r.counts.acts}・当てられない ${r.counts.unmatched}・見ない ${r.counts.notSeen}・言わない ${JSON.stringify(r.counts.hidden)}・注意つき ${JSON.stringify(r.counts.caution)}・指摘 ${JSON.stringify(r.counts.byKind)}`);
     }
     const k8 = run(ukeClaimOf("K8"), aboutOf("K8")).hidden.map((h) => `${h.written} ${h.date.slice(8)} ${h.reason}`);
     expect(k8).toEqual(expect.arrayContaining(["創傷処置（１００ｃｍ２未満） 14 包括", "消炎鎮痛等処置（湿布処置） 28 包括"]));
+    const k9 = run(ukeClaimOf("K9"), aboutOf("K9"));
+    expect(k9.findings[0].days[0].notes).toEqual([{ reason: "データの点検の条件つきの違反", text: K9_NOTE }]);
+    // K10 の酸素吸入と酸素（手技と薬の組）は、背反（例外は入院中の患者だけ）で組ごと隠れ、言わなかった一覧に組で並ぶ
+    const k10 = run(ukeClaimOf("K10"), aboutOf("K10")).hidden.filter((h) => h.reason === "背反");
+    expect(k10.map((h) => [h.written, h.date.slice(8), h.partner, h.with])).toEqual([["酸素吸入", "28", "在宅酸素療法指導管理料（その他）", ["液体酸素・可搬式液化酸素容器（ＬＧＣ）", expect.any(String)]]]);
+    // K11 の院内の投薬・処方料・麻薬等加算・処方箋料も言わなかった一覧に並ぶ（包括）
+    const k11 = run(ukeClaimOf("K11"), aboutOf("K11")).hidden.map((h) => `${h.written} ${h.reason}`);
+    for (const w of ["アローゼン顆粒", "ハルシオン０．２５ｍｇ錠", "処方料（その他）", "麻薬等加算（処方料）", "処方箋料"]) expect(k11.some((h) => h.startsWith(w) && h.endsWith("包括"))).toBe(true);
   });
 
   withData("「出るべき」行為を 1 つずつ請求から外すと、外した単位のコードだけが出る（親が残れば子は missing_with）。同じ区分番号の別コードが残る外し方を含む", () => {
@@ -62,7 +76,8 @@ describe("段 18b：実データの masters.db で G11（K8〜K11）", () => {
       const codes = shouldCodes(k);
       for (const code of codes) {
         const r = run(without(ukeClaimOf(k), code), aboutOf(k));
-        const got = r.findings.filter((f) => !CONDITIONAL[k].includes(keys([f])[0]));
+        // 外した行為の相手で隠れていた対照（K10 の酸素吸入など）は、候補どうしの背反の注意つきで出る（手順 2）ので除く
+        const got = r.findings.filter((f) => !CONDITIONAL[k].includes(keys([f])[0]) && !(f.caution && !f.codes.includes(code)));
         expect([k, code, got.map((f) => f.codes.join("+"))]).toEqual([k, code, [code]]);
         expect([k, code, got[0].messageKey]).toEqual([k, code, ["620008991", "641140046", "621128301", "647130028", "646320003", "643230027", "643230038", "622345201", "643180017", "643140004", "620717601", "643330011", "647250002", "620007260", "620002613"].includes(code) ? "G11.missing_with" : "G11.missing"]);
         report.push(`${k}:${code}`);
@@ -138,7 +153,7 @@ describe("段 18b：実データの masters.db で G11（K8〜K11）", () => {
     for (const k of G11_CASES)
       for (const code of shouldCodes(k)) {
         const r = run(without(ukeClaimOf(k), code), aboutOf(k, { declaration: emptyDeclaration() }));
-        expect([k, code, r.findings.filter((f) => !CONDITIONAL[k].includes(keys([f])[0])).map((f) => f.codes.join("+"))]).toEqual([k, code, [code]]);
+        expect([k, code, r.findings.filter((f) => !CONDITIONAL[k].includes(keys([f])[0]) && !(f.caution && !f.codes.includes(code))).map((f) => f.codes.join("+"))]).toEqual([k, code, [code]]);
       }
     console.log(`K8〜K11 の「出るべき」行為のうち施設基準の要るもの：${need}（作り物のマスターで別に確かめる）`);
     expect(need).toBe(0);

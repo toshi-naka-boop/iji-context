@@ -9,6 +9,11 @@ import type { DeclarationView, Tri } from "../../src/facility/declaration";
 import { evaluateGeneric } from "../../src/generic";
 import { evaluateG11, type ConfirmedAct, type G11About, type G11Claim, type G11Finding, type G11Result } from "../../src/generic/g11";
 import { r18Step3 } from "../../src/generic/g11-rules";
+import { g03 } from "../../src/generic/g03";
+import { g04 } from "../../src/generic/g04";
+import { makeG05 } from "../../src/generic/g05";
+import { g10 } from "../../src/generic/g10";
+import type { HaihanConfig, HaihanException } from "../../src/generic/haihan";
 import { loadCase } from "../engine/helpers";
 import { YM } from "../helpers/period";
 import { GEN, put } from "./small-masters";
@@ -174,6 +179,32 @@ describe("1 つずつ見る（手順 1）", () => {
     expect(notesOf(r.findings[0])).toEqual(["背反の表では、条件によっては算定できません（相手：皮内、皮下及び筋肉内注射。別の単位の同時）。告示・通知を確かめてください"]);
     expect(notesOf(r.findings[1])[0]).toContain("特例条件あり");
     expect(r.findings.every((f) => f.certainty === "条件つき")).toBe(true);
+  });
+
+  it("背反の特例条件の例外（C-280 の直し）：例外が全部 分類ア で元の請求から当たらないと決まる組は隠れる。分類イの例外がある組は注意つきで、添え書きに例外の一言が入る", () => {
+    // 作り物の決まり：酸素の管理料 × 酸素吸入（tensuhyoMasters の同一月の背反。区分 1・特例条件あり）。例外の一言は作り物
+    const RECEIPT: HaihanException = { id: "HX-T1", text: "入院中の患者に行ったもの", kind: "receipt", allow: { receiptKind: "入院" } };
+    const ASK: HaihanException = {
+      id: "HX-T3",
+      text: "短期入所中の患者に行ったもの",
+      kind: "fact",
+      ask: { factKey: "haihan:HX-T3", scope: "day", askOn: "b", question: "短期入所中でしたか", choices: [{ label: "はい", means: "当たる" }, { label: "いいえ", means: "当たらない" }, { label: "その他", means: "決まらない" }, { label: "判定不能", means: "決まらない" }] },
+    };
+    const config = (ids: string[]): HaihanConfig => ({ patterns: [{ id: "HP-T1", a: { codes: [C.sanso] }, b: { codes: [C.sansoKyunyu] }, tani: [2], exceptions: ids }], exceptions: [RECEIPT, ASK] });
+    const claim = { units: [unit([C.sanso], 6)] };
+    const run = (ids: string[], acts: ConfirmedAct[]) => ok(evaluateG11(claim, g11Db(), about(acts), rev, { checks: [g03, g04, makeG05(config(ids)), g10] }));
+    const acts = [act(20, C.sansoKyunyu, "酸素吸入")];
+    // アだけ：隠れて、言わなかった一覧に背反で並ぶ
+    const a = run(["HX-T1"], acts);
+    expect(keys(a.findings)).toEqual([]);
+    expect(a.hidden).toEqual([{ written: "酸素吸入", date: date(20), reason: "背反", check: "G05", partner: "在宅酸素療法指導管理料 2 その他" }]);
+    // イがある：注意つきで、添え書きに例外の一言（決まらない側だけ）が入る
+    const b = run(["HX-T1", "HX-T3"], acts);
+    expect(keys(b.findings)).toEqual(["G11.missing 140005610 20 注意つき"]);
+    expect(b.findings[0].days[0].notes).toEqual([{ reason: "データの点検の条件つきの違反", text: "在宅酸素療法指導管理料 2 その他を算定する月は、原則として算定できません。例外：短期入所中の患者に行ったもの。当たらなければ、請求にないままで合っています" }]);
+    expect(b.hidden).toEqual([]);
+    // 並べ方を逆にしても同じ
+    expect(run(["HX-T1", "HX-T3"], [...acts].reverse()).findings).toEqual(b.findings);
   });
 
   it("届出なしと包括（M-2）：施設基準の届出なしの候補 A は隠れ、A に包括される候補 B は添え書きなしで出る。並べ方を逆にしても同じ", () => {

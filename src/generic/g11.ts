@@ -69,7 +69,7 @@ export type G11Finding = {
   source: { data: "chart"; ref: string };
 };
 /** 言わなかった候補（L-96）：書かれた名前・日・理由（抑えた点検の名前と相手の行の名前） */
-export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string };
+export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string; with?: string[] };
 export type G11Result =
   | { skip: string }
   | {
@@ -120,6 +120,8 @@ type Cand = {
   report: Report[];
   /** with：親の書かれた名前／derived：何から決まったか（文）／qty：量の指摘 */
   parent?: string;
+  /** act：組ごと隠したときに言わなかった一覧に添える、手技で使った薬・器材の書かれた名前（with） */
+  withNames?: string[];
   derived?: { what: string; basis: string; name: string };
   qty?: { key: "G11.quantity_less" | "G11.quantity_more"; chart: string; claim: string; child?: string };
   /** 手順 1〜3 の添え書き */
@@ -186,7 +188,7 @@ export function unitKey(name: string, collide: ReadonlySet<string>): string {
 // ───────────────────────────────────────────────────────────────────────────
 // 抑え（手順 1・2）。足した単位に結び付いた違反を、点検の上限を掛けずに全部見る（X-138）
 
-type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string };
+type Bind = { check: GenericCheckId; certain: boolean; partner: string; why: string; byDeclaration?: string; exception?: { hxText: string; month: boolean } };
 
 /** 指摘が参照する単位に、足した単位が入るか。日で決まる指摘は、その日が足した単位の算定日か（X-137） */
 function touches(f: GenericFinding, added: Map<number, AddedUnit>, code: string): AddedUnit[] {
@@ -210,8 +212,15 @@ function loserOf(f: GenericFinding): { loser: string; partner: string } | null {
   return { loser: f.codes[0], partner: f.codes[0] };
 }
 
-/** 言い切りの形（§12-3 の「確定に上げる条件」の形。言い切りの一覧には依らない。C-280）。背反の特例条件の例外で決めた指摘は条件つきとして扱う */
-const certainShape = (f: GenericFinding) => f.certainty === "確定" && !f.messageKey.startsWith("G05.exception") && !f.messageKey.startsWith("G05.local");
+/**
+ * 言い切りの形（§12-3 の「確定に上げる条件」の形。言い切りの一覧には依らない。C-280）。背反の特例条件の例外で決めた指摘は条件つきとして扱う。
+ * ただし、例外が全部 分類ア（レセプトで決まる）で、元の請求から「当たらない」と決まった組（答えを使っていない exception_none）は言い切りの形に入れる
+ * （C-280 の直し。2026-11-23 利用者の判断。reviews/fable-consult-18b.md の推奨 1）
+ */
+const receiptNone = (f: GenericFinding) => f.messageKey === "G05.exception_none" && f.params.receiptOnly === "true" && f.params.answered === "false";
+const certainShape = (f: GenericFinding) => f.certainty === "確定" && (receiptNone(f) || (!f.messageKey.startsWith("G05.exception") && !f.messageKey.startsWith("G05.local")));
+/** 例外の決まりがあり、医療事務の答えが要る例外（分類イ・ウ）が決まっていない背反の組（添え書きに例外の一言を名指しする。C-280 の直し） */
+const OPEN_EXCEPTION = new Set(["G05.exception_check", "G05.exception_ask", "G05.exception_split"]);
 /** 条件つきの理由 */
 function whyOf(f: GenericFinding): string {
   if (f.messageKey.endsWith("_cond") || f.messageKey.startsWith("G05.exception") || f.messageKey.startsWith("G05.local")) return "特例条件あり";
@@ -277,6 +286,7 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
           partner: f.check === "G10" ? (f.params.kijun ?? "") : nameOfCode(c, lp.partner),
           why: whyOf(f),
           ...(f.check === "G10" && f.messageKey === "G10.unknown" ? { byDeclaration: f.params.kijun ?? "" } : {}),
+          ...(OPEN_EXCEPTION.has(f.messageKey) && f.params.hxText ? { exception: { hxText: f.params.hxText, month: f.params.where === "同じレセプト" } } : {}),
           ...(partnerUnit !== undefined ? { partnerUnit } : {}),
         };
         push(candOf.get(u)!, b);
@@ -456,7 +466,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const rep = (code: string, written: string, quote: string): Report => ({ code, written, quote, noteId: a.noteId, name: nameOfCode(c, code) });
     if (!present(m.code, day, isJudgement(m.code))) {
       const items: G11Item[] = [{ kind, code: m.code }, ...children.map((x) => ({ kind: (x.match!.tbl === "iyakuhin" ? "IY" : "TO") as G11Item["kind"], code: x.match!.code }))];
-      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote)] });
+      add({ kind: "act", date, day, units: [unitOn(items, day)], report: [rep(m.code, a.act.written, a.act.quote)], ...(children.length > 0 ? { withNames: children.map((x) => x.written) } : {}) });
       return;
     }
     // 請求にある：同じ日・同じ区分の量をまとめて比べる（X-146）
@@ -572,11 +582,14 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const binds = [...(bindsOf(c, checks, claim, x.units.map((unit) => ({ cand: x.id, unit }))).get(x.id) ?? []), ...x.units.flatMap((u) => kaisuBinds(c, idx, u, firstDow))];
     const block = binds.find((b) => b.certain);
     if (block) {
-      for (const r of x.report.length > 0 ? x.report : [{ written: "", code: "" } as Report]) hidden.push({ written: r.written, date: x.date, reason: CHECK_NAME[block.check], check: block.check, partner: block.partner });
+      for (const r of x.report.length > 0 ? x.report : [{ written: "", code: "" } as Report]) hidden.push({ written: r.written, date: x.date, reason: CHECK_NAME[block.check], check: block.check, partner: block.partner, ...(x.withNames ? { with: x.withNames } : {}) });
       continue;
     }
     for (const b of binds) {
       if (b.byDeclaration !== undefined) x.notes.push({ reason: "施設基準の申告が分からない", text: `施設基準${b.byDeclaration}の申告が分からないので、算定できるかは施設の申告しだいです（施設の申告による）` });
+      else if (b.exception)
+        // 例外を名指しする（EM §2-12 の HX の一言をそのまま使う。文を作らない）。同一月の表は「月」、1 日・同時の表は「日」
+        x.notes.push({ reason: "データの点検の条件つきの違反", text: `${b.partner}を算定する${b.exception.month ? "月" : "日"}は、原則として算定できません。例外：${b.exception.hxText}。当たらなければ、請求にないままで合っています` });
       else if (b.check !== "G10") x.notes.push({ reason: "データの点検の条件つきの違反", text: `${CHECK_NAME[b.check]}の表では、条件によっては算定できません（相手：${b.partner}。${b.why}）。告示・通知を確かめてください` });
     }
     passed.push(x);
