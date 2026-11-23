@@ -167,7 +167,7 @@ describe("記載の形：R17 と同じ commentFormatOk で見る（design.md §1
     expect(evaluateGeneric(bad, bare, about).findings.filter((f) => f.check === "G07").map((f) => [f.messageKey, f.certainty])).toEqual([["G07.form", "確定"]]);
   });
 
-  it("重なりはコメントの行の単位（X-321・C-480）：同じ行に R17 の指摘（形でも中身の食い違いでも）があれば G07 の形の指摘を落とし、別の行の G07 の指摘は残す", () => {
+  it("重なりはコメント 1 つの単位（X-321・X-330・C-480）：同じコメントに R17 の指摘（形でも中身の食い違いでも）があれば G07 の形の指摘を落とし、同じ行の別の枠を含め、別のコメントの G07 の指摘は残す", () => {
     const k1 = () => structuredClone(claimsOf("kokuhoren.UKE")[0]);
     // 訪問日のコメントを翌月の日付にする：R17 は中身の食い違い（comment_mismatch_visitDates）を言うので、G07.form_future は出さない（同じことを 2 回言わない）
     const a = k1();
@@ -175,17 +175,19 @@ describe("記載の形：R17 と同じ commentFormatOk で見る（design.md §1
     a.comments[i] = { ...a.comments[i], raw: warekiOf(`${month(1)}-05`)! };
     const ra = checkUke(a, commentMasters());
     const mismatch = ra.hand.findings.find((f) => f.messageKey === "R17.comment_mismatch_visitDates")!;
-    expect(mismatch.params?.lines?.split(",")).toContain(String(a.comments[i].line));
+    expect(mismatch.params?.seqs?.split(",")).toContain(String(i));
     expect(ra.generic.map((f) => f.messageKey)).toContain("G07.form_future");
     expect(ra.shown.filter((f) => f.messageKey.startsWith("G07.form"))).toEqual([]);
-    // 同じコードの 2 行：形の誤り（13 月 32 日）と、翌月の日付。R17 は形の誤りの行だけを言い（形が誤ると中身は比べない）、翌月の日付の行の G07.form_future は残る
+    // 同じコードの 2 つのコメントを、同じ行（SI のコメント枠の 2 つ。行番号が同じ。X-330）に置く：形の誤り（13 月 32 日）と、翌月の日付。
+    // R17 は形の誤りのコメントだけを言い（形が誤ると中身は比べない）、翌月の日付のコメントの G07.form_future は残る
     const b = k1();
     const j = b.comments.findIndex((c) => c.code === "850100106");
     b.comments[j] = { ...b.comments[j], raw: `${warekiOf(day(1))!.slice(0, 3)}1332` };
-    b.comments.push({ ...b.comments[j], line: 99999, raw: warekiOf(`${month(1)}-01`)! });
+    b.comments.push({ ...b.comments[j], raw: warekiOf(`${month(1)}-01`)! });
+    expect(b.comments.at(-1)!.line).toBe(b.comments[j].line);
     const rb = checkUke(b, commentMasters());
-    expect(rb.hand.findings.find((f) => f.messageKey === "R17.comment_format")!.params?.lines).toBe(String(b.comments[j].line));
-    expect(rb.shown.filter((f) => f.messageKey.startsWith("G07.form")).map((f) => [f.messageKey, f.params.line])).toEqual([["G07.form_future", "99999"]]);
+    expect(rb.hand.findings.find((f) => f.messageKey === "R17.comment_format")!.params?.seqs).toBe(String(j));
+    expect(rb.shown.filter((f) => f.messageKey.startsWith("G07.form")).map((f) => [f.messageKey, f.params.seq])).toEqual([["G07.form_future", String(b.comments.length - 1)]]);
   });
 
   it("R17 の規則に当たる算定行があるレセプトの形の誤りは R17.comment_format だけ。算定行がないレセプトの同じコードの形の誤りは G07.form", () => {

@@ -114,11 +114,11 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
         continue;
       }
     }
-    // 記載の形（G07.form・form_day00・form_future。design.md §17-3）：同じコメントの行（UKE の行番号）について R17 が指摘（形 comment_format、中身の食い違い comment_mismatch_* など）を
-    // 出しているときだけ出さない（X-321・C-480）。別の行の G07 の指摘は残す。R17 は対応する算定行がなければ形を見ないので、R17 のコードでも R17 が見なかったコメントは G07 が言う
+    // 記載の形（G07.form・form_day00・form_future。design.md §17-3）：同じコメント（通し番号。SI のコメント枠は同じ行番号を持つので行番号では分けない。X-330）について
+    // R17 が指摘（形 comment_format、実際に比べたコメントの中身の食い違い comment_mismatch_* など）を出しているときだけ出さない（X-321・X-331・C-480）。別のコメントの G07 の指摘は残す。R17 は対応する算定行がなければ形を見ないので、R17 のコードでも R17 が見なかったコメントは G07 が言う
     if (g.messageKey.startsWith("G07.form")) {
-      const line = g.params.line;
-      if (line !== undefined && hand.findings.some((f) => f.ruleId === "R17" && f.kind !== "情報不足" && (f.params?.lines ?? "").split(",").includes(line))) out.duplicate++;
+      const seq = g.params.seq;
+      if (seq !== undefined && hand.findings.some((f) => f.ruleId === "R17" && f.kind !== "情報不足" && (f.params?.seqs ?? "").split(",").includes(seq))) out.duplicate++;
       else out.findings.push(g);
       continue;
     }

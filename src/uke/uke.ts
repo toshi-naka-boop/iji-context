@@ -608,12 +608,12 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
  * ほかの食い違い（数量データが読めないなど）の単位は、点検の対象外の単位として others に残す
  */
 /**
- * コメントに、UKE の行番号（line）を添える（design.md §17-3。X-321：R17 の指摘と、データで動く点検の記載の形の指摘を、コメントの行の単位で重ねるため）。
+ * コメントに、通し番号（seq＝claim.comments の添字）を添える（design.md §17-3。X-321・X-330：R17 の指摘と、データで動く点検の記載の形の指摘を、コメント 1 つの単位で重ねるため）。
  * comments は、claim から作ったコメント（mapClaim の comments・取り込んだレセプトの comments。同じ並び）。並びとコードが全部合うときだけ添え、合わなければそのまま返す
  */
 export function withCommentLines(comments: Comment[], claim: UkeClaim): Comment[] {
   if (comments.length !== claim.comments.length || comments.some((c, i) => c.code !== claim.comments[i].code)) return comments;
-  return comments.map((c, i) => ({ ...c, line: claim.comments[i].line }));
+  return comments.map((c, i) => ({ ...c, seq: i }));
 }
 
 export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): MappedClaim {

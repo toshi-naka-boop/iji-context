@@ -211,7 +211,7 @@ const FORMS: Record<string, string> = {
 function formFindings(claim: GenericClaim, about: GenericAbout, label: (code: string) => string): GenericFinding[] {
   const out: GenericFinding[] = [];
   const last = `${about.yearMonth}-31`;
-  for (const c of claim.comments ?? []) {
+  for (const [seq, c] of (claim.comments ?? []).entries()) {
     const prefix = c.code.slice(0, 3);
     if (!Object.hasOwn(FORMS, prefix) || c.raw === undefined) continue;
     const text = normalizeCommentText(c.raw);
@@ -226,8 +226,8 @@ function formFindings(claim: GenericClaim, about: GenericAbout, label: (code: st
       units: c.unit === null || c.unit === undefined ? [] : [c.unit],
       codes: [],
       messageKey: key,
-      // line（UKE の行番号）は、重なりの規則（src/generic/overlap.ts）が、同じコメントの行に R17 の指摘があるかを見るのに使う
-      params: { comment: label(c.code), commentCode: c.code, text, form: FORMS[prefix], ...(c.line === undefined ? {} : { line: String(c.line) }) },
+      // seq（コメントの通し番号＝claim.comments の添字）は、重なりの規則（src/generic/overlap.ts）が、同じコメントに R17 の指摘があるかを見るのに使う（X-330）
+      params: { comment: label(c.code), commentCode: c.code, text, form: FORMS[prefix], seq: String(seq) },
       source: { data: "コメントの形式", ref: `EM §2-10 表 3 先頭 3 桁=${prefix}, コード=${c.code}` },
     });
   }
