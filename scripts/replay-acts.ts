@@ -12,13 +12,14 @@ import { withMasters } from "../src/masters/db";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** 再生の線（設計の値。段 18d） */
 const REPLAY_MIN_IN20 = 48;
-const DEFAULT_RUN = "2026-11-23T07-35-47-886Z";
 
 type Case = { id: string; kind: string; chart?: string; date?: string; refExclude?: RefExclude[] };
 type Saved = { id: string; output: { got?: SavedAct[]; misses?: { got: SavedAct[] }[] } };
 type Baseline = { run: string; hits: string[] };
 
-const runId = process.argv[2] ?? DEFAULT_RUN;
+const baseline = JSON.parse(readFileSync(path.join(root, "eval", "replay-baseline.json"), "utf8")) as Baseline;
+/** 既定の run は基準のファイルが持つ run（日付をコードに直書きしない） */
+const runId = process.argv[2] ?? baseline.run;
 const cases = new Map(
   readFileSync(path.join(root, "eval", "datasets", "resemen.jsonl"), "utf8")
     .split("\n")
@@ -32,7 +33,6 @@ const saved = readFileSync(path.join(root, "eval", "runs", runId, "results.jsonl
   .filter((l) => l.trim())
   .map((l) => JSON.parse(l) as Saved)
   .filter((r) => cases.has(r.id));
-const baseline = JSON.parse(readFileSync(path.join(root, "eval", "replay-baseline.json"), "utf8")) as Baseline;
 
 const code = withMasters((db) => {
   if (!db) {
