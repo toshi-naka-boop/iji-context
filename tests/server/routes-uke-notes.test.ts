@@ -132,6 +132,32 @@ describe("取り込んだ請求の月末の点検の B の欄（反証 round-55 
   });
 });
 
+describe("当てられない行為を B の欄から選ぶ入口（design.md §15-9。反証 round-55 X-157）", () => {
+  it("当てずに残した行為は B の欄に当てられない行為として並び（カルテの id と位置つき）、POST /api/chart/acts で選ぶと次の点検で突き合わせる。当たっている行為は 409、表にないコードは 400", async () => {
+    const clerkId = instance.clerkIdOf(user);
+    const [, other] = instance.runAs(user, () => instance.getApp().importedClaims(clerkId));
+    const written = "そうしょう";
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts: [{ category: "処置", written, lookup: [], quote: written }], rx: [] }, sessionId: "", stats: {} });
+    const pasted = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${other}/notes`, { date: "2026-10-14", note: { s: "", o: `${written}。`, a: "", p: "", rx: "" } }), { params: Promise.resolve({ claimId: other }) });
+    expect(pasted.status).toBe(200);
+    const p = (await pasted.json()) as { id: number; acts: Record<string, unknown>[] };
+    const acts = (await import("../../app/api/chart/acts/route")).POST;
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), facts: [], acts: p.acts.map((a) => ({ ...a, match: null })), rx: [] }))).status).toBe(200);
+    const before = (await check(other)).torikawasure as { unmatchedActs?: unknown[]; findings?: { codes: string[] }[] };
+    expect(before.unmatchedActs).toEqual([{ date: "2026-10-14", written, category: "処置", noteId: p.id, index: 0 }]);
+    expect(before.findings?.some((f) => f.codes.includes("140000610"))).toBe(false);
+    const match = { tbl: "shinryo", code: "140000610", name: "創傷処置", by: "search" };
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, match: { ...match, code: "999999999" } }))).status).toBe(400);
+    const picked = await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, match }));
+    expect([picked.status, picked.status === 200 ? "" : await picked.text()]).toEqual([200, ""]);
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, match }))).status).toBe(409);
+    const after = (await check(other)).torikawasure as { unmatchedActs?: unknown[]; findings?: { messageKey: string; codes: string[] }[] };
+    expect(after.unmatchedActs).toEqual([]);
+    expect(after.findings?.map((f) => `${f.messageKey} ${f.codes.join("+")}`)).toContain("G11.missing 140000610");
+    expect(instance.runAs(user, () => instance.getApp().savedActs(p.id))!.acts[0].match).toEqual({ tbl: "shinryo", code: "140000610", name: "創傷処置（１００ｃｍ２未満）", by: "search" });
+  });
+});
+
 describe("区分誤りの出た対応は消さずに、読むときに外す（反証 round-55 C-293・C-300）", () => {
   it("施設の種別と合わない区分の在医総管を選んだ対応は、点検（GET）を開いても消えず、次の確かめでは初期値にも「前に選んだもの」にもならない。種別に合う区分の対応は初期値になる", async () => {
     const clerkId = instance.clerkIdOf(user);

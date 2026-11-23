@@ -22,17 +22,17 @@ export type Torikawasure = G11Result & { coverage?: string };
 
 type Entry = { date: string; acts?: ChartAct[]; rxNotes?: RxNote[]; rxChoice?: RxChoice | null };
 
-/** 保存した行ったこと（日ごと）を、G11 の入力にする。noteId はカルテの id（合成カルテは日の並びの番号） */
-export function actsInput(days: { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }[]): { acts: ConfirmedAct[]; rxDays: RxDay[] } {
+/** 保存した行ったこと（日ごと）を、G11 の入力にする。noteId はカルテの id（合成カルテは日の並びの番号）。stored は保存したカルテ（行為の位置を添え、当てられない行為をあとから選べる。X-157） */
+export function actsInput(days: { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; stored?: boolean }[]): { acts: ConfirmedAct[]; rxDays: RxDay[] } {
   return {
-    acts: days.flatMap((d) => d.acts.map((act) => ({ date: d.date, noteId: d.noteId, act }))),
+    acts: days.flatMap((d) => d.acts.map((act, index) => ({ date: d.date, noteId: d.noteId, ...(d.stored ? { index } : {}), act }))),
     rxDays: days.map((d) => ({ date: d.date, rx: d.rx.length > 0, choice: d.rxChoice ?? (d.rx.length > 0 ? rxDefault(d.rx) : null) })),
   };
 }
 
 export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">) {
   /** 合成の症例の、合成カルテの確かめたあとの行ったこと（合成カルテのない症例・acts を持たない合成カルテは空） */
-  function chartDays(claimId: string): { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }[] {
+  function chartDays(claimId: string): { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; stored?: boolean }[] {
     const f = chartFileOf(ctx.paths.root, claimId);
     if (!f) return [];
     const entries = (JSON.parse(readFileSync(f, "utf8")) as { entries: Entry[] }).entries;
@@ -40,13 +40,13 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
   }
   /** 確かめたカルテ（id・日・保存した行ったこと）を、日ごとの形にする */
   const storedDays = (notes: { id: number; date: string; acts: StoredActs | null | undefined }[]) =>
-    notes.flatMap((n) => (n.acts ? [{ date: n.date, noteId: n.id, acts: n.acts.acts, rx: n.acts.rx, rxChoice: n.acts.rxChoice }] : []));
+    notes.flatMap((n) => (n.acts ? [{ date: n.date, noteId: n.id, acts: n.acts.acts, rx: n.acts.rx, rxChoice: n.acts.rxChoice, stored: true }] : []));
 
   /**
    * G11 を掛ける。claim は突き合わせる請求（取り込んだ請求は UKE の単位、算定プレビュー・月末の点検は claimOfLines の単位）、base は元の請求の文脈（手順 3 と同じ族の例外が使う）、
    * hand は元の請求の手書きのルールの結果（R ルールと 2 回言わない）
    */
-  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: ReturnType<typeof storedDays>; hand: Finding[] }): G11Result {
+  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[] }): G11Result {
     const { acts, rxDays } = actsInput(input.days);
     const ym = input.base.yearMonth;
     const declaration = declarationViewOf(ctx, clock);

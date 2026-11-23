@@ -50,6 +50,14 @@ export const actsBody = z.strictObject({
   rx: z.array(z.strictObject({ quote: z.string().max(MAX_CHART_TEXT) })).max(20),
   rxChoice: z.enum(["outside", "inside", "unknown"]).nullable().optional(),
 });
+/** 確かめて残したカルテの当てられない行為を、選んで当てる本文（POST /api/chart/acts の別の形。design.md §15-9 の「当てられない行為（候補から選ぶ入口）」。X-157） */
+export const pickBody = z.strictObject({
+  noteId: noteParams.shape.id,
+  index: z.number().int().min(0).max(99),
+  match: z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["alias", "candidate", "search"]) }),
+});
+/** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */
+export const actsOrPickBody = z.union([actsBody, pickBody]);
 const ym = z.string().regex(YEAR_MONTH);
 /** 候補（GET /api/chart/acts/candidates）。lookup は「|」で区切った語（5 個まで） */
 export const candidatesQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, written: z.string().min(1).max(200), lookup: z.string().max(600).optional() });

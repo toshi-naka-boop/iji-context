@@ -90,7 +90,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
     // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
@@ -132,6 +132,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     actCandidates,
     searchMasters,
     savedActs,
+    pickAct,
     deleteNote,
     listNotes,
     chartClaim,

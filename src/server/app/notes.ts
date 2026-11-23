@@ -214,6 +214,37 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     })();
     return { claimId: r.claim_id, date: r.date };
   }
+  /**
+   * 確かめて残したカルテの、当てられない行為（match が null）を、本人が候補・探す・前に選んだものから選んで当てる（design.md §15-7・15-9 の
+   * B の欄「当てられない行為（候補から選ぶ入口）」。反証 round-55 X-157）。次の点検から、その行為を突き合わせる。
+   * 当てたコードは confirmActs と同じく、診療年月の 1 枚の、category で決めた表に実在するものだけ（名称はマスターの値に置き換える）。選んだ対応はクリニックごとに残す（L-95）。
+   * もう当たっている行為は直さない（409）。訪問カルテは書いた本人だけ（C-302 と同じ）。返すのは請求と日だけ
+   */
+  function pickAct(id: number, clerkId: string, index: number, match: ActMatch) {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
+    if (r.acts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const stored = JSON.parse(r.acts) as StoredActs;
+    const act = stored.acts[index];
+    if (!act) throw badRequest("このカルテにない行為です", ["index"]);
+    if (act.match) throw conflict("この行為はもう当たっています");
+    if (match.by === "name") throw badRequest("選んだ当て方ではありません", ["match"]);
+    const key = tableKeyOfAct(act.category);
+    const row = withMasters((db) => rowIn(rowsFor(db, key, caseOf(r.claim_id).yearMonth), match.tbl, match.code));
+    if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${match.code}`, ["match"]);
+    const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
+    const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i === index ? { ...a, match: m } : a)) };
+    const wn = normName(act.written);
+    sqlite.transaction(() => {
+      sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
+      for (const t of tablesOfKey(key)) if (t !== m.tbl) sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ?").run(wn, t);
+      sqlite
+        .prepare("INSERT INTO chart_act_aliases (written_norm, tbl, code, chosen_by, chosen_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(written_norm, tbl) DO UPDATE SET code = excluded.code, chosen_by = excluded.chosen_by, chosen_at = excluded.chosen_at")
+        .run(wn, m.tbl, m.code, clerkId, now());
+    })();
+    return { claimId: r.claim_id, date: r.date };
+  }
   /** 保存した行ったこと（確かめていなければ null） */
   const savedActs = (id: number): StoredActs | null => {
     const r = noteRow(id);
@@ -405,7 +436,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

@@ -543,6 +543,18 @@ describe("反証 round-55", () => {
     expect(keys(less.findings)).toEqual(["G11.quantity_less 620008991 14"]);
   });
 
+  it("X-157：当てられない行為は、日・書かれた名前・種類と、保存したカルテの id と位置（あとから選ぶ入口）を結果に並べる。位置のない行為（合成カルテ）は位置なし", () => {
+    const db = g11Db();
+    const stored: ConfirmedAct = { date: date(10), noteId: 7, index: 2, act: { category: "処置", written: "よく分からない処置", lookup: [], quote: "よく分からない処置", match: null } };
+    const synthetic: ConfirmedAct = { date: date(12), noteId: 1, act: { category: "注射", written: "よく分からない注射", lookup: [], quote: "よく分からない注射", match: null } };
+    const r = both(db, { units: [] }, about([stored, synthetic]));
+    expect(r.unmatchedActs).toEqual([
+      { date: date(10), written: "よく分からない処置", category: "処置", noteId: 7, index: 2 },
+      { date: date(12), written: "よく分からない注射", category: "注射" },
+    ]);
+    expect(r.scope).toContain("当てられない行為：2 件");
+  });
+
   it("X-158：判断料の候補は、請求にある検査の項目からも立てる（請求に ＰＴ があって判断料がなく、カルテには別の処置だけ）", () => {
     const db = g11Db();
     const r = both(db, { units: [unit([C.pt], 14)] }, about([act(14, C.wound, "創傷処置")]));

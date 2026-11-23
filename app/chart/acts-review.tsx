@@ -33,8 +33,8 @@ export function actsToSave(rows: ActRow[]): ChartAct[] {
 const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", inside: "院内", unknown: "分からない" };
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
-/** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口 */
-function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void }) {
+/** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
+export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void }) {
   const { item, onChange } = props;
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Candidate[]>([]);

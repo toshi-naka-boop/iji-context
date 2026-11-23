@@ -24,8 +24,8 @@ import type { GenericAbout, GenericAboutMore, GenericCheck, GenericCheckId, Gene
 // ───────────────────────────────────────────────────────────────────────────
 // 入力
 
-/** 本人が確かめた行為 1 つ（カルテの日付と、その日の記載の id） */
-export type ConfirmedAct = { date: string; noteId?: number; act: ChartAct };
+/** 本人が確かめた行為 1 つ（カルテの日付と、その日の記載の id）。index は保存したカルテの行ったことの中の位置（保存したカルテだけ。当てられない行為をあとから選ぶ入口。X-157） */
+export type ConfirmedAct = { date: string; noteId?: number; index?: number; act: ChartAct };
 /** その日の処方の記載があるか（rx）と、本人が選んだ（なければ初期値の規則で出た）院内・院外 */
 export type RxDay = { date: string; rx: boolean; choice: RxChoice | null };
 /** 院内処方か院外処方か（施設の申告 dispensing。その請求の診療年月で効く行）。inside＝院内処方もある */
@@ -77,6 +77,8 @@ export type G11Finding = {
   caution: boolean;
   source: { data: "chart"; ref: string };
 };
+/** 当てられない行為（design.md §15-7・15-9。X-157）：日・書かれた名前・種類。保存したカルテの行為は、カルテの id と位置（候補から選んで残す入口） */
+export type G11Unmatched = { date: string; written: string; category: ChartAct["category"]; noteId?: number; index?: number };
 /** 言わなかった候補（L-96）：書かれた名前・日・理由（抑えた点検の名前と相手の行の名前） */
 export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string; with?: string[] };
 /** 区分誤りの出た対応（C-250・C-263）：R18 の同じ族の区分誤りが添えられた候補の、書かれた名前・表・コード（結果に載せるだけ。前に選んだ対応は消さず、読むときに同じ R18 の規則で外す：src/server/app/notes.ts の aliasOf。反証 round-55 C-293） */
@@ -86,6 +88,8 @@ export type G11Result =
   | {
       findings: G11Finding[];
       hidden: G11Hidden[];
+      /** 当てられない行為（取り忘れは言わない。L-94） */
+      unmatchedActs: G11Unmatched[];
       kubunDoubts: KubunDoubt[];
       /** 手書きのルールの指摘に添える文（R01 の回数の区分誤り。条件つきに下げる。design.md §15-8 の「R ルールと 2 回言わない」） */
       handNotes: { messageKey: string; text: string }[];
@@ -447,6 +451,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const byDay = new Map<string, ConfirmedAct[]>();
   for (const a of acts) byDay.set(a.date, [...(byDay.get(a.date) ?? []), a]);
   let unmatched = 0;
+  const unmatchedActs: G11Unmatched[] = [];
   for (const [date, list] of [...byDay].sort(([x], [y]) => (x < y ? -1 : 1))) {
     const day = Number(date.slice(8, 10));
     const r = rxDay.get(date);
@@ -459,6 +464,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       const m = a.act.match;
       if (!m) {
         unmatched++;
+        unmatchedActs.push({ date: a.date, written: a.act.written, category: a.act.category, ...(a.noteId !== undefined && a.index !== undefined ? { noteId: a.noteId, index: a.index } : {}) });
         continue;
       }
       const kubun = m.tbl === "shinryo" ? info.kubunOf(m.code) : null;
@@ -856,5 +862,6 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const n = new Set(acts.filter((a) => a.act.match && visit.has(info.kubunOf(a.act.match.code) ?? "")).map((a) => a.date)).size;
     handNotes.push({ messageKey: "R01.use_once", text: `カルテでは訪問診療が ${n} 回あります。訪問診療料の取り忘れ（G11）を先に確かめてください` });
   }
-  return { findings, hidden, kubunDoubts, handNotes, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  unmatchedActs.sort((a, b) => (`${a.date}|${a.written}|${a.noteId ?? ""}|${a.index ?? ""}` < `${b.date}|${b.written}|${b.noteId ?? ""}|${b.index ?? ""}` ? -1 : 1));
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }
