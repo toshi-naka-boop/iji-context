@@ -114,6 +114,14 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
         continue;
       }
     }
+    // 記載の形（G07.form・form_day00・form_future。design.md §17-3）：同じコメントについて R17 が形の指摘（R17.comment_format）を出しているときだけ出さない。
+    // R17 は対応する算定行がなければ形を見ないので、R17 のコードでも R17 が見なかったコメントは G07 が言う（判定の関数は同じ commentFormatOk）
+    if (g.messageKey.startsWith("G07.form")) {
+      const code = g.params.commentCode;
+      if (hand.findings.some((f) => f.ruleId === "R17" && f.messageKey === "R17.comment_format" && rev.comments.some((r) => r.id === f.params?.rule && r.codes.includes(code)))) out.duplicate++;
+      else out.findings.push(g);
+      continue;
+    }
     const kubun = g.codes.map((code) => kubunOf.get(code));
     // 当たるコードのどれかが、エンジンに渡っていない（手書きの表にないコード）→ 手書きは、その組を見ていない
     const owners = kubun.includes(undefined) ? [] : covers.filter((c) => c.kind === g.kind && c.sets.has(setKey(kubun as string[])) && sameComment(g, kubun));

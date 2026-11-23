@@ -1,6 +1,6 @@
 // G07 必須コメント（design.md §12-3）：コメント関連テーブル（［関］＝ファイル仕様説明書 令和8年度版。列の意味は src/masters/layout.ts）で、レセプトにある診療行為・医薬品・特定器材の
 // コードごとに、算定すれば必ず要る記載を引き、そのコメントコードがレセプトのどこにもなければ指摘する。置き場所では判定しない（R17 と同じ。コメントコードは項目ごとに決まっている）。
-// 見るのは「あるか・ないか」だけ。中身（日付・数値・文章）は読まない。
+// 見るのは「あるか・ないか」（と、下の記載の形）だけ。中身が正しいか（日付・数値・文章の意味）は読まない。
 // 使う行（［関］p2〜7。どれも、原文の記載要領 別表Ⅰ・Ⅱ・Ⅳ の行で確かめた錨が EM §2-11 にある）：
 //   コメント記載通知等が、行の種類に合う表：診療行為＝1（別表Ⅰ 医科）／医薬品＝5（別表Ⅱ）／特定器材＝8（別表Ⅳ）。別表Ⅲ（検査値。指定の病院だけ）・歯科・調剤・訪問看護は使わない
 //   条件区分 01（その行為の算定が条件で、ほかの条件がない）と、入院外のレセプトでの 02・入外区分 2（入院外で算定した場合）
@@ -9,11 +9,14 @@
 // 条件区分 03 のうち、材料加算の項番 0237 だけは、同じコードの回数で判定する（design.md §17-2。条件つき。2 回分・3 回分を回数で表す読みは明文なし〔EM §2-10 表 5 W-61d〕）。
 // 使わない行（点検の範囲に数を出す）：0237 以外の 03・特定器材の 03・数量のある 0237・13（複数回算定した場合）、
 //   10〜12（DPC）、20・30（選定療養など）、入院か入院外かが分からないときの 02。診療行為を特定しない行（199999999 など）は、コードで引けないので当たらない。
+// 記載の形（design.md §17-3）：レセプトのコメントの文字データの形を、R17 と同じ関数（commentFormatOk）で見る。中身と請求の突き合わせはしない
 // 組の読み方：同じ行為・同じ項番・同じ枝番の行を 1 つの組にする（枝番は「項番内の条件ごと」。［関］p3）。組にコメントが複数あるとき、選択（どれか 1 つ）か全部要るかは、表からは決まらない。
 //   別表Ⅰ の原文で確かめた範囲では、選択肢・「初回である旨か前回の年月日」・「どちらかの値」が同じ枝番に並び、両方とも要る記載は別の枝番に分かれている（EM §2-11）。
 //   どちらの読み方でも成り立つことだけを言う：組のコメントが 1 つもないときだけ指摘する（1 つでもあれば言わない）
+import { commentFormatOk, dateOfWareki } from "../engine/comments";
 import type { CommentRule, KisaiYoshi } from "../engine/revisions/types";
 import { pickSnapshot, sourcesOf, type MastersDb } from "../masters/db";
+import { normalizeCommentText } from "../uke/uke";
 import { rowNamesOf } from "./lookup";
 import type { GenericAbout, GenericAboutMore, GenericCheck, GenericClaim, GenericFinding, GenericUnitDetail } from "./types";
 
@@ -179,16 +182,56 @@ const shown = (list: string[]): string[] => (list.length > SHOWN ? [...list.slic
 export function g07NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const r = commentGroupsOf(claim, masters, about);
   if (r === null) return ["必須コメントは、コメントを持つレセプトにだけ掛けます。ここの行にはコメントが付いていないので、点検していません"];
-  if ("skip" in r) return [];
+  // 表がなくても形の指摘があれば G07 は動いたことになる（design.md §17-3）。そのときは、記載があるか・ないかを見ていないことを出す
+  if ("skip" in r) return [`必須コメント：${r.skip}。記載があるか・ないかは点検していません（記載の形〔年月日・時刻・数値など〕だけを見ています）`];
   const always = r.groups.filter((g) => g.kaisu === undefined);
   const multi = always.filter((g) => g.comments.length > 1).length;
   const conditional = conditionalOf(claim, masters, about);
   return [
-    `必須コメント：このレセプトの行について見たのは、算定すれば必ず要る記載 ${always.length} 組と、材料加算の 2 回分・3 回分の記載（項番 237）${r.groups.length - always.length} 組です（記載があるか・ないかだけで、中身は見ていません）。` +
+    `必須コメント：このレセプトの行について見たのは、算定すれば必ず要る記載 ${always.length} 組と、材料加算の 2 回分・3 回分の記載（項番 237）${r.groups.length - always.length} 組です（記載の形〔年月日・時刻・数値など〕は見ていますが、中身が正しいかは見ていません）。` +
       `${multi > 0 ? `そのうち、同じ項番・枝番にコメントコードが複数ある ${multi} 組は、どれか 1 つがあれば指摘しません（全部が要る組か、選択かを、表からは決められないため）` : ""}`,
     `記載が要ることがある項目 ${conditional?.items.length ?? 0} 件は、判定していません（条件は記載要領の文章にあります。条件に当たるかは記載要領で確かめてください）`,
     `判定していない組（項番 237 以外の複数回算定の記載・数量の書いてある項番 237・診療年月の後に変わった行・DPC など）は ${r.notUsed} 組です`,
   ];
+}
+
+/** 記載の形を見るコメントの種類（コードの先頭 3 桁。EM §2-10 表 3）と、形の説明 */
+const FORMS: Record<string, string> = {
+  "830": "定型文の後の文字",
+  "842": "数値（数字と小数点・符号）",
+  "850": "和暦の年月日 7 桁（年号・年・月・日）",
+  "851": "時刻 4 桁（時・分）",
+  "852": "時間（分）5 桁",
+};
+
+/**
+ * 記載の形（design.md §17-3）：R17 と同じ commentFormatOk で見る。850 で年号・年・月が正しく日だけが 00 のときは、年月だけのコードがあり得るので条件つき（form_day00）。
+ * 850 の日付が診療年月の末日より後なら条件つき（form_future。予定日を書く記載があり得る）。診療年月より前の日付は言わない
+ */
+function formFindings(claim: GenericClaim, about: GenericAbout, label: (code: string) => string): GenericFinding[] {
+  const out: GenericFinding[] = [];
+  const last = `${about.yearMonth}-31`;
+  for (const c of claim.comments ?? []) {
+    const prefix = c.code.slice(0, 3);
+    if (!Object.hasOwn(FORMS, prefix) || c.raw === undefined) continue;
+    const text = normalizeCommentText(c.raw);
+    let key: string | null = null;
+    if (!commentFormatOk(c.code, text)) key = prefix === "850" && /^\d{5}00$/.test(text) && dateOfWareki(`${text.slice(0, 5)}01`) !== null ? "G07.form_day00" : "G07.form";
+    else if (prefix === "850" && (dateOfWareki(text) as string) > last) key = "G07.form_future";
+    if (key === null) continue;
+    out.push({
+      check: "G07",
+      kind: "記載もれ",
+      certainty: key === "G07.form" ? "確定" : "条件つき",
+      units: c.unit === null || c.unit === undefined ? [] : [c.unit],
+      codes: [],
+      messageKey: key,
+      // commentCode は、重なりの規則（src/generic/overlap.ts）が R17 の形の指摘と同じコメントかを見るのに使う
+      params: { comment: label(c.code), commentCode: c.code, text, form: FORMS[prefix] },
+      source: { data: "コメントの形式", ref: `EM §2-10 表 3 先頭 3 桁=${prefix}, コード=${c.code}` },
+    });
+  }
+  return out;
 }
 
 export const g07: GenericCheck = {
@@ -197,13 +240,17 @@ export const g07: GenericCheck = {
   run(claim, masters, about) {
     const r = commentGroupsOf(claim, masters, about);
     if (r === null) return [];
-    if ("skip" in r) return r;
     const names = pickSnapshot(masters, "comment", about.yearMonth, about.generation);
     const nameOf = masters.prepare("SELECT name FROM comment WHERE snapshot = ? AND code = ?");
     const label = (code: string): string => {
       const name = names === null ? undefined : (nameOf.get(names.snapshot, code) as { name: string } | undefined)?.name;
       return name ? `「${phrase(name)}」（${code}）` : `コメントコード ${code}`;
     };
+    // 記載の形は、コードの先頭 3 桁だけで決まるので、診療年月の世代のコメント関連テーブルがなくても見る（design.md §17-3 の C-471。記載があるか・ないかは見ない）
+    if ("skip" in r) {
+      const form = formFindings(claim, about, label);
+      return form.length > 0 ? form : r;
+    }
     const r17 = about.kisai?.r17Codes ?? new Set<string>();
     const out: GenericFinding[] = [];
     for (const g of r.groups) {
@@ -233,6 +280,7 @@ export const g07: GenericCheck = {
         source: { data: COMMENT_TABLE, ref: `コメント記載通知等=${SHEET[g.kind].tsuchi}, 項番=${g.kouban}, 枝番=${g.edaban}, コード=${g.code}` },
       });
     }
+    out.push(...formFindings(claim, about, label));
     return out;
   },
 };

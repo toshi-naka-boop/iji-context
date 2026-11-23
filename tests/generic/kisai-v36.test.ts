@@ -11,9 +11,9 @@ import { genericScopeOf } from "../../src/generic/scope";
 import type { GenericAboutMore, GenericClaim } from "../../src/generic/types";
 import { genericView } from "../../src/generic/view";
 import { openMasters } from "../../src/masters/db";
-import { day, YM } from "../helpers/period";
+import { day, month, YM } from "../helpers/period";
 import { GEN, put } from "./small-masters";
-import { commentMasters, K } from "./small-comments";
+import { checkUke, claimsOf, commentMasters, K } from "./small-comments";
 
 const rev = resolveRevision(YM);
 const about: GenericAboutMore = { yearMonth: YM, generation: GEN, outpatient: true };
@@ -117,6 +117,58 @@ describe("項番 0237：同じコードの回数が算定回数に届き、選�
     const db = v36Masters();
     const c = claimOf([unit("SI", ZAIRYO.bombe, 2)]);
     expect(genericScopeOf(c, db, about, evaluateGeneric(c, db, about)).notDone.find((t) => t.startsWith("必須コメント"))).toContain("材料加算の 2 回分・3 回分の記載（項番 237）1 組");
+  });
+});
+
+describe("記載の形：R17 と同じ commentFormatOk で見る（design.md §17-3）", () => {
+  const wareki = (n: number) => warekiOf(day(n))!;
+  const form = (code: string, raw: string) => g07(claimOf([], [{ code, raw, unit: null }])).map((f) => [f.messageKey, f.certainty]);
+  it("形の誤りは G07.form（確定）：850 の 7 桁でない・存在しない日、851 の 2460、842 の「＋」「１２．３．４」、830 の空", () => {
+    const era = wareki(1).slice(0, 3);
+    for (const [code, raw] of [["850100106", wareki(1).slice(0, 6)], ["851100038", "２４６０"], ["842100072", "＋"], ["842100072", "１２．３．４"], ["830100086", "　"], ["852100005", "123"]])
+      expect(form(code, raw), `${code} ${raw}`).toEqual([["G07.form", "確定"]]);
+    // 令和 8 年 2 月 30 日（暦にない日）
+    expect(form("850100106", `${era}0230`)).toEqual([["G07.form", "確定"]]);
+  });
+
+  it("通る形：昭和の日付（年号 3）、全角の数字、852 の 5 桁、842 の符号つきの小数。診療年月より前の日付は言わない", () => {
+    for (const [code, raw] of [["850100108", "３５００１０１"], ["850100106", wareki(5).replace(/\d/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0))], ["852100005", "００１２０"], ["842100072", "－１．５"], ["850100106", warekiOf(`${month(-3)}-15`)!]])
+      expect(form(code, raw), `${code} ${raw}`).toEqual([]);
+  });
+
+  it("日が 00 は G07.form_day00（条件つき）。年月が誤っていれば（13 月）G07.form（確定）。末日より後は G07.form_future（条件つき）", () => {
+    const ym = wareki(1).slice(0, 5);
+    expect(form("850100106", `${ym}00`)).toEqual([["G07.form_day00", "条件つき"]]);
+    expect(form("850100106", `${ym.slice(0, 3)}1300`)).toEqual([["G07.form", "確定"]]);
+    expect(form("850100106", warekiOf(`${month(1)}-01`)!)).toEqual([["G07.form_future", "条件つき"]]);
+    const f = g07(claimOf([], [{ code: "850100106", raw: `${ym}00`, unit: null }]));
+    expect(genericView({ findings: f, ran: [], notRun: [] }, null).findings[0].text).toBe(`摘要欄の「手作りのコメントの定型文」（850100106）の年月日「${ym}00」の日が 00 です。年月だけを書くコードでなければ、日を書いてください`);
+  });
+
+  it("診療年月の世代のコメント関連テーブルがなくても、形は見る（記載があるか・ないかは見ていないと点検の範囲に出す）。形の誤りがなければ、今までどおり動かさない", () => {
+    const db = commentMasters();
+    const old = { ...about, yearMonth: month(-60), generation: "R3" };
+    const bad = claimOf([unit("SI", K.kokyu)], [{ code: "851100038", raw: "2460", unit: null }]);
+    const r = evaluateGeneric(bad, db, old);
+    expect(r.findings.filter((f) => f.check === "G07").map((f) => f.messageKey)).toEqual(["G07.form"]);
+    expect(genericScopeOf(bad, db, old, r).notDone.find((t) => t.startsWith("必須コメント"))).toContain("記載があるか・ないかは点検していません");
+    expect(evaluateGeneric(claimOf([unit("SI", K.kokyu)]), db, old).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "noSnapshot" });
+  });
+
+  it("R17 の規則に当たる算定行があるレセプトの形の誤りは R17.comment_format だけ。算定行がないレセプトの同じコードの形の誤りは G07.form", () => {
+    const [k1] = structuredClone(claimsOf("kokuhoren.UKE"));
+    const i = k1.comments.findIndex((c) => c.code === "850100106");
+    expect(i).toBeGreaterThanOrEqual(0);
+    k1.comments[i] = { ...k1.comments[i], raw: "５０８１３３２" };
+    const withLine = checkUke(k1, commentMasters());
+    expect(withLine.hand.findings.filter((f) => f.messageKey === "R17.comment_format").length).toBe(1);
+    expect(withLine.generic.filter((f) => f.messageKey === "G07.form")).toHaveLength(1);
+    expect(withLine.shown.filter((f) => f.messageKey.startsWith("G07.form"))).toEqual([]);
+    // 在医総管・施医総管の行を外す（R17 は対応する算定行がないので形を見ない）
+    const without = { ...k1, units: k1.units.map((u) => ({ ...u, items: u.items.filter((it) => !rev.comments.find((r) => r.id === "T176-date")!.kubun.some((k) => rev.codes[k]?.primary === it.code)) })).filter((u) => u.items.length > 0), comments: [{ ...k1.comments[i], unit: null }] };
+    const noLine = checkUke(without, commentMasters());
+    expect(noLine.hand.findings.filter((f) => f.messageKey === "R17.comment_format")).toEqual([]);
+    expect(noLine.shown.filter((f) => f.messageKey.startsWith("G07.form")).map((f) => [f.messageKey, f.certainty])).toEqual([["G07.form", "確定"]]);
   });
 });
 
