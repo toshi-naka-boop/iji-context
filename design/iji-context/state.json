@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v34",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v34",
+  "approvedDesignSha256": "af1d2b4be431c89e987c5a417720c0c93b6f4363105de2a8c9b8b2715f866e44",
+  "approvedAt": "2026-11-23",
+  "approvalEvidence": "承認する（直前のメッセージで v34:af1d2b4be431 を示し「v34（v34:af1d2b4be431）を承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
   "requiredApprovalFingerprint": "v34:af1d2b4be431",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 67,
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v34（C-433・C-434 の設計の読み方）の承認を待つ。並行して round-68 の実装の指摘 13 件を直している",
+  "nextAction": "round-68 の実装の指摘 13 件の直しを確かめる → v34 の 2 件（C-433・C-434）を実装 → 段 19h と実際の AI での合否の組",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
