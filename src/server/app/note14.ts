@@ -150,7 +150,7 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
     });
     const s = body.stage1;
     const n = (x: number | null | undefined) => x ?? null;
-    const stage1 = { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count) })), openedOn: s.openedOn ?? null };
+    const stage1 = { months, gansou: n(s.gansou), secondPatient: n(s.secondPatient), special: s.special, institutions: s.institutions.map((i) => ({ openedOn: i.openedOn ?? null, ownerChangedFrom: i.ownerChangedFrom ?? null, count: n(i.count), otsuExtra: n(i.otsuExtra) })), openedOn: s.openedOn ?? null };
     if (!body.stage2) return { stage1 };
     const keys = new Set(fieldKeys().map((x) => x.key));
     const bad = Object.keys(body.stage2.values).find((key) => !keys.has(key));

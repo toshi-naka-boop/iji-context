@@ -17,7 +17,7 @@ type Tool = { month: string | null; outOfScope: boolean; text?: string; isCheckM
 
 const RESULT_LABEL = { meets: "基準に当たる（減算になりません）", not_meets: "基準に当たらない（減算になります）", undecided: "決めきれない" } as const;
 type MonthInput = { confirmed: boolean; kou: string; otsuExtra: string };
-type InstInput = { openedOn: string; changed: boolean; ownerChangedFrom: string; count: string };
+type InstInput = { openedOn: string; changed: boolean; ownerChangedFrom: string; count: string; otsuExtra: string };
 
 const num = (s: string): number | null => (s.trim() === "" || !/^\d+$/.test(s.trim()) ? null : Number(s.trim()));
 const periodText = (p: Period) => `3 か月 ${p.short.from}〜${p.short.to}・1 年 ${p.long.from}〜${p.long.to}`;
@@ -111,7 +111,7 @@ export default function Note14Page() {
         gansou: num(gansou),
         secondPatient: num(second),
         special,
-        institutions: insts.map((i): Institution => ({ openedOn: i.openedOn || null, ownerChangedFrom: i.changed ? i.ownerChangedFrom || null : null, count: num(i.count) })),
+        institutions: insts.map((i): Institution => ({ openedOn: i.openedOn || null, ownerChangedFrom: i.changed ? i.ownerChangedFrom || null : null, count: num(i.count), otsuExtra: num(i.otsuExtra) })),
         openedOn: openedOn || null,
       },
       stage2: { values: Object.fromEntries(fieldKeys().map((f) => [f.key, num(vals[f.key] ?? "")])) },
@@ -211,12 +211,13 @@ export default function Note14Page() {
                     <label>開設日 <input type="date" aria-label={`機関 ${n + 1} の開設日`} value={i.openedOn} onChange={(x) => up({ openedOn: x.target.value })} /></label>
                     <label><input type="checkbox" checked={i.changed} onChange={(x) => up({ changed: x.target.checked })} />開設者の変更がある</label>
                     {i.changed && <label>元の機関が最初に開設した日 <input type="date" aria-label={`機関 ${n + 1} の元の開設日`} value={i.ownerChangedFrom} onChange={(x) => up({ ownerChangedFrom: x.target.value })} /></label>}
-                    <NumberInput label="期間の回数" value={i.count} onChange={(v) => up({ count: v })} />
+                    <NumberInput label={FIELD_LABEL.inst} value={i.count} onChange={(v) => up({ count: v })} />
+                    <NumberInput label={FIELD_LABEL.instOtsu} value={i.otsuExtra} onChange={(v) => up({ otsuExtra: v })} />
                     <button onClick={() => setInsts((p) => p.filter((_, j) => j !== n))}>外す</button>
                   </li>
                 );
               })}
-              <li style={{ listStyle: "none" }}><button onClick={() => setInsts((p) => [...p, { openedOn: "", changed: false, ownerChangedFrom: "", count: "" }])}>機関を足す</button></li>
+              <li style={{ listStyle: "none" }}><button onClick={() => setInsts((p) => [...p, { openedOn: "", changed: false, ownerChangedFrom: "", count: "", otsuExtra: "" }])}>機関を足す</button></li>
             </ul>
           )}
         </div>

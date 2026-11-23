@@ -21,7 +21,8 @@ export const note14WorksheetBody = z.strictObject({
     gansou: count,
     secondPatient: count,
     special: z.enum(["none", "some", "unknown"]),
-    institutions: z.array(z.strictObject({ openedOn: day.nullable(), ownerChangedFrom: day.nullable(), count })).max(30),
+    // count＝C001 の行の回数（U-27 の甲）、otsuExtra＝C001-2 の行などの回数（読み乙だけで足す。省けば空の欄。round-61 C-361）
+    institutions: z.array(z.strictObject({ openedOn: day.nullable(), ownerChangedFrom: day.nullable(), count, otsuExtra: count.optional() })).max(30),
     // 開設日（期間の初めより後に開設したときだけ。U-34 は門にも掛ける。round-61 C-360）
     openedOn: day.nullable().optional(),
   }),

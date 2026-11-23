@@ -91,13 +91,13 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
   });
   it("開設日が境の日の機関を入れると U-30a で割れる（除くなら門未満・足すなら門以上で 2 段目へ）。開設者の変更があると U-30b で割れる", () => {
     const cut = K.excludeOpenedOnOrBefore;
-    const inst = (openedOn: string, ownerChangedFrom: string | null = null) => ({ stage1: s1({ months: auto(T - 200), special: "some", institutions: [{ openedOn, ownerChangedFrom, count: 200 }] }) });
+    const inst = (openedOn: string, ownerChangedFrom: string | null = null) => ({ stage1: s1({ months: auto(T - 200), special: "some", institutions: [{ openedOn, ownerChangedFrom, count: 200, otsuExtra: 0 }] }) });
     expect(evaluate(inst(cut), K).stage2Open).toBe(true);
     const e = evaluate({ ...inst(cut), stage2: notMet }, K);
     expect(e.status === "done" && [e.result, e.splits]).toEqual(["undecided", ["U-30a"]]);
     expect(e.status === "done" && e.lines[0]).toBe("U-30a〔3 月 31 日に開設した機関〕：告示・通知の読み（除く）なら減算にならず、様式の読み（足す）だと減算になります。厚生局に確かめてください（照会 #5）");
     // 境の日の機関の回数を足しても門未満なら割れない
-    const small = evaluate({ stage1: s1({ months: auto(T - 300), special: "some", institutions: [{ openedOn: cut, ownerChangedFrom: null, count: 100 }] }) }, K);
+    const small = evaluate({ stage1: s1({ months: auto(T - 300), special: "some", institutions: [{ openedOn: cut, ownerChangedFrom: null, count: 100, otsuExtra: 0 }] }) }, K);
     expect(small.status === "done" && [small.result, small.splits]).toEqual(["meets", []]);
     // 境の日より前に開設した機関はどの読みでも足さない（開設者の変更がなければ割れない）
     const before = evaluate(inst(`${Number(cut.slice(0, 4)) - 1}${cut.slice(4)}`), K);
@@ -130,6 +130,16 @@ describe("回数の門の判定（EM R8-194・R8-195。U-27・U-30a・U-30b）",
     // 期間の初めの日以前に開設していれば割れない
     const old = evaluate({ stage1: s1({ months: auto(300), openedOn: `${m1}-01` }) }, K, P);
     expect(old.status === "done" && [old.result, old.splits]).toEqual(["meets", []]);
+  });
+  it("C-361：特別の関係にある機関の回数は U-27 の甲（C001 の行）と乙だけの行（C001-2 の行など）で別に入れ、乙の読みでだけ足す。乙だけの欄が空なら下限として扱う", () => {
+    const inst = (otsuExtra: number | null) => s1({ months: auto(T - 300, 100), special: "some", institutions: [{ openedOn: `${M}-01`, ownerChangedFrom: null, count: 150, otsuExtra }] });
+    // 甲：T-300+150＝T-150（門未満）、乙：T-300+100+150+100＝T+50（門以上）→ 2 段目へ
+    expect(evaluate({ stage1: inst(100) }, K).stage2Open).toBe(true);
+    const e = evaluate({ stage1: inst(100), stage2: notMet }, K);
+    expect(e.status === "done" && [e.result, e.splits]).toEqual(["undecided", ["U-27"]]);
+    // 乙だけの欄が空：乙の下限（T-50）が門未満なので決めきれない（欄を名指し）
+    const u = evaluate({ stage1: inst(null) }, K);
+    expect(u.status === "done" && [u.result, u.reasons]).toEqual(["undecided", ["手入力の欄が空：特別の関係にある機関 1 の期間の回数（C001-2 の行など）"]]);
   });
   it("C-325：使った期間は確認月 M に対して M-3〜M-1 と M-12〜M-1", () => {
     expect(periodOf(M, K)).toEqual({ short: { from: month(-2), to: month(0) }, long: { from: month(-11), to: month(0) } });

@@ -34,8 +34,12 @@ export const isCheckMonth = (m: string, c: Pick<Note14Consts, "checkMonths">): b
 
 /** 1 段目の月ごとの回数（kou＝読み甲の行の回数、otsuExtra＝読み乙だけの行の回数。source は自動で数えた〔本人が確かめた月〕か手入力か） */
 export type MonthCount = { month: string; kou: number | null; otsuExtra: number | null; source: "auto" | "manual" };
-/** 特別の関係にある保険医療機関 1 つ（openedOn＝開設日、ownerChangedFrom＝開設者を変えたときの元の機関が最初に開設した日、count＝期間の回数） */
-export type Institution = { openedOn: string | null; ownerChangedFrom: string | null; count: number | null };
+/**
+ * 特別の関係にある保険医療機関 1 つ（openedOn＝開設日、ownerChangedFrom＝開設者を変えたときの元の機関が最初に開設した日、
+ * count＝期間の回数〔C001 の行。U-27 の甲〕、otsuExtra＝期間の回数〔C001-2 の行など、読み乙だけで足すもの〕。甲乙で 1 つの値を両方に足さない。round-61 C-361）。
+ * otsuExtra の null は空の欄（0 と数えず、乙は下限として扱う。C-334 と同じ）
+ */
+export type Institution = { openedOn: string | null; ownerChangedFrom: string | null; count: number | null; otsuExtra?: number | null };
 export type Stage1Input = {
   months: MonthCount[];
   /** 読み乙だけの手入力の欄（期間の合計）：在宅がん医療総合診療料で訪問した日の回数、同一の患家の 2 人目以降で初診料・再診料を算定した日の回数。null は空の欄（0 と数えない。C-323） */
@@ -74,6 +78,8 @@ export type Evaluation =
 export const FIELD_LABEL = {
   gansou: "在宅がん医療総合診療料で訪問した日の回数",
   secondPatient: "同一の患家の 2 人目以降で初診料・再診料を算定した日の回数",
+  inst: "期間の回数（C001 の行）",
+  instOtsu: "期間の回数（C001-2 の行など）",
 } as const;
 
 /** unmet：U-34 の読み乙で、回数の期間（3 か月）の全部に実績がないので回数の要件を満たさない（2 段目の 3 か月の要件も満たさないので、減算になる側。C-360） */
@@ -94,7 +100,9 @@ function gateOf(c: Combo, s: Stage1Input, k: Note14Consts, p: Period | null): Ga
     const on = readingOf(c, "U-30b") === "B" && i.ownerChangedFrom ? i.ownerChangedFrom : i.openedOn!;
     return readingOf(c, "U-30a") === "A" ? on > k.excludeOpenedOnOrBefore : on >= k.excludeOpenedOnOrBefore;
   };
-  const inst = s.special === "some" ? sum(s.institutions.filter(included).map((i) => i.count)) : 0;
+  const counted = s.special === "some" ? s.institutions.map((i, n) => ({ i, n })).filter((x) => included(x.i)) : [];
+  const inst = sum(counted.map((x) => x.i.count)) + (wide ? sum(counted.map((x) => x.i.otsuExtra ?? null)) : 0);
+  if (wide) for (const x of counted) if ((x.i.otsuExtra ?? null) === null) empty.push(`特別の関係にある機関 ${x.n + 1} の${FIELD_LABEL.instOtsu}`);
   const total = own + inst;
   if (total >= k.visitThreshold) return { kind: "over" };
   if (s.special === "unknown") return { kind: "unknown", reason: "特別の関係の機関が分からない" };
@@ -113,7 +121,7 @@ function missingOf(s: Stage1Input): string[] {
     if (s.institutions.length === 0) out.push("特別の関係にある機関");
     s.institutions.forEach((i, n) => {
       if (i.openedOn === null) out.push(`特別の関係にある機関 ${n + 1} の開設日`);
-      if (i.count === null) out.push(`特別の関係にある機関 ${n + 1} の期間の回数`);
+      if (i.count === null) out.push(`特別の関係にある機関 ${n + 1} の${FIELD_LABEL.inst}`);
     });
   }
   return out;
