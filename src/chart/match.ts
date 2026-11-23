@@ -71,6 +71,8 @@ export function rowsFor(db: MastersDb | null, key: TableKey, yearMonth: string):
 }
 
 const shortest = (rows: Row[]) => [...rows].sort((a, b) => a.name.length - b.name.length || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+/** lookup の語を分ける区切り（§15-7 の 3b） */
+export const LOOKUP_SEPARATORS = /[\s・（）()、,／/]+/;
 const byCode = (a: Row, b: Row) => (a.code < b.code ? -1 : a.code > b.code ? 1 : a.tbl < b.tbl ? -1 : a.tbl > b.tbl ? 1 : 0);
 
 /** 名称がその語で始まる行（完全一致を除く）を先、名称の途中にその語がある行を後にし、同じ強さの中はコードの順（L-161） */
@@ -114,6 +116,13 @@ export function matchItem(rows: Row[] | null, key: TableKey, written: string, lo
   for (const r of shortest(exact)) add(r);
   const terms = lookup.map(normName).filter(Boolean);
   for (const t of terms) for (const r of shortest(rows.filter((x) => x.norm === t))) add(r);
+  // 区切りでつないだ lookup の語（§15-7 の 3b。v35。L-218）：空白・「・」・括弧・読点・斜線で分けた語が 2 つ以上なら、分けた語をすべて含む行をコードの順に足す
+  // （指示文で「空白でつながない」と頼んでも守られないことがあり、normName が空白を除くと 1 語になって当たらないため。AI に頼らず決まった規則で拾う）
+  for (const raw of lookup) {
+    const parts = raw.split(LOOKUP_SEPARATORS).map(normName).filter(Boolean);
+    if (parts.length < 2) continue;
+    for (const r of rows.filter((x) => parts.every((t) => x.norm.includes(t))).sort(byCode)) add(r);
+  }
   // 語の輪（L-161。round-63 C-392）
   const ring = [...new Set([...terms, ...(w ? [w] : [])])].map((t) => prefixThenPartial(rows, t));
   const pos = ring.map(() => 0);
