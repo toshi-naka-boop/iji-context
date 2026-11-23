@@ -102,4 +102,27 @@ describe("画面の操作で構造化データを読んで残す（C-440）", ()
     const plain = await as(() => instance.writeChart({ user, claimId: claimId("K1"), clerkId: me, kind: "訪問診療", note: { s: "経過良好", o: "", a: "", p: "", rx: "分3 毎食後" } }));
     expect(plain.review.visitTime).toBeNull();
   });
+
+  it("処方の日の印は効く日だけ：構造化データのない在医総管の月は出さず、在医総管のない月の院内の日は調剤料・処方料の側（C-441）", async () => {
+    const me = instance.clerkIdOf(user);
+    resetLimits();
+    const k2 = await as(() => instance.writeChart({ user, claimId: claimId("K2"), clerkId: me, kind: "訪問診療", note: { s: "経過良好", o: "", a: "", p: "", rx: "湿布を院内で" } }));
+    expect(k2.review.rxMark).toBeNull();
+    resetLimits();
+    const k5 = await as(() => instance.writeChart({ user, claimId: claimId("K5"), clerkId: me, kind: "往診", note: { s: "経過良好", o: "", a: "", p: "", rx: "湿布を院内で" } }));
+    expect(k5.review.rxMark).toBe("chozai");
+  });
+
+  it("確かめたあとで印・「同じ／違う」を付け直す一覧（GET /api/chart/acts/fixes）：印の効く日で印のない確かめたカルテを並べ、rx-confirm で印を付けると消える（C-441）", async () => {
+    const me = instance.clerkIdOf(user);
+    resetLimits();
+    const w = await as(() => instance.writeChart({ user, claimId: claimId("K1"), clerkId: me, kind: "訪問診療", note: { s: "経過良好", o: "", a: "", p: "", rx: "湿布を院内で" } }));
+    as(() => app().confirmActs(w.id, me, { facts: [], acts: [], rx: [{ quote: "湿布を院内で" }], rxChoice: "inside" }));
+    const { GET } = await import("../../app/api/chart/acts/fixes/route");
+    const list = async () => (await (await GET(get(`/api/chart/acts/fixes?claimId=${claimId("K1")}`))).json()) as { noteId: number; date: string; rxMark: string | null; rx: string[] }[];
+    const before = await list();
+    expect(before.filter((x) => x.noteId === w.id)).toEqual([expect.objectContaining({ noteId: w.id, date: w.date, rxMark: "n2", rx: ["湿布を院内で"] })]);
+    as(() => app().confirmRx(w.id, me, { rxChoice: "inside", confirmed: true }));
+    expect((await list()).filter((x) => x.noteId === w.id)).toEqual([]);
+  });
 });

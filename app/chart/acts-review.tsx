@@ -36,7 +36,7 @@ export function actsToSave(rows: ActRow[]): ChartAct[] {
     });
 }
 
-const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", inside: "院内", unknown: "分からない" };
+export const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", inside: "院内", unknown: "分からない" };
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
 /** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
@@ -158,8 +158,6 @@ export function ActsReviewPanel(props: {
   };
 
   const st = review.structured ?? null;
-  /** 印が効く日か：オーダーを受け取っている月でこの日にオーダーの薬がない日、またはオーダーを受け取っていない月で初期値が院内の日（在医総管の月かは画面では見ない） */
-  const rxMarkMatters = st?.parts.orders === "supported" ? !st.day.some((x) => x.kind === "drug") : review.rxDefault === "inside";
   /** 構造化データとの見分け（取り出したときの行だけ。足した行は持たない） */
   const ovOf = (i: number) => (st && i < st.acts.length ? st.acts[i] : null);
   const folded = (i: number) => ovOf(i)?.status === "folded" && rows[i].sel !== null;
@@ -226,11 +224,11 @@ export function ActsReviewPanel(props: {
             ))}
           </div>
           {rxChoice === review.rxDefault && <div className="muted">処方の文から決めた初期値です。違えば直してください。</div>}
-          {props.setRxConfirmed && (
-            // 印の案内は効く日だけ目立たせる（オーダーを受け取っている月のオーダーのない処方の日、オーダーを受け取っていない月の初期値が院内の日）。一括の操作は作らない
-            <label className={rxMarkMatters ? undefined : "muted"}>
+          {props.setRxConfirmed && review.rxMark && (
+            // 印は効く日だけに出す（在医総管の月のオーダーのない処方の日、オーダーのない在医総管のない月の院内の日。サーバーが決める。C-441）。一括の操作は作らない
+            <label>
               <input type="checkbox" checked={props.rxConfirmed ?? false} onChange={(e) => props.setRxConfirmed!(e.target.checked)} /> この日の院内・院外を確かめた
-              {rxMarkMatters && "（処方箋を交付しない場合の加算・調剤料・処方料を規則で見るのに使います）"}
+              {review.rxMark === "n2" ? "（処方箋を交付しない場合の加算を規則で見るのに使います）" : "（調剤料・処方料を規則で見るのに使います）"}
             </label>
           )}
         </div>

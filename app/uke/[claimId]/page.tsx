@@ -13,6 +13,7 @@ import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
 import { GenericFindings } from "../../generic-findings";
+import { ConfirmedFixes } from "../../chart/confirmed-fixes";
 import { Torikawasure, type TorikawasureView } from "../../torikawasure";
 import { RecordPaste } from "../record-paste";
 import { LocalReturn } from "../../local-pair";
@@ -294,8 +295,10 @@ export default function UkeClaimCheck() {
 
               {!trial && (
                 <>
-                  <Torikawasure data={check?.torikawasure} claimId={claimId} />
+                  <Torikawasure data={check?.torikawasure} claimId={claimId} chartHref="#chart-fixes" />
                   <RecordPaste claimId={c.claimId} yearMonth={c.yearMonth} onSaved={() => setTick((t) => t + 1)} />
+                  {/* 貼って確かめたカルテの処方の日の印・「同じ／違う」を付け直す（design.md §16-7。C-441） */}
+                  <ConfirmedFixes claimId={c.claimId} tick={tick} />
                 </>
               )}
 
