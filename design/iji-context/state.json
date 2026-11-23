@@ -6,9 +6,9 @@
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v33:b3e32d0b14ca",
+  "requiredApprovalFingerprint": "v33:51f919833087",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 65,
+  "criticRound": 66,
   "openIssueIds": [],
   "requiredReads": [
     "design.md §16",
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v33 の批評 3 巡目（round-66。上限）と、利用者に聞く 10 件への Fable の見立て",
+  "nextAction": "v33 の round-66 の直しの狭い確かめ（round-67）→ 承認",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
