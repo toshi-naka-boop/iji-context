@@ -83,8 +83,8 @@ export type Declarations = {
   selectable: Row[];
   initialSelection: number[];
   mismatches: string[];
-  /** 注14 の道具の結果との比べ（L-160。段 17h。道具の結果の表は段 17i） */
-  note14: { month: string | null; state: "none" | "same" | "differs" | "block"; managerLine?: string; note?: string };
+  /** 注14 の道具の結果との比べ（L-160）。tool は道具の入口を出すか（building が「ない」の施設には出さない）、undecidedLine は「決めきれないまま」の 1 行 */
+  note14: { month: string | null; state: "none" | "same" | "differs" | "block"; managerLine?: string; note?: string; tool: boolean; toolText: string; undecidedLine?: string };
   /** 注14 の確かめ直す日の既定（今日の次の確認月の末日） */
   note14RecheckDefault: string;
 };
@@ -160,16 +160,19 @@ function useHistory(item: string): Row[] | null {
  * 1 項目を残す欄。mode が change（変更）なら、いつの診療月からは前の行があれば空（選ばせる）、なければ今日の前の月。
  * recheck（確かめ直し）なら、前の行の from_month・算定開始年月日・値を初期値にする（確かめ直しで前の月を落とさないように。docs L-1）
  */
-function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "recheck"; onSaved: (d: Declarations) => void; onCancel: () => void }) {
-  const { item, data, mode } = props;
+/** 注14 の計算の道具の「申告の下書きを開く」から開いたときの値（design.md §15-13。申告は本人が確かめて残す。L-132） */
+export type Note14Draft = { choice: "normal" | "reduced"; fromMonth: string; checkMonth: string; note: string };
+
+function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "recheck"; draft?: Note14Draft; onSaved: (d: Declarations) => void; onCancel: () => void }) {
+  const { item, data, mode, draft } = props;
   const history = useHistory(item.key);
   const r = item.row;
   const kind = item.key === "grade" || item.key === "note16" || item.key === "dispensing" || item.key === "building" || item.key === "note14" ? item.key : "code";
   const [override, setOverride] = useState("");
   // 道具の結果（減算になる）と違う「通常」を残すとき（L-160）：警告を出し、理由を必ず 1 つ選ばせる
   const warnNote14 = kind === "note14" && data.note14.state === "block" && data.note14.month !== null;
-  const [fromMonth, setFromMonth] = useState(mode === "recheck" ? (r?.fromMonth ?? "") : r || item.noFromMonth ? "" : prevMonthOf(data.today));
-  const [choice, setChoice] = useState(r?.choice ?? (kind === "code" ? "" : UNKNOWN));
+  const [fromMonth, setFromMonth] = useState(draft ? draft.fromMonth : mode === "recheck" ? (r?.fromMonth ?? "") : r || item.noFromMonth ? "" : prevMonthOf(data.today));
+  const [choice, setChoice] = useState<string>(draft ? draft.choice : (r?.choice ?? (kind === "code" ? "" : UNKNOWN)));
   const [notified, setNotified] = useState<string>(r?.notified && r.notified !== "na" ? r.notified : UNKNOWN);
   const [requirement, setRequirement] = useState<string>(r?.requirement ?? UNKNOWN);
   const [startOn, setStartOn] = useState(r?.startOn ?? "");
@@ -226,6 +229,7 @@ function DeclForm(props: { item: Item; data: Declarations; mode: "change" | "rec
       <DayInput label="確かめた日" value={checkedOn} onChange={setCheckedOn} />
       <DayInput label="次に確かめ直す日" value={recheckOn} onChange={setRecheckOn} />
       {fromMonth === "" && <div className="notice warn">いつの診療月からの値かを選んでください。</div>}
+      {draft && <div className="notice">計算表の結果（{draft.checkMonth}）から開いた下書きです。いつの診療月からの初期値は確認月の翌月です（{draft.note}）。確かめて残してください。</div>}
       {kind === "building" && <div className="muted">「ない」なら、どの患者も単一建物 1 人の区分として点検し、患者ごとには聞きません。「ある」「分からない」なら、医療事務が患者ごとの人数の区分を、変わったときに入れます（施設基準ではないので、届出の欄は対象外）。</div>}
       {kind === "note16" && <div className="muted">注16 の基準を変更したときは様式 19 で届け出ます（マスターにコードがないので、届出の欄は対象外）。いつの診療月から効くかは、通知で確かめてください。</div>}
       {notices.map((n) => <div key={n} className="notice">{n}</div>)}
@@ -256,9 +260,9 @@ function History(props: { item: string }) {
   );
 }
 
-function DeclItem(props: { item: Item; data: Declarations; canEdit: boolean; onSaved: (d: Declarations) => void }) {
-  const { item, data } = props;
-  const [editing, setEditing] = useState<"change" | "recheck" | null>(null);
+function DeclItem(props: { item: Item; data: Declarations; canEdit: boolean; draft?: Note14Draft; onSaved: (d: Declarations) => void }) {
+  const { item, data, draft } = props;
+  const [editing, setEditing] = useState<"change" | "recheck" | null>(draft ? "change" : null);
   const [showHistory, setShowHistory] = useState(false);
   const r = item.row;
   return (
@@ -271,6 +275,7 @@ function DeclItem(props: { item: Item; data: Declarations; canEdit: boolean; onS
         {item.later.map((l) => `　${l.fromMonth} から：${valueLabel(l)}`).join("")}
       </div>
       {item.noFromMonth && <div className="notice warn">いつの診療月からを入れてください（入れるまで、この項目は「分からない」として判定します）。</div>}
+      {item.key === "note14" && data.note14.tool && <div><a href="/note14">注14 の計算表を開く</a></div>}
       {item.key === "grade" && <div className="muted">令和8年5月以前に連携型（機能強化型）を届け出た施設は、(2)ア か (2)イ かをご自身で選んでください（扱いは未確認です）。</div>}
       {item.key === "grade" && item.status.v === "unknown" && r?.requirement === "not_met" && <div className="notice warn">種別を直してください（要件を満たさない種別のままでは、種別を「分からない」として判定します）。</div>}
       <span style={{ display: "inline-flex", gap: 6 }}>
@@ -278,7 +283,7 @@ function DeclItem(props: { item: Item; data: Declarations; canEdit: boolean; onS
         {props.canEdit && !editing && (r || item.noFromMonth) && <button onClick={() => setEditing("recheck")}>確かめ直す</button>}
         {item.history > 0 && <button onClick={() => setShowHistory((v) => !v)}>{showHistory ? "記録を閉じる" : `変更の記録（${item.history} 件）`}</button>}
       </span>
-      {editing && <DeclForm item={item} data={data} mode={editing} onCancel={() => setEditing(null)} onSaved={(d) => { setEditing(null); props.onSaved(d); }} />}
+      {editing && <DeclForm item={item} data={data} mode={editing} draft={draft} onCancel={() => setEditing(null)} onSaved={(d) => { setEditing(null); props.onSaved(d); }} />}
       {showHistory && <History item={item.key} />}
     </li>
   );
@@ -345,9 +350,13 @@ function ConfirmUnchanged(props: { data: Declarations; onSaved: (d: Declarations
 export function Declaration(props: { canEdit: boolean }) {
   const [data, setData] = useState<Declarations | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Note14Draft | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     getJson<Declarations>("/api/facility/declaration").then(setData).catch((e: Error) => setErr(e.message));
+    // 注14 の計算表の「申告の下書きを開く」（?note14Draft=結果の id）：値を入れた状態で申告の欄を開く（残すまで申告は変わらない）
+    const id = new URLSearchParams(location.search).get("note14Draft");
+    if (id && /^\d+$/.test(id)) getJson<Note14Draft>(`/api/note14/worksheets/${id}/draft`).then(setDraft).catch((e: Error) => setErr(e.message));
   }, []);
   return (
     <div className="panel">
@@ -357,7 +366,7 @@ export function Declaration(props: { canEdit: boolean }) {
       {data?.mismatches.map((m) => <div key={m} className="notice warn">{m}（判定には申告をそのまま使います）</div>)}
       {data && (
         <ul style={{ paddingLeft: 18 }}>
-          {data.items.map((it) => <DeclItem key={`${it.key}-${it.row?.id ?? 0}`} item={it} data={data} canEdit={props.canEdit} onSaved={setData} />)}
+          {data.items.map((it) => <DeclItem key={`${it.key}-${it.row?.id ?? 0}-${it.key === "note14" && draft ? "draft" : ""}`} item={it} data={data} canEdit={props.canEdit} draft={it.key === "note14" && draft && props.canEdit ? draft : undefined} onSaved={(d) => { setDraft(null); setData(d); }} />)}
         </ul>
       )}
       {data && props.canEdit && <ConfirmUnchanged key={data.selectable.map((r) => r.id).join(",")} data={data} onSaved={setData} />}

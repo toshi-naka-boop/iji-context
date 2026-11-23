@@ -32,6 +32,14 @@ export function RecheckNotice() {
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>施設の申告の確かめ直し</h3>
       {d.note14.managerLine && <div className="notice warn">{d.note14.managerLine}</div>}
+      {/* 「決めきれないまま」の行（design.md §15-2）：ここからも note14 を「変わりなし」で確かめ直せる（round-57 C-320）。減算になる結果のまま申告が通常なら出さない（C-342） */}
+      {d.note14.undecidedLine && (
+        <div className="notice warn">
+          {d.note14.undecidedLine}　
+          {d.note14.state === "block" ? NOTE14_TEXT.differs : <a href={`/settings?confirmMonth=${encodeURIComponent(d.today.slice(0, 7))}&item=note14#declaration-confirm`}>変わりなしとして確かめ直す</a>}
+          {d.note14.tool && <>　<a href={`/note14?month=${encodeURIComponent(d.note14.month ?? "")}`}>計算表を開く</a></>}
+        </div>
+      )}
       {empty && <p className="muted">確かめ直す日が近い・過ぎた・ない申告はありません。</p>}
       {groups.map(([title, rows]) =>
         rows.length > 0 ? (
@@ -44,6 +52,7 @@ export function RecheckNotice() {
                   {/* 注14：道具の結果（減算になる）のまま申告が「通常」なら「変わりなし」の入口を出さず、申告の画面へ案内する（round-58 C-331・round-59 C-342。L-160） */}
                   {n.key === "note14" && d.note14.state === "block" ? <span className="notice warn">{NOTE14_TEXT.differs}</span> : <a href={`/settings?confirm=${n.id}#declaration-confirm`}>変わりなしとして確かめ直す</a>}
                   {n.key === "note14" && d.note14.state === "differs" && <span className="muted">（{NOTE14_TEXT.differs}）</span>}
+                  {n.key === "note14" && d.note14.tool && <>　<a href="/note14">{d.note14.toolText}</a></>}
                   　<a href={`/settings#declaration-${n.key}`}>申告を見る</a>
                 </li>
               ))}

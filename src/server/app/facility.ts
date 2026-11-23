@@ -41,6 +41,7 @@ import {
   type Tri,
 } from "../../facility/declaration";
 import { insertDeclaration, MOVED_SETTING_KEYS, readDeclarations } from "../../facility/seed";
+import { NOTE14_TOOL_TEXT, note14ResultsFromDb } from "./note14";
 import { pickSnapshot, shinryoOf, withMasters } from "../../masters/db";
 import type { User } from "../auth";
 import { badRequest, conflict } from "../errors";
@@ -121,11 +122,8 @@ export function recheckDefaultOf(months: Record<string, number>, itemKey: string
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * 注14 の計算の道具の結果（note14_worksheets。マイグレーション 16）。表は段 17i で足す。それまでは結果がない（どの入口も止まらない）。
- * 段 17i で、この関数を表の読み出しに替え、round-58 C-331・round-59 C-342・round-60 C-350（L-160）の通しのテストを通す
- */
-export const note14ResultsOf = (_ctx: Pick<AppContext, "sqlite">): Note14Result[] => [];
+/** 注14 の計算の道具の結果（note14_worksheets。マイグレーション 16。段 17i）のうち、確認月の結果（round-58 C-331・round-59 C-342・round-60 C-350。L-160） */
+export const note14ResultsOf = (ctx: Pick<AppContext, "sqlite">): Note14Result[] => note14ResultsFromDb(ctx.sqlite);
 
 export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "ukeFiles">) {
   /** 設定の画面に出す一覧（申告に移さない項目だけ）：項目ごとに、いま効いている値（null は分からない）と、クリニックで残した値か（偽なら既定値のまま） */
@@ -272,9 +270,19 @@ export function createFacility(ctx: AppContext, clock: Clock, uke: Pick<Uke, "uk
       initialSelection: initialSelection(rows, { screen: today }),
       mismatches,
       // 注14 の道具の結果との比べ（L-160）。block のあいだは事務長の画面に 1 行出し、「変わりなし」の入口を出さない
+      // undecidedLine：比べる確認月の最新の結果が「決めきれない」なら、事務長の画面に 1 行（design.md §15-2）。tool：道具の入口を出すか（building が「ない」の施設には出さない。§15-13）
       note14: (() => {
         const s = note14State(rows, today);
-        return { month: s.month, state: s.state, results: s.results, ...(s.state === "block" ? { managerLine: NOTE14_TEXT.overrideManager(s.month!) } : {}), ...(s.state === "differs" ? { note: NOTE14_TEXT.differs } : {}) };
+        return {
+          month: s.month,
+          state: s.state,
+          results: s.results,
+          tool: askNote14 && !buildingNone,
+          toolText: NOTE14_TOOL_TEXT.open,
+          ...(s.month && s.results.at(-1)?.outcome === "undecided" ? { undecidedLine: NOTE14_TOOL_TEXT.undecided(s.month) } : {}),
+          ...(s.state === "block" ? { managerLine: NOTE14_TEXT.overrideManager(s.month!) } : {}),
+          ...(s.state === "differs" ? { note: NOTE14_TEXT.differs } : {}),
+        };
       })(),
       note14RecheckDefault: recheckDefaultOf(ctx.recheckDefaultMonths, NOTE14_KEY, today),
     };
