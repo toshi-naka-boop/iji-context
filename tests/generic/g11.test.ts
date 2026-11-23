@@ -7,7 +7,7 @@ import { resolveRevision } from "../../src/engine/revisions";
 import type { ClaimContext } from "../../src/engine/types";
 import type { DeclarationView, Tri } from "../../src/facility/declaration";
 import { evaluateGeneric } from "../../src/generic";
-import { evaluateG11, type ConfirmedAct, type G11About, type G11Claim, type G11Finding, type G11Result } from "../../src/generic/g11";
+import { evaluateG11, NO_STRUCTURED_SCOPE as NS, type ConfirmedAct, type G11About, type G11Claim, type G11Finding, type G11Result } from "../../src/generic/g11";
 import { r18Step3 } from "../../src/generic/g11-rules";
 import { g03 } from "../../src/generic/g03";
 import { g04 } from "../../src/generic/g04";
@@ -313,7 +313,7 @@ describe("院内・院外と剤形（C-221・C-231・C-243・M-3）", () => {
     const r = both(db, { units: [] }, about(acts, { rxDays: [{ date: date(14), rx: true, choice: "unknown" }, { date: date(28), rx: true, choice: null }] }));
     expect(r.guide).toBe("14日・28日の処方の院内・院外を選ぶと、薬の取り忘れを見ます");
     expect(keys(r.findings)).toEqual([]);
-    expect(r.scope).toEqual(["10月7日は処方の記載がないので薬は見ていません：1 件"]);
+    expect(r.scope).toEqual(["10月7日は処方の記載がないので薬は見ていません：1 件", NS]);
   });
 
   it("院内の日の投薬の組：薬と、剤形から決まる調剤料・処方料を組にし、組が抑えられなければ書かれた薬だけを言う（印のない入力：調剤料・処方料は足すだけ／印のある入力：本人が院内を確かめた日は調剤料と処方料〔区分なし〕も指摘に出る。L-199 (a)）。剤形 4 の薬は組に入れない", () => {
@@ -326,7 +326,7 @@ describe("院内・院外と剤形（C-221・C-231・C-243・M-3）", () => {
     expect(keys(marked.findings)).toEqual(["G11.missing_rule 120000710 14", "G11.missing_rule 120001210 14", "G11.missing 622095502 14"]);
     const four = both(db, { units: [] }, about([act(14, D.xylo, "キシロカイン注ポリアンプ０．５％　５ｍＬ")], { rxDays: rx }));
     expect(keys(four.findings)).toEqual([]);
-    expect(four.scope).toEqual(["剤形が内服・外用でない薬は見ていません：1 件"]);
+    expect(four.scope).toEqual(["剤形が内服・外用でない薬は見ていません：1 件", NS]);
     // 在医総管の月：調剤料・処方料が包括されるので、組ごと言わない（X-130）
     db.prepare("UPDATE hojo SET unit1 = '2' WHERE code = ?").run(C.zaiisoukan);
     put(db, "houkatsu", SNAP, { ...LIVE, group_no: "C002001", code: "120000710", tokurei: "0" });
@@ -339,8 +339,8 @@ describe("院内・院外と剤形（C-221・C-231・C-243・M-3）", () => {
     const db = g11Db();
     const acts = [act(14, D.carve, "カルベジロール錠１０ｍｇ「ニプロ」")];
     const rx = [{ date: date(14), rx: true, choice: null }];
-    expect(both(db, { units: [unit([C.shohosen], 14)] }, about(acts, { dispensing: "outside", rxDays: rx })).scope).toEqual(["院外処方の施設なので薬は見ていません：1 件"]);
-    expect(both(db, { units: [] }, about(acts, { dispensing: "unknown", rxDays: rx })).scope).toEqual(["院内か院外かが分からないので薬は見ていません：1 件。施設の申告で院内・院外処方を入れてください"]);
+    expect(both(db, { units: [unit([C.shohosen], 14)] }, about(acts, { dispensing: "outside", rxDays: rx })).scope).toEqual(["院外処方の施設なので薬は見ていません：1 件", NS]);
+    expect(both(db, { units: [] }, about(acts, { dispensing: "unknown", rxDays: rx })).scope).toEqual(["院内か院外かが分からないので薬は見ていません：1 件。施設の申告で院内・院外処方を入れてください", NS]);
   });
 });
 
@@ -372,10 +372,10 @@ describe("量（L-98・C-253・C-261・C-262・X-144・X-146）", () => {
     const db = g11Db();
     for (const [q, n] of [["3回", 1], ["1回", 3]] as const) {
       const r = both(db, claimN(n), about([shippu(q)]));
-      expect([q, keys(r.findings), r.scope]).toEqual([q, [], ["量は見ていません（1 日の回数の決まりがデータにない）：1 件"]]);
+      expect([q, keys(r.findings), r.scope]).toEqual([q, [], ["量は見ていません（1 日の回数の決まりがデータにない）：1 件", NS]]);
     }
-    expect(both(db, claimN(1), about([shippu("朝夕")])).scope).toEqual(["量は見ていません（決まった形で書かれていない）：1 件"]);
-    expect(both(db, claimN(1), about([shippu("10分")])).scope).toEqual(["量は見ていません（この行為はマスターに量の単位がない）：1 件"]);
+    expect(both(db, claimN(1), about([shippu("朝夕")])).scope).toEqual(["量は見ていません（決まった形で書かれていない）：1 件", NS]);
+    expect(both(db, claimN(1), about([shippu("10分")])).scope).toEqual(["量は見ていません（この行為はマスターに量の単位がない）：1 件", NS]);
   });
 
   it("合計（X-146）：同じ日のカルテに「1回」の行が 2 つあり請求が 1 回なら、合計 2 回と比べて 1 件。片方の量が空なら比べず「そろっていない」に数える", () => {
@@ -383,7 +383,7 @@ describe("量（L-98・C-253・C-261・C-262・X-144・X-146）", () => {
     expect(keys(both(db, claimN(1), about([shippu("1回"), shippu("1回")])).findings)).toEqual(["G11.quantity_less 140002210 14"]);
     const r = both(db, claimN(1), about([shippu("1回"), shippu(undefined)]));
     expect(keys(r.findings)).toEqual([]);
-    expect(r.scope).toEqual(["量は見ていません（同じ日の記載の量がそろっていない）：1 件"]);
+    expect(r.scope).toEqual(["量は見ていません（同じ日の記載の量がそろっていない）：1 件", NS]);
   });
 
   it("「回」と量を分ける（X-144）：単位が「分」の行為で「70分」は数量データと比べ、「1回」は回数の規則に回る（数量データと比べない）", () => {
@@ -392,7 +392,7 @@ describe("量（L-98・C-253・C-261・C-262・X-144・X-146）", () => {
     expect(keys(both(db, claim, about([act(14, C.kanka, "患家診療時間加算", { quantity: "70分" })])).findings)).toEqual([]);
     expect(keys(both(db, claim, about([act(14, C.kanka, "患家診療時間加算", { quantity: "80分" })])).findings)).toEqual(["G11.quantity_less 114001470 14"]);
     const once = both(db, claim, about([act(14, C.kanka, "患家診療時間加算", { quantity: "1回" })]));
-    expect([keys(once.findings), once.scope]).toEqual([[], ["量は見ていません（1 日の回数の決まりがデータにない）：1 件"]]);
+    expect([keys(once.findings), once.scope]).toEqual([[], ["量は見ていません（1 日の回数の決まりがデータにない）：1 件", NS]]);
   });
 
   it("大文字・小文字（L-98）：単位の名前が「mL」の薬に、カルテの「10ml」を数として比べる。マスターに「ml」の別の単位も置いて衝突させると、字のまま比べて合わない", () => {
@@ -405,7 +405,7 @@ describe("量（L-98・C-253・C-261・C-262・X-144・X-146）", () => {
     expect(r.findings[0].text).toBe("カルテ（14日）では「熱傷処置」で使った「ゲーベンクリーム１％」が10ml、請求では5です。算定できるか確かめてください");
     put(db, "tokutei", SNAP, { code: "700990000", name: "作り物の器材", unit_name: "ml" });
     const c = both(db, claim, a);
-    expect([keys(c.findings), c.scope]).toEqual([[], ["量は見ていません（単位がマスターと合わない（マスターは mL））：1 件"]]);
+    expect([keys(c.findings), c.scope]).toEqual([[], ["量は見ていません（単位がマスターと合わない（マスターは mL））：1 件", NS]]);
   });
 
   it("単位の列のない古い masters.db では比べず「単位の列が古い形です」に数え、取り忘れは同じに出る。子の「回」は比べない", () => {
@@ -413,10 +413,10 @@ describe("量（L-98・C-253・C-261・C-262・X-144・X-146）", () => {
     db.prepare("ALTER TABLE tokutei DROP COLUMN unit_name").run();
     const claim = { units: [{ items: [{ kind: "SI" as const, code: C.burn }, { kind: "IY" as const, code: D.geben, quantity: "10" }], count: 1, days: dayArr(14) }] };
     const r = both(db, claim, about([act(14, C.burn, "熱傷処置", { kids: [["薬", D.geben, "ゲーベンクリーム１％", "20g"]] }), act(14, C.nail, "爪甲除去術")]));
-    expect([keys(r.findings), r.scope]).toEqual([["G11.missing 150054110 14"], ["量は見ていません（単位の列が古い形です）：1 件"]]);
+    expect([keys(r.findings), r.scope]).toEqual([["G11.missing 150054110 14"], ["量は見ていません（単位の列が古い形です）：1 件", NS]]);
     const db2 = g11Db();
     const kid = both(db2, claim, about([act(14, C.burn, "熱傷処置", { kids: [["薬", D.geben, "ゲーベンクリーム１％", "1回"]] })]));
-    expect([keys(kid.findings), kid.scope]).toEqual([[], []]);
+    expect([keys(kid.findings), kid.scope]).toEqual([[], [NS]]);
   });
 });
 
@@ -436,7 +436,7 @@ describe("出し方", () => {
     expect(keys(r.findings)).toEqual([]);
     expect(r.counts.unmatched).toBe(1);
     expect(r.counts.notSeen).toBe(1);
-    expect(r.scope).toEqual(["訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（算定プレビューでは導出と手書きのルールが見ます）：1 件", "当てられない行為：1 件"]);
+    expect(r.scope).toEqual(["訪問診療料・管理料など、R ルールと導出が見る区分は見ていません（算定プレビューでは導出と手書きのルールが見ます）：1 件", "当てられない行為：1 件", NS]);
   });
 });
 

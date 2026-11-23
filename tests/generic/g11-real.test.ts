@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { evaluateG11, type G11About, type G11Claim, type G11Finding, type G11Result } from "../../src/generic/g11";
+import { evaluateG11, NO_STRUCTURED_SCOPE, type G11About, type G11Claim, type G11Finding, type G11Result } from "../../src/generic/g11";
 import { claimOfLines } from "../../src/generic/overlap";
 import { g11Owned } from "../../src/engine/derive";
 import { kubunOfCode } from "../../src/engine/revisions/codes";
@@ -252,5 +252,15 @@ describe("段 18b の報告の数", () => {
     }
     console.log(`段 18b の G11 の数（K8〜K11 の 1 つずつ外した請求の合計）：${JSON.stringify(sum)}`);
     expect(sum["当てられない"]).toBe(0);
+  });
+});
+
+describe("v34（design.md §16-4-1。C-433）：構造化データのない取り込んだ請求", () => {
+  withData("K8〜K11 の取り込んだ請求（構造化データなし）で、点検の範囲に「電子カルテの構造化データがないので…見ていません」が 1 行だけ出て、規則の候補（指摘）は増えない", () => {
+    for (const k of G11_CASES) {
+      const r = run(ukeClaimOf(k), aboutOf(k));
+      expect(r.scope.filter((s) => s === NO_STRUCTURED_SCOPE)).toHaveLength(1);
+      expect(r.findings.filter((f) => f.messageKey === "G11.missing_rule")).toEqual([]);
+    }
   });
 });

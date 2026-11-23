@@ -1099,11 +1099,13 @@ describe("構造化データのない請求（v32 の入力）", () => {
     const r = ok(evaluateG11({ units: [unit([VISIT], 5)] }, db, about({ noStructured: true, acts: [textAct(5, T.sansoKyunyu, "酸素吸入", "処置")], devices: devs([drow("C158")]) }), rev));
     expect(rules(r).map((f) => f.codes)).toContainEqual([M.c158]);
   });
-  it("規則の候補を出さず、注2・時間の加算の「見ていません」も出さない（v32 の点検の範囲のまま）", () => {
+  it("規則の候補を出さず、点検の範囲に「電子カルテの構造化データがないので…見ていません」の 1 行だけを出す（v34。C-433。指摘の数は増えない）", () => {
     const db = rdb();
-    const r = ok(evaluateG11({ units: [unit([KANRI, VISIT], 14)] }, db, about({ noStructured: true, acts: [textAct(14, T.sansoKyunyu, "酸素吸入", "処置")] }), rev));
+    const act = textAct(14, T.sansoKyunyu, "酸素吸入", "処置");
+    const r = ok(evaluateG11({ units: [unit([KANRI, VISIT], 14)] }, db, about({ noStructured: true, acts: [act] }), rev));
     expect(rules(r)).toEqual([]);
-    expect(r.scope.filter((s) => s.includes("処方箋を交付しない") || s.includes("時間の加算"))).toEqual([]);
+    expect(r.scope.filter((s) => s.includes("処方箋を交付しない") || s.includes("時間の加算") || s.includes("材料加算"))).toEqual(["電子カルテの構造化データがないので、処方箋を交付しない場合の加算・患家診療時間加算・材料加算は見ていません"]);
+    expect(r.scope.filter((s) => s.startsWith("電子カルテの構造化データがない"))).toHaveLength(1);
   });
 });
 

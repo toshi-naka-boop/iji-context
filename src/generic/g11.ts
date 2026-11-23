@@ -194,6 +194,8 @@ export type G11Result =
 
 /** 判断料の候補の元にする検査のグループ（EM §2-11 の V-9：1〜6・17。8 の基本的検体検査判断料は入れない） */
 export const JUDGEMENT_GROUPS: readonly number[] = [1, 2, 3, 4, 5, 6, 17];
+/** 構造化データのない請求の点検の範囲の 1 行（設計の文。design.md §16-4-1 v34） */
+export const NO_STRUCTURED_SCOPE = "電子カルテの構造化データがないので、処方箋を交付しない場合の加算・患家診療時間加算・材料加算は見ていません";
 /** 剤形（医薬品マスター）：1＝内服、6＝外用。ほかは投薬の組に入れない（L-111） */
 const ORAL = "1";
 const EXTERNAL = "6";
@@ -915,6 +917,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 2b. 規則の候補（design.md §16-4。段 19c・19d）：処方のオーダー・処方の欄の「確かめた」の印・訪問の記録から、決まった規則で出す。言い切らず、手順 1〜4 に通す
   const ruleScope: string[] = [];
+  // 構造化データのない請求でも黙らない：請求ごとに 1 行だけ（v34 の 16-4-1。C-433。指摘の数は増やさない。患者の機器で決まる材料加算は、機器があれば下で今までどおり見る）
+  if (!S) ruleScope.push(NO_STRUCTURED_SCOPE);
   const ruleGuides: string[] = [];
   // 対応表にない独自コード（16-2）：数を持ち、上の案内に 1 行出す（対応を選ぶ欄は画面の側。患者・日は出さない。C-443）
   const unmappedCodes = S ? S.items.filter((x) => x.out === OUT_REASONS.noMap).length : 0;
