@@ -1,20 +1,22 @@
 {
-  "currentNode": "完了",
-  "status": "done",
-  "designVersion": "v32",
-  "approvedDesignVersion": "v32",
-  "approvedDesignSha256": "2fabdc50f888ef198c1d06f4cfd65fe830c71df90b972e2299b2bec60ca70f61",
-  "approvedAt": "2026-11-23",
-  "approvalEvidence": "承認・後に回す（直前のメッセージで v32:2fabdc50f888 を示し「v32 を承認し、L-164 は後の版に回してよいですか」と聞いたボタンの答え。返事そのものに指紋はない。提示のあと design.md は変えていない）",
-  "requiredApprovalFingerprint": "v32:2fabdc50f888",
+  "currentNode": "批評",
+  "status": "in_progress",
+  "designVersion": "v33",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v33:5095da648c70",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 63,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§15-6・15-7・15-10 の 18d・15-12 の L-108・L-161〜L-163）",
-    "reviews/fable-consult-acts-eval.md"
+    "design.md §16",
+    "v33-inputs.md",
+    "spec.md FR-205〜211",
+    "sources/em-v33-draft.md"
   ],
-  "nextAction": "A・B は受け入れ条件まで済み。次は C〜I（FR-203）と L-164。照会の答えが来たら EM へ",
+  "nextAction": "v33（§16。B-構造化）の批評 1 巡目",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
@@ -29,5 +31,11 @@
   },
   "decisionsAfterApproval": {
     "L-164": "後の版（C〜I の手順）に回す。利用者が決定 2026-11-23。design.md の L-164 の行は「利用者に聞く」のまま（書き換えると承認が外れるため。次の版で写す）"
+  },
+  "v32Approval": {
+    "fingerprint": "v32:2fabdc50f888",
+    "sha256": "2fabdc50f888ef198c1d06f4cfd65fe830c71df90b972e2299b2bec60ca70f61",
+    "evidence": "承認・後に回す（直前のメッセージで v32:2fabdc50f888 を示し「v32 を承認し、L-164 は後の版に回してよいですか」と聞いたボタンの答え。返事そのものに指紋はない。提示のあと design.md は変えていない）",
+    "at": "2026-11-23"
   }
 }
