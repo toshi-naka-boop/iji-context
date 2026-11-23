@@ -52,6 +52,8 @@ export const actsBody = z.strictObject({
   acts: z.array(act).max(100),
   rx: z.array(z.strictObject({ quote: z.string().max(MAX_CHART_TEXT) })).max(20),
   rxChoice: z.enum(["outside", "inside", "unknown"]).nullable().optional(),
+  /** 「この日の院内・院外を確かめた」を押した（design.md §16-4-1。値を選び直したときは押さなくても印が付く） */
+  rxConfirmed: z.boolean().optional(),
 });
 /**
  * 確かめて残したカルテの当てられない行為を、選んで当てる本文（POST /api/chart/acts の別の形。design.md §15-9 の「当てられない行為（候補から選ぶ入口）」。X-157）。
@@ -67,6 +69,8 @@ export const pickBody = z.strictObject({
 export const foldBody = z.strictObject({ noteId: noteParams.shape.id, index: z.number().int().min(0).max(99), choice: z.enum(["same", "different", "none"]), ref: ref.optional() });
 /** 独自コードの対応を残す本文（POST /api/code-maps。design.md §16-2・16-7）。code は当ててよい表のコード（機器は機器の種類のキー）。yearMonth の 1 枚で実在を確かめる */
 export const codeMapBody = z.strictObject({ connectorId: z.string().regex(/^[a-z0-9_-]{1,40}$/), field: z.enum(["薬", "材料", "行為", "指導管理", "機器"]), extCode: z.string().min(1).max(100), code: z.string().min(1).max(20), yearMonth: z.string().regex(YEAR_MONTH) });
+/** 確かめたカルテのその日の処方の欄の値と「確かめた」の印を付け直す本文（POST /api/chart/acts/rx-confirm。design.md §16-7。C-421） */
+export const rxConfirmBody = z.strictObject({ noteId: noteParams.shape.id, rxChoice: z.enum(["outside", "inside", "unknown"]), confirmed: z.boolean() });
 /** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */
 export const actsOrPickBody = z.union([actsBody, pickBody]);
 const ym = z.string().regex(YEAR_MONTH);

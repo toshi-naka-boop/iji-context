@@ -105,6 +105,8 @@ export const POLICY = {
   "GET /api/chart/structured": row(WORK, "none", true),
   // 当てられない行為に電子カルテの行為と「同じ／違う」をあとから付ける（design.md §16-7）。当てられない行為を選んで当てる入口（POST /api/chart/acts）と同じ
   "POST /api/chart/acts/fold": row(WORK, "none", true),
+  // 処方の日の院内・院外と「確かめた」の印をあとから付け直す（design.md §16-7。C-421）。権限は POST /api/chart/acts/fold と同じ
+  "POST /api/chart/acts/rx-confirm": row(WORK, "none", true),
   // 独自コードの対応表（design.md §16-7）。事務長・医療事務。返すのは接続先・欄・独自コード・表示名・件数で、患者・日は持たない
   "GET /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
   "POST /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),

@@ -42,6 +42,7 @@ export default function Chart() {
   /** 行ったこと（design.md §15-6）と、その日の院内・院外 */
   const [actRows, setActRows] = useState<ActRow[]>([]);
   const [rxChoice, setRxChoice] = useState<RxChoice | null>(null);
+  const [rxConfirmed, setRxConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 自由記述（SOAP に整える前） */
   const [free, setFree] = useState("");
@@ -63,6 +64,7 @@ export default function Chart() {
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
       setActRows(rowsOf(r.acts, r.review));
       setRxChoice(r.review.rxDefault);
+      setRxConfirmed(false);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -115,6 +117,7 @@ export default function Chart() {
         acts: actsToSave(actRows),
         rx: ex.rx,
         rxChoice,
+        rxConfirmed,
       });
       setConfirmed(r);
     } catch (e) {
@@ -250,7 +253,7 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} />
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} />
                 {ex.actsDropped.length > 0 && (
                   <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
                 )}

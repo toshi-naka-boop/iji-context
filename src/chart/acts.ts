@@ -147,4 +147,14 @@ export function foldOfAct(act: Pick<ChartAct, "category">, initial: ActMatch | n
 }
 
 /** 保存する形（chart_notes.acts の JSON）。rxChoice は院内処方もある施設で処方の記載がある日だけ持つ。rxChoiceBy：規則で出た初期値のままか、本人が直したか（判定には使わない） */
-export type StoredActs = { acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; rxChoiceBy: "rule" | "person" | null };
+export type StoredActs = {
+  acts: ChartAct[];
+  rx: RxNote[];
+  rxChoice: RxChoice | null;
+  rxChoiceBy: "rule" | "person" | null;
+  /**
+   * 処方の日の「確かめた」の印（design.md §16-4-1。C-410）。本人が欄の値を選び直したとき、または「この日の院内・院外を確かめた」を押したときだけ付く（初期値のまま保存しただけでは付かない）。
+   * rxHash はそのときの処方の文の指紋で、文が変わったら印はないものとして読む
+   */
+  rxConfirmed?: { by: string; at: string; rxHash: string } | null;
+};

@@ -34,7 +34,9 @@ import { json, type AppContext } from "./context";
 import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
-import { createTorikawasure } from "./torikawasure";
+import { createTorikawasure, type TextDay } from "./torikawasure";
+import { structuredConfig } from "../../structured/rule-codes";
+import { rxHashOf } from "../../structured/rx-mark";
 import type { LocalAbout } from "./local-pairs";
 import type { Structured } from "./structured";
 import { overlap, type SItem, type StructuredReview } from "../../structured/overlap";
@@ -49,7 +51,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { clerk } = clerks;
   const { patientOf } = uke;
   const { cases, caseOf, isUploaded } = casesOf;
-  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredItemsOf(claimId, ym, db) : undefined);
+  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -208,7 +210,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 当てたコードは、診療年月の 1 枚の、category で決めた表に実在するものだけ（名称はマスターの値に置き換える）。
    * 本人が候補・探す・前に選んだものから選んだ対応は、クリニックごとに残す（L-95）。院内・院外は、院内処方もある施設で処方の記載がある日だけ残し、規則の初期値のままかを印にする（C-243）
    */
-  function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }) {
+  function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; rxConfirmed?: boolean }) {
     clerk(clerkId);
     const r = noteRow(id);
     // 訪問カルテ（訪問診療・往診）は書いた本人の算定プレビューに重なるので、書いた本人だけが確かめる。貼ったカルテ（記録）はチームで見る（反証 round-55 C-302）
@@ -244,8 +246,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
-    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person" };
     const at = now();
+    // 「確かめた」の印（design.md §16-4-1）：値を選び直したか、「確かめた」を押したときだけ。初期値のまま保存しただけでは付けない
+    const marked = choice !== null && (choice !== rule || input.rxConfirmed === true);
+    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person", rxConfirmed: marked ? { by: clerkId, at, rxHash: rxHashOf(a.rx) } : null };
     sqlite.transaction(() => {
       sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(v.facts), JSON.stringify(stored), id);
       for (const c of chosen) {
@@ -311,6 +315,23 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
     return { claimId: r.claim_id, date: r.date };
   }
+  /**
+   * 確かめて残したカルテの、その日の処方の欄の値と「確かめた」の印を付け直す（POST /api/chart/acts/rx-confirm。design.md §16-4-1・16-7。C-421）。
+   * 権限は pickAct と同じ。処方の欄を出すのは、院内処方もある施設で、処方の記載か投薬の行為がある日だけ。印はそのときの処方の文の指紋を持つ。返すのは請求と日だけ
+   */
+  function confirmRx(id: number, clerkId: string, input: { rxChoice: RxChoice; confirmed: boolean }) {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
+    if (r.acts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const stored = JSON.parse(r.acts) as StoredActs;
+    if (dispensingFor(caseOf(r.claim_id).yearMonth) !== "inside") throw badRequest("施設の申告が院内処方もある施設でないので、処方の院内・院外の欄はありません");
+    if (stored.rx.length === 0 && !stored.acts.some((a) => a.category === "投薬")) throw badRequest("この日のカルテに処方の記載も投薬もありません");
+    const rule = rxDefault(stored.rx);
+    const next: StoredActs = { ...stored, rxChoice: input.rxChoice, rxChoiceBy: input.rxChoice === rule ? "rule" : "person", rxConfirmed: input.confirmed ? { by: clerkId, at: now(), rxHash: rxHashOf(stored.rx) } : null };
+    sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
+    return { claimId: r.claim_id, date: r.date };
+  }
   /** 保存した行ったこと（確かめていなければ null） */
   const savedActs = (id: number): StoredActs | null => {
     const r = noteRow(id);
@@ -365,6 +386,37 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const own = tori.storedDays(mine.map((r) => ({ id: r.id, date: r.date, acts: JSON.parse(r.acts) as StoredActs })));
     const dates = new Set(own.map((d) => d.date));
     return [...tori.chartDays(claimId).filter((d) => !dates.has(d.date)), ...own].filter((d) => upTo === undefined || d.date <= upTo).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+  /** 1 つの請求の、カルテの文章のある日（確かめたかは問わない）。取り込んだ請求は貼ったカルテ、合成の症例は合成カルテの文に本人のカルテを重ねる */
+  function claimTexts(claimId: string, clerkId?: string): TextDay[] {
+    const join = (n: ChartNote) => [n.s, n.o, n.a, n.p, n.rx].filter(Boolean).join("\n");
+    type R = { date: string; note: string; acts: string | null };
+    const rows = (
+      isUploaded(claimId)
+        ? sqlite.prepare("SELECT date, note, acts FROM chart_notes WHERE claim_id = ? AND kind = '記録' ORDER BY date, id").all(claimId)
+        : clerkId
+          ? sqlite.prepare("SELECT date, note, acts FROM chart_notes WHERE claim_id = ? AND clerk_id = ? ORDER BY date, id").all(claimId, clerkId)
+          : []
+    ) as R[];
+    const own: TextDay[] = rows.map((r) => ({ date: r.date, text: join(JSON.parse(r.note) as ChartNote), stored: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs) }));
+    if (isUploaded(claimId)) return own;
+    const dates = new Set(own.map((d) => d.date));
+    return [...tori.chartTextDays(claimId).filter((d) => !dates.has(d.date)), ...own];
+  }
+  /**
+   * G11 の規則の候補（design.md §16-4-5 (e)・(d)）に渡すカルテの文章：当月と、同じ患者のさかのぼる月の請求（構造化データを残していない請求は読まない）
+   */
+  function textsOf(claimId: string, clerkId?: string): TextDay[] {
+    if (!structured) return claimTexts(claimId, clerkId);
+    let past: TextDay[] = [];
+    try {
+      const ym = isUploaded(claimId) ? uke.receiptOf(claimId).receipt.yearMonth : caseOf(claimId).yearMonth;
+      const months = structured.monthsBefore(ym, structuredConfig().rxLookbackMonths);
+      past = structured.samePatientClaims(claimId, months).flatMap((x) => claimTexts(x.claimId, clerkId));
+    } catch {
+      past = [];
+    }
+    return [...claimTexts(claimId, clerkId), ...past];
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
@@ -506,7 +558,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

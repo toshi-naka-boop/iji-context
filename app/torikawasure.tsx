@@ -25,6 +25,7 @@ export function Torikawasure({ data, chartHref }: { data: TorikawasureView | und
       ) : (
         <>
           {data.guide && <div className="notice">{chartHref ? <a href={chartHref}>{data.guide}</a> : data.guide}</div>}
+          {(data.ruleGuides ?? []).map((g, i) => <div key={i} className="notice">{chartHref ? <a href={chartHref}>{g}</a> : g}</div>)}
           {data.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>カルテに書かれた行為で、請求にないものは見つかりませんでした（見ていないものは下に並べたとおり）。</p>}
           {data.findings.map((f, i) => (
             <div key={i} className="notice">
@@ -98,3 +99,4 @@ function UnmatchedPick({ u }: { u: G11Unmatched }) {
     </div>
   );
 }
+

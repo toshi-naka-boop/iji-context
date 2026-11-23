@@ -316,11 +316,14 @@ describe("院内・院外と剤形（C-221・C-231・C-243・M-3）", () => {
     expect(r.scope).toEqual(["10月7日は処方の記載がないので薬は見ていません：1 件"]);
   });
 
-  it("院内の日の投薬の組：薬と、剤形から決まる調剤料・処方料を組にし、組が抑えられなければ書かれた薬だけを言う（調剤料・処方料は足すだけ）。剤形 4 の薬は組に入れない", () => {
+  it("院内の日の投薬の組：薬と、剤形から決まる調剤料・処方料を組にし、組が抑えられなければ書かれた薬だけを言う（印のない入力：調剤料・処方料は足すだけ／印のある入力：本人が院内を確かめた日は調剤料と処方料〔区分なし〕も指摘に出る。L-199 (a)）。剤形 4 の薬は組に入れない", () => {
     const db = g11Db();
     const rx = [{ date: date(14), rx: true, choice: "inside" as const }];
     const r = both(db, { units: [] }, about([act(14, D.carve, "カルベジロール錠１０ｍｇ「ニプロ」")], { rxDays: rx }));
     expect(keys(r.findings)).toEqual(["G11.missing 622095502 14"]);
+    // 印のある入力（本人が院内を確かめた日。design.md §16-4-2・19c の行）：120000710 と処方料（区分なし）が増える
+    const marked = both(db, { units: [] }, about([act(14, D.carve, "カルベジロール錠１０ｍｇ「ニプロ」")], { rxDays: [{ ...rx[0], confirmed: true }] }));
+    expect(keys(marked.findings)).toEqual(["G11.missing_rule 120000710 14", "G11.missing_rule 120001210 14", "G11.missing 622095502 14"]);
     const four = both(db, { units: [] }, about([act(14, D.xylo, "キシロカイン注ポリアンプ０．５％　５ｍＬ")], { rxDays: rx }));
     expect(keys(four.findings)).toEqual([]);
     expect(four.scope).toEqual(["剤形が内服・外用でない薬は見ていません：1 件"]);

@@ -20,6 +20,10 @@ import type { Finding } from "../engine/types";
 import { KIJUN_OWNERS } from "../facility/codes";
 import { TABLE, tensuhyoOf, type Dated } from "./tensuhyo";
 import type { GenericAbout, GenericAboutMore, GenericCheck, GenericCheckId, GenericFinding } from "./types";
+import type { Part, RxOrder, StructuredChart } from "../connect/types";
+import type { SItem } from "../structured/overlap";
+import { RULE_CODES } from "../structured/rule-codes";
+import { isOutsideText } from "../structured/outside-words";
 
 // ───────────────────────────────────────────────────────────────────────────
 // 入力
@@ -36,8 +40,23 @@ export type ConfirmedAct = {
   /** 候補に添える文（16-3 の「文章にあるがオーダーにない」） */
   note?: string;
 };
-/** その日の処方の記載があるか（rx）と、本人が選んだ（なければ初期値の規則で出た）院内・院外 */
-export type RxDay = { date: string; rx: boolean; choice: RxChoice | null };
+/**
+ * その日の処方の記載があるか（rx）と、本人が選んだ（なければ初期値の規則で出た）院内・院外。
+ * confirmed：本人がその日の院内・院外を確かめた印があり、いまの処方の文で効く（design.md §16-4-1。C-410。文字の初期値だけでは付かない）
+ */
+export type RxDay = { date: string; rx: boolean; choice: RxChoice | null; confirmed?: boolean };
+/**
+ * 構造化データから規則で出す算定の入力（design.md §16-4。段 19c・19d）。ないときは規則の候補を出さない（v32 のまま）。
+ * history：さかのぼって読む月（当月の前の月から順に lookbackMonths 個）。orders は残した処方のオーダー（残していない月は null）、items はその月の当てたコードつきの行為。
+ * texts：カルテの文章のある日（当月とさかのぼる月。確かめたかは問わない）。text は S・O・A・P・処方の欄を合わせた文、confirmed は確かめたか。choice・rxAct はさかのぼる月の日だけが持つ（当月は rxDays・acts で見る）。
+ */
+export type G11Structured = {
+  chart: StructuredChart;
+  items: SItem[];
+  history: { yearMonth: string; orders: Part<RxOrder> | null; items: SItem[] }[];
+  lookbackMonths: number;
+  texts: { date: string; text: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
+};
 /** 院内処方か院外処方か（施設の申告 dispensing。その請求の診療年月で効く行）。inside＝院内処方もある */
 export type Dispensing = "outside" | "inside" | "unknown";
 
@@ -52,6 +71,7 @@ export type G11About = GenericAboutMore & {
   /** どの経路の請求か（design.md §15-8）。uke＝取り込んだ請求、preview＝導出の算定行 */
   path: "uke" | "preview";
   dispensing: Dispensing;
+  structured?: G11Structured;
 };
 
 /** 足した単位 1 つ（候補の単位。算定日は 1 日） */
@@ -66,7 +86,19 @@ export type Step3 = (cands: { id: number; date: string; units: { items: G11Item[
 export type SameFamily = (cand: { date: string; units: { items: G11Item[]; count: number }[] }) => Note | null;
 
 /** 添え書きの理由（注意つきの数を理由ごとに数える。design.md §15-8 の「注意つきの候補の出し方」） */
-export const CAUTION_REASONS = ["データの点検の条件つきの違反", "候補どうしの包括・背反", "同じ族の区分誤り", "情報不足", "手書きのルールの指摘", "手書きのルールで判定できない行", "施設基準の申告が分からない", "文章にあるがオーダーにない"] as const;
+export const CAUTION_REASONS = [
+  "データの点検の条件つきの違反",
+  "候補どうしの包括・背反",
+  "同じ族の区分誤り",
+  "情報不足",
+  "手書きのルールの指摘",
+  "手書きのルールで判定できない行",
+  "施設基準の申告が分からない",
+  "文章にあるがオーダーにない",
+  "院内・院外の食い違い",
+  "規則の添え書き",
+  "規則の項目が取れない",
+] as const;
 export type CautionReason = (typeof CAUTION_REASONS)[number];
 /** rule：添え書きの元の手書きのルール。doubt：同じ族の区分誤り（R18 のときだけ kubunDoubts に入れる。C-263） */
 export type Note = { reason: CautionReason; text: string; rule?: string; doubt?: boolean };
@@ -74,8 +106,14 @@ export type Note = { reason: CautionReason; text: string; rule?: string; doubt?:
 // ───────────────────────────────────────────────────────────────────────────
 // 出力
 
-export type G11Kind = "G11.missing" | "G11.missing_with" | "G11.missing_either" | "G11.missing_derived" | "G11.quantity_less" | "G11.quantity_more";
-export type G11Day = { date: string; quote: string; notes: Note[] };
+export type G11Kind = "G11.missing" | "G11.missing_with" | "G11.missing_either" | "G11.missing_derived" | "G11.missing_rule" | "G11.quantity_less" | "G11.quantity_more";
+/** quantity：規則の候補の数量（患家診療時間加算の分。design.md §16-4-6） */
+export type G11Day = { date: string; quote: string; notes: Note[]; quantity?: string };
+/**
+ * 規則の候補の根拠（design.md §16-4-1）。basis：order＝処方のオーダー／visit＝訪問の記録／device＝患者の機器／chart＝処方の欄で本人が院内と確かめた日（L-199 (a)）。
+ * sources：出どころの印（電子カルテ／医療事務が入れた〔誰・いつ〕）
+ */
+export type RuleBasis = { basis: "order" | "visit" | "device" | "chart"; sources: string[] };
 export type G11Finding = {
   messageKey: G11Kind;
   certainty: "条件つき";
@@ -86,6 +124,8 @@ export type G11Finding = {
   /** 添え書きのある日を 1 つでも持つ（後ろにまとめる） */
   caution: boolean;
   source: { data: "chart"; ref: string };
+  /** 規則の候補（G11.missing_rule）だけ */
+  rule?: RuleBasis;
 };
 /**
  * 当てられない行為（design.md §15-7・15-9。X-157）：日・書かれた名前・種類。保存したカルテの行為は、カルテの id と位置（候補から選んで残す入口）。
@@ -108,6 +148,8 @@ export type G11Result =
       handNotes: { messageKey: string; text: string }[];
       /** 院内・院外が選ばれていない日の案内（たたまない 1 行。C-243）。なければ null */
       guide: string | null;
+      /** 規則の候補の入力の案内（効く場面の日だけ。処方の日の「確かめた」の印。design.md §16-6。たたまない 1 行ずつ） */
+      ruleGuides: string[];
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
       scope: string[];
       /** 段の報告に出す数（design.md §15-10 の共通の検査の G11 の数） */
@@ -146,12 +188,20 @@ const squash = (s: string) => s.normalize("NFKC").replace(/\s/g, "");
 // 候補
 
 type Report = { code: string; written: string; quote: string; noteId?: number; name: string; tbl?: string };
+/**
+ * 規則の候補（design.md §16-4）。key：同じ規則の候補を 1 件にまとめる鍵（日の一覧を持つ）。label：名称。basisLabel：文の頭の根拠（「オーダー」など）。
+ * requirement：要件の要旨（文の中）。dayQuote・quantity：日の行に出す文と数量
+ */
+type RuleCand = { key: string; label: string; basisLabel: string; requirement: string; basis: RuleBasis; dayQuote: string; quantity?: string };
 type Cand = {
   id: number;
-  kind: "act" | "with" | "drugs" | "derived" | "qty";
+  kind: "act" | "with" | "drugs" | "derived" | "qty" | "rule";
   date: string;
   day: number;
   units: AddedUnit[];
+  /** 手順 1 で、units が抑えられたときに代わりに確かめる単位（処方料：区分を決めないので、両方の区分が抑えられたときだけ隠す。16-4-2） */
+  alt?: AddedUnit[];
+  rule?: RuleCand;
   /** 指摘に出す行為（組は、カルテにあって請求にないもの） */
   report: Report[];
   /** with：親の書かれた名前／derived：何から決まったか（文）／qty：量の指摘 */
@@ -373,7 +423,8 @@ function bindsOf(c: Ctx, checks: GenericCheck[], claim: G11Claim, addedList: { c
  */
 export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11About, rev: Revision, opt: { checks?: GenericCheck[]; step3?: Step3; sameFamily?: SameFamily; hand?: Finding[] } = {}): G11Result {
   const acts = (about.acts ?? []).filter((a) => a.date.startsWith(`${about.yearMonth}-`));
-  if (acts.length === 0) return { skip: "確かめたカルテの「行ったこと」がないので、取り忘れは見ていません" };
+  // 構造化データがあれば、文章の行為がなくても規則の候補を見る（design.md §16-4）
+  if (acts.length === 0 && !about.structured) return { skip: "確かめたカルテの「行ったこと」がないので、取り忘れは見ていません" };
   if (!db) return { skip: "基本マスターがないので、取り忘れは見ていません" };
   // G11 が頼る点検（G03〜G06・G10）が判定不能なら、その請求の取り忘れは何も言わない（X-131・X-136）
   for (const [id, label] of [["G11", "取り忘れ"], ["G03", "行の属性"], ["G04", "包括"], ["G05", "背反"], ["G06", "回数"], ["G10", "施設基準"]] as const) {
@@ -412,7 +463,85 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   let nextId = 0;
   const add = (x: Omit<Cand, "id" | "notes">, notes: Note[] = []) => cands.push({ ...x, id: nextId++, notes: [...notes] });
   /** 構造化データとの突き合わせで添えた文（16-3。文章にあるがオーダーにない） */
-  const orderNotes = (list: ConfirmedAct[]): Note[] => [...new Set(list.flatMap((a) => (a.note ? [a.note] : [])))].map((text) => ({ reason: "文章にあるがオーダーにない", text }));
+  /** 行為に添える規則の文（16-3） */
+  const extraNotes = new Map<ConfirmedAct, Note[]>();
+  const orderNotes = (list: ConfirmedAct[]): Note[] => [
+    ...[...new Set(list.flatMap((a) => (a.note ? [a.note] : [])))].map((text): Note => ({ reason: "文章にあるがオーダーにない", text })),
+    ...list.flatMap((a) => extraNotes.get(a) ?? []),
+  ];
+
+  // ── 構造化データから規則で出す算定の準備（design.md §16-4。段 19c・19d）。S がなければ何もしない（v32 のまま）
+  const S = about.structured ?? null;
+  const ym = about.yearMonth;
+  const inMonth = (d: string) => d.startsWith(`${ym}-`);
+  const kubunCodes = (k: string) => (Object.hasOwn(rev.codes, k) ? [rev.codes[k].primary, ...rev.codes[k].accept] : []);
+  /** マスターの区分番号（アルファベット＋区分番号）に当たるか。区分番号の単位で「ある・ない」を見る（F100・F400・A000・A001） */
+  const kubunMemo = new Map<string, string | null>();
+  const kubunNoOf = (code: string): string | null => {
+    if (!kubunMemo.has(code)) {
+      const r = shinryoOf(db, c.snapshot.si, code);
+      kubunMemo.set(code, r ? `${r.alpha}${r.kubun_no}` : null);
+    }
+    return kubunMemo.get(code)!;
+  };
+  const inKubun = (code: string, keys: string[]) => keys.includes(kubunNoOf(code) ?? "");
+  /** その区分番号のどれかのコードが、請求のその日にある（算定日の分からない単位は月の中） */
+  const kubunOnDay = (keys: string[], day: number) => [...idx.days].some(([code, d]) => (d[day - 1] ?? 0) > 0 && inKubun(code, keys)) || [...idx.untimed].some((code) => inKubun(code, keys));
+  /** その区分番号のコードが請求にある日（算定日の分からない単位は日を数えず、月の中に 1 つあれば 1） */
+  const kubunDays = (keys: string[]): number => {
+    const ds = new Set<number>();
+    for (const [code, d] of idx.days) if (inKubun(code, keys)) d.forEach((n, i) => n > 0 && ds.add(i + 1));
+    return ds.size > 0 ? ds.size : [...idx.untimed].some((code) => inKubun(code, keys)) ? 1 : 0;
+  };
+  const codesOnDay = (codes: Iterable<string>, day: number) => [...codes].some((x) => idx.untimed.has(x) || (idx.days.get(x)?.[day - 1] ?? 0) > 0);
+  const codeDays = (codes: Iterable<string>): string[] => {
+    const ds = new Set<string>();
+    for (const x of codes) (idx.days.get(x) ?? []).forEach((n, i) => n > 0 && ds.add(`${ym}-${String(i + 1).padStart(2, "0")}`));
+    return [...ds];
+  };
+  const ordersPart = S?.chart.orders ?? null;
+  const orderMonth = ordersPart?.status === "supported";
+  const ordersOn = new Map<string, RxOrder[]>();
+  if (ordersPart?.status === "supported") for (const o of ordersPart.items) if (inMonth(o.date)) ordersOn.set(o.date, [...(ordersOn.get(o.date) ?? []), o]);
+  /** オーダーの日の院内・院外（16-4-1。オーダーを受け取っている月は、オーダーで決める） */
+  const orderDay = (date: string) => {
+    const os = ordersOn.get(date);
+    if (!os) return null;
+    const inside = os.filter((o) => o.place === "院内");
+    const outside = os.filter((o) => o.place === "院外");
+    const place = inside.length > 0 && outside.length > 0 ? "mixed" : inside.length > 0 ? "inside" : outside.length > 0 ? "outside" : "blank";
+    return { place, inside, outside };
+  };
+  const orderRefOf = (ref: string) => ref.slice(0, ref.lastIndexOf("/"));
+  const orderDrugs = (orders: RxOrder[], items: SItem[] = S?.items ?? []) => {
+    const refs = new Set(orders.map((o) => o.ref));
+    return items.filter((x) => x.kind === "drug" && refs.has(orderRefOf(x.ref)));
+  };
+  const PLACE_LABEL = { inside: "院内", outside: "院外" } as const;
+  /** 食い違いの添え書き（施設の申告・本人の選択とオーダー。FR-207。利用者の判断 2026-11-23） */
+  const mismatch = (date: string, place: "inside" | "outside"): Note[] => {
+    const out: Note[] = [];
+    if (about.dispensing === "outside" && place === "inside") out.push({ reason: "院内・院外の食い違い", text: "施設の申告は院外処方だけ。オーダーは院内" });
+    const r = rxDay.get(date);
+    if (r?.confirmed && (r.choice === "inside" || r.choice === "outside") && r.choice !== place)
+      out.push({ reason: "院内・院外の食い違い", text: `本人の選択は${r.choice === "inside" ? "院内" : "院外処方箋"}。オーダーは${PLACE_LABEL[place]}` });
+    return out;
+  };
+  /** 本人の選択と申告で院内と決まり、「確かめた」の印のある日（L-199 (a)。オーダーのある日は除く） */
+  const confirmedInside = (date: string) => {
+    const r = rxDay.get(date);
+    return !ordersOn.has(date) && about.dispensing === "inside" && !!r?.rx && r.choice === "inside" && r.confirmed === true;
+  };
+  /** 規則が調剤料・処方料を見る日（文章の調剤料・処方料の行為は、規則の側にたたむ。16-3） */
+  const ruleDrugDay = (date: string) => orderDay(date)?.place === "inside" || confirmedInside(date);
+
+  /** 規則で出す算定と同じコードの文章の行為（16-3）：規則がその日を見るときは規則の側にたたむ */
+  const ruleFolded = new Set<ConfirmedAct>();
+  for (const a of acts) {
+    const m = a.act.match;
+    if (m && m.tbl === "shinryo" && a.act.category === "投薬" && a.source !== "structured" && inKubun(m.code, ["F0", "F100"]) && ruleDrugDay(a.date)) ruleFolded.add(a);
+  }
+  if (ruleFolded.size > 0) tally("規則で見る行為をたたみました", ruleFolded.size);
 
   /** 量の比較の材料：単位の列・衝突する単位の名前・1 日の上限の行 */
   const units = hasUnitColumns(db);
@@ -494,7 +623,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 1. カルテの行為を、見ないもの・投薬・ほかに分ける
   const byDay = new Map<string, ConfirmedAct[]>();
-  for (const a of acts) byDay.set(a.date, [...(byDay.get(a.date) ?? []), a]);
+  for (const a of acts) if (!ruleFolded.has(a)) byDay.set(a.date, [...(byDay.get(a.date) ?? []), a]);
   let unmatched = 0;
   const unmatchedActs: G11Unmatched[] = [];
   for (const [date, list] of [...byDay].sort(([x], [y]) => (x < y ? -1 : 1))) {
@@ -547,7 +676,16 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       compare(g.kind, g.code, date, g.acts.map((x) => x.act.quantity), { written: head.act.written, quote: [...new Set(g.acts.map((x) => x.act.quote))].sort().join("／"), noteIds: g.acts.map((x) => x.noteId) });
     }
     // 投薬の薬と手技（院内・院外の扱い。C-221・C-231・X-130）
-    if (drugs.length + procs.length > 0) {
+    const od = orderDay(date);
+    if (drugs.length + procs.length > 0 && od) {
+      // オーダーを受け取っている月のオーダーの日：院内・院外はオーダーで決める（16-4-1。施設の申告・本人の選択は使わず、食い違いを添える）
+      if (od.place === "inside") drugGroup(date, day, drugs, procs, mismatch(date, "inside"));
+      else {
+        if (drugs.length > 0)
+          tally(od.place === "outside" ? "院外処方箋の日なので薬は見ていません" : od.place === "mixed" ? "同じ日に院内と院外のオーダーがある日の薬は見ていません" : "オーダーの院内・院外が欠けている日の薬は見ていません", drugs.length);
+        for (const p of procs) regular(p, date, day, new Map(), childGroups);
+      }
+    } else if (drugs.length + procs.length > 0) {
       const n = drugs.length + procs.length;
       if (about.dispensing === "outside") {
         if (drugs.length > 0) tally("院外処方の施設なので薬は見ていません", drugs.length);
@@ -595,7 +733,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
 
   /** 投薬の組（院内の日。X-130・C-221）：その日の薬・書かれた投薬の手技と、剤形から決まる調剤料・処方料を 1 つの候補にする */
-  function drugGroup(date: string, day: number, drugs: ConfirmedAct[], procs: ConfirmedAct[]) {
+  function drugGroup(date: string, day: number, drugs: ConfirmedAct[], procs: ConfirmedAct[], extra: Note[] = []) {
     const kept: ConfirmedAct[] = [];
     const forms = new Set<string>();
     for (const d of drugs) {
@@ -617,7 +755,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       ...missing.map((a) => unitOn([{ kind: (a.act.match!.tbl === "iyakuhin" ? "IY" : "SI") as G11Item["kind"], code: a.act.match!.code }], day)),
       ...auto.map((code) => unitOn([{ kind: "SI", code }], day)),
     ];
-    add({ kind: "drugs", date, day, units: unitsOfGroup, report: missing.map((a) => ({ code: a.act.match!.code, written: a.act.written, quote: a.act.quote, noteId: a.noteId, name: nameOfCode(c, a.act.match!.code) })) }, orderNotes(missing));
+    add({ kind: "drugs", date, day, units: unitsOfGroup, report: missing.map((a) => ({ code: a.act.match!.code, written: a.act.written, quote: a.act.quote, noteId: a.noteId, name: nameOfCode(c, a.act.match!.code) })) }, [...orderNotes(missing), ...extra]);
   }
 
   // 2. 決まった規則で足す候補（M-1。X-147）：判断料と処方箋料
@@ -680,13 +818,225 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     if (undecided > 0) tally("判断料の行を 1 つに決められない検査のグループ", undecided);
     // 処方箋料：院内処方もある施設で院外処方箋と選んだ日、院外処方だけの施設で処方の記載がある日
     for (const r of about.rxDays ?? []) {
-      if (!r.date.startsWith(`${about.yearMonth}-`) || !r.rx || info.rxPrimary === null) continue;
+      // オーダーのある日は、オーダーで決める（16-4-4。下の規則の候補）
+      if (!r.date.startsWith(`${about.yearMonth}-`) || !r.rx || info.rxPrimary === null || ordersOn.has(r.date)) continue;
       if (!((about.dispensing === "inside" && r.choice === "outside") || about.dispensing === "outside")) continue;
       const day = Number(r.date.slice(8, 10));
       if (rxPresent(day) || acts.some((a) => a.date === r.date && a.act.match && info.rxCodes.has(a.act.match.code))) continue;
       const quote = (byDay.get(r.date) ?? []).find((a) => a.act.category === "投薬")?.act.quote ?? "";
       add({ kind: "derived", date: r.date, day, units: [unitOn([{ kind: "SI", code: info.rxPrimary }], day)], report: [{ code: info.rxPrimary, written: "処方箋料", quote, name: "処方箋料" }], derived: { what: "処方の記載", basis: "処方の記載", name: "処方箋料" } });
     }
+  }
+
+  // 2b. 規則の候補（design.md §16-4。段 19c・19d）：処方のオーダー・処方の欄の「確かめた」の印・訪問の記録から、決まった規則で出す。言い切らず、手順 1〜4 に通す
+  const ruleScope: string[] = [];
+  const ruleGuides: string[] = [];
+  const dayList = (dates: Iterable<string>) => [...new Set(dates)].sort().map((d) => `${md(d)}日`).join("・");
+  const ruleCand = (date: string, units: AddedUnit[], rc: RuleCand, notes: Note[] = [], alt?: AddedUnit[]) =>
+    add({ kind: "rule", date, day: Number(date.slice(8, 10)) || 0, units, ...(alt ? { alt } : {}), rule: rc, report: [{ code: units[0].items[0].code, written: rc.label, quote: rc.dayQuote, name: rc.label }] }, notes);
+  const si1 = (code: string, day: number, quantity?: string) => unitOn([{ kind: "SI", code, ...(quantity !== undefined ? { quantity } : {}) }], day);
+  const EHR = "電子カルテ";
+  const zaikeiOf = (code: string) => (c.snapshot.iy ? iyakuhinOf(db, c.snapshot.iy, code)?.zaikei : undefined);
+  {
+    // 麻薬等の区分（E-12 の錨のあとの医薬品マスターの列）。列を読めないマスターでは麻薬等加算を見ない（L-174）
+    const mayakuReadable = c.snapshot.iy !== null && (db.prepare("PRAGMA table_info(iyakuhin)").all() as { name: string }[]).some((x) => x.name === "mayaku");
+    const mayakuOf = (code: string): string | null =>
+      mayakuReadable ? ((db.prepare("SELECT mayaku FROM iyakuhin WHERE snapshot = ? AND code = ?").get(c.snapshot.iy, code) as { mayaku: string } | undefined)?.mayaku ?? null) : null;
+    const NARCOTIC = new Set(["1", "2", "3", "5"]);
+    let mayakuUnread = 0;
+    let formUnread = 0;
+    const dates = [...new Set([...ordersOn.keys(), ...(about.rxDays ?? []).filter((r) => inMonth(r.date)).map((r) => r.date)])].sort();
+    for (const date of dates) {
+      const day = Number(date.slice(8, 10));
+      const od = orderDay(date);
+      // 院内の日（T1〜T4）：オーダーの院内の日、またはオーダーのない日で「確かめた」の印のある院内の日（L-199 (a)）
+      let codes: string[] = [];
+      let names: string[] = [];
+      let notes: Note[] = [];
+      let basis: RuleBasis["basis"];
+      if (od?.place === "inside") {
+        const items = orderDrugs(od.inside);
+        formUnread += items.filter((x) => x.code === null).length;
+        codes = items.flatMap((x) => (x.code !== null && x.tbl === "iyakuhin" ? [x.code] : []));
+        names = items.map((x) => x.name);
+        notes = [...mismatch(date, "inside"), ...(od.inside.length >= 2 ? [{ reason: "規則の添え書き" as const, text: `同じ日にオーダーが ${od.inside.length} 件あります。別々の処方なら回数が増えます（明文なし。EM U-50）` }] : [])];
+        basis = "order";
+      } else if (!od && confirmedInside(date)) {
+        const ds = acts.filter((a) => a.date === date && a.act.category === "投薬" && a.act.match?.tbl === "iyakuhin");
+        codes = ds.map((a) => a.act.match!.code);
+        names = ds.map((a) => a.act.written);
+        basis = "chart";
+      } else {
+        if (od?.place === "blank") tally("オーダーの院内・院外が欠けているので、調剤料・処方料は見ていません");
+        continue;
+      }
+      const forms = new Set<string>();
+      let narcotic = false;
+      for (const code of codes) {
+        const z = zaikeiOf(code);
+        if (z === ORAL || z === EXTERNAL) forms.add(z);
+        if (NARCOTIC.has(mayakuOf(code) ?? "")) narcotic = true;
+      }
+      // 剤形が内服・外用の薬がない日（自己注射の薬だけなど）は出さない（L-111。GK-R8-02-Q65）
+      if (forms.size === 0) continue;
+      const B: RuleBasis = { basis, sources: [basis === "order" ? EHR : "本人が確かめた処方の欄"] };
+      const rc = (key: string, label: string, requirement: string): RuleCand => ({ key, label, basisLabel: basis === "order" ? "オーダー" : "処方の欄で院内と確かめた日", requirement, basis: B, dayQuote: names.join("・") });
+      if (forms.has(ORAL) && !present(RULE_CODES.chozaiOral, day)) ruleCand(date, [si1(RULE_CODES.chozaiOral, day)], rc("chozai-oral", "調剤料（内服薬・浸煎薬・屯服薬）", "院内で投薬した 1 回の処方につき 1 回算定します（R8-237）"), notes);
+      if (forms.has(EXTERNAL) && !present(RULE_CODES.chozaiExternal, day)) ruleCand(date, [si1(RULE_CODES.chozaiExternal, day)], rc("chozai-external", "調剤料（外用薬）", "院内で投薬した 1 回の処方につき 1 回算定します（R8-237）"), notes);
+      // 処方料は区分を決めない 1 件。請求にその日の F100 のどれかの区分があれば出さない（L-173）。手順 1 は両方の区分が抑えられたときだけ隠す
+      if (!kubunOnDay(["F100"], day))
+        ruleCand(date, [si1(RULE_CODES.shohoryo3, day)], rc("shohoryo", "処方料", "1 回の処方につき 1 回算定します。区分は内服の種類・向精神薬の長期処方と多剤投与で決まります（R8-240）"), notes, [si1(RULE_CODES.shohoryo2, day)]);
+      if (!mayakuReadable) mayakuUnread++;
+      else if (narcotic) {
+        const missing = [RULE_CODES.mayakuChozai, RULE_CODES.mayakuShohoryo].filter((code) => !present(code, day));
+        if (missing.length > 0) ruleCand(date, [unitOn(missing.map((code) => ({ kind: "SI" as const, code })), day)], rc("mayaku", "麻薬等加算（調剤料・処方料）", "麻薬・向精神薬・覚醒剤原料・毒薬を処方・調剤した 1 処方につき 1 回ずつ算定します（R8-238）"), notes);
+      }
+    }
+    if (formUnread > 0) tally("調剤料・処方料は、オーダーの薬のコードが判定の外で剤形を読めない分を見ていません", formUnread);
+    if (mayakuUnread > 0) tally("麻薬等の区分を医薬品マスターから読めないので、麻薬等加算は見ていません", mayakuUnread);
+
+    // 処方箋料（T5）：オーダーの院外の日。同じ日に院内と院外のオーダーがある日は、調剤料・処方料を出さず、処方箋料に R8-239 の添え書き
+    for (const [date] of [...ordersOn].sort(([a], [b]) => (a < b ? -1 : 1))) {
+      const od = orderDay(date)!;
+      if ((od.place !== "outside" && od.place !== "mixed") || info.rxPrimary === null) continue;
+      const day = Number(date.slice(8, 10));
+      // 確かめた行為に処方箋料がその日にあれば、そちらで言う（1 つにまとめる。X-147）
+      if (rxPresent(day) || acts.some((a) => a.date === date && a.act.match && info.rxCodes.has(a.act.match.code))) continue;
+      const notes: Note[] = [
+        ...mismatch(date, "outside"),
+        ...(od.place === "mixed" ? [{ reason: "規則の添え書き" as const, text: "同じ日に院内と院外のオーダーがあります。原則認められず、緊急やむを得ない場合は調剤料・処方料を算定せず、摘要欄に日付と理由を書きます（R8-239）" }] : []),
+      ];
+      ruleCand(date, [si1(info.rxPrimary, day)], { key: "shohosen", label: "処方箋料", basisLabel: "オーダー", requirement: "院外処方箋を交付した日に算定します（R8-236）", basis: { basis: "order", sources: [EHR] }, dayQuote: orderDrugs(od.outside).map((x) => x.name).join("・") }, notes);
+    }
+  }
+
+  // 在医総管 注2（T6。16-4-5）：在医総管の月で、全部の条件を満たすときだけ。確かめられないときは理由ごとに「見ていません」
+  if (S) {
+    const kanriCodes = new Set(rev.consts.kanri.rows.flatMap((r) => kubunCodes(r.kubun)));
+    const kanriMonth = [...kanriCodes].some((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
+    const n2Codes = kubunCodes(rev.consts.bundled.noRxAddition);
+    const n2Present = n2Codes.some((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
+    const textsNow = S.texts.filter((x) => inMonth(x.date));
+    const writtenRx = (date: string) => acts.some((a) => a.date === date && a.source !== "structured" && a.act.match && info.rxCodes.has(a.act.match.code));
+    // 院外を示す日（当月）：院外の語の規則に当たる、本人が院外を選んだ、確かめた文章の行為が処方箋料の区分に当たった
+    const outsideDays = new Set<string>([
+      ...textsNow.filter((x) => isOutsideText(x.text)).map((x) => x.date),
+      ...(about.rxDays ?? []).filter((r) => inMonth(r.date) && r.choice === "outside").map((r) => r.date),
+      ...acts.filter((a) => writtenRx(a.date)).map((a) => a.date),
+    ]);
+    // オーダーのない処方の日（当月）：処方の記載か、文章にだけある薬がある日（16-4-1）
+    const textDrugDays = acts.filter((a) => a.source !== "structured" && a.act.category === "投薬" && a.act.match?.tbl === "iyakuhin").map((a) => a.date);
+    const orderless = [...new Set([...(about.rxDays ?? []).filter((r) => inMonth(r.date) && r.rx).map((r) => r.date), ...textDrugDays])].filter((d) => !ordersOn.has(d)).sort();
+    if (kanriMonth && !n2Present) {
+      const reasons: string[] = [];
+      let blocked = false;
+      let insideN = 0;
+      const unconfirmed: string[] = [];
+      if (!orderMonth) reasons.push("処方のオーダーを受け取っていない");
+      else {
+        const monthOrders = [...ordersOn.values()].flat();
+        // 院外のオーダーがその月に 1 件でもあれば出さない（R8-241 (c)）
+        if (monthOrders.some((o) => o.place === "院外")) blocked = true;
+        insideN = monthOrders.filter((o) => o.place === "院内").length;
+        const blankDays = [...ordersOn].filter(([, os]) => os.some((o) => o.place === null)).map(([d]) => d);
+        unconfirmed.push(...blankDays);
+        // 投薬のない月は出さない（U-52。照会 #19。L-175）
+        if (insideN === 0 && orderless.length === 0 && blankDays.length === 0) reasons.push("投薬のない月（照会中）");
+        else if (insideN === 0) reasons.push("院内のオーダーがない（オーダーのない処方の日だけの月）");
+        // (d) 30 日を超える院外処方の投与期間がこの月にかからないか：前の lookbackMonths か月のオーダーで確かめる（L-201）
+        const first = `${ym}-01`;
+        const endOf = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + (days - 1) * 86400000).toISOString().slice(0, 10);
+        let unreadable = 0;
+        let noDays = 0;
+        let refill = 0;
+        let unknownPeriod = 0;
+        for (const h of S.history) {
+          if (!h.orders || h.orders.status !== "supported") {
+            unreadable++;
+            continue;
+          }
+          const outsideDates = new Set(h.orders.items.filter((o) => o.place === "院外").map((o) => o.date));
+          for (const o of h.orders.items) {
+            if (o.place === null) {
+              unreadable++;
+              continue;
+            }
+            if (o.place !== "院外") continue;
+            if ((o.refills ?? 0) >= 2) refill++;
+            o.drugs.forEach((d, i) => {
+              if (d.days === null) {
+                // 日数の欠け：内服（剤形 1）やコードの当たらない薬は読めない。外用・頓服など日数を持たない薬は「日数のない院外処方」（L-201 (2)）
+                const it = h.items.find((x) => x.ref === `${o.ref}/${i}`);
+                const z = it?.code ? zaikeiOf(it.code) : undefined;
+                if (!it?.code || z === ORAL) unreadable++;
+                else noDays++;
+              } else if (d.days > 30 && endOf(o.date, d.days) >= first) blocked = true;
+            });
+          }
+          // 範囲の中の文章：院外を示す日で、その日に院外のオーダーがないもの（期間が分からない。文章から日数を読んで決めない。X-241）
+          for (const x of S.texts.filter((y) => y.date.startsWith(`${h.yearMonth}-`)))
+            if ((isOutsideText(x.text) || x.choice === "outside" || x.rxAct === true) && !outsideDates.has(x.date)) unknownPeriod++;
+        }
+        if (unreadable > 0) reasons.push("前の処方を読めない");
+        if (unknownPeriod > 0) reasons.push(`期間の分からない院外処方：${unknownPeriod} 日`);
+        if (noDays + refill > 0) reasons.push(`日数のない・リフィルの院外処方：${noDays + refill} 件`);
+      }
+      // (e) 文章との照らし合わせ（当月の全部の日。L-206・L-211）
+      const visitDates = new Set<string>([
+        ...(S.chart.visits.status === "supported" ? S.chart.visits.items.filter((v) => inMonth(v.date)).map((v) => v.date) : []),
+        ...codeDays([...rev.consts.visitKubun, rev.consts.oushin.kubun, rev.consts.oushin.revisit].flatMap(kubunCodes)),
+        ...textsNow.map((x) => x.date),
+        ...acts.filter((a) => a.source !== "structured").map((a) => a.date),
+      ]);
+      const textDates = new Set(textsNow.map((x) => x.date));
+      // カルテを 1 日も持たない請求では、注2 だけを回さない（16-4-5 (e)。調剤料・処方料はオーダーで出す）
+      if (textDates.size === 0) reasons.push("カルテの文章がない月");
+      const noText = [...visitDates].filter((d) => !textDates.has(d));
+      if (noText.length > 0) reasons.push(`カルテの文章のない訪問の日：${noText.length} 日`);
+      if (outsideDays.size > 0) reasons.push(`文章に院外処方箋の記載：${outsideDays.size} 日`);
+      const facilityOutside: string[] = [];
+      for (const d of orderless) {
+        if (outsideDays.has(d)) continue;
+        const r = rxDay.get(d);
+        if (about.dispensing === "outside") facilityOutside.push(d);
+        else if (!(r?.confirmed && r.choice === "inside")) unconfirmed.push(d);
+      }
+      if (unconfirmed.length > 0) reasons.push(`院内・院外が確かめられていない日：${new Set(unconfirmed).size} 日`);
+      if (facilityOutside.length > 0) reasons.push(`施設の申告は院外処方だけ：オーダーのない処方の日 ${facilityOutside.length} 日`);
+      // (e2) 請求の処方箋料（X-251）
+      const f400 = kubunDays(["F400"]);
+      if (f400 > 0) reasons.push(`請求に処方箋料があり、院外のオーダーと食い違います：${f400} 日`);
+      const mismatchDays = [...outsideDays].filter((d) => orderDay(d)?.place === "inside");
+      if (!blocked) {
+        const label = "処方箋を交付しない場合の加算";
+        if (reasons.length > 0) {
+          for (const r of reasons) ruleScope.push(`${label}は見ていません（${r}）`);
+          if (mismatchDays.length > 0) ruleScope.push(`文章に院外処方箋の記載があり、オーダーは院内の日（食い違い）：${dayList(mismatchDays)}`);
+          if (orderMonth && unconfirmed.length > 0) ruleGuides.push(`${dayList(unconfirmed)}の処方の院内・院外を確かめると、${label}を見ます`);
+        } else if (insideN > 0 && n2Codes.length > 0) {
+          const firstInside = [...ordersOn].filter(([, os]) => os.some((o) => o.place === "院内")).map(([d]) => d).sort()[0];
+          ruleCand(firstInside, [si1(n2Codes[0], Number(firstInside.slice(8, 10)))], {
+            key: "n2",
+            label,
+            basisLabel: "オーダー",
+            requirement: `在医総管の月で、院外処方箋を交付していない月に算定します（R8-241）。当月にかかる 30 日を超える院外処方は、前の ${S.lookbackMonths} か月のオーダーで確かめました`,
+            basis: { basis: "order", sources: [EHR] },
+            dayQuote: `院内のオーダー ${insideN} 件・院外のオーダー 0 件`,
+          });
+        }
+      }
+    }
+    // 処方の日の「確かめた」の印の案内（16-6。効く日だけ）：オーダーを受け取っていない、在医総管のない月の、初期値が院内の日（L-199 (a)）
+    if (!orderMonth && !kanriMonth && about.dispensing === "inside") {
+      const ds = (about.rxDays ?? []).filter((r) => inMonth(r.date) && r.rx && r.choice === "inside" && !r.confirmed).map((r) => r.date);
+      if (ds.length > 0) ruleGuides.push(`${dayList(ds)}の処方の院内を確かめると、調剤料・処方料を見ます`);
+    }
+  } else if (about.dispensing === "inside") {
+    // 構造化データのない請求（オーダーを受け取っていない月）でも、在医総管のない月の、初期値が院内の日には印の案内を出す（L-199 (a)）
+    const kanriCodes = new Set(rev.consts.kanri.rows.flatMap((r) => kubunCodes(r.kubun)));
+    const kanriMonth = [...kanriCodes].some((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
+    const ds = (about.rxDays ?? []).filter((r) => inMonth(r.date) && r.rx && r.choice === "inside" && !r.confirmed).map((r) => r.date);
+    if (!kanriMonth && ds.length > 0) ruleGuides.push(`${dayList(ds)}の処方の院内を確かめると、調剤料・処方料を見ます`);
   }
 
   // 3. 手順 1 の前に外す：背反区分 3（どちらか一方）の相手が元の請求にある行為（C-283）
@@ -725,8 +1075,17 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const hidden: G11Hidden[] = [];
   const passed: Cand[] = [];
   for (const x of live) {
-    const binds = [...(bindsOf(c, checks, claim, x.units.map((unit) => ({ cand: x.id, unit }))).get(x.id) ?? []), ...x.units.flatMap((u) => kaisuBinds(c, idx, u, firstDow))];
+    const bindsFor = (units: AddedUnit[]) => [...(bindsOf(c, checks, claim, units.map((unit) => ({ cand: x.id, unit }))).get(x.id) ?? []), ...units.flatMap((u) => kaisuBinds(c, idx, u, firstDow))];
+    let binds = bindsFor(x.units);
     let block = binds.find((b) => b.certain);
+    // 処方料（区分を決めない）：もう一方の区分も抑えられるときだけ隠す（16-4-2）
+    if (block && x.alt) {
+      const other = bindsFor(x.alt);
+      if (!other.some((b) => b.certain)) {
+        binds = other;
+        block = undefined;
+      }
+    }
     // 同じ族の区分誤りは G10 より C-250 を勝たせる（L-128）：抑えが R18 の担当の施設基準の届出なしだけで、R18 が同じ族の直し先を持つときは隠さず添え書き
     const r18Codes = new Set(KIJUN_OWNERS.filter((o) => o.rule === "R18").flatMap((o) => o.codes));
     const hard = binds.filter((b) => b.certain);
@@ -821,6 +1180,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const findings: G11Finding[] = [];
   const ref = (r: Report[]) => `note=${[...new Set(r.flatMap((x) => (x.noteId !== undefined ? [x.noteId] : [])))].sort((a, b) => a - b).join(",")}`;
   const grouped = new Map<string, { key: G11Kind; code: string; reps: { r: Report; cand: Cand }[] }>();
+  /** 規則の候補は、同じ規則（key）ごとに 1 件で日の一覧（design.md §16-4-1） */
+  const ruleGroups = new Map<string, Cand[]>();
   for (const x of passed) {
     if (inPair.has(x.id)) continue;
     if (x.kind === "qty") {
@@ -831,6 +1192,12 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
           ? `カルテ（${md(x.date)}日）では${name}が${x.qty!.chart}、請求では${x.qty!.claim}です。算定できるか確かめてください`
           : `カルテ（${md(x.date)}日）では${name}が${x.qty!.chart}、請求では${x.qty!.claim}です。カルテの記載と請求を確かめてください`;
       findings.push({ messageKey: x.qty!.key, certainty: "条件つき", codes: [r.code], text, days: [{ date: x.date, quote: r.quote, notes: x.notes }], caution: x.notes.length > 0, source: { data: "chart", ref: ref(x.report) } });
+      continue;
+    }
+    if (x.kind === "rule") {
+      const g = ruleGroups.get(x.rule!.key) ?? [];
+      g.push(x);
+      ruleGroups.set(x.rule!.key, g);
       continue;
     }
     const key: G11Kind = x.kind === "with" ? "G11.missing_with" : x.kind === "derived" ? "G11.missing_derived" : "G11.missing";
@@ -861,6 +1228,22 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const days = [...byDate].sort(([a], [b]) => (a < b ? -1 : 1)).map(([date, d]) => ({ date, quote: [...new Set(d.quotes)].sort().join("／"), notes: d.notes.sort((a, b) => (a.text < b.text ? -1 : 1)) }));
     findings.push({ messageKey: g.key, certainty: "条件つき", codes: [g.code], text, days, caution: days.some((d) => d.notes.length > 0), source: { data: "chart", ref: ref(g.reps.map((x) => x.r)) } });
   }
+  for (const list of ruleGroups.values()) {
+    const rc = list[0].rule!;
+    const sorted = [...list].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const codes = [...new Set(sorted.flatMap((x) => x.units.flatMap((u) => u.items.map((it) => it.code))))];
+    const days = sorted.map((x) => ({ date: x.date, quote: x.rule!.dayQuote, notes: [...x.notes].sort((a, b) => (a.text < b.text ? -1 : 1)), ...(x.rule!.quantity !== undefined ? { quantity: x.rule!.quantity } : {}) }));
+    findings.push({
+      messageKey: "G11.missing_rule",
+      certainty: "条件つき",
+      codes,
+      text: `${rc.basisLabel}${daysPart(sorted.map((x) => x.date))}から、${rc.label}が請求にありません。${rc.requirement}。算定できるか確かめてください`,
+      days,
+      caution: days.some((d) => d.notes.length > 0),
+      source: { data: "chart", ref: "note=" },
+      rule: { basis: rc.basis.basis, sources: [...new Set(sorted.flatMap((x) => x.rule!.basis.sources))] },
+    });
+  }
   for (const [a, b] of pairs) {
     const [ra, rb] = [a.report[0], b.report[0]];
     const days = [...new Set([a.date, b.date])];
@@ -882,6 +1265,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   // 8. 点検の範囲
   if (unmatched > 0) tally("当てられない行為", unmatched);
   for (const [text, { n, suffix }] of scopeCount) scope.push(`${text}：${n} 件${suffix}`);
+  scope.push(...ruleScope);
   const hiddenBy: Record<string, number> = {};
   for (const h of hidden) hiddenBy[h.reason] = (hiddenBy[h.reason] ?? 0) + 1;
   if (hidden.length > 0) scope.push(`算定できない見込みなので言わない：${hidden.length} 件（${Object.entries(hiddenBy).map(([k, v]) => `${k} ${v}`).join("・")}）`);
@@ -919,5 +1303,5 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
   const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
   unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
-  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }

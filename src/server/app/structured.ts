@@ -7,6 +7,8 @@ import { checkMapTarget, FIELDS, type Field, type MapContext, type MapTable } fr
 import { itemsOf, type SItem } from "../../structured/overlap";
 import type { Coded } from "../../connect/types";
 import { withMasters, type MastersDb } from "../../masters/db";
+import type { G11Structured } from "../../generic/g11";
+import { structuredConfig } from "../../structured/rule-codes";
 import { YEAR_MONTH } from "../../demo/period";
 import { badRequest } from "../errors";
 import type { Clerks } from "./clerks";
@@ -172,7 +174,43 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
     return { chart: stored.chart, items: itemsOf(stored.chart, mapContextOf(db, yearMonth, stored.connectorId)), connectorId: stored.connectorId };
   }
 
-  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf };
+  // ---------------------------------------------------------------------------
+  // 規則で出す算定の入力（16-4・16-6。段 19c・19d）
+
+  /** 当月の前の n か月（新しい月から） */
+  const monthsBefore = (yearMonth: string, n: number): string[] =>
+    Array.from({ length: n }, (_, i) => {
+      const d = new Date(Date.UTC(Number(yearMonth.slice(0, 4)), Number(yearMonth.slice(5, 7)) - 2 - i, 1));
+      return d.toISOString().slice(0, 7);
+    });
+  /** 同じ患者の、ほかの月の請求（取り込んだ・同梱の請求。さかのぼる月のカルテの文章を読むため） */
+  function samePatientClaims(claimId: string, yearMonths: string[]): { yearMonth: string; claimId: string }[] {
+    const patientId = structuredPatientOf(claimId);
+    const want = new Set(yearMonths);
+    return uke
+      .ukeReceipts()
+      .filter((x) => want.has(x.yearMonth) && x.claimId !== claimId && patients.ingest(x.patient) === patientId)
+      .map((x) => ({ yearMonth: x.yearMonth, claimId: x.claimId }));
+  }
+  /**
+   * G11 の規則の候補に渡す構造化データ（当月・さかのぼる月の処方のオーダー）。当月を残していなければ null（規則の候補を出さない）。
+   * さかのぼる月は残した処方のオーダーだけを読み、残していない月は null（読めない。L-201）
+   */
+  function structuredRulesOf(claimId: string, yearMonth: string, db: MastersDb | null): Omit<G11Structured, "texts"> | null {
+    const s = structuredItemsOf(claimId, yearMonth, db);
+    if (!s) return null;
+    const patientId = structuredPatientOf(claimId);
+    const lookbackMonths = structuredConfig().rxLookbackMonths;
+    const history = monthsBefore(yearMonth, lookbackMonths).map((ym) => {
+      const st = storedStructured(patientId, ym);
+      if (!st || st.chart.orders.status !== "supported") return { yearMonth: ym, orders: st ? st.chart.orders : null, items: [] };
+      const only: StructuredChart = { ...unsupportedAll(), orders: st.chart.orders };
+      return { yearMonth: ym, orders: st.chart.orders, items: itemsOf(only, mapContextOf(db, ym, st.connectorId)) };
+    });
+    return { chart: s.chart, items: s.items, history, lookbackMonths };
+  }
+
+  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, samePatientClaims, structuredRulesOf, monthsBefore };
 }
 
 export type Structured = ReturnType<typeof createStructured>;
