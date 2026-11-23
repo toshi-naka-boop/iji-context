@@ -148,14 +148,23 @@ describe("記載の形：R17 と同じ commentFormatOk で見る（design.md §1
     expect(genericView({ findings: f, ran: [], notRun: [] }, null).findings[0].text).toBe(`摘要欄の「手作りのコメントの定型文」（850100106）の年月日「${ym}00」の日が 00 です。年月だけを書くコードでなければ、日を書いてください`);
   });
 
-  it("診療年月の世代のコメント関連テーブルがなくても、形は見る（記載があるか・ないかは見ていないと点検の範囲に出す）。形の誤りがなければ、今までどおり動かさない", () => {
+  it("診療年月の世代のコメント関連テーブルがなくても、G07 の準備ができていない DB でも、通常の経路（evaluateGeneric）で形を見る。形を見て通ったときも、点検の範囲にそう出す（X-320・C-482）", () => {
     const db = commentMasters();
     const old = { ...about, yearMonth: month(-60), generation: "R3" };
     const bad = claimOf([unit("SI", K.kokyu)], [{ code: "851100038", raw: "2460", unit: null }]);
     const r = evaluateGeneric(bad, db, old);
     expect(r.findings.filter((f) => f.check === "G07").map((f) => f.messageKey)).toEqual(["G07.form"]);
-    expect(genericScopeOf(bad, db, old, r).notDone.find((t) => t.startsWith("必須コメント"))).toContain("記載があるか・ないかは点検していません");
-    expect(evaluateGeneric(claimOf([unit("SI", K.kokyu)]), db, old).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "noSnapshot" });
+    expect(genericScopeOf(bad, db, old, r).notDone.find((t) => t.startsWith("必須コメント"))).toContain("記載があるか・ないかは表がないので見ていません");
+    const good = claimOf([unit("SI", K.kokyu)], [{ code: "851100038", raw: "2359", unit: null }]);
+    const ok = evaluateGeneric(good, db, old);
+    expect([ok.ran.some((x) => x.check === "G07"), ok.notRun.some((x) => x.check === "G07")]).toEqual([true, false]);
+    expect(genericScopeOf(good, db, old, ok).notDone.find((t) => t.startsWith("必須コメント"))).toContain("記載の形（年月日・時刻・数値など）は見ました");
+    // コメント関連テーブルがなく、G07 の準備ができていない DB
+    const bare = commentMasters();
+    bare.prepare("DELETE FROM comment_kanren").run();
+    bare.prepare("DELETE FROM sources WHERE dataset = 'comment_kanren'").run();
+    bare.prepare("UPDATE checks_ready SET ready = 0, reason = 'コメント関連テーブルがない' WHERE check_id = 'G07'").run();
+    expect(evaluateGeneric(bad, bare, about).findings.filter((f) => f.check === "G07").map((f) => [f.messageKey, f.certainty])).toEqual([["G07.form", "確定"]]);
   });
 
   it("R17 の規則に当たる算定行があるレセプトの形の誤りは R17.comment_format だけ。算定行がないレセプトの同じコードの形の誤りは G07.form", () => {

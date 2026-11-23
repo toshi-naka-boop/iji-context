@@ -107,7 +107,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     expect(c.names!.items[r2026.codes.C001_1I.primary]).toEqual({ name: r2026.points.C001_1I.name, no: "C001" });
     expect(c.names!.comments).toEqual({ "850100106": "手作りのコメントの定型文" });
     // G01：動いた。小さな表にない項目（包括の検査の項目）が、条件つきで出る。言い切りは 1 件もない
-    expect(c.generic.ran).toEqual([{ check: "G01", kind: "コード" }]);
+    // G07 は準備ができていない表でも記載の形だけを見る（design.md §17-3。X-320）
+    expect(c.generic.ran).toEqual([{ check: "G01", kind: "コード" }, { check: "G07", kind: "記載もれ" }]);
     expect(c.generic.findings.length).toBeGreaterThan(0);
     expect(c.generic.findings.every((f) => f.check === "G01" && f.certainty === "条件つき" && f.text.includes("持っているどの版のマスターにもありません"))).toBe(true);
     expect(c.generic.findings.flatMap((f) => f.codes.map((x) => x.code))).not.toContain("114704470");
@@ -141,7 +142,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     withMasters();
     const t = await trial("U1-1", r2026.id, cookie);
     expect(t.names!.items["114704470"]).toEqual({ name: "手作りの加算（往診料）", no: "C000" });
-    expect(t.generic.ran).toEqual([{ check: "G01", kind: "コード" }]);
+    // G07 は準備ができていない表でも記載の形だけを見る（design.md §17-3。X-320）
+    expect(t.generic.ran).toEqual([{ check: "G01", kind: "コード" }, { check: "G07", kind: "記載もれ" }]);
     expect(t.stopped.every((s) => !s.all)).toBe(true);
     noMasters();
     const none = await trial("U1-1", r2026.id, cookie);
@@ -155,7 +157,8 @@ describe("取り込んだレセプトの点検：基本マスターがあると�
     withMasters();
     const b = await check(claimId("K1"), cookie);
     expect([b.findings, b.missing, b.subtotal, b.partial, b.stopped]).toEqual([a.findings, a.missing, a.subtotal, false, []]);
-    expect(b.generic.ran).toEqual([{ check: "G01", kind: "コード" }]);
+    // G07 は準備ができていない表でも記載の形だけを見る（design.md §17-3。X-320）
+    expect(b.generic.ran).toEqual([{ check: "G01", kind: "コード" }, { check: "G07", kind: "記載もれ" }]);
   });
 });
 

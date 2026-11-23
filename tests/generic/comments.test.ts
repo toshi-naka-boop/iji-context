@@ -118,14 +118,20 @@ describe("G07 必須コメント：算定すれば必ず要る記載が、レセ
     expect(texts.join("")).not.toContain("患者の氏名など");
   });
 
-  it("準備ができていない（錨がない）・世代の 1 枚がないときは、動かさない（「指摘なし」にしない）", () => {
+  it("準備ができていない（錨がない）・世代の 1 枚がないときは、記載があるか・ないかを見ない（「指摘なし」にしない）。記載の形だけは見て、点検の範囲にそう出す（design.md §17-3。X-320・C-482）", () => {
     const db = commentMasters();
     db.prepare("UPDATE checks_ready SET ready = 0, reason = '錨がない：手作りの表' WHERE check_id = 'G07'").run();
-    const r = evaluateGeneric(claimOf([[["SI", K.kokyu]]]), db, about);
-    expect([r.findings.filter((f) => f.check === "G07"), r.notRun.find((n) => n.check === "G07")]).toEqual([[], { check: "G07", kind: "記載もれ", reason: "notReady", detail: "錨がない：手作りの表" }]);
+    const c = claimOf([[["SI", K.kokyu]]]);
+    const r = evaluateGeneric(c, db, about);
+    expect([r.findings.filter((f) => f.check === "G07"), r.notRun.find((n) => n.check === "G07"), r.g07FormOnly]).toEqual([[], undefined, "錨がない：手作りの表"]);
+    expect(genericScopeOf(c, db, about, r).notDone).toContain("必須コメント：錨がない：手作りの表。記載の形（年月日・時刻・数値など）は見ました（記載があるか・ないかは表がないので見ていません）");
+    // コメントを持たない請求には、今までどおり掛けない
+    expect(evaluateGeneric(claimOf([[["SI", K.kokyu]]], null), db, about).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "notReady" });
     const db2 = commentMasters();
     db2.prepare("DELETE FROM sources WHERE dataset = 'comment_kanren'").run();
-    expect(evaluateGeneric(claimOf([[["SI", K.kokyu]]]), db2, about).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "noSnapshot" });
+    const r2 = evaluateGeneric(c, db2, about);
+    expect([r2.ran.some((x) => x.check === "G07"), r2.findings.filter((f) => f.check === "G07")]).toEqual([true, []]);
+    expect(genericScopeOf(c, db2, about, r2).notDone.find((x) => x.startsWith("必須コメント"))).toContain("記載の形（年月日・時刻・数値など）は見ました");
   });
 });
 

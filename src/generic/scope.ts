@@ -7,7 +7,7 @@ import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, pickSnapshot, shinryoOf, ty
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
 import { recalcClaim, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
-import { conditionalOf, g07NotDone, type Conditional } from "./g07";
+import { conditionalOf, formOnlyNote, g07NotDone, type Conditional } from "./g07";
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
 import { g10NotDone } from "./g10";
@@ -34,7 +34,8 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if ((result.localSilenced ?? []).length > 0) out.notDone.push(`${LOCAL_PAIR_TEXT.silenced}：${result.localSilenced!.reduce((s, x) => s + x.count, 0)} 件（${result.localSilenced!.map((x) => x.id).join("・")}）`);
   // G04〜G06 の断り（作っていない単位・数え方）。画面の部品が別に足していたのをここに寄せ、月末の点検・算定プレビューの 1 行の表示でも出す（round-32 O-19）
   for (const r of result.ran) if (GENERIC_SCOPE_NOTE[r.check]) out.notDone.push(`${r.check}（${r.kind}）が点検していないこと：${GENERIC_SCOPE_NOTE[r.check]}`);
-  if (masters !== null && ran("G07")) {
+  if (masters !== null && ran("G07") && result.g07FormOnly !== undefined) out.notDone.push(formOnlyNote(result.g07FormOnly));
+  else if (masters !== null && ran("G07")) {
     out.notDone.push(...g07NotDone(claim, masters, about));
     const c = conditionalOf(claim, masters, about);
     if (c !== null && c.items.length + c.hidden.r17 + c.hidden.present > 0) out.conditional = c;

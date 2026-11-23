@@ -109,6 +109,8 @@ export type GenericResult = {
   localSilenced?: { id: string; count: number }[];
   /** 指摘に添えた承認済みの院内の知識の id（USED を出す。design.md §14-3） */
   localUsed?: string[];
+  /** G07 の準備ができていないので、記載の形だけを見た（design.md §17-3。X-320）。値は準備ができていない理由（点検の範囲に出す） */
+  g07FormOnly?: string;
 };
 
 /**

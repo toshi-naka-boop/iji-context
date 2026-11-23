@@ -183,7 +183,7 @@ export function g07NotDone(claim: GenericClaim, masters: MastersDb, about: Gener
   const r = commentGroupsOf(claim, masters, about);
   if (r === null) return ["必須コメントは、コメントを持つレセプトにだけ掛けます。ここの行にはコメントが付いていないので、点検していません"];
   // 表がなくても形の指摘があれば G07 は動いたことになる（design.md §17-3）。そのときは、記載があるか・ないかを見ていないことを出す
-  if ("skip" in r) return [`必須コメント：${r.skip}。記載があるか・ないかは点検していません（記載の形〔年月日・時刻・数値など〕だけを見ています）`];
+  if ("skip" in r) return [formOnlyNote(r.skip)];
   const always = r.groups.filter((g) => g.kaisu === undefined);
   const multi = always.filter((g) => g.comments.length > 1).length;
   const conditional = conditionalOf(claim, masters, about);
@@ -234,23 +234,37 @@ function formFindings(claim: GenericClaim, about: GenericAbout, label: (code: st
   return out;
 }
 
+/** コメントマスターの名称（定型文）とコード。名称がなければコードだけ */
+function labelOf(masters: MastersDb, about: GenericAbout): (code: string) => string {
+  const names = pickSnapshot(masters, "comment", about.yearMonth, about.generation);
+  const nameOf = masters.prepare("SELECT name FROM comment WHERE snapshot = ? AND code = ?");
+  return (code) => {
+    const name = names === null ? undefined : (nameOf.get(names.snapshot, code) as { name: string } | undefined)?.name;
+    return name ? `「${phrase(name)}」（${code}）` : `コメントコード ${code}`;
+  };
+}
+
+/** 記載があるか・ないかを見ずに、形だけを見たときの点検の範囲の文（reason は見なかった理由） */
+export const formOnlyNote = (reason: string): string => `必須コメント：${reason}。記載の形（年月日・時刻・数値など）は見ました（記載があるか・ないかは表がないので見ていません）`;
+
+/**
+ * G07 の準備ができていない（コメント関連テーブルがない・錨が通らない）masters.db でも、記載の形だけは見る（design.md §17-3。X-320）。
+ * 形はコードの先頭 3 桁だけで決まり、関連テーブルを読まない。コメントを持たない請求は null（掛けない）
+ */
+export function g07FormOnly(claim: GenericClaim, masters: MastersDb, about: GenericAbout): GenericFinding[] | null {
+  return claim.comments === undefined ? null : formFindings(claim, about, labelOf(masters, about));
+}
+
 export const g07: GenericCheck = {
   id: "G07",
   kind: "記載もれ",
   run(claim, masters, about) {
     const r = commentGroupsOf(claim, masters, about);
     if (r === null) return [];
-    const names = pickSnapshot(masters, "comment", about.yearMonth, about.generation);
-    const nameOf = masters.prepare("SELECT name FROM comment WHERE snapshot = ? AND code = ?");
-    const label = (code: string): string => {
-      const name = names === null ? undefined : (nameOf.get(names.snapshot, code) as { name: string } | undefined)?.name;
-      return name ? `「${phrase(name)}」（${code}）` : `コメントコード ${code}`;
-    };
-    // 記載の形は、コードの先頭 3 桁だけで決まるので、診療年月の世代のコメント関連テーブルがなくても見る（design.md §17-3 の C-471。記載があるか・ないかは見ない）
-    if ("skip" in r) {
-      const form = formFindings(claim, about, label);
-      return form.length > 0 ? form : r;
-    }
+    const label = labelOf(masters, about);
+    // 記載の形は、コードの先頭 3 桁だけで決まるので、診療年月の世代のコメント関連テーブルがなくても見る（design.md §17-3 の C-471。記載があるか・ないかは見ない）。
+    // 形の誤りがなくても「動いた」にする（見て通ったことを点検の範囲に出す。C-482）
+    if ("skip" in r) return formFindings(claim, about, label);
     const r17 = about.kisai?.r17Codes ?? new Set<string>();
     const out: GenericFinding[] = [];
     for (const g of r.groups) {

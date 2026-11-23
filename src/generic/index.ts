@@ -9,7 +9,7 @@ import { g03 } from "./g03";
 import { g04 } from "./g04";
 import { g05 } from "./g05";
 import { g06 } from "./g06";
-import { g07 } from "./g07";
+import { g07, g07FormOnly } from "./g07";
 import { g08 } from "./g08";
 import { g09 } from "./g09";
 import { g10 } from "./g10";
@@ -45,11 +45,14 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
     else if (masters === null) skip("noMasters");
     else {
       const ready = checkReady(masters, id);
-      if (!ready?.ready) {
+      // G07 の記載の形は、コメント関連テーブルを読まないので、G07 の準備ができていなくても見る（design.md §17-3。X-320）。点検の範囲には、記載があるか・ないかを見ていないことを出す
+      const formOnly = !ready?.ready && id === "G07" && checks.includes(g07) ? g07FormOnly(claim, masters, about) : null;
+      if (!ready?.ready && formOnly === null) {
         skip("notReady", ready?.reason ?? "");
         continue;
       }
-      const found = check.run(claim, masters, about);
+      if (formOnly !== null) result.g07FormOnly = ready?.reason || "必須コメントの点検の準備ができていません";
+      const found: ReturnType<GenericCheck["run"]> = formOnly ?? check.run(claim, masters, about);
       if (!Array.isArray(found)) {
         skip("noSnapshot", found.skip);
         continue;
