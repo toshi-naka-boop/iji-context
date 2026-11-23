@@ -34,6 +34,7 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     consts: {} as RevisionConsts,
     comments: [],
     commentCodes: {},
+    kisaiYoshi: [],
     rules: [fakeRule(kubun, maxCount)],
     changes: [],
     ...over,

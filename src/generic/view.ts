@@ -24,7 +24,7 @@ export type GenericLocal = { mode: LocalAttach["mode"]; pair: LocalAttach["pair"
 export type GenericDeclaration = { month: string; items: { item: string; reconfirm: boolean }[] };
 
 export type GenericView = {
-  findings: { check: string; kind: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string }; asks?: GenericAsk[]; local?: GenericLocal; localPair?: LocalAttach["pair"]; declaration?: GenericDeclaration }[];
+  findings: { check: string; kind: string; messageKey: string; certainty: "確定" | "条件つき"; text: string; codes: { code: string; name: string | null }[]; source: { data: string; ref: string }; asks?: GenericAsk[]; local?: GenericLocal; localPair?: LocalAttach["pair"]; declaration?: GenericDeclaration }[];
   /** 動いた点検。「指摘なし」は、ここにある点検についてだけ言える */
   ran: { check: string; kind: string }[];
   /** 動かさなかった点検と理由。reason は、データがない（noMasters・noSnapshot）／準備ができていない（notReady）／まだ入っていない（notBuilt） */
@@ -41,6 +41,7 @@ export function genericView(result: GenericResult, names: RowNames | null): Gene
     findings: result.findings.map((f) => ({
       check: f.check,
       kind: f.kind,
+      messageKey: f.messageKey,
       certainty: f.certainty,
       text: genericText(f),
       codes: f.codes.map((code) => ({ code, name: names?.items[code]?.name ?? f.params.name ?? null })),

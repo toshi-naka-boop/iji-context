@@ -4,7 +4,7 @@
 import { commentCodesFor, commentFormatOk, commentWhen, dateOfWareki, kanriStartMonth, visitOrOushinDays, type CommentSpec } from "../comments";
 import { kanriKubun, overLimitVisitDays } from "../predicates";
 import type { CommentRule } from "../revisions/types";
-import type { ClaimContext, Finding, Rule } from "../types";
+import type { ClaimContext, Comment, Finding, Rule } from "../types";
 import { eventsOf, present } from "./util";
 
 export function makeR17(spec: CommentSpec): Rule {
@@ -41,8 +41,15 @@ export function makeR17(spec: CommentSpec): Rule {
           params: { rule: rule.id, what: rule.summary, ...params },
           reference: this.reference,
         });
-        const badFormat = comments.some((x) => rule.codes.includes(x.code) && !commentFormatOk(x.code, x.text));
-        if (badFormat) out.push(found("comment_format"));
+        // seqs は、その指摘が言っているコメントの通し番号（通し番号を持つコメントだけ。「,」区切り）：形の指摘は形が誤ったコメント、比べる指摘は中身を言っているコメント（多い日の記載）だけ。
+        // データで動く点検の記載の形の指摘と、コメント 1 つの単位で重ねる（design.md §17-3。X-321・X-330・X-331）
+        const seqsOf = (list: typeof comments): Record<string, string> => {
+          const seqs = list.flatMap((x) => (x.seq === undefined ? [] : [String(x.seq)]));
+          return seqs.length > 0 ? { seqs: seqs.join(",") } : {};
+        };
+        const bad = comments.filter((x) => rule.codes.includes(x.code) && !commentFormatOk(x.code, x.text));
+        const badFormat = bad.length > 0;
+        if (badFormat) out.push(found("comment_format", seqsOf(bad)));
         const when = commentWhen(rule, ctx, spec);
         if (when.known === false) {
           // 条件を決める事実（別表第七・急性増悪・看取りの場所）は、どれも医師が確かめる
@@ -61,49 +68,63 @@ export function makeR17(spec: CommentSpec): Rule {
         // 形式の合わない記載がある項目は、中身を比べない（読めない値を「食い違い」と言わない）
         if (badFormat || rule.compare === undefined) continue;
         const mismatch = compare(rule.compare, ctx, codes);
-        if (mismatch) out.push(found(`comment_mismatch_${rule.compare}`, mismatch));
+        if (mismatch) out.push(found(`comment_mismatch_${rule.compare}`, { ...mismatch.values, ...seqsOf(mismatch.used) }));
       }
       return out;
     },
   };
 
-  /** 中身の突き合わせ。食い違えば、文言に埋める値（足りない日 lacking・多い日 extra。"YYYY-MM-DD" の「,」区切り）を返す。比べない場合と一致は null */
-  function compare(kind: NonNullable<CommentRule["compare"]>, ctx: ClaimContext, codes: string[]): Record<string, string> | null {
+  /**
+   * 中身の突き合わせ。食い違えば、文言に埋める値（values：足りない日 lacking・多い日 extra。"YYYY-MM-DD" の「,」区切り）と、実際に比べたコメント（used）を返す。比べない場合と一致は null。
+   * used は、比べる対象のコードのコメントのうち、指摘が中身を言っているもの（多い日の記載）だけ。足りない日だけの指摘では空（X-331・X-340）
+   */
+  function compare(kind: NonNullable<CommentRule["compare"]>, ctx: ClaimContext, codes: string[]): { values: Record<string, string>; used: Comment[] } | null {
     const mine = (ctx.comments ?? []).filter((x) => codes.includes(x.code));
-    const datesOf = (pick: (code: string) => boolean) => [...new Set(mine.filter((x) => pick(x.code)).map((x) => dateOfWareki(x.text) as string))].sort();
-    const diff = (written: string[], billed: string[], both: boolean): Record<string, string> | null => {
+    const datesOf = (list: Comment[]) => [...new Set(list.map((x) => dateOfWareki(x.text) as string))].sort();
+    const diff = (used: Comment[], billed: string[], both: boolean) => {
+      const written = datesOf(used);
       const lacking = billed.filter((d) => !written.includes(d));
       const extra = both ? written.filter((d) => !billed.includes(d)) : [];
-      return lacking.length || extra.length ? { ...(lacking.length ? { lacking: lacking.join(",") } : {}), ...(extra.length ? { extra: extra.join(",") } : {}) } : null;
+      // 重なりに使うコメントは、指摘が中身を言っているもの（多い日＝extra の記載）だけ。足りない日はコメントがないことなので、どのコメントも指していない（X-340）
+      const pointed = used.filter((x) => extra.includes(dateOfWareki(x.text) as string));
+      return lacking.length || extra.length ? { values: { ...(lacking.length ? { lacking: lacking.join(",") } : {}), ...(extra.length ? { extra: extra.join(",") } : {}) }, used: pointed } : null;
     };
     switch (kind) {
       case "visitDates":
         // 記載の年月日の集合と、訪問診療料・往診料の行の算定日の集合が一致するか
-        return diff(datesOf(() => true), visitOrOushinDays(ctx, spec), true);
+        return diff(mine, visitOrOushinDays(ctx, spec), true);
       case "acuteVisitDates":
         // 「訪問診療を行った年月日」の記載が、週の上限を超えた週の訪問診療料の算定日をすべて含むか
-        return diff(datesOf((code) => spec.commentCodes[code]?.visited === true), overLimitVisitDays(ctx, spec.consts), false);
+        return diff(
+          mine.filter((x) => spec.commentCodes[x.code]?.visited === true),
+          overLimitVisitDays(ctx, spec.consts),
+          false,
+        );
       case "deathDate": {
         // 記録がない請求では比べない（evaluate も recordFindings の申告で捨てる）。記録があって死亡の出来事がなければ、「なかった」と読む
         if (!ctx.recordsKnown) return null;
         const death = eventsOf(ctx, "death")[0]?.date;
-        return datesOf(() => true).some((d) => d !== death) ? {} : null;
+        return datesOf(mine).some((d) => d !== death) ? { values: {}, used: mine } : null;
       }
       case "hokatsuState": {
         // 事実と対応のあるコード（要介護3・4・5、障害支援区分2 以上）だけを、確かめてある事実と比べる。事実が不明なら比べない
         const care = ctx.facts.careLevel;
         const disability = ctx.facts.disabilitySupportLevel;
-        const wrong = mine.some((x) => {
+        const used = mine.filter((x) => {
+          const note = spec.commentCodes[x.code];
+          return (note?.careLevel !== undefined && care.known) || (note?.disabilityLevelMin !== undefined && disability.known);
+        });
+        const wrong = used.some((x) => {
           const note = spec.commentCodes[x.code];
           if (note?.careLevel !== undefined && care.known && care.value !== note.careLevel) return true;
           return note?.disabilityLevelMin !== undefined && disability.known && disability.value < note.disabilityLevelMin;
         });
-        return wrong ? {} : null;
+        return wrong ? { values: {}, used } : null;
       }
       case "ikouStart": {
         // 算定開始月の記録がなければ比べない（記録のない請求では不明）
         const start = kanriStartMonth(ctx);
-        return start !== undefined && datesOf(() => true).some((d) => d.slice(0, 7) !== start) ? {} : null;
+        return start !== undefined && datesOf(mine).some((d) => d.slice(0, 7) !== start) ? { values: {}, used: mine } : null;
       }
     }
   }

@@ -3,6 +3,7 @@
     { "messageKey": "G03.inpatient_only", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
     { "messageKey": "G03.clinic_only", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
     { "messageKey": "G05.same_unit", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
-    { "messageKey": "G06.day", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" }
+    { "messageKey": "G06.day", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
+    { "messageKey": "G07.form", "verifiedIn": "design/iji-context/design.md §17-3（判断 E。R17 と同じ commentFormatOk で見る。EM §2-10 表 3）。利用者の判断 2026-11-24" }
   ]
 }

@@ -22,7 +22,10 @@ type ItemRow = { id: number; upload_sha256: string; seq: number; data: string; c
 type JudgmentRow = { id: number; item_id: number; fingerprint: string; revision_id: string | null; result: ReviewResult; reason: string | null; finding: string | null; judged_by: string; judged_at: string };
 
 /** 指摘 1 件（当てた請求を今の点検で点検し直したもの）。key は判定で選ぶときの印（点検し直すたびに同じ並びで振る） */
-export type ReviewFinding = { key: string; system: "ユスティ" | "データで動く点検" | "患者情報チェック"; id: string; certainty: Certainty; text: string; related: boolean };
+/** 画面に出す指摘。text は画面の文（記載の値を含むことがある）。判定の記録（review_judgments.finding）には text を残さず、JudgedFinding だけを残す（X-322） */
+export type ReviewFinding = { key: string; system: "ユスティ" | "データで動く点検" | "患者情報チェック"; id: string; messageKey: string; certainty: Certainty; codes: string[]; text: string; related: boolean };
+/** 判定の記録に残す指摘：系統・ID・文言の鍵・確度・コード（ユスティは行の区分）だけ。文と値は残さない */
+export type JudgedFinding = Pick<ReviewFinding, "system" | "id" | "messageKey" | "certainty" | "codes">;
 
 /** 判定で選べる値 */
 export type JudgeInput = { result: ReviewResult; reason?: string; finding?: string };
@@ -195,9 +198,9 @@ export function createReview(ctx: AppContext, uke: Uke, check: UkeCheck["ukeChec
     if (!("rows" in r) || !r.rows) return { revisionId: null, findings: [] };
     const claimWide = lineBy === "claim" || lineCode === null || (LINE_OTHERS as readonly string[]).includes(lineCode);
     const kubun = new Set(r.rows.filter((row) => row.items.some((i) => i.code === lineCode)).flatMap((row) => row.kubun));
-    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, certainty: f.params?.g11First ? "条件つき" : "確定", text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
-    const generic = (r.generic?.findings ?? []).map((f, i): ReviewFinding => ({ key: `G:${i}`, system: "データで動く点検", id: f.check, certainty: f.certainty, text: f.text, related: claimWide || f.codes.some((c) => c.code === lineCode) }));
-    const patient = r.patientFindings.filter((f) => f.kind !== "情報不足").map((f, i): ReviewFinding => ({ key: `P:${i}`, system: "患者情報チェック", id: f.checkId, certainty: "患者情報", text: patientFindingText(f), related: true }));
+    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, messageKey: f.messageKey, codes: f.lineRefs, certainty: f.params?.g11First ? "条件つき" : "確定", text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
+    const generic = (r.generic?.findings ?? []).map((f, i): ReviewFinding => ({ key: `G:${i}`, system: "データで動く点検", id: f.check, messageKey: f.messageKey, codes: f.codes.map((c) => c.code), certainty: f.certainty, text: f.text, related: claimWide || f.codes.some((c) => c.code === lineCode) }));
+    const patient = r.patientFindings.filter((f) => f.kind !== "情報不足").map((f, i): ReviewFinding => ({ key: `P:${i}`, system: "患者情報チェック", id: f.checkId, messageKey: f.messageKey, codes: [], certainty: "患者情報", text: patientFindingText(f), related: true }));
     return { revisionId: r.revisionId, findings: [...hand, ...generic, ...patient] };
   }
 
@@ -244,7 +247,7 @@ export function createReview(ctx: AppContext, uke: Uke, check: UkeCheck["ukeChec
       findings: found.findings,
       fingerprint: fingerprint(),
       fixedFingerprint: up.fingerprint,
-      judgments: judgmentsOf(it.id).map((j) => ({ fingerprint: j.fingerprint, revisionId: j.revision_id, result: j.result, reason: j.reason, finding: j.finding ? (JSON.parse(j.finding) as Omit<ReviewFinding, "key" | "related">) : null, at: j.judged_at })),
+      judgments: judgmentsOf(it.id).map((j) => ({ fingerprint: j.fingerprint, revisionId: j.revision_id, result: j.result, reason: j.reason, finding: j.finding ? (JSON.parse(j.finding) as JudgedFinding) : null, at: j.judged_at })),
       choices: { results: RESULTS, reasons: MISS_REASONS, exclusions: HUMAN_EXCLUSIONS },
     };
   }
@@ -314,7 +317,8 @@ export function createReview(ctx: AppContext, uke: Uke, check: UkeCheck["ukeChec
     const found = findingsOf(it.claim_id!, it.line_code, it.line_by);
     const f = same ? found.findings.find((x) => x.key === input.finding) : undefined;
     if (same && !f) throw badRequest("どの指摘かを選んでください", ["finding"]);
-    const finding = f ? JSON.stringify({ system: f.system, id: f.id, certainty: f.certainty, text: f.text }) : null;
+    // 文（text）は残さない：記載の値（G07 の形の指摘の文字データなど）が判定の記録に写らないように（X-322）
+    const finding = f ? JSON.stringify({ system: f.system, id: f.id, messageKey: f.messageKey, certainty: f.certainty, codes: f.codes } satisfies JudgedFinding) : null;
     sqlite.prepare("INSERT INTO review_judgments (item_id, fingerprint, revision_id, result, reason, finding, judged_by, judged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, fingerprint(), found.revisionId, input.result, same ? null : input.reason, finding, clerkId, now());
     return reviewItem(id);
   }

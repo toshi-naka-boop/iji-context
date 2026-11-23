@@ -14,7 +14,7 @@ import { evaluateGeneric } from "../../generic";
 import { g10MarksOf, sidelessOf } from "../../generic/g10";
 import { outsideOf, rowNamesOf, sheetNotesOf } from "../../generic/lookup";
 import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
-import { commentKanrenNotesOf } from "../../generic/g07";
+import { commentKanrenNotesOf, kisaiOf } from "../../generic/g07";
 import { checkmasterNotesOf } from "../../generic/g09";
 import { buildingScopeNotes, deferredNote, genericScopeOf } from "../../generic/scope";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
@@ -22,7 +22,7 @@ import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
 import { diseaseCodeOf, SUSPECTED_MODIFIER } from "../../uke/diseases";
 import type { UkeClaim, UkeOther } from "../../uke/types";
-import { isDeductionUnit, mapClaim } from "../../uke/uke";
+import { isDeductionUnit, mapClaim, withCommentLines } from "../../uke/uke";
 import { badRequest } from "../errors";
 import type { Cases } from "./cases";
 import { genericOut, type Hand } from "./generic";
@@ -91,7 +91,7 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: ClaimContext, hand: 
   // 施設の種別は、設定が在宅療養支援診療所なら診療所（在宅療養支援診療所は診療所であることが要件で、病院は在宅療養支援病院）。そうでなければ決めない
   const diseaseCodes = claim.patient.diseases.map((d) => d.code ?? diseaseCodeOf(d.name));
   // 傷病名の要件（G08）・適応（G09）が読むもの：SY の傷病名コード（未コード化は 0000999）と、疑い病名かどうか（修飾語「の疑い」）。必須コメント（G07）は、請求のコメント（claim.comments）を読む
-  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, ...exceptions, ...(exceptions?.declaration ? { sideless: sidelessOf(rev) } : {}), outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}), diseases: diseaseCodes.map((code, i) => ({ code, suspected: claim.patient.diseases[i].modifiers?.includes(SUSPECTED_MODIFIER) === true })) };
+  const about: GenericAboutMore = { yearMonth: claim.yearMonth, generation: rev.generation, ...exceptions, ...(exceptions?.declaration ? { sideless: sidelessOf(rev) } : {}), outpatient: true, birth: claim.patient.birth, ...(ctx.facility.zaishishin ? { clinic: true } : {}), diseases: diseaseCodes.map((code, i) => ({ code, suspected: claim.patient.diseases[i].modifiers?.includes(SUSPECTED_MODIFIER) === true })), kisai: kisaiOf(rev, ctx.lines.filter((l) => l.count > 0).map((l) => l.kubun)) };
   return withMasters((db) => {
     const result = evaluateGeneric(claim, db, about);
     // 施設基準の印は、G10 が動いたときだけ（動かなければ「届出が要ります」のまま。design.md §15-5）
@@ -149,9 +149,11 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
     if (r.noRevision) return { ...head, unreadable: null, revisionId: null, revisions: trialRevisions(r.yearMonth) };
     const rev = resolveRevision(r.yearMonth);
     // UKE に書いてあることだけで点検する：行とコメントは UKE のまま、出来事は持たない（同梱の症例でも、カルテ側の記録は使わない）
-    const ctx: ClaimContext = { ...cases.caseOf(claimId), events: [], recordsKnown: false };
-    const result = cases.judge(ctx);
     const parsed = claim();
+    // コメントには UKE の行番号を添える（R17 の指摘とデータで動く点検の記載の形の指摘を、行の単位で重ねる。design.md §17-3）
+    const base = cases.caseOf(claimId);
+    const ctx: ClaimContext = { ...base, events: [], recordsKnown: false, ...(base.comments ? { comments: withCommentLines(base.comments, parsed) } : {}) };
+    const result = cases.judge(ctx);
     const mapped = mapClaim(parsed, rev);
     // B の欄（G11。design.md §15-8・§15-9）：貼ったカルテの行ったことと UKE を突き合わせる。recordsKnown は偽のまま、手書きのルールの判定は変えない
     const torikawasure = torikawasureOf?.(claimId, clerkId, { claim: parsed, base: ctx, rev, hand: result.findings });
@@ -204,7 +206,7 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       recordsKnown: false,
       // 検査項目のコード（items）は UKE の側の持ち物で、エンジンには渡さない
       lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })),
-      comments: mapped.comments,
+      comments: withCommentLines(mapped.comments, parsed),
       commentsKnown: true,
       ...(mapped.others.length > 0 ? { partial: true } : {}),
       ...(outside ? { outside } : {}),

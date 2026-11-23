@@ -33,7 +33,7 @@ export function warekiOf(date: string): string | null {
 
 /**
  * コメントの文字データ（半角に寄せたもの）が、コードの形式に合うか。形式はコードの先頭 3 桁で決まる（EM §2-10 表 3）。
- * 見るのは表 1 のコードが使う形式だけ：830＝文字がある／842＝数値／850＝和暦の年月日 7 桁／851＝時刻 4 桁。820 は文字データを持たないので見ない
+ * 見るのは表 1 のコードが使う形式と、G07 が見る 852（design.md §17-3）：830＝文字がある／842＝数値／850＝和暦の年月日 7 桁／851＝時刻 4 桁／852＝時間（分）5 桁。820 は文字データを持たないので見ない
  */
 export function commentFormatOk(code: string, text: string): boolean {
   switch (code.slice(0, 3)) {
@@ -45,6 +45,8 @@ export function commentFormatOk(code: string, text: string): boolean {
       return dateOfWareki(text) !== null;
     case "851":
       return /^([01]\d|2[0-3])[0-5]\d$/.test(text);
+    case "852":
+      return /^\d{5}$/.test(text);
     default:
       return true;
   }

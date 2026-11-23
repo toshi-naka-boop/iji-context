@@ -25,6 +25,7 @@ import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
 import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
 import { bundles, codes as baseCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
+import { kisaiYoshi } from "./r2026-kisai";
 import { kanriRows } from "./kanri";
 import type { KanriRow, KubunDef, Revision, RevisionConsts } from "./types";
 
@@ -267,6 +268,7 @@ export const r2026: Revision = {
   consts,
   comments,
   commentCodes,
+  kisaiYoshi,
   rules: [
     makeR01(consts, points),
     ...[makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),

@@ -152,6 +152,12 @@ export type CommentRule = {
  * careLevel：その要介護度に当たる状態のコード／disabilityLevelMin：障害支援区分がその数以上に当たる状態のコード／
  * visited：急性増悪の「訪問診療を行った年月日」のコード（acuteVisitDates が比べる）
  */
+/**
+ * 記載が要ることがある項目（条件区分 00）の要旨（design.md §17-1。値は EM §2-10 表 5 の 5-1 の行だけ）。G07 が点検の範囲に畳んで並べる項番に添える。
+ * 判定には使わない（条件に当たるかは見ない）。sheet は記載要領の表、kouban は項番（4 桁）、summary は自分の言葉の要旨（原文は写さない）、em は EM の出どころ、url・page は記載要領の PDF とページ
+ */
+export type KisaiYoshi = { sheet: "別表Ⅰ"; kouban: string; summary: string; em: string; url: string; page: string };
+
 export type CommentCodeNote = { family?: KanriFamily; careLevel?: number; disabilityLevelMin?: number; visited?: true };
 
 export type Revision = {
@@ -178,6 +184,8 @@ export type Revision = {
   /** 摘要欄に要る記載（R17 と、導出の「摘要欄に書くこと」が同じ表を使う） */
   comments: CommentRule[];
   commentCodes: Record<string, CommentCodeNote>;
+  /** 記載が要ることがある項目（条件区分 00）の要旨。表にない項番は要旨なしで並ぶ */
+  kisaiYoshi: KisaiYoshi[];
   /** consts（R17 は comments・commentCodes も）から工場関数で組み立てたもの */
   rules: Rule[];
   /** その版で、前の改定から変わった点（design.md §11-2）。人が EM を見て書く。値の変更の版は持たない（空） */

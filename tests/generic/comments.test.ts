@@ -92,12 +92,18 @@ describe("G07 必須コメント：算定すれば必ず要る記載が、レセ
     expect(genericScopeOf(c, db, about, r).notDone).toContain("必須コメントは、コメントを持つレセプトにだけ掛けます。ここの行にはコメントが付いていないので、点検していません");
   });
 
-  it("点検の範囲：見た組の数、コメントが複数ある組（どれか 1 つで足りるとして見た）の数、点検していない組の数を出す", () => {
+  it("点検の範囲：見た組の数（コメントが複数ある組の数も）、記載が要ることがある項目（条件区分 00）の数、判定していない組の数を、3 つの文に分けて出す（design.md §17-4）", () => {
     const db = commentMasters();
     const c = claimOf([[["SI", K.kokyu]], [["SI", K.sanso]], [["SI", K.oushin]], [["SI", K.shoshin]]], [K.kokyuStart, K.spo2]);
-    expect(commentGroupsOf(c, db, about)).toMatchObject({ groups: [{ code: K.kokyu, found: true }, { code: K.sanso, found: true, comments: [K.spo2, K.pao2] }], notUsed: 1 });
-    const text = genericScopeOf(c, db, about, evaluateGeneric(c, db, about)).notDone.find((t) => t.startsWith("必須コメント"));
-    expect(text).toBe("必須コメント：このレセプトの行について見たのは、算定すれば必ず要る記載 2 組です（記載があるか・ないかだけで、中身は見ていません）。そのうち、同じ項番・枝番にコメントコードが複数ある 1 組は、どれか 1 つがあれば指摘しません（全部が要る組か、選択かを、表からは決められないため）。条件によって要る記載（条件は記載要領の文章にあります）・複数回算定したときの記載など、点検していない組は 1 組です");
+    expect(commentGroupsOf(c, db, about)).toMatchObject({ groups: [{ code: K.kokyu, found: true }, { code: K.sanso, found: true, comments: [K.spo2, K.pao2] }], conditional: [{ code: K.oushin, kouban: "0162", edaban: "03" }], notUsed: 0 });
+    const scope = genericScopeOf(c, db, about, evaluateGeneric(c, db, about));
+    const i = scope.notDone.findIndex((t) => t.startsWith("必須コメント"));
+    expect(scope.notDone.slice(i, i + 3)).toEqual([
+      "必須コメント：このレセプトの行について見たのは、算定すれば必ず要る記載 2 組と、材料加算の 2 回分・3 回分の記載（項番 237）0 組です（記載の形〔年月日・時刻・数値など〕は見ていますが、中身が正しいかは見ていません）。そのうち、同じ項番・枝番にコメントコードが複数ある 1 組は、どれか 1 つがあれば指摘しません（全部が要る組か、選択かを、表からは決められないため）",
+      "記載が要ることがある項目 1 件は、判定していません（条件は記載要領の文章にあります。条件に当たるかは記載要領で確かめてください）",
+      "判定していない組（項番 237 以外の複数回算定の記載・数量の書いてある項番 237・診療年月の後に変わった行・DPC など）は 0 組です",
+    ]);
+    expect(scope.conditional?.items.map((x) => [x.sheet, x.kouban, x.codes.map((y) => y.code), x.branches])).toEqual([["別表Ⅰ", "162", [K.oushin], [{ edaban: "03", comments: [`コメントコード ${K.oushinReason}`] }]]]);
   });
 
   it("文：コメントマスターの名称（定型文）とコメントコード。選択式は候補を並べ、多ければ先頭の 3 つと残りの数。コメントの文字データは出さない", () => {
@@ -112,14 +118,20 @@ describe("G07 必須コメント：算定すれば必ず要る記載が、レセ
     expect(texts.join("")).not.toContain("患者の氏名など");
   });
 
-  it("準備ができていない（錨がない）・世代の 1 枚がないときは、動かさない（「指摘なし」にしない）", () => {
+  it("準備ができていない（錨がない）・世代の 1 枚がないときは、記載があるか・ないかを見ない（「指摘なし」にしない）。記載の形だけは見て、点検の範囲にそう出す（design.md §17-3。X-320・C-482）", () => {
     const db = commentMasters();
     db.prepare("UPDATE checks_ready SET ready = 0, reason = '錨がない：手作りの表' WHERE check_id = 'G07'").run();
-    const r = evaluateGeneric(claimOf([[["SI", K.kokyu]]]), db, about);
-    expect([r.findings.filter((f) => f.check === "G07"), r.notRun.find((n) => n.check === "G07")]).toEqual([[], { check: "G07", kind: "記載もれ", reason: "notReady", detail: "錨がない：手作りの表" }]);
+    const c = claimOf([[["SI", K.kokyu]]]);
+    const r = evaluateGeneric(c, db, about);
+    expect([r.findings.filter((f) => f.check === "G07"), r.notRun.find((n) => n.check === "G07"), r.g07FormOnly]).toEqual([[], undefined, "錨がない：手作りの表"]);
+    expect(genericScopeOf(c, db, about, r).notDone).toContain("必須コメント：錨がない：手作りの表。記載の形（年月日・時刻・数値など）は見ました（記載があるか・ないかは表がないので見ていません）");
+    // コメントを持たない請求には、今までどおり掛けない
+    expect(evaluateGeneric(claimOf([[["SI", K.kokyu]]], null), db, about).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "notReady" });
     const db2 = commentMasters();
     db2.prepare("DELETE FROM sources WHERE dataset = 'comment_kanren'").run();
-    expect(evaluateGeneric(claimOf([[["SI", K.kokyu]]]), db2, about).notRun.find((n) => n.check === "G07")).toMatchObject({ reason: "noSnapshot" });
+    const r2 = evaluateGeneric(c, db2, about);
+    expect([r2.ran.some((x) => x.check === "G07"), r2.findings.filter((f) => f.check === "G07")]).toEqual([true, []]);
+    expect(genericScopeOf(c, db2, about, r2).notDone.find((x) => x.startsWith("必須コメント"))).toContain("記載の形（年月日・時刻・数値など）は見ました");
   });
 });
 

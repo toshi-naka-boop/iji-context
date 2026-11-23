@@ -29,7 +29,8 @@ const brief = (fs: GenericFinding[]) => fs.map((f) => [f.messageKey, f.certainty
 describe("骨組み", () => {
   it("出荷の一覧（config/generic-checks.json の certain）は標本で確かめた 4 種類だけ：一覧にない種類は、G04〜G06 がどう判定しても条件つきで出る。文も言い切らない", () => {
     // 2026-11-21 の利用者の判断（design/iji-context/sources/research/certain-sample.md で 30 行中 30 行が原文と合った種類）
-    expect([...CERTAIN].sort()).toEqual(["G03.clinic_only", "G03.inpatient_only", "G05.same_unit", "G06.day"]);
+    // 2026-11-24 に G07.form（記載の形。R17 と同じ判定の関数。design.md §17-3）を足した
+    expect([...CERTAIN].sort()).toEqual(["G03.clinic_only", "G03.inpatient_only", "G05.same_unit", "G06.day", "G07.form"]);
     const fs = run([unit([C.zaiisoukan], [20]), unit([C.shohosen], [5]), unit([C.sanso], [20]), unit([C.jikochu], [20]), unit([C.handan], [5, 19])], tensuhyoMasters(), CERTAIN);
     expect(brief(fs)).toEqual([["G04.month", "条件つき", C.zaiisoukan, C.shohosen], ["G05.month", "条件つき", C.sanso, C.jikochu], ["G06.month", "条件つき", C.handan]]);
     for (const f of fs) {

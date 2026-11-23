@@ -34,7 +34,7 @@ const fixture = (name: string) => readFileSync(path.join(repo, "fixtures", "revi
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
 type Item = { id: number; kind: string; name: string; seikyu: string; jiyu: string[]; claimId: string | null; claimNote: string | null; line: string | null; confirmed: boolean; excluded: string | null; state: string };
-type Detail = { id: number; claimId: string | null; line: string | null; lineBy: string | null; confirmed: boolean; excluded: string | null; pending: string | null; claimLevel: boolean; claims: { claimId: string; nameMatch: boolean }[]; lines: { code: string; hit: boolean }[]; findings: { key: string; system: string; id: string; certainty: string; related: boolean }[]; revisionId: string | null; fingerprint: string; fixedFingerprint: string; judgments: unknown[] };
+type Detail = { id: number; claimId: string | null; line: string | null; lineBy: string | null; confirmed: boolean; excluded: string | null; pending: string | null; claimLevel: boolean; claims: { claimId: string; nameMatch: boolean }[]; lines: { code: string; hit: boolean }[]; findings: { key: string; system: string; id: string; messageKey: string; certainty: string; codes: string[]; related: boolean }[]; revisionId: string | null; fingerprint: string; fixedFingerprint: string; judgments: unknown[] };
 type Count = { items: number; receipts: number };
 
 const api = {
@@ -163,6 +163,10 @@ describe("査定・返戻の突き合わせ", () => {
     expect((await api.act(cookie, row.masao.id, { action: "judge", result: "同じ論点で指摘していた" })).status).toBe(400);
     expect((await api.act(cookie, row.k1.id, { action: "judge", result: "指摘なし" })).status).toBe(400);
     await ok(api.act(cookie, row.masao.id, { action: "judge", result: "同じ論点で指摘していた", finding: r17.key }));
+    // 判定の記録には、系統・ID・文言の鍵・確度・コードだけを残す。指摘の文（記載の値を含むことがある）は残さない（X-322）
+    const judged = ((await ok<Detail>(api.item(cookie, row.masao.id))).judgments.at(-1) as { finding: Record<string, unknown> | null }).finding;
+    expect(judged).toEqual({ system: "ユスティ", id: "R17", messageKey: r17.messageKey, certainty: "確定", codes: r17.codes });
+    expect(Object.keys(judged!)).not.toContain("text");
     // 指摘のない請求は、指摘を選べない（理由の選択を求められる）
     const k1 = await ok<Detail>(api.item(cookie, row.k1.id));
     expect(k1.findings.filter((f) => f.system !== "患者情報チェック")).toEqual([]);
