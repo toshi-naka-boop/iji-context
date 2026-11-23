@@ -25,6 +25,7 @@ import type { SItem } from "../structured/overlap";
 import { RULE_CODES } from "../structured/rule-codes";
 import { isOutsideText } from "../structured/outside-words";
 import { hasTimeHint } from "../structured/time-hint";
+import { codeOfDevice, DEVICE_KINDS, MATERIAL_MONTH_COMMENTS, OXYGEN_KINDS, unitOfDevice, type C150Detail, type DeviceKey } from "../structured/devices";
 
 // ───────────────────────────────────────────────────────────────────────────
 // 入力
@@ -59,6 +60,20 @@ export type G11Structured = {
   lookbackMonths: number;
   texts: { date: string; text: string; confirmed: boolean; choice?: RxChoice | null; rxAct?: boolean }[];
   times: { date: string; ref: string | null; start: string; end: string; by: string; at: string }[];
+  /** 患者の機器から規則で出す材料加算の入力（design.md §16-4-7・16-5。段 19e）。ないときは材料加算を見ない（段 19d まで） */
+  devices?: G11Devices;
+};
+/**
+ * 材料加算の入力（16-4-7）。checked：機器を確かめた患者か。rows：診療年月に効く機器の行（source は出どころの印）。
+ * pending：確かめていない変える案の種類（当てられない案は null）。prev：前の 2 か月のうち取り込んだ請求のある月の、単位ごとのコードとコメント。
+ * c103：電子カルテの在宅療養の指示に C103 の 2 の指導管理がある
+ */
+export type G11Devices = {
+  checked: boolean;
+  rows: { kind: DeviceKey; fromMonth: string; c150?: C150Detail | null; source: string }[];
+  pending: (DeviceKey | null)[];
+  prev: { yearMonth: string; units: { codes: string[]; comments: string[] }[] }[];
+  c103: boolean;
 };
 /** 院内処方か院外処方か（施設の申告 dispensing。その請求の診療年月で効く行）。inside＝院内処方もある */
 export type Dispensing = "outside" | "inside" | "unknown";
@@ -155,6 +170,8 @@ export type G11Result =
       ruleGuides: string[];
       /** 時刻の入力を案内する日（16-6 の 2 つの場面。B の欄で時刻を入れる欄を出す日） */
       visitTimeDays: string[];
+      /** 材料加算の候補の欄の上に出す 1 行ずつ（見ていないもの。design.md §16-4-7。L-181・L-186） */
+      materialNotes: string[];
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
       scope: string[];
       /** 段の報告に出す数（design.md §15-10 の共通の検査の G11 の数） */
@@ -197,14 +214,14 @@ type Report = { code: string; written: string; quote: string; noteId?: number; n
  * 規則の候補（design.md §16-4）。key：同じ規則の候補を 1 件にまとめる鍵（日の一覧を持つ）。label：名称。basisLabel：文の頭の根拠（「オーダー」など）。
  * requirement：要件の要旨（文の中）。dayQuote・quantity：日の行に出す文と数量
  */
-type RuleCand = { key: string; label: string; basisLabel: string; requirement: string; basis: RuleBasis; dayQuote: string; quantity?: string };
+type RuleCand = { key: string; label: string; basisLabel: string; requirement: string; basis: RuleBasis; dayQuote: string; quantity?: string; either?: string[] };
 type Cand = {
   id: number;
   kind: "act" | "with" | "drugs" | "derived" | "qty" | "rule";
   date: string;
   day: number;
   units: AddedUnit[];
-  /** 手順 1 で、units が抑えられたときに代わりに確かめる単位（処方料：区分を決めないので、両方の区分が抑えられたときだけ隠す。16-4-2） */
+  /** 手順 1 で、units が抑えられたときに代わりに確かめる単位（1 つずつ。処方料：区分を決めないので、両方の区分が抑えられたときだけ隠す。16-4-2。材料加算の「どれか 1 つ」：全部が抑えられたときだけ隠す。16-4-7） */
   alt?: AddedUnit[];
   rule?: RuleCand;
   /** 指摘に出す行為（組は、カルテにあって請求にないもの） */
@@ -579,6 +596,18 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     if (m && m.tbl === "shinryo" && a.act.category === "投薬" && a.source !== "structured" && inKubun(m.code, ["F0", "F100"]) && ruleDrugDay(a.date)) ruleFolded.add(a);
   }
   if (ruleFolded.size > 0) tally("規則で見る行為をたたみました", ruleFolded.size);
+  // 材料加算のコードに当たった文章の行為は、候補にせず患者の情報の機器で見る（16-3。FR-208）。注入器加算・注入器用注射針加算は機器で見ないので、たたまない（L-181）
+  const DEVICE_CODES = new Set<string>([...Object.values(DEVICE_KINDS).flatMap((d) => [...d.codes]), RULE_CODES.oxygenMaterial2]);
+  let deviceFolded = 0;
+  if (S?.devices)
+    for (const a of acts) {
+      const m = a.act.match;
+      if (m && m.tbl === "shinryo" && a.source !== "structured" && DEVICE_CODES.has(m.code) && !ruleFolded.has(a)) {
+        ruleFolded.add(a);
+        deviceFolded++;
+      }
+    }
+  if (deviceFolded > 0) tally("患者の情報の機器で見る行為をたたみました", deviceFolded);
 
   /** 量の比較の材料：単位の列・衝突する単位の名前・1 日の上限の行 */
   const units = hasUnitColumns(db);
@@ -1164,6 +1193,164 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     visitTimeDays.push(...guideDays);
   }
 
+  // 在宅療養指導管理材料加算（T8〜T15。16-4-7）：患者の機器の行だけから出す。請求に「ある」は EM の区分と組の単位で見る（C-401）。前の 2 か月の請求のコメントで当月分を見る（C-411）
+  const materialNotes: string[] = [];
+  const mismatchFindings: G11Finding[] = [];
+  if (S?.devices) {
+    const dv = S.devices;
+    materialNotes.push("注入器加算・注入器用注射針加算は見ていません", "ほかの医療機関が在宅療養指導管理料を算定している患者かは見ていません");
+    const inClaim = (codes: Iterable<string>) => [...codes].filter((x) => idx.untimed.has(x) || (idx.days.get(x) ?? []).some((n) => n > 0));
+    const nameOf = (code: string) => shinryoOf(db, c.snapshot.si, code)?.name ?? code;
+    const shift = (m: string, n: number) => {
+      const d = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + n, 1));
+      return d.toISOString().slice(0, 7);
+    };
+    // 機器の案内（16-6）：確かめていない患者で、その月の請求か確かめた行為に、在宅療養指導管理料（C100〜C121）か材料加算のコードがある
+    const kanriLike = (code: string) => {
+      const k = kubunNoOf(code);
+      const n = k && k.startsWith("C") ? Number(k.slice(1)) : NaN;
+      return (n >= 100 && n <= 121) || DEVICE_CODES.has(code);
+    };
+    if (!dv.checked) {
+      tally("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません");
+      const touched = [...idx.days.keys(), ...idx.untimed].some(kanriLike) || acts.some((a) => a.act.match?.tbl === "shinryo" && kanriLike(a.act.match.code));
+      if (touched) ruleGuides.push("患者の情報で在宅療養の機器を確かめると、在宅療養指導管理材料加算を見ます");
+    } else {
+      const pendingKinds = new Set(dv.pending);
+      const pendingAny = dv.pending.includes(null);
+      if (dv.pending.length > 0) ruleGuides.push(`電子カルテから届いた機器の変える案が ${dv.pending.length} 件あります。患者の情報で入れるか決めてください`);
+      const missingPrev = [1, 2].map((n) => shift(ym, -n)).filter((m) => !dv.prev.some((p) => p.yearMonth === m));
+      /** 前の 2 か月の請求で、その単位のどれかのコードと対象の月のコメントがあり、対象の月に当月が入るコード */
+      const prevCovered = (codes: string[]): string[] => {
+        const out = new Set<string>();
+        for (const p of dv.prev)
+          for (const u of p.units) {
+            const hit = u.codes.filter((x) => codes.includes(x));
+            if (hit.length === 0) continue;
+            if (u.comments.some((cm) => Object.hasOwn(MATERIAL_MONTH_COMMENTS, cm) && shift(p.yearMonth, MATERIAL_MONTH_COMMENTS[cm]) === ym)) hit.forEach((x) => out.add(x));
+          }
+        return [...out];
+      };
+      const EHR_CHECKED = "電子カルテ（確かめた）";
+      type Dev = { kind: DeviceKey; code: string; label: string; row: G11Devices["rows"][number] };
+      const devs: Dev[] = [];
+      for (const r of dv.rows) {
+        const code = codeOfDevice(r);
+        if (code === null) {
+          tally("血糖自己測定器加算は、機器の行の区分か患者の区分が空なので見ていません");
+          continue;
+        }
+        devs.push({ kind: r.kind, code, label: nameOf(code), row: r });
+      }
+      const notesFor = (d: Dev): Note[] => {
+        const out: Note[] = [];
+        if (OXYGEN_KINDS.includes(d.kind)) out.push({ reason: "規則の添え書き", text: "チアノーゼ型先天性心疾患の患者には算定しません" });
+        if (d.kind === "C160") out.push({ reason: "規則の添え書き", text: "保険薬局が輸液セットを出していれば算定しません（R8-210）" });
+        if (d.kind === "C161") out.push({ reason: "規則の添え書き", text: "対象の療法（R8-218 のイ〜ホ）に当たるか確かめてください" });
+        if (d.kind === "C162") out.push({ reason: "規則の添え書き", text: "C105 の対象（成分栄養。単なる流動食は当たらない）か確かめてください" });
+        if (d.kind === "C150") out.push({ reason: "規則の添え書き", text: "指示の回数で区分を選びました（U-46）" });
+        if ((d.kind === "C161" || d.kind === "C166") && devs.some((x) => x.kind === (d.kind === "C161" ? "C166" : "C161"))) out.push({ reason: "規則の添え書き", text: "同じ月の併算定は明文がありません（U-48）" });
+        if (pendingKinds.has(d.kind) || pendingAny) out.push({ reason: "規則の添え書き", text: "電子カルテから確かめていない変える案があります" });
+        if (missingPrev.length > 0) out.push({ reason: "規則の添え書き", text: "前の月に当月分を算定していないか確かめてください" });
+        return out;
+      };
+      const sourceOf = (r: G11Devices["rows"][number]) => (r.source === EHR_CHECKED ? EHR_CHECKED : r.source);
+      const requirementOf = (em: string) => `患者の情報の在宅療養の機器が診療年月に効いています。医療機関が提供した機器を在宅で使っている月に、3 月に 3 回まで算定します（${em}・R8-208・R8-210）`;
+      const dayUnit = (codes: string[]): AddedUnit => ({ items: codes.map((code) => ({ kind: "SI" as const, code })), count: 1, days: zeros(), day: 0 });
+      const deviceCand = (group: Dev[], key: string) => {
+        const [first, ...rest] = group;
+        const label = group.map((d) => d.label).join("・");
+        const em = [...new Set(group.map((d) => DEVICE_KINDS[d.kind].em))].join("・");
+        const notes = [...new Map(group.flatMap(notesFor).map((n) => [n.text, n])).values()];
+        ruleCand(
+          ym,
+          [dayUnit([first.code])],
+          {
+            key,
+            label: group.length > 1 ? `${label}のどれか 1 つ` : label,
+            basisLabel: "患者の機器",
+            requirement: group.length > 1 ? `1 か月にどれか 1 つを算定します（${em}）。どれで算定するか、算定できるかを確かめてください` : requirementOf(em),
+            basis: { basis: "device", sources: [...new Set(group.map((d) => sourceOf(d.row)))] },
+            dayQuote: group.map((d) => `${d.label}（${d.row.fromMonth} の診療月から）`).join("・"),
+            ...(group.length > 1 ? { either: group.map((d) => d.code) } : {}),
+          },
+          notes,
+          rest.length > 0 ? rest.map((d) => dayUnit([d.code])) : undefined,
+        );
+      };
+      // 酸素の組 (a)：酸素濃縮装置が効く月は、酸素ボンベ 2 を出さない（R8-216 (a)。告示）
+      const hasC158 = devs.some((d) => d.kind === "C158");
+      const live = devs.filter((d) => !(hasC158 && d.kind === "C157_2"));
+      if (hasC158 && live.length < devs.length) tally("酸素濃縮装置加算の月なので、酸素ボンベ加算（携帯用以外）は出しません（R8-216）");
+      // 単位ごとにまとめる（単位にない機器は 1 つずつ）
+      const groups = new Map<string, Dev[]>();
+      for (const d of live) {
+        const u = unitOfDevice(d.kind);
+        const key = u.name ?? d.kind;
+        groups.set(key, [...(groups.get(key) ?? []), d]);
+      }
+      for (const [key, group] of [...groups].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const unitCodes = unitOfDevice(group[0].kind).codes;
+        // 請求に同じ単位のどれかがある：同じコードなら出さない。違えば食い違いの 1 件（2 つ目を勧めない。点数の高い側へ直さない。L-207）
+        const claimed = inClaim(unitCodes);
+        if (claimed.length > 0) {
+          const devCodes = group.map((d) => d.code);
+          if (claimed.some((x) => devCodes.includes(x))) continue;
+          const claimLabel = claimed.map(nameOf).join("・");
+          const devLabel = group.map((d) => d.label).join("・");
+          mismatchFindings.push({
+            messageKey: "G11.missing_rule",
+            certainty: "条件つき",
+            codes: [...claimed, ...devCodes],
+            text: `患者の機器では${devLabel}、請求は${claimLabel}です。どちらが正しいか確かめてください`,
+            days: [{ date: ym, quote: group.map((d) => `${d.label}（${d.row.fromMonth} の診療月から）`).join("・"), notes: [{ reason: "規則の添え書き", text: "同じ組の別の区分が請求にあります（R8-216・R8-221・R8-226）" }] }],
+            caution: true,
+            source: { data: "chart", ref: "note=" },
+            rule: { basis: "device", sources: [...new Set(group.map((d) => sourceOf(d.row)))] },
+          });
+          continue;
+        }
+        // 前の 2 か月の請求で当月分が算定済み（同じ単位のどれかのコード。C-411）
+        const covered = prevCovered(unitCodes);
+        if (covered.length > 0) {
+          const coveredLabel = covered.map(nameOf).join("・");
+          if (group.some((d) => d.kind === "C150")) ruleScope.push(`前の月に${coveredLabel}を算定済み。月ごとの区分は明文がありません`);
+          else if (!covered.some((x) => group.some((d) => d.code === x))) ruleScope.push(`前の月に${coveredLabel}で当月分を算定済みです`);
+          continue;
+        }
+        // 「どれか 1 つ」：酸素の組 (b)(c)・人工呼吸器（W-18・R8-226）。ほかの単位（同じコードで見る機器）は 1 つずつ
+        if (key === "酸素の組 (b)" || key === "酸素の組 (c)" || key === "人工呼吸器") deviceCand(group, `device-${key}`);
+        else for (const d of group) deviceCand([d], `device-${d.kind}`);
+      }
+      // 在宅酸素療法材料加算 2（T9。R8-215）：酸素の機器が効き、C103 の 2 の指導管理（請求の行か、在宅療養の指示）がある月
+      if (devs.some((d) => OXYGEN_KINDS.includes(d.kind))) {
+        const code = RULE_CODES.oxygenMaterial2;
+        const c103Claim = inClaim(kubunCodes("C103_2")).length > 0;
+        if (!c103Claim && !dv.c103) ruleScope.push("在宅酸素療法材料加算は見ていません（C103 の 2 の指導管理の行も在宅療養の指示もない）");
+        else if (inClaim([code]).length === 0) {
+          if (prevCovered([code]).length > 0) {
+            // 前の 2 か月で当月分が算定済み
+          } else {
+            const notes: Note[] = [
+              ...(!c103Claim ? [{ reason: "規則の添え書き" as const, text: "C103 の 2 を算定しない月でも算定できるかは明文がありません（U-44）" }] : []),
+              { reason: "規則の添え書き", text: "チアノーゼ型先天性心疾患の患者には算定しません" },
+              ...(missingPrev.length > 0 ? [{ reason: "規則の添え書き" as const, text: "前の月に当月分を算定していないか確かめてください" }] : []),
+            ];
+            const oxy = devs.filter((d) => OXYGEN_KINDS.includes(d.kind));
+            ruleCand(ym, [dayUnit([code])], {
+              key: "device-C171_2",
+              label: nameOf(code),
+              basisLabel: "患者の機器",
+              requirement: "C103 の 2 の指導管理をした患者に、医療機関が在宅酸素療法装置を提供した月に算定します（R8-215）",
+              basis: { basis: "device", sources: [...new Set(oxy.map((d) => sourceOf(d.row)))] },
+              dayQuote: oxy.map((d) => d.label).join("・"),
+            }, notes);
+          }
+        }
+      }
+    }
+  }
+
   // 3. 手順 1 の前に外す：背反区分 3（どちらか一方）の相手が元の請求にある行為（C-283）
   // 特例条件のある行（tokurei が 0 でない）は、条件によっては両方を算定できるので「どちらか一方」と決まる組に入れない（往診料と訪問診療料など。R10 が担当。段 18c の外れ）
   const either = db.prepare("SELECT tani, code1, code2, change, created_on, abolished_on FROM haihan WHERE snapshot = ? AND kubun = '3' AND tokurei = '0' AND (code1 = ? OR code2 = ?)");
@@ -1205,10 +1392,13 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     let block = binds.find((b) => b.certain);
     // 処方料（区分を決めない）：もう一方の区分も抑えられるときだけ隠す（16-4-2）
     if (block && x.alt) {
-      const other = bindsFor(x.alt);
-      if (!other.some((b) => b.certain)) {
-        binds = other;
-        block = undefined;
+      for (const a of x.alt) {
+        const other = bindsFor([a]);
+        if (!other.some((b) => b.certain)) {
+          binds = other;
+          block = undefined;
+          break;
+        }
       }
     }
     // 同じ族の区分誤りは G10 より C-250 を勝たせる（L-128）：抑えが R18 の担当の施設基準の届出なしだけで、R18 が同じ族の直し先を持つときは隠さず添え書き
@@ -1359,9 +1549,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const codes = [...new Set(sorted.flatMap((x) => x.units.flatMap((u) => u.items.map((it) => it.code))))];
     const days = sorted.map((x) => ({ date: x.date, quote: x.rule!.dayQuote, notes: [...x.notes].sort((a, b) => (a.text < b.text ? -1 : 1)), ...(x.rule!.quantity !== undefined ? { quantity: x.rule!.quantity } : {}) }));
     findings.push({
-      messageKey: "G11.missing_rule",
+      messageKey: rc.either ? "G11.missing_either" : "G11.missing_rule",
       certainty: "条件つき",
-      codes,
+      codes: rc.either ?? codes,
       text: `${rc.basisLabel}${daysPart(sorted.map((x) => x.date))}から、${rc.label}が請求にありません。${rc.requirement}。算定できるか確かめてください`,
       days,
       caution: days.some((d) => d.notes.length > 0),
@@ -1383,6 +1573,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       source: { data: "chart", ref: ref([ra, rb]) },
     });
   }
+  findings.push(...mismatchFindings);
   // 添え書きのない件を先に、注意つきを後ろに（並べ方は日・コードの順。候補の並べ方に依らない）
   const order = (f: G11Finding) => `${f.caution ? 1 : 0}|${f.days[0]?.date ?? ""}|${f.messageKey}|${f.codes.join(",")}`;
   findings.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
@@ -1428,5 +1619,5 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
   const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
   unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
-  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, materialNotes, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }

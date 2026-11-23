@@ -196,6 +196,19 @@ CREATE INDEX structured_inputs_patient ON structured_inputs (patient_id, date, i
 CREATE TABLE ext_code_maps (connector_id TEXT NOT NULL, field TEXT NOT NULL, system TEXT NOT NULL, ext_code TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (connector_id, field, system, ext_code));
 `,
   },
+  {
+    // 患者の在宅療養の機器と、電子カルテからの変える案（design.md §16-5・16-8。段 19e。FR-208）。どちらも追記だけ。
+    // patient_devices：kind は機器の種類（DEVICE_KINDS のキー）か none（機器なし）。detail は C150 の段と患者の区分の JSON。source は「電子カルテ（確かめた）」か「医療事務が入れた」。
+    // device_proposals：電子カルテの指示と効く行の違い。kind は当てた種類（当てられなければ NULL）。decision は accept・reject（決めるまで NULL）。
+    // どちらも患者 id を持つので、患者マスタを消すときに一緒に消す。ログ・監査ログ・AI に送る文脈に機器の値を出さない（監査ログは種類の鍵だけ）
+    version: 19,
+    sql: `
+CREATE TABLE patient_devices (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, kind TEXT NOT NULL, from_month TEXT NOT NULL, end_month TEXT, detail TEXT, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_at TEXT NOT NULL);
+CREATE INDEX patient_devices_patient ON patient_devices (patient_id, id);
+CREATE TABLE device_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, kind TEXT, started_on TEXT, ended_on TEXT, ref TEXT NOT NULL, connector_id TEXT NOT NULL, received_at TEXT NOT NULL, decision TEXT, decided_by TEXT, decided_at TEXT);
+CREATE INDEX device_proposals_patient ON device_proposals (patient_id, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

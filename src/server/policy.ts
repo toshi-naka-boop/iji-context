@@ -136,6 +136,10 @@ export const POLICY = {
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),
+  // 患者の在宅療養の機器と変える案（design.md §16-7。段 19e）。患者の情報を残せる人と同じ。監査ログは種類の鍵だけ
+  "GET /api/patient/devices": row(WORK, "none", true),
+  "POST /api/patient/devices": row(WORK, "none", true),
+  "POST /api/patient/device-proposals/[id]": row(WORK, "none", true),
   // 一覧は、消す操作のために事務長にも見せる
   "GET /api/uke": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/uke": row(WORK, "none", true),

@@ -52,3 +52,83 @@ export function deviceOfRece(code: string): { kind: DeviceKey; c150?: { band: st
   const [band, b] = Object.entries(C150_BANDS).find(([, x]) => Object.values(x).includes(code))!;
   return { kind, c150: { band, patientClass: b.イ === code ? "イ" : b.ロ === code ? "ロ" : null } };
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// 材料加算の「同じ単位」と、前の月の分のコメント（design.md §16-4-7。段 19e）
+
+/**
+ * 請求に「ある」を、コードでなく EM の行の区分と組で見る単位（round-64 C-401・round-65 C-411）。ここにない機器は同じコードで見る。
+ * EM の行（R8-221・R8-226・R8-216 の (b)(c)）と合うことをテストで縛る（tests/patient/devices.test.ts）
+ */
+export const DEVICE_UNITS: Record<string, { em: string; kinds: readonly DeviceKey[] }> = {
+  血糖自己測定器: { em: "R8-221", kinds: ["C150"] },
+  人工呼吸器: { em: "R8-226", kinds: ["C164_1", "C164_2", "C164_3"] },
+  "酸素の組 (b)": { em: "R8-216", kinds: ["C157_2", "C158", "C159_1"] },
+  "酸素の組 (c)": { em: "R8-216", kinds: ["C157_1", "C159_2"] },
+};
+
+/** その機器の単位（名前と、単位のどれかのコード）。単位にない機器は自分のコードだけ */
+export function unitOfDevice(kind: DeviceKey): { name: string | null; codes: string[] } {
+  const hit = Object.entries(DEVICE_UNITS).find(([, u]) => u.kinds.includes(kind));
+  return hit ? { name: hit[0], codes: hit[1].kinds.flatMap((k) => [...DEVICE_KINDS[k].codes]) } : { name: null, codes: [...DEVICE_KINDS[kind].codes] };
+}
+
+/** 材料加算の 2 回分・3 回分の対象の月のコメント（EM §2-10 表 1-b）：コード → コメントのある請求の診療年月から何か月ずれた月か */
+export const MATERIAL_MONTH_COMMENTS: Record<string, number> = { "820100122": 0, "820100124": 1, "820100123": 2, "820100125": -1, "820100126": -2 };
+
+/** 酸素の機器（チアノーゼ型先天性心疾患の添え書き・在宅酸素療法材料加算 2 の元） */
+export const OXYGEN_KINDS: readonly DeviceKey[] = ["C157_1", "C157_2", "C158", "C159_1", "C159_2", "C159-2"];
+
+// ───────────────────────────────────────────────────────────────────────────
+// 患者の機器の行（design.md §16-5）
+
+export type C150Detail = { band: string; patientClass: "イ" | "ロ" };
+/** 機器の行（追記だけ）。kind の none は「機器なし」。seq は追記の順（DB の id） */
+export type DeviceRow = { seq: number; kind: DeviceKey | "none"; fromMonth: string; endMonth: string | null; c150?: C150Detail | null; source: string; checkedBy: string; checkedAt: string };
+
+const after = (a: Pick<DeviceRow, "fromMonth" | "seq">, b: Pick<DeviceRow, "fromMonth" | "seq">) => a.fromMonth > b.fromMonth || (a.fromMonth === b.fromMonth && a.seq > b.seq);
+
+/**
+ * 診療年月 ym に効く機器の行（16-5）。種類ごとに fromMonth が ym 以前で最も新しい行（同じ月なら追記の順が後）を選び、
+ * ym 以前で最も新しい「機器なし」の行より後に入れたもので、endMonth が空か ym 以後のものだけ。
+ * checked：ym 以前の行が 1 つ以上ある（「機器なし」を含む）
+ */
+export function effectiveDevices(rows: DeviceRow[], ym: string): { checked: boolean; rows: (DeviceRow & { kind: DeviceKey })[] } {
+  const upto = rows.filter((r) => r.fromMonth <= ym);
+  const none = upto.filter((r) => r.kind === "none").reduce<DeviceRow | null>((a, b) => (a === null || after(b, a) ? b : a), null);
+  const latest = new Map<string, DeviceRow>();
+  for (const r of upto) if (r.kind !== "none" && (!latest.has(r.kind) || after(r, latest.get(r.kind)!))) latest.set(r.kind, r);
+  const live = [...latest.values()].filter((r) => (r.endMonth === null || r.endMonth >= ym) && (none === null || after(r, none))) as (DeviceRow & { kind: DeviceKey })[];
+  return { checked: upto.length > 0, rows: live.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0)) };
+}
+
+/** 機器の行のコード（C150 は段と患者の区分で 1 つ。決まらなければ null） */
+export function codeOfDevice(r: Pick<DeviceRow, "kind" | "c150">): string | null {
+  if (r.kind === "none") return null;
+  if (r.kind !== "C150") return DEVICE_KINDS[r.kind].codes[0];
+  const b = r.c150 ? C150_BANDS[r.c150.band] : undefined;
+  if (!b) return null;
+  return b.one ?? b[r.c150!.patientClass] ?? null;
+}
+
+/** 電子カルテの指示の機器 1 つ（当てた種類。当てられなければ null） */
+export type InstructedDevice = { kind: DeviceKey | null; name: string | null; startedOn: string | null; endedOn: string | null; ref: string };
+/** 変える案（16-5）。end は「効く行にあって指示にない機器」（終わりの案） */
+export type DeviceProposal = { kind: DeviceKey | null; name: string | null; startedOn: string | null; endedOn: string | null; ref: string };
+
+/**
+ * 電子カルテの在宅療養の指示の機器と、診療年月に効く機器の行を比べ、違うものだけを変える案にする（16-5）：
+ * 新しい機器（効く行にない種類。当てられない機器を含む）・endedOn のある機器（効く行がある種類）・効く行にあって指示にない機器
+ */
+export function proposalsOf(instructed: InstructedDevice[], live: { kind: DeviceKey }[]): DeviceProposal[] {
+  const liveKinds = new Set(live.map((r) => r.kind));
+  const out: DeviceProposal[] = [];
+  for (const d of instructed) {
+    if (d.kind === null) out.push({ ...d });
+    else if (!liveKinds.has(d.kind) && d.endedOn === null) out.push({ ...d });
+    else if (liveKinds.has(d.kind) && d.endedOn !== null) out.push({ ...d });
+  }
+  const told = new Set(instructed.flatMap((d) => (d.kind ? [d.kind] : [])));
+  for (const k of liveKinds) if (!told.has(k)) out.push({ kind: k, name: null, startedOn: null, endedOn: null, ref: `指示になし:${k}` });
+  return out;
+}

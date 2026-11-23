@@ -10,6 +10,10 @@ import { withMasters, type MastersDb } from "../../masters/db";
 import type { G11Structured } from "../../generic/g11";
 import { structuredConfig } from "../../structured/rule-codes";
 import { YEAR_MONTH } from "../../demo/period";
+import { resolveRevision } from "../../engine/revisions";
+import { mapCoded } from "../../structured/code-map";
+import type { InstructedDevice } from "../../structured/devices";
+import { createDevices, type DeviceInput, type ProposalDecision } from "./devices";
 import { badRequest } from "../errors";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
@@ -56,6 +60,7 @@ function codedFields(chart: StructuredChart): { field: Field; coded: Coded }[] {
 
 export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, clerks: Pick<Clerks, "clerk">) {
   const { sqlite, paths } = ctx;
+  const devices = createDevices(ctx, clock, clerks);
 
   /** 請求の患者の、患者マスタの id（請求からその月の構造化データを引くとき） */
   const structuredPatientOf = (claimId: string): string => patients.ingest(uke.receiptOf(claimId).receipt.patient);
@@ -69,7 +74,20 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
         const part = s[p];
         put.run(patientId, yearMonth, p, part.status, JSON.stringify(part.status === "supported" ? part.items : []), JSON.stringify(part.status === "supported" ? part.gaps : {}), connectorId, at);
       }
+      // 在宅療養の指示の機器は、患者の機器の「変える案」にする（16-5。確かめるまで判定に使わない）
+      if (s.homeCare.status === "supported") devices.syncProposals(patientId, yearMonth, connectorId, instructedOf(s, yearMonth, connectorId));
     })();
+  }
+  /** 在宅療養の指示の機器を、機器の種類に当てる（16-2 の機器の欄。表示名だけで決まらないものは種類なし） */
+  function instructedOf(s: StructuredChart, yearMonth: string, connectorId: string): InstructedDevice[] {
+    if (s.homeCare.status !== "supported") return [];
+    const ctx: MapContext = { db: null, yearMonth, connectorId, localMap: localMapOf(connectorId) };
+    return s.homeCare.items.flatMap((h) =>
+      h.devices.map((d, i): InstructedDevice => {
+        const m = mapCoded("機器", d, ctx);
+        return { kind: m.ok ? (m.code as InstructedDevice["kind"]) : null, name: d.name, startedOn: d.startedOn, endedOn: d.endedOn, ref: `${h.ref}/${i}` };
+      }),
+    );
   }
 
   /** 残した 4 種類の最新（1 つも残していなければ null） */
@@ -225,10 +243,39 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
       const only: StructuredChart = { ...unsupportedAll(), orders: st.chart.orders };
       return { yearMonth: ym, orders: st.chart.orders, items: itemsOf(only, mapContextOf(db, ym, st.connectorId)) };
     });
-    return { chart: s.chart, items: s.items, history, lookbackMonths, times: visitTimesOf(patientId, yearMonth) };
+    return { chart: s.chart, items: s.items, history, lookbackMonths, times: visitTimesOf(patientId, yearMonth), devices: deviceRulesOf(claimId, patientId, yearMonth, s.chart, s.connectorId, db) };
   }
 
-  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, saveVisitTime, visitTimesOf, samePatientClaims, structuredRulesOf, monthsBefore };
+  /**
+   * 材料加算の入力（16-4-7）：患者の機器（効く行・確かめたか・決めていない案）、前の 2 か月の取り込んだ請求の単位ごとのコードとコメント、
+   * 電子カルテの在宅療養の指示に C103 の 2 の指導管理があるか
+   */
+  function deviceRulesOf(claimId: string, patientId: string, yearMonth: string, chart: StructuredChart, connectorId: string, db: MastersDb | null): NonNullable<G11Structured["devices"]> {
+    const prev = samePatientClaims(claimId, monthsBefore(yearMonth, 2)).map((x) => {
+      const claim = uke.receiptOf(x.claimId).claim();
+      return {
+        yearMonth: x.yearMonth,
+        units: claim.units.map((u, i) => ({ codes: u.items.map((it) => it.code), comments: claim.comments.filter((cm) => cm.unit === i).map((cm) => cm.code) })),
+      };
+    });
+    const rev = resolveRevision(yearMonth);
+    const c103Codes = new Set(Object.hasOwn(rev.codes, "C103_2") ? [rev.codes.C103_2.primary, ...rev.codes.C103_2.accept] : []);
+    const ctx = mapContextOf(db, yearMonth, connectorId);
+    const c103 = chart.homeCare.status === "supported" && chart.homeCare.items.some((h) => {
+      const m = mapCoded("指導管理", h.kind, ctx);
+      return m.ok && c103Codes.has(m.code);
+    });
+    return { ...devices.deviceInputOf(patientId, yearMonth), prev, c103 };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 患者の機器の画面と API（16-5・16-7。段 19e）。請求から患者を引く（患者の識別子は画面に出さない）
+
+  const patientDevices = (claimId: string) => devices.devicesView(structuredPatientOf(claimId), uke.receiptOf(claimId).receipt.yearMonth);
+  const savePatientDevice = (claimId: string, clerkId: string, input: DeviceInput) => devices.addDevice(structuredPatientOf(claimId), clerkId, input);
+  const decideDeviceProposal = (claimId: string, id: number, clerkId: string, input: ProposalDecision) => devices.decideProposal(structuredPatientOf(claimId), id, clerkId, input);
+
+  return { saveStructured, storedStructured, chartStructured, structuredPatientOf, unmappedCodes, saveCodeMap, structuredItemsOf, mapContextOf, saveVisitTime, visitTimesOf, samePatientClaims, structuredRulesOf, monthsBefore, patientDevices, savePatientDevice, decideDeviceProposal, devices };
 }
 
 export type Structured = ReturnType<typeof createStructured>;

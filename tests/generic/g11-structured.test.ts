@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { ChartAct } from "../../src/chart/acts";
 import type { RxOrder, StructuredChart, Visit } from "../../src/connect/types";
 import type { DeclarationView } from "../../src/facility/declaration";
-import { evaluateG11, type ConfirmedAct, type G11About, type G11Claim, type G11Finding, type G11Result, type G11Structured, type RxDay } from "../../src/generic/g11";
+import { evaluateG11, type ConfirmedAct, type G11About, type G11Claim, type G11Devices, type G11Finding, type G11Result, type G11Structured, type RxDay } from "../../src/generic/g11";
 import { resolveRevision } from "../../src/engine/revisions";
 import { withStructured } from "../../src/structured/g11-input";
 import { FR207_CELLS } from "../../src/structured/fr207-table";
@@ -48,6 +48,8 @@ function rdb(): Database.Database {
   si(R.kakaVisit, "患家診療時間加算（在宅患者訪問診療料（１）・（２））", "C", 1, { unit_code: 1, unit_name: "分" });
   si(R.kakaOushin, "患家診療時間加算（往診料）", "C", 0, { unit_code: 1, unit_name: "分" });
   si(R.kakaOushinSpecial, "患家診療時間加算（特別往診）", "C", 0, { unit_code: 1, unit_name: "分" });
+  // 材料加算（EM §2-8 の別表「規則の候補で使うコード」の名称と区分番号）と、在宅酸素療法指導管理料（その他）
+  for (const [code, name, kubun] of DEVICE_MASTER) si(code, name, "C", kubun);
   for (const [code, name, zaikei, mayaku] of [
     [D.carve, "カルベジロール錠１０ｍｇ「ニプロ」", "1", "0"],
     [D.geben, "ゲーベンクリーム１％", "6", "0"],
@@ -58,6 +60,27 @@ function rdb(): Database.Database {
   return db;
 }
 
+/** 材料加算のコード・名称・区分番号（EM §2-8 の別表） */
+const DEVICE_MASTER: [string, string, number][] = [
+  ["114006310", "酸素ボンベ加算（携帯用酸素ボンベ）", 157],
+  ["114006110", "酸素ボンベ加算（その他）", 157],
+  ["114006210", "酸素濃縮装置加算", 158],
+  ["114004910", "設置型液化酸素装置加算", 159],
+  ["114005010", "携帯型液化酸素装置加算", 159],
+  ["114015710", "呼吸同調式デマンドバルブ加算", 159],
+  ["114005110", "在宅中心静脈栄養法用輸液セット加算", 160],
+  ["114006710", "注入ポンプ加算", 161],
+  ["114005210", "在宅経管栄養法用栄養管セット加算", 162],
+  ["114006810", "人工呼吸器加算（陽圧式人工呼吸器）", 164],
+  ["114009610", "人工呼吸器加算（人工呼吸器）", 164],
+  ["114005510", "人工呼吸器加算（陰圧式人工呼吸器）", 164],
+  ["114006910", "携帯型ディスポーザブル注入ポンプ加算", 166],
+  ["114046010", "血糖自己測定器加算（３０回以上）（イ・１型糖尿病、膵全摘後以外）", 150],
+  ["114046110", "血糖自己測定器加算（３０回以上）（ロ、ハ又はニ・１型糖尿病等）", 150],
+  ["114006010", "血糖自己測定器加算（４０回以上）（イ・１型糖尿病、膵全摘後以外）", 150],
+  ["114041610", "在宅酸素療法材料加算（その他）", 171],
+  ["114003710", "在宅酸素療法指導管理料（その他）", 103],
+];
 const date = (d: number) => `${YM}-${String(d).padStart(2, "0")}`;
 const dayArr = (...days: number[]) => Array.from({ length: 31 }, (_, i) => days.filter((d) => d === i + 1).length);
 const unit = (codes: string[], ...days: number[]) => ({ items: codes.map((code) => ({ kind: (code.startsWith("6") ? "IY" : "SI") as "SI" | "IY", code })), count: days.length, days: dayArr(...days) });
@@ -98,6 +121,8 @@ type Opt = {
   unmapped?: string[];
   /** 構造化データを渡さない（v32 の入力） */
   noStructured?: boolean;
+  /** 材料加算の入力（段 19e） */
+  devices?: G11Devices;
 };
 const emptyHistory = (): G11Structured["history"] => Array.from({ length: 12 }, (_, i) => ({ yearMonth: month(-(i + 1)), orders: sup<RxOrder>([]), items: [] }));
 function about(o: Opt = {}): G11About {
@@ -109,7 +134,7 @@ function about(o: Opt = {}): G11About {
     homeCare: UNS,
   };
   const items = orders ? itemsOf(orders, o.unmapped) : [];
-  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [] };
+  const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [], ...(o.devices ? { devices: o.devices } : {}) };
   const acts = o.noStructured ? (o.acts ?? []) : withStructured(o.acts ?? [], { chart, items }, rev).acts;
   return {
     yearMonth: YM,
@@ -666,6 +691,325 @@ describe("T7 患家診療時間加算（114001470・114000970。R8-202〜R8-207�
   });
 });
 
+// ───────────────────────────────────────────────────────────────────────────
+// T8〜T15：在宅療養指導管理材料加算（段 19e。16-4-7）
+
+/** 機器のコード（EM §2-8 の別表） */
+const M = {
+  c157_1: "114006310",
+  c157_2: "114006110",
+  c158: "114006210",
+  c159_1: "114004910",
+  c159_2: "114005010",
+  c160: "114005110",
+  c161: "114006710",
+  c162: "114005210",
+  c164_1: "114006810",
+  c164_2: "114009610",
+  c164_3: "114005510",
+  c166: "114006910",
+  c150_2i: "114046010",
+  c150_2ro: "114046110",
+  c150_3i: "114006010",
+  c171_2: "114041610",
+} as const;
+const C103_2 = rev.codes.C103_2.primary;
+const SRC = "医療事務が入れた（たいおう・2026-11-01T10:00:00+09:00）";
+type DRow = G11Devices["rows"][number];
+const drow = (kind: DRow["kind"], more: Partial<DRow> = {}): DRow => ({ kind, fromMonth: month(-6), source: SRC, ...more });
+/** 確かめた患者の機器（前の 2 か月の請求は、どちらも材料加算なしで取り込んである） */
+const devs = (rows: DRow[], more: Partial<G11Devices> = {}): G11Devices => ({ checked: true, rows, pending: [], prev: [1, 2].map((n) => ({ yearMonth: month(-n), units: [] })), c103: false, ...more });
+const visit5 = (...codes: string[]) => ({ units: [unit([VISIT], 5), ...codes.map((c) => unit([c], 5))] });
+const devFindings = (r: ReturnType<typeof run>) => r.findings.filter((f) => f.rule?.basis === "device");
+const devKeys = (r: ReturnType<typeof run>) => devFindings(r).map((f) => `${f.messageKey === "G11.missing_either" ? "either " : ""}${f.codes.join("+")}`);
+/** 作り物の包括の親（在医総管。補助マスターのグループ C002001・月）にコードを包括させる（材料加算は在医総管の包括に入らないので、包括で隠れる升だけで使う） */
+const bundleUnderKanriCode = (db: Database.Database, code: string) => put(db, "houkatsu", SNAP, { ...LIVE, group_no: "C002001", code, tokurei: "0" });
+/** 前の月の請求の単位（コードと対象の月のコメント） */
+const prevUnit = (n: number, codes: string[], comments: string[]) => ({ yearMonth: month(-n), units: [{ codes, comments }] });
+/** 対象の月が当月になるコメント（前の月の請求の「翌月分」・前々月の請求の「翌々月分」。EM §2-10 表 1-b） */
+const NEXT = "820100124";
+const NEXT2 = "820100123";
+
+describe("T8 酸素の機器（C157・C158・C159・C159-2。R8-23・R8-24・R8-211〜R8-214・R8-216）", () => {
+  cell("T8-出る", "機器の行が効き、請求にそのコードも同じ組の相手もなければ、機器のコードの候補（チアノーゼ型の添え書き）。併用の組 (b) は「どれか 1 つ」の 1 件", () => {
+    const db = rdb();
+    const r = run(db, visit5(), { devices: devs([drow("C158")]) });
+    const f = devFindings(r)[0];
+    expect(f.codes).toEqual([M.c158]);
+    expect(f.messageKey).toBe("G11.missing_rule");
+    expect(f.text).toMatch(/^患者の機器から、酸素濃縮装置加算が請求にありません。/);
+    expect(f.rule).toEqual({ basis: "device", sources: [SRC] });
+    expect(notesOf(f)).toContain("チアノーゼ型先天性心疾患の患者には算定しません");
+    expect(f.text).not.toMatch(/点|円/);
+    // 請求にあれば出ない
+    expect(devFindings(run(db, visit5(M.c158), { devices: devs([drow("C158")]) }))).toEqual([]);
+    // (b) ボンベ（携帯用以外）と設置型液化酸素装置：どれか 1 つ
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C157_2"), drow("C159_1")]) }))).toEqual([`either ${M.c157_2}+${M.c159_1}`]);
+    // (c) 携帯用ボンベと携帯型液化酸素装置：どれか 1 つ。(d) 設置型と携帯型の液化酸素は両方
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C157_1"), drow("C159_2")]) }))).toEqual([`either ${M.c157_1}+${M.c159_2}`]);
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C159_1"), drow("C159_2")]) })).sort()).toEqual([M.c159_1, M.c159_2].sort());
+    // 濃縮装置と携帯用ボンベ（K1・K12 の組）は組に当たらず、両方
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C158"), drow("C157_1")]) })).sort()).toEqual([M.c157_1, M.c158].sort());
+  });
+  cell("T8-包括で出ない", "元の請求の行と G04 の言い切りの包括で隠れ、言わなかったものに包括の理由で並ぶ（作った包括の行）", () => {
+    const db = rdb();
+    bundleUnderKanriCode(db, M.c158);
+    const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow("C158")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ written: "酸素濃縮装置加算", reason: "包括", check: "G04" }));
+  });
+  cell("T8-背反で出ない", "C158 が効く月の C157_2 は出さない（R8-216 (a)）。請求に同じ組の相手がある月は勧めず、食い違いの 1 件（C-401）", () => {
+    const db = rdb();
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C158"), drow("C157_2")]) }))).toEqual([M.c158]);
+    // 請求に 114006110（ボンベ 2）があり機器の行が C158：114006210 を勧めない
+    const r = run(db, visit5(M.c157_2), { devices: devs([drow("C158")]) });
+    const f = devFindings(r);
+    expect(f.map((x) => x.text)).toEqual(["患者の機器では酸素濃縮装置加算、請求は酸素ボンベ加算（その他）です。どちらが正しいか確かめてください"]);
+    expect(f[0].certainty).toBe("条件つき");
+  });
+  cell("T8-在医総管の月で出ない", "該当しない（材料加算は投薬の費用でない）：在医総管の月にも出る", () => {
+    const db = rdb();
+    bundleUnderKanri(db);
+    expect(devKeys(run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow("C158")]) }))).toEqual([M.c158]);
+  });
+  cell("T8-項目が取れず見ない", "機器を確かめていない患者は見ず、点検の範囲に数える。指導管理料（C100〜C121）の行がある月だけ案内が出る", () => {
+    const db = rdb();
+    const unchecked = devs([], { checked: false });
+    const r = run(db, visit5(C103_2), { devices: unchecked });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+    expect(r.ruleGuides).toContain("患者の情報で在宅療養の機器を確かめると、在宅療養指導管理材料加算を見ます");
+    expect(run(db, visit5(), { devices: unchecked }).ruleGuides).toEqual([]);
+  });
+  cell("T8-そのほか出ない", "前の 2 か月の請求で、同じ単位のどれかのコードで当月分が算定済みなら出さない。コードが違えば点検の範囲に 1 行（W-17・C-411）", () => {
+    const db = rdb();
+    // 9 月の請求にボンベ 2 と 3 回分のコメント（9〜11 月分）、10 月から機器の行が C158
+    const prev = [prevUnit(1, [M.c157_2], [NEXT]), { yearMonth: month(-2), units: [] }];
+    const r = run(db, visit5(), { devices: devs([drow("C158", { fromMonth: YM })], { prev }) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("前の月に酸素ボンベ加算（その他）で当月分を算定済みです");
+    // 同じコードなら黙って出さない
+    const same = run(db, visit5(), { devices: devs([drow("C158")], { prev: [prevUnit(1, [M.c158], [NEXT]), prevUnit(2, [], [])] }) });
+    expect(devFindings(same)).toEqual([]);
+    expect(same.scope.filter((s) => s.startsWith("前の月に"))).toEqual([]);
+    // 前の 2 か月の請求がなければ、候補に添え書き
+    const none = run(db, visit5(), { devices: devs([drow("C158")], { prev: [] }) });
+    expect(notesOf(devFindings(none)[0])).toContain("前の月に当月分を算定していないか確かめてください");
+  });
+});
+
+describe("T9 在宅酸素療法材料加算 2（C171_2。R8-215）", () => {
+  cell("T9-出る", "酸素の機器が効き、その月に C103 の 2 の指導管理（請求の行か、在宅療養の指示）がある月に出る。指示だけの月は U-44 の添え書き", () => {
+    const db = rdb();
+    const r = run(db, visit5(C103_2, M.c158), { devices: devs([drow("C158")]) });
+    expect(devKeys(r)).toEqual([M.c171_2]);
+    expect(notesOf(devFindings(r)[0])).not.toContain("C103 の 2 を算定しない月でも算定できるかは明文がありません（U-44）");
+    const byOrder = run(db, visit5(M.c158), { devices: devs([drow("C158")], { c103: true }) });
+    expect(devKeys(byOrder)).toEqual([M.c171_2]);
+    expect(notesOf(devFindings(byOrder)[0])).toContain("C103 の 2 を算定しない月でも算定できるかは明文がありません（U-44）");
+  });
+  cell("T9-包括で出ない", "元の請求の行と G04 の言い切りの包括で隠れる", () => {
+    const db = rdb();
+    bundleUnderKanriCode(db, M.c171_2);
+    const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5), unit([C103_2], 5), unit([M.c158], 5)] }, { devices: devs([drow("C158")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ reason: "包括", check: "G04" }));
+  });
+  cell("T9-背反で出ない", "元の請求の行と G05 の言い切りの背反で隠れる", () => {
+    const db = rdb();
+    putHaihan(db, SNAP, 2, C103_2, M.c171_2, "1", "0");
+    const r = run(db, visit5(C103_2, M.c158), { devices: devs([drow("C158")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ reason: "背反", check: "G05" }));
+  });
+  cell("T9-在医総管の月で出ない", "該当しない：在医総管の月にも出る", () => {
+    const db = rdb();
+    bundleUnderKanri(db);
+    expect(devKeys(run(db, { units: [unit([VISIT], 5), unit([KANRI], 5), unit([C103_2], 5), unit([M.c158], 5)] }, { devices: devs([drow("C158")]) }))).toEqual([M.c171_2]);
+  });
+  cell("T9-項目が取れず見ない", "C103 の 2 の指導管理の行も指示もない月・機器を確かめていない患者は「見ていません」", () => {
+    const db = rdb();
+    const r = run(db, visit5(M.c158), { devices: devs([drow("C158")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("在宅酸素療法材料加算は見ていません（C103 の 2 の指導管理の行も在宅療養の指示もない）");
+    expect(run(db, visit5(C103_2), { devices: devs([], { checked: false }) }).scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+  });
+  cell("T9-そのほか出ない", "酸素の機器が効かない月は出さない", () => {
+    const db = rdb();
+    expect(devKeys(run(db, visit5(C103_2), { devices: devs([drow("C160")]) }))).toEqual([M.c160]);
+    // 機器を確かめた（機器なし）患者で、C103 の 2 の行だけがある月
+    const r = run(db, visit5(C103_2), { devices: devs([]) });
+    expect(devKeys(r)).toEqual([]);
+    expect(r.scope.filter((s) => s.startsWith("在宅酸素療法材料加算"))).toEqual([]);
+  });
+});
+
+/** T10・T11・T12・T14：同じコードで見る機器（添え書きだけが違う） */
+for (const [row, kind, code, label, note] of [
+  ["T10", "C160", M.c160, "在宅中心静脈栄養法用輸液セット加算", "保険薬局が輸液セットを出していれば算定しません（R8-210）"],
+  ["T11", "C161", M.c161, "注入ポンプ加算", "対象の療法（R8-218 のイ〜ホ）に当たるか確かめてください"],
+  ["T12", "C162", M.c162, "在宅経管栄養法用栄養管セット加算", "C105 の対象（成分栄養。単なる流動食は当たらない）か確かめてください"],
+  ["T14", "C166", M.c166, "携帯型ディスポーザブル注入ポンプ加算", null],
+] as const) {
+  describe(`${row} ${label}`, () => {
+    cell(`${row}-出る`, `機器の行が効き、請求になければ出る${note ? `（添え書き：${note}）` : ""}`, () => {
+      const db = rdb();
+      const r = run(db, visit5(), { devices: devs([drow(kind)]) });
+      const f = devFindings(r)[0];
+      expect(f.codes).toEqual([code]);
+      expect(f.text).toMatch(new RegExp(`^患者の機器から、${label}が請求にありません。`));
+      if (note) expect(notesOf(f)).toContain(note);
+      if (kind === "C166") {
+        // 注入ポンプと同じ月なら両方を出し、両方に同じ文（U-48。L-204）
+        const both = devFindings(run(db, visit5(), { devices: devs([drow("C161"), drow("C166")]) }));
+        expect(both.map((x) => x.codes[0]).sort()).toEqual([M.c161, M.c166].sort());
+        for (const x of both) expect(notesOf(x)).toContain("同じ月の併算定は明文がありません（U-48）");
+      }
+    });
+    cell(`${row}-包括で出ない`, "元の請求の行と G04 の言い切りの包括で隠れる", () => {
+      const db = rdb();
+      bundleUnderKanriCode(db, code);
+      const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow(kind)]) });
+      expect(devFindings(r)).toEqual([]);
+      expect(r.hidden).toContainEqual(expect.objectContaining({ written: label, reason: "包括", check: "G04" }));
+    });
+    cell(`${row}-背反で出ない`, "元の請求の行と G05 の言い切りの背反で隠れる", () => {
+      const db = rdb();
+      putHaihan(db, SNAP, 2, VISIT, code, "1", "0");
+      const r = run(db, visit5(), { devices: devs([drow(kind)]) });
+      expect(devFindings(r)).toEqual([]);
+      expect(r.hidden).toContainEqual(expect.objectContaining({ written: label, reason: "背反", check: "G05" }));
+    });
+    cell(`${row}-在医総管の月で出ない`, "該当しない：在医総管の月にも出る", () => {
+      const db = rdb();
+      bundleUnderKanri(db);
+      expect(devKeys(run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow(kind)]) }))).toEqual([code]);
+    });
+    cell(`${row}-項目が取れず見ない`, "機器を確かめていない患者は「見ていません」", () => {
+      const db = rdb();
+      const r = run(db, visit5(), { devices: devs([], { checked: false }) });
+      expect(devFindings(r)).toEqual([]);
+      expect(r.scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+    });
+    cell(`${row}-そのほか出ない`, "前の 2 か月の請求で当月分が算定済み（前々月の翌々月分）なら出さない", () => {
+      const db = rdb();
+      expect(devFindings(run(db, visit5(), { devices: devs([drow(kind)], { prev: [prevUnit(1, [], []), prevUnit(2, [code], [NEXT2])] }) }))).toEqual([]);
+    });
+  });
+}
+
+describe("T13 人工呼吸器（C164_1〜C164_3。R8-226）", () => {
+  cell("T13-出る", "機器の行のコード 1 つ。2 つ以上効けば「どれか 1 つ」", () => {
+    const db = rdb();
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C164_2")]) }))).toEqual([M.c164_2]);
+    expect(devKeys(run(db, visit5(), { devices: devs([drow("C164_1"), drow("C164_3")]) }))).toEqual([`either ${M.c164_1}+${M.c164_3}`]);
+  });
+  cell("T13-包括で出ない", "元の請求の行と G04 の言い切りの包括で隠れる", () => {
+    const db = rdb();
+    bundleUnderKanriCode(db, M.c164_2);
+    const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow("C164_2")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ reason: "包括", check: "G04" }));
+  });
+  cell("T13-背反で出ない", "請求に C164 のほかの区分がある（114006810 と機器の行 C164_2）と勧めず食い違いの 1 件（C-401）。元の請求の行と G05 の言い切りの背反でも隠れる", () => {
+    const db = rdb();
+    expect(devFindings(run(db, visit5(M.c164_1), { devices: devs([drow("C164_2")]) })).map((f) => f.text)).toEqual([
+      "患者の機器では人工呼吸器加算（人工呼吸器）、請求は人工呼吸器加算（陽圧式人工呼吸器）です。どちらが正しいか確かめてください",
+    ]);
+    putHaihan(db, SNAP, 2, VISIT, M.c164_2, "1", "0");
+    expect(run(db, visit5(), { devices: devs([drow("C164_2")]) }).hidden).toContainEqual(expect.objectContaining({ reason: "背反", check: "G05" }));
+  });
+  cell("T13-在医総管の月で出ない", "該当しない：在医総管の月にも出る", () => {
+    const db = rdb();
+    bundleUnderKanri(db);
+    expect(devKeys(run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([drow("C164_2")]) }))).toEqual([M.c164_2]);
+  });
+  cell("T13-項目が取れず見ない", "機器を確かめていない患者は「見ていません」", () => {
+    const db = rdb();
+    expect(run(db, visit5(), { devices: devs([], { checked: false }) }).scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+  });
+  cell("T13-そのほか出ない", "前の 2 か月の請求で C164 のどれかの区分で当月分が算定済みなら出さず、区分が違えば点検の範囲に 1 行（C-411）", () => {
+    const db = rdb();
+    const r = run(db, visit5(), { devices: devs([drow("C164_2", { fromMonth: YM })], { prev: [prevUnit(1, [M.c164_1], [NEXT]), prevUnit(2, [], [])] }) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("前の月に人工呼吸器加算（陽圧式人工呼吸器）で当月分を算定済みです");
+  });
+});
+
+describe("T15 血糖自己測定器（C150_1〜C150_7。R8-221・R8-222。W-23）", () => {
+  const c150 = (band: string, patientClass: "イ" | "ロ" = "イ") => drow("C150", { c150: { band, patientClass } });
+  cell("T15-出る", "機器の行の区分と患者の区分で 1 つのコード（添え書き：指示の回数で区分を選んだ）", () => {
+    const db = rdb();
+    const f = devFindings(run(db, visit5(), { devices: devs([c150("C150_2")]) }))[0];
+    expect(f.codes).toEqual([M.c150_2i]);
+    expect(notesOf(f)).toContain("指示の回数で区分を選びました（U-46）");
+    expect(devKeys(run(db, visit5(), { devices: devs([c150("C150_2", "ロ")]) }))).toEqual([M.c150_2ro]);
+  });
+  cell("T15-包括で出ない", "元の請求の行と G04 の言い切りの包括で隠れる", () => {
+    const db = rdb();
+    bundleUnderKanriCode(db, M.c150_2i);
+    const r = run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([c150("C150_2")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.hidden).toContainEqual(expect.objectContaining({ reason: "包括", check: "G04" }));
+  });
+  cell("T15-背反で出ない", "請求に 114006010（40 回以上 イ）があり機器の行が C150_2：114046010 を勧めず食い違いの 1 件（C-401）。G05 の言い切りの背反でも隠れる", () => {
+    const db = rdb();
+    const f = devFindings(run(db, visit5(M.c150_3i), { devices: devs([c150("C150_2")]) }));
+    expect(f.map((x) => x.codes)).toEqual([[M.c150_3i, M.c150_2i]]);
+    expect(f[0].text).toMatch(/、請求は血糖自己測定器加算（４０回以上）/);
+    putHaihan(db, SNAP, 2, VISIT, M.c150_2i, "1", "0");
+    expect(run(db, visit5(), { devices: devs([c150("C150_2")]) }).hidden).toContainEqual(expect.objectContaining({ reason: "背反", check: "G05" }));
+  });
+  cell("T15-在医総管の月で出ない", "該当しない：在医総管の月にも出る", () => {
+    const db = rdb();
+    bundleUnderKanri(db);
+    expect(devKeys(run(db, { units: [unit([VISIT], 5), unit([KANRI], 5)] }, { devices: devs([c150("C150_2")]) }))).toEqual([M.c150_2i]);
+  });
+  cell("T15-項目が取れず見ない", "機器を確かめていない患者、区分か患者の区分が空の行は「見ていません」", () => {
+    const db = rdb();
+    expect(run(db, visit5(), { devices: devs([], { checked: false }) }).scope).toContain("在宅療養指導管理材料加算は、機器を確かめていない患者なので見ていません：1 件");
+    const r = run(db, visit5(), { devices: devs([drow("C150")]) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("血糖自己測定器加算は、機器の行の区分か患者の区分が空なので見ていません：1 件");
+  });
+  cell("T15-そのほか出ない", "9 月に C150_2 の 3 回分、10 月の機器の行が C150_3：候補を出さず、点検の範囲に「前の月に〔区分〕を算定済み。月ごとの区分は明文がありません」（L-205）", () => {
+    const db = rdb();
+    const r = run(db, visit5(), { devices: devs([drow("C150", { fromMonth: YM, c150: { band: "C150_3", patientClass: "イ" } })], { prev: [prevUnit(1, [M.c150_2i], [NEXT]), prevUnit(2, [], [])] }) });
+    expect(devFindings(r)).toEqual([]);
+    expect(r.scope).toContain("前の月に血糖自己測定器加算（３０回以上）（イ・１型糖尿病、膵全摘後以外）を算定済み。月ごとの区分は明文がありません");
+  });
+});
+
+describe("材料加算の欄（16-3・16-4-7）", () => {
+  it("文章の「酸素ボンベ使用」（114006110）は候補にならず「患者の情報の機器で見ます」にたたまれる", () => {
+    const db = rdb();
+    const a = textAct(5, M.c157_2, "酸素ボンベ使用", "診療行為");
+    const r = run(db, visit5(), { acts: [a], devices: devs([]) });
+    expect(r.findings.filter((f) => f.codes.includes(M.c157_2))).toEqual([]);
+    expect(r.scope).toContain("患者の情報の機器で見る行為をたたみました：1 件");
+    // 機器を確かめていない患者では、機器の入力の案内が出る（16-6）
+    expect(run(db, visit5(), { acts: [a], devices: devs([], { checked: false }) }).ruleGuides).toContain("患者の情報で在宅療養の機器を確かめると、在宅療養指導管理材料加算を見ます");
+  });
+  it("材料加算の欄の上に、注入器加算・注入器用注射針加算と、ほかの医療機関の指導管理料を見ていないことを 1 行ずつ出す（L-181・L-186）", () => {
+    const db = rdb();
+    expect(run(db, visit5(), { devices: devs([drow("C158")]) }).materialNotes).toEqual(["注入器加算・注入器用注射針加算は見ていません", "ほかの医療機関が在宅療養指導管理料を算定している患者かは見ていません"]);
+    expect(run(db, visit5(), {}).materialNotes).toEqual([]);
+  });
+  it("確かめていない変える案がある患者は、関わる機器の候補に添え書きし、件数の案内を出す（判定には使わない）", () => {
+    const db = rdb();
+    const r = run(db, visit5(), { devices: devs([drow("C158")], { pending: ["C158"] }) });
+    expect(notesOf(devFindings(r)[0])).toContain("電子カルテから確かめていない変える案があります");
+    expect(r.ruleGuides).toContain("電子カルテから届いた機器の変える案が 1 件あります。患者の情報で入れるか決めてください");
+  });
+  it("9 月の請求に 114006110（ボンベ 2）と 3 回分のコメント（9〜11 月分）、10 月から機器の行が C158：10 月に C158 を勧めない（C-411＝X-240）", () => {
+    const db = rdb();
+    const prev = [{ yearMonth: month(-1), units: [{ codes: [M.c157_2], comments: ["820100122", NEXT, NEXT2] }] }, prevUnit(2, [], [])];
+    const r = run(db, visit5(), { devices: devs([drow("C158", { fromMonth: YM })], { prev }) });
+    expect(devKeys(r)).toEqual([]);
+    expect(r.scope).toContain("前の月に酸素ボンベ加算（その他）で当月分を算定済みです");
+  });
+});
+
 describe("構造化データのない請求（v32 の入力）", () => {
   it("規則の候補を出さず、注2・時間の加算の「見ていません」も出さない（v32 の点検の範囲のまま）", () => {
     const db = rdb();
@@ -676,8 +1020,8 @@ describe("構造化データのない請求（v32 の入力）", () => {
 });
 
 describe("FR-207 の表の升（16-4-8）", () => {
-  it("FR207_CELLS の T1〜T7 の全部の升の id に、テストが 1 件以上ある（升を空にしない。L-197・C-413）", () => {
-    expect(FR207_CELLS.length).toBe(7 * 6 + 3 + 9 + 1);
+  it("FR207_CELLS の T1〜T15 の全部の升の id に、テストが 1 件以上ある（升を空にしない。L-197・C-413）", () => {
+    expect(FR207_CELLS.length).toBe(15 * 6 + 3 + 9 + 1);
     expect(FR207_CELLS.filter((id) => !covered.has(id))).toEqual([]);
   });
 });

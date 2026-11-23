@@ -7,6 +7,7 @@ import { BUILDING_BAND_GUIDE } from "../../src/messages";
 import type { PatientFinding } from "../../src/patient/checks";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES, type BuildingBandValue, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
 import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patient/profile";
+import { DevicePanel } from "./device-panel";
 
 type Row = PatientFact & { expired: boolean };
 type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
@@ -255,6 +256,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
           )}
         </div>
       )}
+      <DevicePanel claimId={props.claimId} editable={props.editable} />
     </div>
   );
 }

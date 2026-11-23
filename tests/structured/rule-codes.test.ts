@@ -27,6 +27,7 @@ describe("RULE_CODES と EM", () => {
       kakaVisit: "C001_N5_KAKA（R8-202）",
       kakaOushin: "C000_N2_KAKA（R8-203）",
       kakaOushinSpecial: "C000_N2_KAKA（R8-203）",
+      oxygenMaterial2: "C171_2（R8-215）",
     };
     for (const [k, code] of Object.entries(RULE_CODES)) expect([k, table.get(code)]).toEqual([k, want[k as keyof typeof RULE_CODES]]);
   });

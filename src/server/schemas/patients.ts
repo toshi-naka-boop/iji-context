@@ -52,3 +52,14 @@ export const coverageBody = z.strictObject({
     validUntil: date.nullable(),
   }),
 });
+
+// 患者の在宅療養の機器（design.md §16-5・16-7。段 19e）。種類は DEVICE_KINDS のキーか none（形だけ。所属は src/server/app/devices.ts が確かめて文言を返す）
+const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+const c150 = z.strictObject({ band: z.string().regex(/^C150_[1-7]$/), patientClass: z.enum(["イ", "ロ"]) });
+/** GET /api/patient/devices */
+export const devicesQuery = z.strictObject({ claimId });
+/** POST /api/patient/devices：機器の行を追記する */
+export const deviceBody = z.strictObject({ claimId, kind: z.string().min(1).max(20), fromMonth: yearMonth, endMonth: yearMonth.nullable().optional(), c150: c150.optional() });
+/** POST /api/patient/device-proposals/[id]：変える案に答える（C150 の案は c150 がないと 400。種類の決まらない案は kind を選ぶ） */
+export const proposalParams = z.strictObject({ id: z.coerce.number().int().positive() });
+export const proposalBody = z.strictObject({ claimId, action: z.enum(["accept", "reject"]), kind: z.string().min(1).max(20).optional(), fromMonth: yearMonth.optional(), endMonth: yearMonth.nullable().optional(), c150: c150.optional() });

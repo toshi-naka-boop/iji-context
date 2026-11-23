@@ -85,7 +85,7 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
         // ほかのどの請求（見本と、残っているファイル。読み直しで読めなかったレセプトも含む）からも参照されなくなった患者だけを消す
         for (const r of uke.ukeReceipts()) gone.delete(patients.ingest(r.patient));
         for (const id of gone) {
-          for (const table of ["patient_facts", "patient_coverages", "chart_structured", "structured_inputs"]) sqlite.prepare(`DELETE FROM ${table} WHERE patient_id = ?`).run(id);
+          for (const table of ["patient_facts", "patient_coverages", "chart_structured", "structured_inputs", "patient_devices", "device_proposals"]) sqlite.prepare(`DELETE FROM ${table} WHERE patient_id = ?`).run(id);
           sqlite.prepare("DELETE FROM patients WHERE id = ?").run(id);
         }
         // メンターのやり取りは 1 人 1 セッションで、請求ごとに切り分けられない。その請求を相談した人のセッションをまるごと切る。

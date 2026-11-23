@@ -83,6 +83,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
             history: s.history ?? [],
             lookbackMonths: s.lookbackMonths ?? 0,
             times: s.times ?? [],
+            ...(s.devices ? { devices: s.devices } : {}),
             texts: (input.texts ?? []).map((t) => ({
               date: t.date,
               text: t.text,
