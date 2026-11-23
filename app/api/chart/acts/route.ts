@@ -8,7 +8,7 @@ import { actsOrPickBody } from "../../../../src/server/schemas/chart";
 // 監査ログの対象はカルテの id だけ（行為の名前・引用は残さない）
 export const POST = route({ roles: allow("POST /api/chart/acts"), body: actsOrPickBody, audit: { target: ({ body }) => body.noteId } }, ({ body, clerkId }) =>
   "index" in body
-    ? getApp().pickAct(Number(body.noteId), clerkId, body.index, body.match)
+    ? getApp().pickAct(Number(body.noteId), clerkId, body.index, body.match, body.child)
     : getApp().confirmActs(Number(body.noteId), clerkId, { facts: body.facts, acts: body.acts, rx: body.rx, rxChoice: body.rxChoice ?? null }),
 );
 

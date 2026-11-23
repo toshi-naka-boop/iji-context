@@ -10,7 +10,7 @@
 import { kubunOfCode } from "../engine/revisions/codes";
 import { derivedKubun, g11Owned } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
-import type { ChartAct, RxChoice } from "../chart/acts";
+import type { ChartAct, ChildKind, RxChoice } from "../chart/acts";
 import { checkReady, hasUnitColumns, iyakuhinOf, pickSnapshot, shinryoOf, tokuteiOf, unitCaseCollisions, type MastersDb } from "../masters/db";
 import { g03 } from "./g03";
 import { g04 } from "./g04";
@@ -77,8 +77,11 @@ export type G11Finding = {
   caution: boolean;
   source: { data: "chart"; ref: string };
 };
-/** 当てられない行為（design.md §15-7・15-9。X-157）：日・書かれた名前・種類。保存したカルテの行為は、カルテの id と位置（候補から選んで残す入口） */
-export type G11Unmatched = { date: string; written: string; category: ChartAct["category"]; noteId?: number; index?: number };
+/**
+ * 当てられない行為（design.md §15-7・15-9。X-157）：日・書かれた名前・種類。保存したカルテの行為は、カルテの id と位置（候補から選んで残す入口）。
+ * child は手技で使った薬・器材（with）の当てられないもの：with の中の位置・種類・親の書かれた名前（category・index は親のもの。X-161）
+ */
+export type G11Unmatched = { date: string; written: string; category: ChartAct["category"]; noteId?: number; index?: number; child?: { index: number; kind: ChildKind; parent: string } };
 /** 言わなかった候補（L-96）：書かれた名前・日・理由（抑えた点検の名前と相手の行の名前） */
 export type G11Hidden = { written: string; date: string; reason: string; check: GenericCheckId; partner: string; with?: string[] };
 /** 区分誤りの出た対応（C-250・C-263）：R18 の同じ族の区分誤りが添えられた候補の、書かれた名前・表・コード（結果に載せるだけ。前に選んだ対応は消さず、読むときに同じ R18 の規則で外す：src/server/app/notes.ts の aliasOf。反証 round-55 C-293） */
@@ -486,9 +489,16 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const childGroups: ChildGroups = new Map();
     for (const a of list) {
       const m = a.act.match;
+      const at = a.noteId !== undefined && a.index !== undefined ? { noteId: a.noteId, index: a.index } : {};
+      // 手技で使った薬・器材の当てられないものも並べる（親が当たっていても。X-161）
+      (a.act.with ?? []).forEach((x, j) => {
+        if (x.match) return;
+        unmatched++;
+        unmatchedActs.push({ date: a.date, written: x.written, category: a.act.category, ...at, child: { index: j, kind: x.kind, parent: a.act.written } });
+      });
       if (!m) {
         unmatched++;
-        unmatchedActs.push({ date: a.date, written: a.act.written, category: a.act.category, ...(a.noteId !== undefined && a.index !== undefined ? { noteId: a.noteId, index: a.index } : {}) });
+        unmatchedActs.push({ date: a.date, written: a.act.written, category: a.act.category, ...at });
         continue;
       }
       const kubun = m.tbl === "shinryo" ? info.kubunOf(m.code) : null;
@@ -889,6 +899,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const n = new Set(acts.filter((a) => a.act.match && visit.has(info.kubunOf(a.act.match.code) ?? "")).map((a) => a.date)).size;
     handNotes.push({ messageKey: "R01.use_once", text: `カルテでは訪問診療が ${n} 回あります。訪問診療料の取り忘れ（G11）を先に確かめてください` });
   }
-  unmatchedActs.sort((a, b) => (`${a.date}|${a.written}|${a.noteId ?? ""}|${a.index ?? ""}` < `${b.date}|${b.written}|${b.noteId ?? ""}|${b.index ?? ""}` ? -1 : 1));
+  const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
+  unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
   return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }

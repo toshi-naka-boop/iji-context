@@ -218,9 +218,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 確かめて残したカルテの、当てられない行為（match が null）を、本人が候補・探す・前に選んだものから選んで当てる（design.md §15-7・15-9 の
    * B の欄「当てられない行為（候補から選ぶ入口）」。反証 round-55 X-157）。次の点検から、その行為を突き合わせる。
    * 当てたコードは confirmActs と同じく、診療年月の 1 枚の、category で決めた表に実在するものだけ（名称はマスターの値に置き換える）。選んだ対応はクリニックごとに残す（L-95）。
-   * もう当たっている行為は直さない（409）。訪問カルテは書いた本人だけ（C-302 と同じ）。返すのは請求と日だけ
+   * もう当たっている行為は直さない（409）。訪問カルテは書いた本人だけ（C-302 と同じ）。返すのは請求と日だけ。
+   * child を渡すと、その行為で使った薬・器材（with の位置）を当てる。表は子の種類で決め、権限・検査は親と同じ（X-161）
    */
-  function pickAct(id: number, clerkId: string, index: number, match: ActMatch) {
+  function pickAct(id: number, clerkId: string, index: number, match: ActMatch, child?: number) {
     clerk(clerkId);
     const r = noteRow(id);
     if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
@@ -228,14 +229,16 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const stored = JSON.parse(r.acts) as StoredActs;
     const act = stored.acts[index];
     if (!act) throw badRequest("このカルテにない行為です", ["index"]);
-    if (act.match) throw conflict("この行為はもう当たっています");
+    const kid = child === undefined ? undefined : act.with?.[child];
+    if (child !== undefined && !kid) throw badRequest("この行為にない薬・器材です", ["child"]);
+    if ((kid ?? act).match) throw conflict("この行為はもう当たっています");
     if (match.by === "name") throw badRequest("選んだ当て方ではありません", ["match"]);
-    const key = tableKeyOfAct(act.category);
+    const key = kid ? tableKeyOfChild(kid.kind) : tableKeyOfAct(act.category);
     const row = withMasters((db) => rowIn(rowsFor(db, key, caseOf(r.claim_id).yearMonth), match.tbl, match.code));
     if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${match.code}`, ["match"]);
     const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
-    const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i === index ? { ...a, match: m } : a)) };
-    const wn = normName(act.written);
+    const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : kid ? { ...a, with: a.with!.map((x, j) => (j === child ? { ...x, match: m } : x)) } : { ...a, match: m })) };
+    const wn = normName((kid ?? act).written);
     sqlite.transaction(() => {
       sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
       for (const t of tablesOfKey(key)) if (t !== m.tbl) sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ?").run(wn, t);

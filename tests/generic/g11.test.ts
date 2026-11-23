@@ -577,6 +577,16 @@ describe("再反証 round-56", () => {
     expect(less.findings[0].text).toBe("カルテ（5日）では「熱傷処置」で使った「ゲーベン」が10g、請求では5です。算定できるか確かめてください");
   });
 
+  it("X-161：親が当たって請求にあり、使った薬だけ当てられないときも、その子を当てられない行為に並べる（親の位置と子の位置・種類・親の名前つき）", () => {
+    const db = g11Db();
+    const a: ConfirmedAct = { date: date(14), noteId: 9, index: 1, act: { category: "処置", written: "熱傷処置", lookup: [], quote: "熱傷処置", match: { tbl: "shinryo", code: C.burn, name: "熱傷処置", by: "name" }, with: [{ kind: "薬", written: "よく分からない軟膏", lookup: [], quote: "よく分からない軟膏", quantity: "10g", match: null }] } };
+    const r = both(db, { units: [unit([C.burn], 14)] }, about([a]));
+    expect(keys(r.findings)).toEqual([]);
+    expect(r.unmatchedActs).toEqual([{ date: date(14), written: "よく分からない軟膏", category: "処置", noteId: 9, index: 1, child: { index: 0, kind: "薬", parent: "熱傷処置" } }]);
+    expect(r.scope).toContain("当てられない行為：1 件");
+    expect(r.counts.unmatched).toBe(1);
+  });
+
   it("X-162：算定日の分からない請求の検査からは、日を付けた判断料の候補を作らない（月で扱い、文に日を出さない）", () => {
     const db = g11Db();
     const untimed = { units: [{ items: [{ kind: "SI" as const, code: C.pt }], count: 1 }] };

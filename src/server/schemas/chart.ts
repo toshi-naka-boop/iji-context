@@ -50,10 +50,14 @@ export const actsBody = z.strictObject({
   rx: z.array(z.strictObject({ quote: z.string().max(MAX_CHART_TEXT) })).max(20),
   rxChoice: z.enum(["outside", "inside", "unknown"]).nullable().optional(),
 });
-/** 確かめて残したカルテの当てられない行為を、選んで当てる本文（POST /api/chart/acts の別の形。design.md §15-9 の「当てられない行為（候補から選ぶ入口）」。X-157） */
+/**
+ * 確かめて残したカルテの当てられない行為を、選んで当てる本文（POST /api/chart/acts の別の形。design.md §15-9 の「当てられない行為（候補から選ぶ入口）」。X-157）。
+ * child は、その行為で使った薬・器材（with）の位置（子を当てるとき。X-161）
+ */
 export const pickBody = z.strictObject({
   noteId: noteParams.shape.id,
   index: z.number().int().min(0).max(99),
+  child: z.number().int().min(0).max(19).optional(),
   match: z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["alias", "candidate", "search"]) }),
 });
 /** POST /api/chart/acts の本文（確かめて保存する形か、当てられない行為を選んで当てる形） */

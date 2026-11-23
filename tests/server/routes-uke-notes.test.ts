@@ -31,6 +31,7 @@ beforeAll(async () => {
   const db = tensuhyoMasters("20261001");
   db.prepare("INSERT INTO checks_ready (check_id, ready, reason) VALUES ('G03', 1, ''), ('G10', 1, ''), ('G11', 1, '')").run();
   put(db, "shinryo", "20261001", { code: "140000610", name: "創傷処置（１００ｃｍ２未満）", alpha: "J" });
+  if (!db.prepare("SELECT 1 FROM iyakuhin WHERE snapshot = '20261001' AND code = '620008991'").get()) put(db, "iyakuhin", "20261001", { code: "620008991", name: "ゲーベンクリーム１％", zaikei: "6", unit_name: "ｇ" });
   if (!db.prepare("SELECT 1 FROM shinryo WHERE snapshot = '20261001' AND code = '130000510'").get()) put(db, "shinryo", "20261001", { code: "130000510", name: "皮内、皮下及び筋肉内注射", alpha: "G" });
   writeFileSync(path.join(dir, "masters.db"), db.serialize());
   db.close();
@@ -155,6 +156,34 @@ describe("当てられない行為を B の欄から選ぶ入口（design.md §1
     expect(after.unmatchedActs).toEqual([]);
     expect(after.findings?.map((f) => `${f.messageKey} ${f.codes.join("+")}`)).toContain("G11.missing 140000610");
     expect(instance.runAs(user, () => instance.getApp().savedActs(p.id))!.acts[0].match).toEqual({ tbl: "shinryo", code: "140000610", name: "創傷処置（１００ｃｍ２未満）", by: "search" });
+  });
+});
+
+describe("手技で使った薬・器材の当てられないものを B の欄から選ぶ入口（再反証 round-56 X-161）", () => {
+  it("親が当たっていて子だけ当てていないとき、子が当てられない行為に並び（親の位置と子の位置つき）、POST /api/chart/acts で child を付けて選ぶと子に当たる。表にないコード・ない子は 400、当たっている子は 409", async () => {
+    const clerkId = instance.clerkIdOf(user);
+    const [, other] = instance.runAs(user, () => instance.getApp().importedClaims(clerkId));
+    const kid = { kind: "薬", written: "げーべん", lookup: [], quantity: "10g", quote: "げーべん10g" };
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts: [{ category: "処置", written: "そうしょうしょち", lookup: [], quote: "そうしょうしょち", with: [kid] }], rx: [] }, sessionId: "", stats: {} });
+    const pasted = await (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST(post(`/api/uke/claims/${other}/notes`, { date: "2026-10-16", note: { s: "", o: "そうしょうしょち。げーべん10g。", a: "", p: "", rx: "" } }), { params: Promise.resolve({ claimId: other }) });
+    expect([pasted.status, pasted.status === 200 ? "" : await pasted.clone().text()]).toEqual([200, ""]);
+    const p = (await pasted.json()) as { id: number; acts: Record<string, unknown>[] };
+    const acts = (await import("../../app/api/chart/acts/route")).POST;
+    const parent = { tbl: "shinryo", code: "140000610", name: "創傷処置", by: "search" };
+    const saved = await acts(post("/api/chart/acts", { noteId: String(p.id), facts: [], acts: [{ ...p.acts[0], match: parent, with: [{ ...kid, match: null }] }], rx: [] }));
+    expect([saved.status, saved.status === 200 ? "" : await saved.text()]).toEqual([200, ""]);
+    const before = (await check(other)).torikawasure as { unmatchedActs?: unknown[] };
+    expect(before.unmatchedActs).toEqual([{ date: "2026-10-16", written: "げーべん", category: "処置", noteId: p.id, index: 0, child: { index: 0, kind: "薬", parent: "そうしょうしょち" } }]);
+    const match = { tbl: "iyakuhin", code: "620008991", name: "ゲーベン", by: "candidate" };
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, child: 0, match: { ...match, code: "999999999" } }))).status).toBe(400);
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, child: 1, match }))).status).toBe(400);
+    const picked = await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, child: 0, match }));
+    expect([picked.status, picked.status === 200 ? "" : await picked.text()]).toEqual([200, ""]);
+    expect((await acts(post("/api/chart/acts", { noteId: String(p.id), index: 0, child: 0, match }))).status).toBe(409);
+    const after = (await check(other)).torikawasure as { unmatchedActs?: unknown[] };
+    expect(after.unmatchedActs).toEqual([]);
+    const s = instance.runAs(user, () => instance.getApp().savedActs(p.id))!.acts[0];
+    expect([s.match?.code, s.with?.[0].match]).toEqual(["140000610", { tbl: "iyakuhin", code: "620008991", name: "ゲーベンクリーム１％", by: "candidate" }]);
   });
 });
 
