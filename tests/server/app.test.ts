@@ -241,7 +241,7 @@ describe("訪問カルテを書く（FR-69）", () => {
     const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
     expect(s.date).toBe(day(20));
     expect(app.visits("new1").some((v) => v.claimId === claimId("K4") && v.date === day(20))).toBe(false);
-    app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
+    app.confirmNote(s.id, "new1", [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
     const v = app.visits("new1").find((x) => x.claimId === claimId("K4") && x.date === day(20));
     // ほかの利用者には、この人が書いたカルテは重ならない
     const other = app.createClerk("審査員A");
@@ -254,7 +254,7 @@ describe("訪問カルテを書く（FR-69）", () => {
   it("カルテにない言葉の事実では確定できない。診療月の外の日には書けない", () => {
     app.advanceClock(at(20, "15:00:00"));
     const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
-    expect(() => app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
+    expect(() => app.confirmNote(s.id, "new1", [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
     app.advanceClock(`${dateIn(1, 2)}T09:00:00+09:00`);
     expect(() => app.saveNote(claimId("K4"), "new1", "訪問診療", note)).toThrow();
   });

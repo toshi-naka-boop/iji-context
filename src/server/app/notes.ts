@@ -94,9 +94,13 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return r;
   }
   const noteOf = (id: number) => JSON.parse(noteRow(id).note) as ChartNote;
-  /** 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない */
-  function confirmNote(id: number, facts: ExtractedFact[]) {
+  /**
+   * 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない。
+   * 訪問カルテは、行ったことと同じく書いた本人だけが確定する（反証 round-56 C-311。ほかの人が事実だけを確定すると、本人が行ったことを残せなくなるため）
+   */
+  function confirmNote(id: number, clerkId: string, facts: ExtractedFact[]) {
     const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテを確定できるのは、書いた本人だけです");
     if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
     const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
     if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);

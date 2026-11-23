@@ -5,7 +5,7 @@ import { allow } from "../../../../src/server/policy";
 import { confirmBody, noteParams } from "../../../../src/server/schemas/chart";
 
 // 同じクリニックのほかの人が書いたカルテも確定できる（チームで確かめる運用）。誰が確かめたかは、セッションの本人として監査ログに残る
-export const POST = route({ roles: allow("POST /api/chart/[id]"), params: noteParams, body: confirmBody }, ({ params, body }) => getApp().confirmNote(Number(params.id), body.facts));
+export const POST = route({ roles: allow("POST /api/chart/[id]"), params: noteParams, body: confirmBody }, ({ params, body, clerkId }) => getApp().confirmNote(Number(params.id), clerkId, body.facts));
 
 // 消せるのは、書いた本人と事務長（本人かどうかは処理の側で照合し、違えば 403）。監査ログの対象はカルテの id だけ。返すのも id だけ
 export const DELETE = route({ roles: allow("DELETE /api/chart/[id]"), params: noteParams }, ({ params, clerkId, user }) => getApp().deleteNote(Number(params.id), clerkId, user.role));
