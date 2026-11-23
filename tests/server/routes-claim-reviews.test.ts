@@ -39,14 +39,16 @@ const params = (id: string) => ({ params: Promise.resolve({ claimId: id }) });
 
 /** 往診料と訪問診療料が同じ日にある請求を 2 件、実在の形で取り込む（同梱の合成の患者でない）。shas に取り込んだファイルのハッシュを残す */
 const shas = new Map<string, string>();
-function upload(owner: User): string[] {
+/** 2 件は別の患者（生年月日が違う）。variant を変えると、同じ患者・同じ診療年月の中身の少し違うファイルになる（取り込み直し。C-304） */
+function upload(owner: User, variant = 0): string[] {
   const base = readUke(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")));
   const r = base.receipts[0];
-  const receipt = (claimId: string, no: string) => ({ ...r, claimId, patient: { ...r.patient, name: "架空 梅子", birth: "19480808", insurer: { number: "06139992", symbol: "77", no } }, lines: [{ kubun: VISIT, count: 2, dates: [day(5), day(15)] }, { kubun: OUSHIN, count: 2, dates: [day(5), day(15)] }], comments: [] });
-  const file: UkeFile = { ...base, receipts: [receipt("A1", "603"), receipt("A2", "604")] };
+  const receipt = (claimId: string, no: string, birth: string) => ({ ...r, claimId, patient: { ...r.patient, name: "架空 梅子", birth, insurer: { number: "06139992", symbol: "77", no } }, lines: [{ kubun: VISIT, count: 2, dates: [day(5), day(15)] }, { kubun: OUSHIN, count: 2, dates: [day(5), day(15)] }], comments: [] });
+  const file: UkeFile = { ...base, receipts: [receipt("A1", String(603 + variant * 10), "19480808"), receipt("A2", String(604 + variant * 10), "19480909")] };
   const buf = writeUke(file);
-  shas.set(owner.id, createHash("sha256").update(buf).digest("hex"));
-  return instance.runAs(owner, () => instance.getApp().uploadUke(instance.clerkIdOf(owner), buf).filter((u) => u.uploaded).flatMap((u) => u.receipts.map((x) => x.claimId)));
+  const sha = createHash("sha256").update(buf).digest("hex");
+  if (variant === 0) shas.set(owner.id, sha);
+  return instance.runAs(owner, () => instance.getApp().uploadUke(instance.clerkIdOf(owner), buf).filter((u) => u.uploaded && u.name.includes(sha.slice(0, 8))).flatMap((u) => u.receipts.map((x) => x.claimId)));
 }
 /** 本人の練習問題の件数を n 件にする（完了した問題を直接入れる） */
 function setCount(owner: User, clerkId: string, claimId: string, n: number) {
@@ -209,6 +211,23 @@ describe("実在用のクリニック：取り込んだ請求の点検を確か�
     expect(reviewRows(owner).length).toBeGreaterThan(0);
     instance.runAs(owner, () => instance.getApp().deleteUpload(shas.get(owner.id)!));
     expect(reviewRows(owner)).toEqual([]);
+  });
+});
+
+describe("取り込み直した同じ請求は 1 件と数える（反証 round-55 C-304）", () => {
+  it("同じ患者・同じ診療年月・同じレセプト種別のレセプトを、中身を変えたファイルで取り込み直して確かめても、件数は増えない。別の患者の請求なら増える", async () => {
+    const owner = instance.getAuth().register("reviewed_reimport", "いのうえ", "password123", "real");
+    const cookie = cookieOf(owner);
+    const first = upload(owner);
+    const again = upload(owner, 1);
+    expect([first.length, again.length]).toEqual([2, 2]);
+    expect(again.some((id) => first.includes(id))).toBe(false);
+    expect(await (await review(first[0], cookie)).json()).toMatchObject({ added: true, count: 1 });
+    expect(await (await review(again[0], cookie)).json()).toMatchObject({ added: false, count: 1 });
+    expect((await me(cookie)).count).toBe(1);
+    expect(await (await review(first[1], cookie)).json()).toMatchObject({ added: true, count: 2 });
+    expect(await (await review(again[1], cookie)).json()).toMatchObject({ added: false, count: 2 });
+    expect((await me(cookie)).count).toBe(2);
   });
 });
 

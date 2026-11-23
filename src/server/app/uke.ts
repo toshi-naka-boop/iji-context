@@ -223,7 +223,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     return path.join(uploadDir(), name);
   }
 
-  return { ukeFiles, ukeReceipts, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
+  return { ukeFiles, ukeReceipts, sameMonthKey, receiptOf, ukeList, importUke, sampleUke, uploadUke, importedClaims, patientOf, uploadedFile, forgetUpload };
 }
 
 export type Uke = ReturnType<typeof createUke>;

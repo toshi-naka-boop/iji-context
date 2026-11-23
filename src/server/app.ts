@@ -48,7 +48,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
   // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
-  const claimReviews = createClaimReviews(ctx, clock);
+  const claimReviews = createClaimReviews(ctx, clock, () => new Map(uke.ukeReceipts().map((r) => [r.claimId, uke.sameMonthKey(r)])));
   const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase, claimReviews.countOf);
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
