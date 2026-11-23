@@ -37,8 +37,10 @@ export function designSha(root: string): string {
   return existsSync(f) ? createHash("sha256").update(readFileSync(f)).digest("hex") : "none";
 }
 
-/** 合否の鍵に入れるコード（取り出し・当て方・評価。リポジトリの根からの場所。設計の値。C-453） */
-export const CODE_PATHS = ["src/chart", "src/masters", "src/llm", "eval/acts-count.ts", "eval/run-eval.ts", "eval/gate.ts"] as const;
+/** 合否の鍵に入れるコード（取り出し・当て方・評価と、取り出しのモデルを選ぶコード。リポジトリの根からの場所。設計の値。C-453・X-282） */
+export const CODE_PATHS = ["src/chart", "src/masters", "src/llm", "src/mentor/models.ts", "eval/acts-count.ts", "eval/run-eval.ts", "eval/gate.ts"] as const;
+/** 合否の鍵に入れる設定：config/models.json のうち、取り出しの呼び出しのモデルと推論の強さを決める行（X-282。ほかの役の行は入れない） */
+export const MODEL_ROLES = ["chartExtract"] as const;
 
 /**
  * 取り出し・当て方・評価のコードの中身の指紋（CODE_PATHS の下の全部のファイルを、場所の順に「場所＋中身」で連ねた sha256。C-453）。
@@ -55,6 +57,15 @@ export function codeSha(root: string): string {
   for (const p of CODE_PATHS) walk(p);
   const h = createHash("sha256");
   for (const f of files.sort()) h.update(`${f}\0`).update(readFileSync(path.join(root, f))).update("\0");
+  // 取り出しのモデルと推論の強さ（config/models.json の該当の行。ファイルがない・読めないときは「none」として入れる）
+  const models = path.join(root, "config", "models.json");
+  let all: Record<string, unknown> | null = null;
+  try {
+    all = existsSync(models) ? (JSON.parse(readFileSync(models, "utf8")) as Record<string, unknown>) : null;
+  } catch {
+    all = null;
+  }
+  for (const role of MODEL_ROLES) h.update(`config/models.json#${role}\0`).update(JSON.stringify(all?.[role] ?? "none")).update("\0");
   return h.digest("hex");
 }
 

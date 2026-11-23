@@ -185,7 +185,7 @@ describe("合否の組の回し方（eval/gate-runs.jsonl。C-424・L-217）", (
     expect(readGateRuns(tmp)).toHaveLength(5);
   });
   it("合否の鍵のコードは、取り出し・当て方・評価のコードのファイルの中身の sha256（コミットでない）。未コミットの変更も鍵に入り、関係しないファイルの変更では変わらない（C-453）", () => {
-    expect(CODE_PATHS).toEqual(["src/chart", "src/masters", "src/llm", "eval/acts-count.ts", "eval/run-eval.ts", "eval/gate.ts"]);
+    expect(CODE_PATHS).toEqual(["src/chart", "src/masters", "src/llm", "src/mentor/models.ts", "eval/acts-count.ts", "eval/run-eval.ts", "eval/gate.ts"]);
     mkdirSync(path.join(tmp, "src", "chart"), { recursive: true });
     mkdirSync(path.join(tmp, "src", "server"), { recursive: true });
     writeFileSync(path.join(tmp, "src", "chart", "a.ts"), "export const a = 1;\n");
@@ -204,6 +204,25 @@ describe("合否の組の回し方（eval/gate-runs.jsonl。C-424・L-217）", (
     // 記録の鍵は中身の指紋
     const r = recordGate(tmp, [{ id: "g", split: "gate", output: out(10, 10) }], { at: "t", gateSha256: "g1", gateIds: ["g"], key: { designSha256: "d1" } });
     expect(r.run!.codeSha256).toBe(codeSha(tmp));
+  });
+  it("X-282：合否の鍵のコードに、取り出しのモデルと推論の強さを決める設定（config/models.json の chartExtract の行・src/mentor/models.ts）が入る。ほかの役の行の変更では変わらない", () => {
+    expect(CODE_PATHS).toContain("src/mentor/models.ts");
+    mkdirSync(path.join(tmp, "config"), { recursive: true });
+    mkdirSync(path.join(tmp, "src", "mentor"), { recursive: true });
+    const models = (extract: Record<string, string>, mentor: Record<string, string>) => writeFileSync(path.join(tmp, "config", "models.json"), JSON.stringify({ mentor, chartExtract: extract }));
+    writeFileSync(path.join(tmp, "src", "mentor", "models.ts"), "export const m = 1;\n");
+    models({ model: "m-a", effort: "low" }, { model: "m-a" });
+    const s0 = codeSha(tmp);
+    models({ model: "m-a", effort: "low" }, { model: "m-b", effort: "high" });
+    expect(codeSha(tmp)).toBe(s0);
+    models({ model: "m-a", effort: "high" }, { model: "m-b", effort: "high" });
+    const s1 = codeSha(tmp);
+    expect(s1).not.toBe(s0);
+    models({ model: "m-c", effort: "high" }, { model: "m-b", effort: "high" });
+    const s2 = codeSha(tmp);
+    expect(s2).not.toBe(s1);
+    writeFileSync(path.join(tmp, "src", "mentor", "models.ts"), "export const m = 2;\n");
+    expect(codeSha(tmp)).not.toBe(s2);
   });
   it("線は gate の記載だけに掛かる（tune だけのときは合否を出さず「合否だけの組がありません」。記録もしない）", () => {
     const r = recordGate(tmp, [{ id: "t", split: "tune", output: out(64, 48) }], { at: "t", gateSha256: "g1", gateIds: ["g"], key });
