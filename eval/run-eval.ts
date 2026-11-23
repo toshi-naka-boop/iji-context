@@ -241,7 +241,16 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
   const actsResults = results.filter((r) => r.output && typeof r.output === "object" && "in20" in (r.output as object));
   // 記載ごとの割合（L-108）は直しに使う組だけで足し合わせる。合否だけの組は recordGate が数え、eval/gate-runs.jsonl に 1 行残す（design.md §16-9。C-424）
   const acts = actsResults.filter((r) => splitOf.get(r.id) !== "gate").map((r) => r.output as ActsOutput);
-  const gate = actsResults.length > 0 ? recordGate(root, actsResults.map((r) => ({ split: splitOf.get(r.id), output: r.output as ActsOutput })), { at: new Date().toISOString(), gateSha256: gateSha ?? "" }) : null;
+  // 合否の組は、評価セットの全部の gate の記載の id と照らす（絞った回・例外で出力のない記載がある回は、記録するが合否に使わない。C-431）
+  const gateIds = readFileSync(path.join(root, "eval", "datasets", "resemen.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as Case)
+    .filter((c) => c.kind === "acts" && c.split === "gate")
+    .map((c) => c.id);
+  const gateRows = results.filter((r) => splitOf.get(r.id) === "gate").map((r) => ({ id: r.id, split: "gate", output: actsResults.includes(r) ? (r.output as ActsOutput) : null }));
+  const tuneRows = actsResults.filter((r) => splitOf.get(r.id) !== "gate").map((r) => ({ id: r.id, split: splitOf.get(r.id), output: r.output as ActsOutput }));
+  const gate = actsResults.length > 0 || gateRows.length > 0 ? recordGate(root, [...gateRows, ...tuneRows], { at: new Date().toISOString(), gateSha256: gateSha ?? "", gateIds }) : null;
   const sum = (k: "total" | "in20" | "top5" | "ref" | "refIn20" | "refTop5" | "name" | "lookup" | "unmatched" | "extra" | "ruleTaken") => acts.reduce((a, x) => a + x[k], 0);
   const pctOf = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "-");
   const pct = (a: number) => pctOf(a, sum("total"));

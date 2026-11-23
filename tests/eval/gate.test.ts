@@ -144,20 +144,20 @@ describe("合否の組の回し方（eval/gate-runs.jsonl。C-424・L-217）", (
   const key = { designSha256: "d1", commit: "c1" };
 
   it("合否の組を回すと gate-runs.jsonl に 1 行足され（追記だけ）、合格は同じ条件で続けた最初の 2 回だけで決まる", () => {
-    const r1 = recordGate(tmp, [{ split: "gate", output: out(82, 80, 3, 1) }, { split: "tune", output: out(64, 10) }], { at: "t1", gateSha256: "g1", key });
+    const r1 = recordGate(tmp, [{ id: "g", split: "gate", output: out(82, 80, 3, 1) }, { id: "t", split: "tune", output: out(64, 10) }], { at: "t1", gateSha256: "g1", gateIds: ["g"], key });
     expect(readGateRuns(tmp)).toHaveLength(1);
-    expect(r1.run).toEqual({ at: "t1", gateSha256: "g1", designSha256: "d1", commit: "c1", records: 1, total: 82, in20: 80, top5: 80, extra: 3, ruleTaken: 1, pass: true });
-    expect(r1.lines).toContain("- 合否：未決（同じ条件で回したのは 1 回です（最初の 2 回で決めます））。記録の全部の回 1・この条件で回した回 1");
-    const r2 = recordGate(tmp, [{ split: "gate", output: out(82, 79) }], { at: "t2", gateSha256: "g1", key });
+    expect(r1.run).toEqual({ at: "t1", gateSha256: "g1", designSha256: "d1", commit: "c1", records: 1, total: 82, in20: 80, top5: 80, extra: 3, ruleTaken: 1, pass: true, complete: true, missing: [] });
+    expect(r1.lines).toContain("- 合否：未決（同じ条件で記載をそろえて回したのは 1 回です（最初の 2 回で決めます））。記録の全部の回 1・この条件で回した回 1");
+    const r2 = recordGate(tmp, [{ id: "g", split: "gate", output: out(82, 79) }], { at: "t2", gateSha256: "g1", gateIds: ["g"], key });
     expect(readGateRuns(tmp)).toHaveLength(2);
     expect(r2.lines.find((l) => l.startsWith("- 合否："))).toMatch(/^- 合否：合格/);
     // 3 回目（線に届かない）は合否に使わない
-    const r3 = recordGate(tmp, [{ split: "gate", output: out(82, 70) }], { at: "t3", gateSha256: "g1", key });
+    const r3 = recordGate(tmp, [{ id: "g", split: "gate", output: out(82, 70) }], { at: "t3", gateSha256: "g1", gateIds: ["g"], key });
     expect(r3.lines.find((l) => l.startsWith("- 合否："))).toMatch(/^- 合否：合格（.*3 回目以降の 1 回は合否に使いません）/);
     expect(readFileSync(gateRunsPath(tmp), "utf8").split("\n").filter(Boolean)).toHaveLength(3);
   });
   it("最初の 2 回のあいだに別の指紋の回があれば数えない。最初の 2 回の片方が線に届かなければ、あとで越えても不合格", () => {
-    const run = (at: string, gateSha256: string, pass: boolean): GateRun => ({ at, gateSha256, designSha256: "d1", commit: "c1", records: 14, total: 82, in20: pass ? 80 : 70, top5: 0, extra: 0, ruleTaken: 0, pass });
+    const run = (at: string, gateSha256: string, pass: boolean): GateRun => ({ at, gateSha256, designSha256: "d1", commit: "c1", records: 14, total: 82, in20: pass ? 80 : 70, top5: 0, extra: 0, ruleTaken: 0, pass, complete: true, missing: [] });
     const k = { gateSha256: "g1", designSha256: "d1", commit: "c1" };
     expect(gateVerdict([run("1", "g1", true), run("2", "g2", true), run("3", "g1", true)], k).result).toBe("未決");
     expect(gateVerdict([run("1", "g1", false), run("2", "g1", true), run("3", "g1", true)], k).result).toBe("不合格");
@@ -165,8 +165,27 @@ describe("合否の組の回し方（eval/gate-runs.jsonl。C-424・L-217）", (
     // コミットが変われば、新しいコミットの最初の 2 回で決める
     expect(gateVerdict([run("1", "g1", false), run("2", "g1", false), { ...run("3", "g1", true), commit: "c2" }, { ...run("4", "g1", true), commit: "c2" }], { ...k, commit: "c2" }).result).toBe("合格");
   });
+  it("gate の記載が全部そろった回だけを「最初の 2 回」に数える。一部だけを回した回・例外で抜けた記載がある回は記録して報告するが、合否に使わない（C-431＝C-451）", () => {
+    const ids = ["g-a", "g-b"];
+    // 一部だけ（g-a だけ）を 2 回：記録はするが合否に使わない
+    const p1 = recordGate(tmp, [{ id: "g-a", split: "gate", output: out(5, 5) }], { at: "p1", gateSha256: "g1", gateIds: ids, key });
+    expect(p1.run).toMatchObject({ records: 1, complete: false, missing: ["g-b"] });
+    const p2 = recordGate(tmp, [{ id: "g-a", split: "gate", output: out(5, 5) }], { at: "p2", gateSha256: "g1", gateIds: ids, key });
+    expect(p2.lines.find((l) => l.startsWith("- 合否："))).toMatch(/^- 合否：未決/);
+    expect(p2.lines).toContain("- この回は合否の組の記載がそろっていないので、合否に使いません（足りない記載：g-b）");
+    // 例外で出力のない記載がある回も同じ
+    const e1 = recordGate(tmp, [{ id: "g-a", split: "gate", output: out(5, 5) }, { id: "g-b", split: "gate", output: null }], { at: "e1", gateSha256: "g1", gateIds: ids, key });
+    expect(e1.run).toMatchObject({ complete: false, missing: ["g-b"] });
+    // 全部そろった 1 回だけでは未決。2 回目で決まる（一部だけの回は間に挟まっても数えない）
+    const f1 = recordGate(tmp, [{ id: "g-a", split: "gate", output: out(5, 5) }, { id: "g-b", split: "gate", output: out(60, 57) }], { at: "f1", gateSha256: "g1", gateIds: ids, key });
+    expect(f1.run).toMatchObject({ complete: true, missing: [] });
+    expect(f1.lines.find((l) => l.startsWith("- 合否："))).toMatch(/^- 合否：未決/);
+    const f2 = recordGate(tmp, [{ id: "g-a", split: "gate", output: out(5, 5) }, { id: "g-b", split: "gate", output: out(60, 50) }], { at: "f2", gateSha256: "g1", gateIds: ids, key });
+    expect(f2.lines.find((l) => l.startsWith("- 合否："))).toMatch(/^- 合否：不合格/);
+    expect(readGateRuns(tmp)).toHaveLength(5);
+  });
   it("線は gate の記載だけに掛かる（tune だけのときは合否を出さず「合否だけの組がありません」。記録もしない）", () => {
-    const r = recordGate(tmp, [{ split: "tune", output: out(64, 48) }], { at: "t", gateSha256: "g1", key });
+    const r = recordGate(tmp, [{ id: "t", split: "tune", output: out(64, 48) }], { at: "t", gateSha256: "g1", gateIds: ["g"], key });
     expect(r).toEqual({ lines: ["- 合否だけの組がありません（直しに使う組だけを回したので、合否は出しません）"], run: null });
     expect(existsSync(gateRunsPath(tmp))).toBe(false);
   });
