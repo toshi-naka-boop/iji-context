@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { countActs, matchSaved, wantOf, type RefExclude, type SavedAct } from "../eval/acts-count";
+import { countActs, loadExclude, matchSaved, wantOf, type SavedAct } from "../eval/acts-count";
 import type { ChartAct } from "../src/chart/acts";
 import { withMasters } from "../src/masters/db";
 
@@ -13,7 +13,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** 再生の線（設計の値。段 18d） */
 const REPLAY_MIN_IN20 = 48;
 
-type Case = { id: string; kind: string; chart?: string; date?: string; refExclude?: RefExclude[] };
+type Case = { id: string; kind: string; split?: string; chart?: string; date?: string };
 type Saved = { id: string; output: { got?: SavedAct[]; misses?: { got: SavedAct[] }[] } };
 type Baseline = { run: string; hits: string[] };
 
@@ -39,7 +39,9 @@ const code = withMasters((db) => {
     console.error("masters.db がない（RESEMEN_MASTER_DIR）");
     return 1;
   }
-  const t = { total: 0, in20: 0, top5: 0, ref: 0, refIn20: 0, refTop5: 0 };
+  const t = { total: 0, in20: 0, top5: 0, ref: 0, refIn20: 0, refTop5: 0, extra: 0, ruleTaken: 0 };
+  // 除く正解（規則・患者の情報で出すもの。design.md §16-9）は ID で持つ
+  const exclude = loadExclude(root);
   const hits: string[] = [];
   for (const r of saved) {
     const c = cases.get(r.id)!;
@@ -47,8 +49,8 @@ const code = withMasters((db) => {
     const e = chart.entries.find((x) => x.date === c.date);
     const got = r.output.got ?? r.output.misses?.[0]?.got;
     if (!e || !got) throw new Error(`${r.id}：記載か保存した取り出しがない`);
-    const want = wantOf(e.acts);
-    const n = countActs(matchSaved(db, e.date.slice(0, 7), got), want, c.refExclude);
+    const want = wantOf(e.acts, { chart: c.chart!, date: c.date! });
+    const n = countActs(matchSaved(db, e.date.slice(0, 7), got), want, exclude);
     for (const k of Object.keys(t) as (keyof typeof t)[]) t[k] += n[k];
     hits.push(...n.hits.map((wi) => `${r.id}#${wi}:${want[wi].code}`));
   }
@@ -57,7 +59,8 @@ const code = withMasters((db) => {
   const pct = (a: number, b: number) => `${b ? Math.round((a / b) * 1000) / 10 : 0}%`;
   console.log(`再生 ${runId}（${saved.length} 記載。1 対 1）`);
   console.log(`- 20 件に入った ${t.in20}/${t.total}（${pct(t.in20, t.total)}。線 ${REPLAY_MIN_IN20}）、上位 5 件 ${t.top5}/${t.total}（${pct(t.top5, t.total)}）`);
-  console.log(`- 参考（除く正解を外した ${t.ref} 行為）：20 件 ${t.refIn20}/${t.ref}（${pct(t.refIn20, t.ref)}）、上位 5 件 ${t.refTop5}/${t.ref}（${pct(t.refTop5, t.ref)}）`);
+  console.log(`- 文章から取り出すべき行為（規則・患者の情報で出す除く正解 ${t.total - t.ref} 個を外した ${t.ref} 行為。design.md §16-9）：20 件 ${t.refIn20}/${t.ref}（${pct(t.refIn20, t.ref)}）、上位 5 件 ${t.refTop5}/${t.ref}（${pct(t.refTop5, t.ref)}）`);
+  console.log(`- 余計な取り出し ${t.extra}・規則で出すものを取り出した数 ${t.ruleTaken}（線にしない）`);
   if (baseline.run !== runId) console.log(`- 退行：比べない（基準は ${baseline.run} の再生）`);
   else console.log(`- 基準（${baseline.hits.length} 個）からの退行 ${lost.length}${lost.length ? `：${lost.join("、")}` : ""}、新しく入った ${gained.length}`);
   return t.in20 >= REPLAY_MIN_IN20 && lost.length === 0 ? 0 : 1;

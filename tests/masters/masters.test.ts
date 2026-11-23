@@ -501,7 +501,7 @@ describe("単位の列（design.md §15-3。round-52 C-262。錨の案 A117〜A1
   const em = parseEm(EM(ANCHORS, []));
   const iyakuhinRow = (code: string, unitCode: string, unitName: string, set: Record<number, string> = {}) => {
     const c = Array.from({ length: 42 }, () => "0");
-    for (const [n, v] of Object.entries({ 3: code, 5: `手作りの薬 ${code}`, 8: unitCode, 10: unitName, 11: "1", 12: "10.00", 28: "6", 30: "20260601", 31: "99999999", ...set })) c[Number(n) - 1] = v;
+    for (const [n, v] of Object.entries({ 3: code, 5: `手作りの薬 ${code}`, 8: unitCode, 10: unitName, 11: "1", 12: "10.00", 28: "6", 30: "20260601", 31: "99999999", 32: "", ...set })) c[Number(n) - 1] = v;
     return c;
   };
   const tokuteiRow = (code: string, unitCode: string, unitName: string) => {
@@ -547,5 +547,53 @@ describe("単位の列（design.md §15-3。round-52 C-262。錨の案 A117〜A1
     db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G11', 1, '')").run();
     expect(hasUnitColumns(db)).toBe(false);
     expect(checkReady(db, "G11")).toEqual({ ready: true, reason: "" });
+  });
+});
+
+describe("医薬品マスターの麻薬等の区分と薬価基準収載医薬品コード（design.md §16-10 E-12。EM §2-11 錨 A121〜A123）", () => {
+  const ANCHORS = [
+    "| A121 | `iyakuhin` | `code=611120055` | `mayaku=5` | 向精神薬 | ［基］p17 |",
+    "| A122 | `iyakuhin` | `code=620008991` | `mayaku=0` | 麻薬等でない | ［基］p17 |",
+    "| A123 | `iyakuhin` | `code=620008991` | `yj=2633705N1031` | YJ | ［基］p18 |",
+  ];
+  const COUNTS = ["| `iyakuhin` | `mayaku=5` | 1 |", "| `iyakuhin` | `mayaku=0` | 2 |"];
+  const row = (code: string, mayaku: string, yj: string) => {
+    const c = Array.from({ length: 42 }, () => "0");
+    for (const [n, v] of Object.entries({ 3: code, 5: `手作りの薬 ${code}`, 8: "0", 10: "", 11: "1", 12: "10.00", 14: mayaku, 28: "1", 30: "20260601", 31: "99999999", 32: yj })) c[Number(n) - 1] = v;
+    return c;
+  };
+  const run = (name: string, rows: string[][]) => {
+    const raw = path.join(tmp, `drug-class-${name}`);
+    put(raw, "iyakuhin", "20261112", "y_20261112.csv", sjis(rows));
+    const { db, rejected } = build(raw);
+    return { db, rejected, result: verifyMasters(db, parseEm(EM(ANCHORS, COUNTS, "20261112").replace("`shinryo` 医科診療行為マスター", "`iyakuhin` 医薬品マスター")), { write: false, revisions: [] }) };
+  };
+  it("項番14 を mayaku、項番32 を yj として読み、錨が通る。YJ が空の行（減点のコードなど）も取り込む", () => {
+    const { db, rejected, result } = run("ok", [row("611120055", "5", "1124007F2026"), row("620008991", "0", "2633705N1031"), row("630010002", "0", "")]);
+    expect(rejected).toEqual([]);
+    expect(db.prepare("SELECT code, mayaku, yj FROM iyakuhin ORDER BY code").all()).toEqual([
+      { code: "611120055", mayaku: "5", yj: "1124007F2026" },
+      { code: "620008991", mayaku: "0", yj: "2633705N1031" },
+      { code: "630010002", mayaku: "0", yj: "" },
+    ]);
+    expect([result.failures, result.lines.filter((l) => l.startsWith("錨："))]).toEqual([0, ["錨：3 個のうち 3 個が通った（データがなくて確かめていない 0 個）。確かめた回数 3"]]);
+  });
+  it("仕様書にない区分の値（4）や 12 桁でない YJ の行があれば、医薬品マスターを作らない", () => {
+    expect(run("bad-class", [row("611120055", "4", "1124007F2026")]).rejected.map((r) => r.reason)).toEqual([expect.stringContaining("項番 14")]);
+    expect(run("bad-yj", [row("611120055", "5", "1124007F202")]).rejected.map((r) => r.reason)).toEqual([expect.stringContaining("項番 32")]);
+  });
+  it("列を足す前に作った masters.db では、その列の錨と件数を確かめない（外れにも通ったにも数えない）", () => {
+    const { db } = run("old", [row("611120055", "5", "1124007F2026"), row("620008991", "0", "2633705N1031")]);
+    db.exec("ALTER TABLE iyakuhin DROP COLUMN mayaku");
+    db.exec("DROP INDEX iyakuhin_1");
+    db.exec("ALTER TABLE iyakuhin DROP COLUMN yj");
+    const r = verifyMasters(db, parseEm(EM(ANCHORS, COUNTS, "20261112").replace("`shinryo` 医科診療行為マスター", "`iyakuhin` 医薬品マスター")), { write: false, revisions: [] });
+    expect(r.failures).toBe(0);
+    expect(r.lines.filter((l) => l.startsWith("錨"))).toEqual([
+      "錨 A121 は確かめていない（iyakuhin に列 mayaku がない古い masters.db。masters:build で作り直す）",
+      "錨 A122 は確かめていない（iyakuhin に列 mayaku がない古い masters.db。masters:build で作り直す）",
+      "錨 A123 は確かめていない（iyakuhin に列 yj がない古い masters.db。masters:build で作り直す）",
+      "錨：3 個のうち 0 個が通った（データがなくて確かめていない 0 個）。確かめた回数 0",
+    ]);
   });
 });

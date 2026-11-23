@@ -101,6 +101,19 @@ export const POLICY = {
   "POST /api/chart/acts": row(WORK, "none", true),
   // 行ったことの候補（design.md §15-7）。読むだけ。書かれた名前（カルテの語）を受け取るので、患者の情報として扱う
   "GET /api/chart/acts/candidates": row(WORK, "none", true),
+  // カルテの構造化データ（design.md §16-7。段 19a）。読むだけ。今のカルテの読み出しと同じ役割で、患者の情報として扱う（実在のデータは同意のあとだけ）
+  "GET /api/chart/structured": row(WORK, "none", true),
+  // 当てられない行為に電子カルテの行為と「同じ／違う」をあとから付ける（design.md §16-7）。当てられない行為を選んで当てる入口（POST /api/chart/acts）と同じ
+  "POST /api/chart/acts/fold": row(WORK, "none", true),
+  // 処方の日の院内・院外と「確かめた」の印をあとから付け直す（design.md §16-7。C-421）。権限は POST /api/chart/acts/fold と同じ
+  "POST /api/chart/acts/rx-confirm": row(WORK, "none", true),
+  // 確かめたあとで印・「同じ／違う」を付け直す一覧（design.md §16-7。C-441）。権限は付け直す入口と同じ
+  "GET /api/chart/acts/fixes": row(WORK, "none", true),
+  // 医療事務が入れる訪問の時刻（design.md §16-6・16-7）。カルテを確かめられる人。値はログ・監査ログに出さない
+  "POST /api/chart/structured/visit-time": row(WORK, "none", true),
+  // 独自コードの対応表（design.md §16-7）。事務長・医療事務。返すのは接続先・欄・独自コード・表示名・件数で、患者・日は持たない
+  "GET /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
+  "POST /api/code-maps": row(["clerk", "veteran", "manager"], "none", false),
   // 基本マスターを名前で探す（design.md §15-7）。読むだけ。返すのは公開データの表・コード・名称だけ
   "GET /api/masters/search": row(WORK, "none", false),
   // 訪問カルテを消す（design.md §11-11）。書いた本人と事務長（本人かどうかは src/server/app/notes.ts の deleteNote が照合する）。消す操作は同意を条件にしない
@@ -125,6 +138,10 @@ export const POLICY = {
   // 患者情報チェック（FR-116〜123）：加入情報と指摘の取得、保険・公費の確認入力
   "GET /api/patients/[claimId]/profile": row(WORK, "none", true),
   "POST /api/patients/[claimId]/coverages": row(WORK, "none", true),
+  // 患者の在宅療養の機器と変える案（design.md §16-7。段 19e）。患者の情報を残せる人と同じ。監査ログは種類の鍵だけ
+  "GET /api/patient/devices": row(WORK, "none", true),
+  "POST /api/patient/devices": row(WORK, "none", true),
+  "POST /api/patient/device-proposals/[id]": row(WORK, "none", true),
   // 一覧は、消す操作のために事務長にも見せる
   "GET /api/uke": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/uke": row(WORK, "none", true),

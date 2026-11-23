@@ -549,7 +549,7 @@ export default function Work() {
                   </div>
                 ))}
                 {generic && <GenericFindings generic={generic} scope="line" skippedLines={generic.skippedLines} />}
-                {generic && <Torikawasure data={generic.torikawasure} />}
+                {generic && <Torikawasure data={generic.torikawasure} {...(q.drill ? {} : { claimId: q.claimId, chartHref: ukeClaims?.includes(q.claimId) ? `/uke/${encodeURIComponent(q.claimId)}#chart-fixes` : `/chart?claimId=${encodeURIComponent(q.claimId)}#chart-fixes` })} />}
                 {!q.drill && <CheckedFacts claimId={q.claimId} tick={factTick} onSaved={() => setFactTick((t) => t + 1)} note="確定した判定は、そのまま残ります。残した答えは、次にこの請求を点検するときから使います。" />}
                 {/* 摘要欄の記載（R17）の範囲。問題の判定は、行を入れ直すので摘要欄を見ない（src/server/app/question-case.ts） */}
                 {!q.drill && !q.asOf && <p className="muted">{COMMENT_CHECK_NOTE}この画面の判定は、明細を入れ直すので摘要欄の記載を見ていません（カルテの算定の見込みで点検します）。</p>}

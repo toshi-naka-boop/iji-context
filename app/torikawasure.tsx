@@ -8,13 +8,15 @@ import { tableKeyOfAct, tableKeyOfChild, type ActMatch } from "../src/chart/acts
 import type { G11Result, G11Unmatched } from "../src/generic/g11";
 import { MatchPicker } from "./chart/acts-review";
 import { postJson } from "./get-json";
+import { VisitTimeInput } from "./visit-time-input";
+import { CodeMapPanel } from "./code-map-panel";
 
 export type TorikawasureView = G11Result & { coverage?: string };
 
 // 日を付けない候補（日付が診療年月だけ。X-162）は月だけを出す
 const md = (date: string) => (date.length === 10 ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : `${Number(date.slice(5, 7))}月`);
 
-export function Torikawasure({ data, chartHref }: { data: TorikawasureView | undefined; chartHref?: string }) {
+export function Torikawasure({ data, chartHref, claimId }: { data: TorikawasureView | undefined; chartHref?: string; claimId?: string }) {
   if (!data) return null;
   return (
     <section className="panel" id="torikawasure">
@@ -25,6 +27,10 @@ export function Torikawasure({ data, chartHref }: { data: TorikawasureView | und
       ) : (
         <>
           {data.guide && <div className="notice">{chartHref ? <a href={chartHref}>{data.guide}</a> : data.guide}</div>}
+          {(data.ruleGuides ?? []).map((g, i) => <div key={i} className="notice">{chartHref ? <a href={chartHref}>{g}</a> : g}</div>)}
+          {(data.unmappedCodes ?? 0) > 0 && <CodeMapPanel yearMonth={data.yearMonth} />}
+          {claimId && (data.visitTimeDays ?? []).map((d) => <VisitTimeInput key={d} claimId={claimId} date={d} visits={data.visitTimeRefs?.[d] ?? []} />)}
+          {(data.materialNotes ?? []).map((n, i) => <p key={`m${i}`} className="muted" style={{ margin: 0 }}>{n}</p>)}
           {data.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>カルテに書かれた行為で、請求にないものは見つかりませんでした（見ていないものは下に並べたとおり）。</p>}
           {data.findings.map((f, i) => (
             <div key={i} className="notice">

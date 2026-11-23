@@ -5,9 +5,15 @@
 import { useState } from "react";
 import { ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
+import { VisitTimeInput, type VisitRef } from "../visit-time-input";
+import type { StructuredReview } from "../../src/structured/overlap";
 import { getJson } from "../get-json";
 
-export type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[] };
+/**
+ * rxMark：処方の日の「確かめた」の印が効く日か（n2＝在医総管の月のオーダーのない処方の日、chozai＝オーダーのない在医総管のない月の院内の日。効かない日は null。design.md §16-4-1）。
+ * visitTime：訪問の時刻の入力欄を出す日か（design.md §16-6。visits はその日の電子カルテの訪問）
+ */
+export type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[]; structured?: StructuredReview | null; rxMark?: "n2" | "chozai" | null; visitTime?: { visits: VisitRef[] } | null };
 type Sel = { m: ItemMatch; sel: ActMatch | null };
 export type ChildRow = ActChild & Sel & { keep: boolean };
 export type ActRow = Omit<ChartAct, "with"> & Sel & { keep: boolean; with: ChildRow[] };
@@ -24,13 +30,13 @@ export function rowsOf(acts: ChartAct[], review: ActsReview): ActRow[] {
 export function actsToSave(rows: ActRow[]): ChartAct[] {
   return rows
     .filter((r) => r.keep)
-    .map(({ keep: _k, m: _m, sel, with: w, ...a }) => {
+    .map(({ keep: _k, m: _m, sel, with: w, fold, ...a }) => {
       const kids = w.filter((c) => c.keep).map(({ keep: _ck, m: _cm, sel: cs, ...c }) => ({ ...c, quantity: c.quantity || undefined, match: cs }));
-      return { ...a, quantity: a.quantity || undefined, match: sel, ...(kids.length ? { with: kids } : {}) };
+      return { ...a, quantity: a.quantity || undefined, match: sel, ...(kids.length ? { with: kids } : {}), ...(fold && !sel ? { fold } : {}) };
     });
 }
 
-const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", inside: "院内", unknown: "分からない" };
+export const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", inside: "院内", unknown: "分からない" };
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
 /** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
@@ -95,7 +101,21 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
 }
 
 /** 「行ったこと」の一覧（確かめる画面の一部）。rows・rxChoice は呼び出し側が持ち、確定のときに一緒に送る */
-export function ActsReviewPanel(props: { ym: string; review: ActsReview; rows: ActRow[]; setRows: (r: ActRow[]) => void; rx: RxNote[]; rxChoice: RxChoice | null; setRxChoice: (c: RxChoice) => void }) {
+export function ActsReviewPanel(props: {
+  ym: string;
+  review: ActsReview;
+  rows: ActRow[];
+  setRows: (r: ActRow[]) => void;
+  rx: RxNote[];
+  rxChoice: RxChoice | null;
+  setRxChoice: (c: RxChoice) => void;
+  /** 「この日の院内・院外を確かめた」の印（design.md §16-4-1。値を選び直したときは押さなくても付く） */
+  rxConfirmed?: boolean;
+  setRxConfirmed?: (b: boolean) => void;
+  /** 時刻の入力欄に使う請求とその日（design.md §16-6。カルテの画面のその日の欄） */
+  claimId?: string;
+  date?: string;
+}) {
   const { ym, review, rows, setRows, rx, rxChoice } = props;
   const set = (i: number, r: ActRow) => setRows(rows.map((x, j) => (j === i ? r : x)));
   const askRx = review.dispensing === "inside" && rx.length > 0;
@@ -137,9 +157,61 @@ export function ActsReviewPanel(props: { ym: string; review: ActsReview; rows: A
     );
   };
 
+  const st = review.structured ?? null;
+  /** 構造化データとの見分け（取り出したときの行だけ。足した行は持たない） */
+  const ovOf = (i: number) => (st && i < st.acts.length ? st.acts[i] : null);
+  const folded = (i: number) => ovOf(i)?.status === "folded" && rows[i].sel !== null;
+  const PART_LABEL: Record<keyof StructuredReview["parts"], string> = { visits: "訪問の時刻", orders: "処方のオーダー", procedures: "注射・処置の実施", homeCare: "在宅療養の指示" };
+  /** 当てられない行為の「同じ／違う／選ばない」（design.md §16-3。選ぶのは任意。初期値は出さない） */
+  const pairChoice = (i: number) => {
+    const r = rows[i];
+    const o = ovOf(i);
+    if (!o || o.status !== "unmatched" || r.sel !== null || o.pairs.length === 0) return null;
+    const value = r.fold?.same === false ? "different" : (r.fold?.ref ?? "");
+    return (
+      <div className="notice" role="group" aria-label="電子カルテの行為と同じか">
+        <div className="muted">この日の電子カルテ（構造化データ）の同じ種類の行為と同じですか（選ばなくても保存できます）</div>
+        <div className="chips">
+          {o.pairs.map((x) => (
+            <label key={x.ref}><input type="radio" name={`pair-${i}`} checked={value === x.ref} onChange={() => set(i, { ...r, fold: { kind: "order", ref: x.ref, by: "person" } })} /> 同じ（オーダーの「{x.name}」と同じ行為）</label>
+          ))}
+          <label><input type="radio" name={`pair-${i}`} checked={value === "different"} onChange={() => set(i, { ...r, fold: { kind: "order", by: "person", same: false } })} /> 違う</label>
+          <label><input type="radio" name={`pair-${i}`} checked={value === ""} onChange={() => set(i, { ...r, fold: undefined })} /> 選ばない</label>
+        </div>
+      </div>
+    );
+  };
+  const noteOf = (i: number) => {
+    const o = ovOf(i);
+    return o?.status === "textOnly" && o.note ? <div className="muted">{o.note}</div> : null;
+  };
+  const withMarks = (i: number, el: React.ReactNode) => (
+    <div key={i}>
+      {el}
+      {noteOf(i)}
+      {pairChoice(i)}
+    </div>
+  );
+  const foldedRows = rows.map((_, i) => i).filter(folded);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h3>行ったこと（確かめてください）</h3>
+      {st && (
+        <div className="notice">
+          <strong>電子カルテ（構造化データ。読むだけ・出どころ：{st.source}）</strong>
+          <div className="muted">{(Object.keys(st.parts) as (keyof StructuredReview["parts"])[]).map((k) => `${PART_LABEL[k]}：${st.parts[k] === "supported" ? "受け取っている" : "受け取っていない"}`).join("／")}</div>
+          {st.day.length > 0 ? (
+            <ul>
+              {st.day.map((x) => (
+                <li key={x.ref}>{x.name}{x.quantity ? `（${x.quantity}）` : ""}{x.mapped || x.kind === "visit" ? "" : "（コードを当てられない）"}</li>
+              ))}
+            </ul>
+          ) : (
+            <div className="muted">この日の電子カルテの行為はありません</div>
+          )}
+        </div>
+      )}
       <p className="muted">AI がカルテから読み取った、書かれた名前のままの行為です。マスターの名称と完全に一致したものは当てた状態で出ています。ほかは候補から選ぶか、名前で探してください。選ばなければ「当てられない」のまま残ります。算定できるかは、ここでは決めません。</p>
       {!review.mastersPresent && <div className="notice warn">基本マスターが入っていないため、マスターに当てられません（行ったことはそのまま残せます）。</div>}
       {review.aliasCount > 0 && <div className="notice">前に選んだものを初期値にしています：{review.aliasCount} 件</div>}
@@ -152,20 +224,34 @@ export function ActsReviewPanel(props: { ym: string; review: ActsReview; rows: A
             ))}
           </div>
           {rxChoice === review.rxDefault && <div className="muted">処方の文から決めた初期値です。違えば直してください。</div>}
+          {props.setRxConfirmed && review.rxMark && (
+            // 印は効く日だけに出す（在医総管の月のオーダーのない処方の日、オーダーのない在医総管のない月の院内の日。サーバーが決める。C-441）。一括の操作は作らない
+            <label>
+              <input type="checkbox" checked={props.rxConfirmed ?? false} onChange={(e) => props.setRxConfirmed!(e.target.checked)} /> この日の院内・院外を確かめた
+              {review.rxMark === "n2" ? "（処方箋を交付しない場合の加算を規則で見るのに使います）" : "（調剤料・処方料を規則で見るのに使います）"}
+            </label>
+          )}
         </div>
       )}
-      {others.map((i) => line(i))}
+      {props.claimId && props.date && review.visitTime && <VisitTimeInput claimId={props.claimId} date={props.date} visits={review.visitTime.visits} />}
+      {others.filter((i) => !folded(i)).map((i) => withMarks(i, line(i)))}
       {toyaku.length + groups.optional.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <strong>その日の投薬{askRx && rxChoice === "inside" ? "（院内）" : ""}</strong>
-          {toyaku.map((i) => line(i))}
+          {toyaku.filter((i) => !folded(i)).map((i) => withMarks(i, line(i)))}
           {groups.optional.length > 0 && (
             <details>
               <summary>名前で当たらない薬（選ぶのは任意）：{groups.optional.length} 件</summary>
-              {groups.optional.map((i) => line(i))}
+              {groups.optional.map((i) => withMarks(i, line(i)))}
             </details>
           )}
         </div>
+      )}
+      {foldedRows.length > 0 && (
+        <details>
+          <summary>オーダーにもある：{foldedRows.length} 件（電子カルテの行為を正にします）</summary>
+          {foldedRows.map((i) => line(i))}
+        </details>
       )}
       {groups.hidden.length > 0 && (
         <details>

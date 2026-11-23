@@ -28,7 +28,14 @@ export type ChartAct = {
   with?: ActChild[];
   /** 確かめたあとだけ持つ（当てられないものは null） */
   match?: ActMatch | null;
+  /** たたんだ印（design.md §16-3）。当てられない行為に本人が「同じ（ref の構造化データの行為）」「違う（same: false）」を選んだときだけ持つ */
+  fold?: ActFold;
 };
+/**
+ * たたむ印（design.md §16-3）。kind：order＝構造化データの行為／rule＝規則で出す算定／device＝患者の情報の機器。by：rule＝規則でたたんだ／person＝本人が選んだ。
+ * same が false の印は「違う」を選んだ記録（たたまない）
+ */
+export type ActFold = { kind: "order" | "rule" | "device"; ref?: string; by: "rule" | "person"; same?: false };
 /** その日の処方の記載（文を写すだけ。院内か院外かは AI に分けさせない） */
 export type RxNote = { quote: string };
 /** その日の院内・院外（本人が選ぶ。初期値は src/chart/rx-default.ts） */
@@ -140,4 +147,14 @@ export function foldOfAct(act: Pick<ChartAct, "category">, initial: ActMatch | n
 }
 
 /** 保存する形（chart_notes.acts の JSON）。rxChoice は院内処方もある施設で処方の記載がある日だけ持つ。rxChoiceBy：規則で出た初期値のままか、本人が直したか（判定には使わない） */
-export type StoredActs = { acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; rxChoiceBy: "rule" | "person" | null };
+export type StoredActs = {
+  acts: ChartAct[];
+  rx: RxNote[];
+  rxChoice: RxChoice | null;
+  rxChoiceBy: "rule" | "person" | null;
+  /**
+   * 処方の日の「確かめた」の印（design.md §16-4-1。C-410）。本人が欄の値を選び直したとき、または「この日の院内・院外を確かめた」を押したときだけ付く（初期値のまま保存しただけでは付かない）。
+   * rxHash はそのときの処方の文の指紋で、文が変わったら印はないものとして読む
+   */
+  rxConfirmed?: { by: string; at: string; rxHash: string } | null;
+};

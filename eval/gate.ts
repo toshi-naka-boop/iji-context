@@ -1,0 +1,139 @@
+// 合否の組の回し方（design.md §16-9。round-66 C-424・round-67。L-217）。合否の組を回すたびに、追記だけの記録 eval/gate-runs.jsonl に 1 行残す
+// （日時・GATE_SHA256・設計の指紋・取り出し・当て方・評価のコードの中身の指紋・結果の数）。合格は、同じ設計の指紋・同じ GATE_SHA256・同じコードの指紋で回した最初の 2 回が
+// 続けて回され（間に別の条件の回がない）、どちらも線を越えたときだけ。3 回目以降は合否に使わず、記録と報告だけにする。判定は決まった規則で、LLM は使わない
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import type { ActsCount } from "./acts-count";
+
+/** 合否の線（設計の値。design.md §16-9）：合否だけの組で、文章から取り出すべき行為のうち 20 件に入った割合 */
+export const GATE_PASS_RATE = 0.95;
+/** v32 の 74 行為の、実際の AI での結果（段 18d の 2 回。報告に並べるだけで、線にしない） */
+export const V32_RESULTS = ["60/74", "62/74"] as const;
+
+/**
+ * 記録の 1 行。total・in20・top5 は文章から取り出すべき行為（除く正解を外した数）の側。
+ * complete：合否の組の記載が全部そろった回か（一部だけを回した回・例外で出力のない記載がある回は偽で、合否に使わない。missing はそろわなかった記載の id。C-431）
+ */
+export type GateRun = { at: string; gateSha256: string; designSha256: string; codeSha256: string; records: number; total: number; in20: number; top5: number; extra: number; ruleTaken: number; pass: boolean; complete: boolean; missing: string[] };
+/** 合否を決める条件の組 */
+export type GateKey = Pick<GateRun, "gateSha256" | "designSha256" | "codeSha256">;
+
+export const gateRunsPath = (root: string) => path.join(root, "eval", "gate-runs.jsonl");
+
+export function readGateRuns(root: string): GateRun[] {
+  const f = gateRunsPath(root);
+  return existsSync(f)
+    ? readFileSync(f, "utf8")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as GateRun)
+    : [];
+}
+
+/** 設計の指紋（設計書の sha256。設計の版が変われば変わる） */
+export function designSha(root: string): string {
+  const f = path.join(root, "design", "iji-context", "design.md");
+  return existsSync(f) ? createHash("sha256").update(readFileSync(f)).digest("hex") : "none";
+}
+
+/** 合否の鍵に入れるコード（取り出し・当て方・評価と、取り出しのモデルを選ぶコード。リポジトリの根からの場所。設計の値。C-453・X-282） */
+export const CODE_PATHS = ["src/chart", "src/masters", "src/llm", "src/mentor/models.ts", "eval/acts-count.ts", "eval/run-eval.ts", "eval/gate.ts"] as const;
+/** 合否の鍵に入れる設定：config/models.json のうち、取り出しの呼び出しのモデルと推論の強さを決める行（X-282。ほかの役の行は入れない） */
+export const MODEL_ROLES = ["chartExtract"] as const;
+
+/**
+ * 取り出し・当て方・評価のコードの中身の指紋（CODE_PATHS の下の全部のファイルを、場所の順に「場所＋中身」で連ねた sha256。C-453）。
+ * コミットでなく作業ツリーの中身で作るので、未コミットの変更も鍵に入り、中身の同じコミットを足しても鍵は変わらない
+ */
+export function codeSha(root: string): string {
+  const files: string[] = [];
+  const walk = (rel: string) => {
+    const abs = path.join(root, rel);
+    if (!existsSync(abs)) return;
+    if (statSync(abs).isDirectory()) for (const name of readdirSync(abs).sort()) walk(path.posix.join(rel, name));
+    else files.push(rel);
+  };
+  for (const p of CODE_PATHS) walk(p);
+  const h = createHash("sha256");
+  for (const f of files.sort()) h.update(`${f}\0`).update(readFileSync(path.join(root, f))).update("\0");
+  // 取り出しのモデルと推論の強さ（config/models.json の該当の行。ファイルがない・読めないときは「none」として入れる）
+  const models = path.join(root, "config", "models.json");
+  let all: Record<string, unknown> | null = null;
+  try {
+    all = existsSync(models) ? (JSON.parse(readFileSync(models, "utf8")) as Record<string, unknown>) : null;
+  } catch {
+    all = null;
+  }
+  for (const role of MODEL_ROLES) h.update(`config/models.json#${role}\0`).update(JSON.stringify(all?.[role] ?? "none")).update("\0");
+  return h.digest("hex");
+}
+
+/** 合否だけの組の結果を足し合わせる（文章から取り出すべき行為の側。除く正解を外した数） */
+export function sumGate(outputs: ActsCount[]): Omit<GateRun, "at" | "gateSha256" | "designSha256" | "codeSha256" | "complete" | "missing"> {
+  const s = (k: "ref" | "refIn20" | "refTop5" | "extra" | "ruleTaken") => outputs.reduce((a, x) => a + x[k], 0);
+  const total = s("ref");
+  const in20 = s("refIn20");
+  return { records: outputs.length, total, in20, top5: s("refTop5"), extra: s("extra"), ruleTaken: s("ruleTaken"), pass: total > 0 && in20 >= total * GATE_PASS_RATE };
+}
+
+/** 記録に 1 行足す（追記だけ） */
+export function appendGateRun(root: string, run: GateRun): void {
+  appendFileSync(gateRunsPath(root), `${JSON.stringify(run)}\n`);
+}
+
+const sameKey = (r: GateRun, k: GateKey) => r.gateSha256 === k.gateSha256 && r.designSha256 === k.designSha256 && r.codeSha256 === k.codeSha256;
+
+/**
+ * 合否：同じ条件の組（設計の指紋・GATE_SHA256・コードの中身の指紋）で、合否の組の記載が全部そろった回の最初の 2 回だけを見る。2 回に満たなければ未決。
+ * 最初の 2 回のあいだに別の条件の回があれば、続けた 2 回ではないので数えない（未決のまま。回し直しはコードの中身が変わったときだけ）。3 回目以降は使わない。
+ * 記載のそろわない同じ条件の回（一部だけ・例外で抜けた記載がある回）は記録と報告だけで、数えない（C-431）
+ */
+export function gateVerdict(allRuns: GateRun[], key: GateKey): { result: "合格" | "不合格" | "未決"; text: string; counted: GateRun[] } {
+  const runs = allRuns.filter((r) => !(sameKey(r, key) && r.complete !== true));
+  const idx = runs.flatMap((r, i) => (sameKey(r, key) ? [i] : []));
+  if (idx.length < 2) return { result: "未決", text: `同じ条件で記載をそろえて回したのは ${idx.length} 回です（最初の 2 回で決めます）`, counted: [] };
+  const [a, b] = idx;
+  if (b !== a + 1) return { result: "未決", text: "同じ条件の最初の 2 回のあいだに別の条件の回があるので、数えません", counted: [] };
+  const counted = [runs[a], runs[b]];
+  const later = idx.length - 2;
+  const tail = later > 0 ? `。3 回目以降の ${later} 回は合否に使いません` : "";
+  return counted.every((r) => r.pass)
+    ? { result: "合格", text: `同じ条件で続けた最初の 2 回がどちらも線（${GATE_PASS_RATE * 100}%）を越えました${tail}`, counted }
+    : { result: "不合格", text: `同じ条件で続けた最初の 2 回のうち、線（${GATE_PASS_RATE * 100}%）に届かない回があります${tail}`, counted };
+}
+
+/**
+ * 合否の組を回した結果を記録し、報告の行を返す。gate の記載がなければ記録せず「合否だけの組がありません」。
+ * gateIds は評価セットの合否の組の全部の記載の id。出力（例外のときは null）がそろわない回は complete を偽にして記録し、合否に使わない（C-431）。
+ * key を渡さなければ、今の設計の指紋とコードの中身の指紋で記録する
+ */
+export function recordGate(
+  root: string,
+  outputs: { id: string; split: string | undefined; output: ActsCount | null }[],
+  opt: { at: string; gateSha256: string; gateIds: string[]; key?: Partial<Omit<GateKey, "gateSha256">> },
+): { lines: string[]; run: GateRun | null } {
+  const gateRows = outputs.filter((x) => x.split === "gate");
+  if (gateRows.length === 0) return { lines: ["- 合否だけの組がありません（直しに使う組だけを回したので、合否は出しません）"], run: null };
+  const gate = gateRows.flatMap((x) => (x.output ? [x.output] : []));
+  const done = new Set(gateRows.filter((x) => x.output !== null).map((x) => x.id));
+  const missing = opt.gateIds.filter((id) => !done.has(id));
+  const key: GateKey = { gateSha256: opt.gateSha256, designSha256: opt.key?.designSha256 ?? designSha(root), codeSha256: opt.key?.codeSha256 ?? codeSha(root) };
+  const run: GateRun = { at: opt.at, ...key, ...sumGate(gate), complete: missing.length === 0, missing };
+  appendGateRun(root, run);
+  const runs = readGateRuns(root);
+  const v = gateVerdict(runs, key);
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "-");
+  return {
+    run,
+    lines: [
+      `- 合否だけの組（${run.records} 記載・文章から取り出すべき行為 ${run.total} 件で測った）：20 件に入った ${run.in20}/${run.total}（${pct(run.in20, run.total)}。線 ${GATE_PASS_RATE * 100}%）・上位 5 件 ${run.top5}/${run.total}（${pct(run.top5, run.total)}）`,
+      `- 余計な取り出し ${run.extra}・規則で出すものを取り出した数 ${run.ruleTaken}（どちらも線にしない）`,
+      ...(run.complete ? [] : [`- この回は合否の組の記載がそろっていないので、合否に使いません（足りない記載：${missing.join("、")}）`]),
+      `- 合否：${v.result}（${v.text}）。記録の全部の回 ${runs.length}・この条件で回した回 ${runs.filter((r) => sameKey(r, key)).length}`,
+      ...runs.map((r, i) => `  - ${i + 1}：${r.at} ${r.in20}/${r.total} ${r.pass ? "越えた" : "届かない"}${r.complete === true ? "" : "・記載がそろわない（数えない）"}（束 ${r.gateSha256.slice(0, 12)}・設計 ${r.designSha256.slice(0, 12)}・コード ${(r.codeSha256 ?? "").slice(0, 12)}）`),
+      `- v32 の 74 行為の結果（参考）：${V32_RESULTS.join("・")}`,
+      "- 合成カルテは作成手引きの事例文の書き方で、95% を越えても実物のカルテの略し方の証明ではありません",
+    ],
+  };
+}

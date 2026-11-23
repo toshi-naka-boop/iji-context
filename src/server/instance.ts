@@ -372,6 +372,8 @@ export async function writeChart(input: { user: User; claimId: string; clerkId: 
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
+  await a.ensureStructured(input.claimId);
   return { ...saved, ...r, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
 }
 
@@ -383,6 +385,8 @@ export async function pasteRecord(input: { user: User; claimId: string; clerkId:
   const a = getApp();
   const saved = a.saveRecord(input.claimId, input.clerkId, input.date, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
+  await a.ensureStructured(input.claimId);
   return { ...saved, acts: r.acts, rx: r.rx, actsDropped: r.actsDropped, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
 }
 

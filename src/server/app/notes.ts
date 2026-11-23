@@ -1,7 +1,7 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
 import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
-import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
+import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
 import { dispensingOf } from "../../facility/declaration";
@@ -34,11 +34,17 @@ import { json, type AppContext } from "./context";
 import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
-import { createTorikawasure } from "./torikawasure";
+import { createTorikawasure, type TextDay } from "./torikawasure";
+import { RULE_CODES, structuredConfig } from "../../structured/rule-codes";
+import { hasTimeHint } from "../../structured/time-hint";
+import { rxConfirmedOf, rxHashOf } from "../../structured/rx-mark";
 import type { LocalAbout } from "./local-pairs";
+import type { Structured } from "./structured";
+import { overlap, type SItem, type StructuredReview } from "../../structured/overlap";
+
 import type { Uke } from "./uke";
 
-export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases) {
+export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: Uke, casesOf: Cases, structured?: Structured) {
   const { sqlite, paths, hiddenClaim } = ctx;
   const { now } = clock;
   /** 施設の申告の三値（G10。design.md §15-5） */
@@ -46,7 +52,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { clerk } = clerks;
   const { patientOf } = uke;
   const { cases, caseOf, isUploaded } = casesOf;
-  const tori = createTorikawasure(ctx, clock);
+  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -153,9 +159,77 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
     });
   }
-  /** カルテの id から、確かめる画面の当て方 */
-  function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview {
-    return actsReview(caseOf(noteRow(id).claim_id).yearMonth, acts, rx);
+  /** カルテの id から、確かめる画面の当て方と、その日の入力の場面（処方の日の印・訪問の時刻。design.md §16-6） */
+  function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview & { structured: StructuredReview | null } & DayInputs {
+    const r = noteRow(id);
+    const yearMonth = caseOf(r.claim_id).yearMonth;
+    const review = actsReview(yearMonth, acts, rx);
+    const n = JSON.parse(r.note) as ChartNote;
+    return {
+      ...review,
+      structured: structuredReview(r.claim_id, yearMonth, r.date, acts.map((a, i) => ({ ...a, match: review.matches[i]?.act.initial ?? null }))),
+      ...dayInputsOf(r.claim_id, yearMonth, r.date, review.rxDefault, [n.s, n.o, n.a, n.p].filter(Boolean).join("\n")),
+    };
+  }
+  type VisitRef = { ref: string; kind: "訪問診療" | "往診" | null };
+  /**
+   * その日の入力の場面（design.md §16-4-1・16-6。効く日だけ。決まった規則だけで、LLM は使わない）：
+   * rxMark：処方の日の「確かめた」の印が効くか（n2＝オーダーを受け取っている在医総管の月のオーダーのない日、chozai＝オーダーを受け取っていない在医総管のない月の院内の日。C-441）。
+   * visitTime：訪問の時刻の入力欄を出すか（その日の訪問の時刻が受け取れない・欠けていて、S・O・A・P に時間の語があるか請求のその日に患家診療時間加算がある日。visits はその日の電子カルテの訪問。C-442）
+   */
+  type DayInputs = { rxMark: "n2" | "chozai" | null; visitTime: { visits: VisitRef[] } | null };
+  function dayInputsOf(claimId: string, yearMonth: string, date: string, choice: RxChoice | null, soap: string): DayInputs {
+    if (!structured || !hasRevision(yearMonth)) return { rxMark: null, visitTime: null };
+    const rev = resolveRevision(yearMonth);
+    const lines = caseOf(claimId).lines;
+    const kanriKubun = new Set(rev.consts.kanri.rows.map((k) => k.kubun));
+    const kanri = lines.some((l) => kanriKubun.has(l.kubun));
+    const s = withMasters((db) => structured.structuredItemsOf(claimId, yearMonth, db));
+    // 構造化データのない請求は、注2・時間の加算を見ないので印・時刻の入力を促さない（v34 の 16-4-1）。調剤料・処方料の印（オーダーのない月の院内の日）は出す
+    const orders = s?.chart.orders;
+    const rxMark = orders?.status === "supported" ? (kanri && !orders.items.some((o) => o.date === date) ? "n2" : null) : !kanri && dispensingFor(yearMonth) === "inside" && choice === "inside" ? "chozai" : null;
+    if (!s) return { rxMark, visitTime: null };
+    const full = (v: { start: string | null; end: string | null }) => !!v.start && !!v.end && v.end > v.start;
+    const onDay = s.chart.visits.status === "supported" ? s.chart.visits.items.filter((v) => v.date === date) : [];
+    const clerkTimes = structured.visitTimesOf(structured.structuredPatientOf(claimId), yearMonth).filter((t) => t.date === date);
+    const missing = onDay.filter((v) => !full(v) && !clerkTimes.some((t) => t.ref === v.ref));
+    const known = onDay.some(full) || (onDay.length === 0 && clerkTimes.length > 0);
+    if (known || (onDay.length > 0 && missing.length === 0)) return { rxMark, visitTime: null };
+    const KAKA: string[] = [RULE_CODES.kakaVisit, RULE_CODES.kakaOushin, RULE_CODES.kakaOushinSpecial];
+    const kaka = lines.some((l) => l.dates.includes(date) && Object.hasOwn(rev.codes, l.kubun) && [rev.codes[l.kubun].primary, ...rev.codes[l.kubun].accept].some((c) => KAKA.includes(c)));
+    return { rxMark, visitTime: hasTimeHint(soap) || kaka ? { visits: missing.map((v) => ({ ref: v.ref, kind: v.kind })) } : null };
+  }
+  /**
+   * 確かめる画面の構造化データの欄（design.md §16-3・16-7）：その日の構造化データの行為（読むだけ。出どころの印つき）と、行為ごとの見分け（初期値の当て方で突き合わせた結果）。
+   * 当てられない行為には、その日の同じ種類の構造化データの行為を並べる（「同じ／違う／選ばない」。初期値は出さない）。構造化データを残していない月は null
+   */
+  function structuredReview(claimId: string, yearMonth: string, date: string, acts: ChartAct[]): StructuredReview | null {
+    if (!structured || !hasRevision(yearMonth)) return null;
+    return withMasters((db) => {
+      const s = structured.structuredItemsOf(claimId, yearMonth, db);
+      if (!s) return null;
+      const ov = overlap(acts.map((act, i) => ({ date, key: String(i), act })), s.items, s.chart, resolveRevision(yearMonth));
+      const brief = (x: SItem) => ({ ref: x.ref, kind: x.kind, name: x.name, ...(x.quantity ? { quantity: x.quantity } : {}), ...(x.visitKind !== undefined ? { visitKind: x.visitKind } : {}), mapped: x.code !== null });
+      return {
+        source: "電子カルテ",
+        parts: Object.fromEntries(Object.entries(s.chart).map(([k, p]) => [k, p.status])) as StructuredReview["parts"],
+        day: s.items.filter((x) => x.date === date).map(brief),
+        acts: acts.map((_, i) => {
+          const o = ov.acts.get(String(i))!;
+          return o.status === "unmatched" ? { status: o.status, pairs: o.pairs.map(brief) } : o.status === "folded" ? { status: o.status, refs: o.refs } : o.status === "textOnly" ? { status: o.status, note: o.note } : { status: o.status };
+        }),
+      };
+    });
+  }
+  /** 本人が選んだ「同じ／違う」の印を確かめる：当てられない行為に、その日の同じ種類の構造化データの行為（ref）があるときだけ（design.md §16-3） */
+  function checkFold(claimId: string, yearMonth: string, date: string, act: ChartAct, fold: ActFold | undefined): ActFold | undefined {
+    if (!fold) return undefined;
+    if (act.match) throw badRequest("当たっている行為には「同じ／違う」を付けません", ["acts"]);
+    if (fold.kind !== "order" || fold.by !== "person") throw badRequest("付けられる印は、本人が選んだ「同じ／違う」だけです", ["acts"]);
+    if (fold.same === false) return { kind: "order", by: "person", same: false };
+    const pairs = structuredReview(claimId, yearMonth, date, [act])?.acts[0];
+    if (!fold.ref || pairs?.status !== "unmatched" || !pairs.pairs.some((x) => x.ref === fold.ref)) throw badRequest("その日の同じ種類の電子カルテの行為ではありません", ["acts"]);
+    return { kind: "order", ref: fold.ref, by: "person" };
   }
   /** 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで */
   function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[]): ItemMatch {
@@ -170,7 +244,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 当てたコードは、診療年月の 1 枚の、category で決めた表に実在するものだけ（名称はマスターの値に置き換える）。
    * 本人が候補・探す・前に選んだものから選んだ対応は、クリニックごとに残す（L-95）。院内・院外は、院内処方もある施設で処方の記載がある日だけ残し、規則の初期値のままかを印にする（C-243）
    */
-  function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null }) {
+  function confirmActs(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; rxConfirmed?: boolean }) {
     clerk(clerkId);
     const r = noteRow(id);
     // 訪問カルテ（訪問診療・往診）は書いた本人の算定プレビューに重なるので、書いた本人だけが確かめる。貼ったカルテ（記録）はチームで見る（反証 round-55 C-302）
@@ -197,6 +271,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       return a.acts.map((x, i) => {
         const src = input.acts[i];
         const act: ChartAct = { ...x, match: check(tableKeyOfAct(x.category), x.written, src.match) };
+        const fold = checkFold(r.claim_id, yearMonth, r.date, act, src.fold);
+        if (fold) act.fold = fold;
         if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, src.with?.[j]?.match) }));
         return act;
       });
@@ -204,8 +280,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
-    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person" };
     const at = now();
+    // 「確かめた」の印（design.md §16-4-1）：値を選び直したか、「確かめた」を押したときだけ。初期値のまま保存しただけでは付けない
+    const marked = choice !== null && (choice !== rule || input.rxConfirmed === true);
+    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person", rxConfirmed: marked ? { by: clerkId, at, rxHash: rxHashOf(a.rx) } : null };
     sqlite.transaction(() => {
       sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(v.facts), JSON.stringify(stored), id);
       for (const c of chosen) {
@@ -252,6 +330,73 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         .run(wn, m.tbl, m.code, clerkId, now());
     })();
     return { claimId: r.claim_id, date: r.date };
+  }
+  /**
+   * 確かめて残したカルテの当てられない行為に、16-3 の「同じ（ref）／違う／選ばない」をあとから付ける（POST /api/chart/acts/fold。design.md §16-7。round-66 C-421）。
+   * 権限は pickAct と同じ（訪問カルテは書いた本人だけ、貼ったカルテはチーム）。「選ばない」は印を外す。返すのは請求と日だけ
+   */
+  function foldAct(id: number, clerkId: string, index: number, choice: "same" | "different" | "none", ref?: string) {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
+    if (r.acts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const stored = JSON.parse(r.acts) as StoredActs;
+    const act = stored.acts[index];
+    if (!act) throw badRequest("このカルテにない行為です", ["index"]);
+    const yearMonth = caseOf(r.claim_id).yearMonth;
+    const fold = choice === "none" ? undefined : checkFold(r.claim_id, yearMonth, r.date, act, choice === "same" ? { kind: "order", by: "person", ...(ref ? { ref } : {}) } : { kind: "order", by: "person", same: false });
+    const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : (({ fold: _, ...rest }) => (fold ? { ...rest, fold } : rest))(a))) };
+    sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
+    return { claimId: r.claim_id, date: r.date };
+  }
+  /**
+   * 確かめて残したカルテの、その日の処方の欄の値と「確かめた」の印を付け直す（POST /api/chart/acts/rx-confirm。design.md §16-4-1・16-7。C-421）。
+   * 権限は pickAct と同じ。処方の欄を出すのは、院内処方もある施設で、処方の記載か投薬の行為がある日だけ。印はそのときの処方の文の指紋を持つ。返すのは請求と日だけ
+   */
+  function confirmRx(id: number, clerkId: string, input: { rxChoice: RxChoice; confirmed: boolean }) {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
+    if (r.acts === null) throw conflict(`まだ確かめていないカルテ: ${id}`);
+    const stored = JSON.parse(r.acts) as StoredActs;
+    if (dispensingFor(caseOf(r.claim_id).yearMonth) !== "inside") throw badRequest("施設の申告が院内処方もある施設でないので、処方の院内・院外の欄はありません");
+    if (stored.rx.length === 0 && !stored.acts.some((a) => a.category === "投薬")) throw badRequest("この日のカルテに処方の記載も投薬もありません");
+    const rule = rxDefault(stored.rx);
+    const next: StoredActs = { ...stored, rxChoice: input.rxChoice, rxChoiceBy: input.rxChoice === rule ? "rule" : "person", rxConfirmed: input.confirmed ? { by: clerkId, at: now(), rxHash: rxHashOf(stored.rx) } : null };
+    sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
+    return { claimId: r.claim_id, date: r.date };
+  }
+  /** カルテの請求の id（画面の操作の前に構造化データを読むため。C-440） */
+  const claimIdOfNote = (id: number): string => noteRow(id).claim_id;
+  /**
+   * 確かめたあとで付け直す一覧（GET /api/chart/acts/fixes。design.md §16-4-1・16-3・16-7。C-441）：その請求の確かめて残したカルテのうち、
+   * 処方の日の印の効く日で印がない日（rxMark）と、当てられない行為に同じ日の電子カルテの同じ種類の行為があるもの（pairs）。見える範囲は確かめる画面と同じ
+   * （取り込んだ請求は貼ったカルテ〔チーム〕、合成の症例は本人が書いたカルテ）。返すのはカルテの id・日・処方の文・行為の書かれた名前と電子カルテの表示名だけ
+   */
+  function confirmedFixes(claimId: string, clerkId: string) {
+    clerk(clerkId);
+    const rows = (
+      isUploaded(claimId)
+        ? sqlite.prepare("SELECT * FROM chart_notes WHERE claim_id = ? AND kind = '記録' AND acts IS NOT NULL ORDER BY date, id").all(claimId)
+        : sqlite.prepare("SELECT * FROM chart_notes WHERE claim_id = ? AND clerk_id = ? AND acts IS NOT NULL ORDER BY date, id").all(claimId, clerkId)
+    ) as NoteRow[];
+    const yearMonth = caseOf(claimId).yearMonth;
+    const inside = dispensingFor(yearMonth) === "inside";
+    return rows.flatMap((r) => {
+      const stored = JSON.parse(r.acts!) as StoredActs;
+      const n = JSON.parse(r.note) as ChartNote;
+      const hasRx = stored.rx.length > 0 || stored.acts.some((a) => a.category === "投薬");
+      const choice = stored.rxChoice ?? (stored.rx.length > 0 ? rxDefault(stored.rx) : null);
+      const mark = inside && hasRx && !rxConfirmedOf(stored) ? dayInputsOf(claimId, yearMonth, r.date, choice, [n.s, n.o, n.a, n.p].filter(Boolean).join("\n")).rxMark : null;
+      const review = structuredReview(claimId, yearMonth, r.date, stored.acts);
+      const pairs = (review?.acts ?? []).flatMap((o, index) =>
+        o.status === "unmatched" && o.pairs.length > 0 && !stored.acts[index].match
+          ? [{ index, written: stored.acts[index].written, pairs: o.pairs.map((x) => ({ ref: x.ref, name: x.name })), fold: stored.acts[index].fold ?? null }]
+          : [],
+      );
+      if (mark === null && pairs.length === 0) return [];
+      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs }];
+    });
   }
   /** 保存した行ったこと（確かめていなければ null） */
   const savedActs = (id: number): StoredActs | null => {
@@ -307,6 +452,41 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const own = tori.storedDays(mine.map((r) => ({ id: r.id, date: r.date, acts: JSON.parse(r.acts) as StoredActs })));
     const dates = new Set(own.map((d) => d.date));
     return [...tori.chartDays(claimId).filter((d) => !dates.has(d.date)), ...own].filter((d) => upTo === undefined || d.date <= upTo).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+  /** 1 つの請求の、カルテの文章のある日（確かめたかは問わない）。取り込んだ請求は貼ったカルテ、合成の症例は合成カルテの文に本人のカルテを重ねる */
+  function claimTexts(claimId: string, clerkId?: string): TextDay[] {
+    const join = (n: ChartNote) => [n.s, n.o, n.a, n.p, n.rx].filter(Boolean).join("\n");
+    const soapOf = (n: ChartNote) => [n.s, n.o, n.a, n.p].filter(Boolean).join("\n");
+    type R = { date: string; note: string; acts: string | null };
+    const rows = (
+      isUploaded(claimId)
+        ? sqlite.prepare("SELECT date, note, acts FROM chart_notes WHERE claim_id = ? AND kind = '記録' ORDER BY date, id").all(claimId)
+        : clerkId
+          ? sqlite.prepare("SELECT date, note, acts FROM chart_notes WHERE claim_id = ? AND clerk_id = ? ORDER BY date, id").all(claimId, clerkId)
+          : []
+    ) as R[];
+    const own: TextDay[] = rows.map((r) => ({ date: r.date, text: join(JSON.parse(r.note) as ChartNote), soap: soapOf(JSON.parse(r.note) as ChartNote), stored: r.acts === null ? null : (JSON.parse(r.acts) as StoredActs) }));
+    if (isUploaded(claimId)) return own;
+    const dates = new Set(own.map((d) => d.date));
+    return [...tori.chartTextDays(claimId).filter((d) => !dates.has(d.date)), ...own];
+  }
+  /**
+   * G11 の規則の候補（design.md §16-4-5 (e)・(d)）に渡すカルテの文章：当月と、同じ患者のさかのぼる月の請求（構造化データを残していない請求は読まない）
+   */
+  function textsOf(claimId: string, clerkId?: string): { texts: TextDay[]; pastTextsUnreadable: boolean } {
+    if (!structured) return { texts: claimTexts(claimId, clerkId), pastTextsUnreadable: false };
+    let past: TextDay[] = [];
+    let pastTextsUnreadable = false;
+    try {
+      const ym = isUploaded(claimId) ? uke.receiptOf(claimId).receipt.yearMonth : caseOf(claimId).yearMonth;
+      const months = structured.monthsBefore(ym, structuredConfig().rxLookbackMonths);
+      past = structured.samePatientClaims(claimId, months).flatMap((x) => claimTexts(x.claimId, clerkId));
+    } catch {
+      // 例外を黙って捨てない：さかのぼる月の文章を「ない」と読まず、読めないとして G11 に渡す（注2 は「見ていません」。C-454）
+      past = [];
+      pastTextsUnreadable = true;
+    }
+    return { texts: [...claimTexts(claimId, clerkId), ...past], pastTextsUnreadable };
   }
   /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
   const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
@@ -445,10 +625,12 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   function chartOf(claimId: string, clerkId?: string): Chart | null {
     // 請求 id はパスに使わず、表を引く（合成カルテのない症例・表にない請求 id は null）
     const f = chartFileOf(paths.root, claimId);
-    return chartWithNotes(f ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
+    // 処方の一覧を持たない合成カルテ（K8〜K13 の確かめたあとの形）は、処方の一覧を空として読む
+    const c = f ? json<Chart>(f) : null;
+    return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { saveNote, saveRecord, recordNotes, recordCounts, actsDays, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

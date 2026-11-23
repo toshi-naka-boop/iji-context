@@ -1,6 +1,6 @@
 "use client";
 // UKE の取り込み（月末。レセコンが書き出した提出用のファイルを読み込み、提出前の点検にかける）
-// 見本の 2 本（国保連・支払基金。合成データ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）。
+// 見本の 2 本（国保連・支払基金。合成データ）と、電子カルテの構造化データつきの見本（K12・K13。取り込むと一覧に並ぶ）を選んで取り込むか、ファイルを選んでアップロードする（spec FR-71・FR-106〜109）。
 // 実在のデータで使うクリニック（と未定のクリニック）では、見本を一覧に出さず、ダウンロードも出さない。同梱の見本と同じ内容のアップロードはサーバーが断る（2026-11-22 利用者の判断）
 import { useEffect, useState } from "react";
 import { payerLabel } from "../../src/messages";
@@ -10,6 +10,9 @@ import { SignIn, useClerk } from "../clerk";
 import { Notice } from "../consent";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
+
+/** 取り込むと一覧に並ぶ見本（受け入れの症例 K12・K13。合成の接続先が構造化データを返す） */
+const MORE_SAMPLE = "kozoka.UKE";
 
 type Uke = {
   name: string;
@@ -159,6 +162,11 @@ export default function UkeImport() {
           </article>
         ))}
       </div>
+      {!real && !list.some((u) => u.name === MORE_SAMPLE) && (
+        <p style={{ margin: "16px 0 0" }}>
+          <button onClick={() => take(MORE_SAMPLE)}>電子カルテの構造化データつきの見本（K12・K13）を取り込む</button>
+        </p>
+      )}
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-body">
           <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>ファイルを選んでアップロード</h2>

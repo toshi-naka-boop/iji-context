@@ -19,6 +19,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
   const [ex, setEx] = useState<Pasted | null>(null);
   const [rows, setRows] = useState<ActRow[]>([]);
   const [rxChoice, setRxChoice] = useState<RxChoice | null>(null);
+  const [rxConfirmed, setRxConfirmed] = useState(false);
 
   async function paste() {
     setErr("");
@@ -29,6 +30,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
       setEx(r);
       setRows(rowsOf(r.acts, r.review));
       setRxChoice(null);
+      setRxConfirmed(false);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -39,7 +41,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
     if (!ex) return;
     setErr("");
     try {
-      await postJson("/api/chart/acts", { noteId: String(ex.id), facts: [], acts: actsToSave(rows), rx: ex.rx, rxChoice });
+      await postJson("/api/chart/acts", { noteId: String(ex.id), facts: [], acts: actsToSave(rows), rx: ex.rx, rxChoice, rxConfirmed });
       setMsg(`${ex.date} のカルテを確かめて残しました。`);
       setEx(null);
       setText("");
@@ -73,7 +75,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
         </div>
       ) : (
         <div>
-          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} />
+          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={claimId} date={ex.date} />
           {ex.actsDropped.length > 0 && <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました。</div>}
           <button className="primary" onClick={save}>これで確かめる（{ex.date}）</button>
         </div>

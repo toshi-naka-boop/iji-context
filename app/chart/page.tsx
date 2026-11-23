@@ -18,6 +18,7 @@ import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
 import { ClaimPreview } from "./claim-preview";
 import { NoteList } from "./note-list";
+import { ConfirmedFixes } from "./confirmed-fixes";
 import { ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "./acts-review";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
@@ -42,6 +43,7 @@ export default function Chart() {
   /** 行ったこと（design.md §15-6）と、その日の院内・院外 */
   const [actRows, setActRows] = useState<ActRow[]>([]);
   const [rxChoice, setRxChoice] = useState<RxChoice | null>(null);
+  const [rxConfirmed, setRxConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 自由記述（SOAP に整える前） */
   const [free, setFree] = useState("");
@@ -50,7 +52,15 @@ export default function Chart() {
   /** 確定したカルテ（確定したら、同じ画面に算定行と指摘を出す） */
   const [confirmed, setConfirmed] = useState<{ claimId: string; date: string } | null>(null);
   useEffect(() => {
-    getJson<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
+    getJson<Patient[]>("/api/patients")
+      .then((list) => {
+        setPatients(list);
+        // G11 の結果の案内から来たとき（/chart?claimId=…#chart-fixes）は、その患者を選んだ状態で開く（C-441）
+        const want = new URLSearchParams(window.location.search).get("claimId");
+        const hit = want ? list.find((x) => x.claimId === want) : undefined;
+        if (hit) setP(hit);
+      })
+      .catch((e) => setErr(e.message));
   }, []);
 
   async function read() {
@@ -63,6 +73,7 @@ export default function Chart() {
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
       setActRows(rowsOf(r.acts, r.review));
       setRxChoice(r.review.rxDefault);
+      setRxConfirmed(false);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -115,6 +126,7 @@ export default function Chart() {
         acts: actsToSave(actRows),
         rx: ex.rx,
         rxChoice,
+        rxConfirmed,
       });
       setConfirmed(r);
     } catch (e) {
@@ -233,6 +245,8 @@ export default function Chart() {
             )}
             {/* 前に書いたカルテ（保存のみ・確定済み）を、あとからでも消せる。一覧から今のカルテを消したら、入力を最初に戻す */}
             <NoteList claimId={p.claimId} tick={`${ex?.id ?? ""}-${confirmed ? 1 : 0}`} onDeleted={(id) => { if (ex?.id === id) { setEx(null); setRows([]); setConfirmed(null); setNote(EMPTY); } }} />
+            {/* 確かめたあとで処方の日の印・「同じ／違う」を付け直す（design.md §16-7。C-441） */}
+            <ConfirmedFixes claimId={p.claimId} tick={confirmed ? 1 : 0} />
             {ex && !confirmed && (
               <div>
                 <h3>読み取った事実（確かめてください）</h3>
@@ -250,7 +264,7 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} />
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={p.claimId} date={ex.date} />
                 {ex.actsDropped.length > 0 && (
                   <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
                 )}

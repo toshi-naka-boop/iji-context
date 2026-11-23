@@ -25,6 +25,7 @@ import { createPrevented } from "./app/prevented";
 import { createQuestionCase } from "./app/question-case";
 import { createQuestions } from "./app/questions";
 import { createRevision } from "./app/revision";
+import { createStructured } from "./app/structured";
 import { createUke } from "./app/uke";
 import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
 import { claimOfLines } from "../generic/overlap";
@@ -45,7 +46,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
   const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
   const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
-  const notes = createNotes(ctx, clock, clerks, uke, casesOf);
+  const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
+  const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
   const questionCase = createQuestionCase(casesOf, notes, doctor);
   // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
@@ -80,7 +82,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const pasted = same.filter((id) => counts.has(id)).length;
     const coverage = `カルテを貼った患者だけを見ています（貼った ${pasted} 人・貼っていない ${same.length - pasted} 人）`;
     if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
-    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId) }), coverage };
+    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), ...notes.textsOf(claimId) }), coverage };
   };
   /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
   const ukeTorikawasure = (claimId: string, clerkId: string) => {
@@ -92,7 +94,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
-  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, confirmedFixes, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
   /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
   const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
     // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
@@ -135,6 +137,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     searchMasters,
     savedActs,
     pickAct,
+    foldAct,
+    confirmRx,
+    confirmedFixes,
     deleteNote,
     listNotes,
     chartClaim,
@@ -170,7 +175,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const rev = resolveRevision(base.yearMonth);
       const torikawasure = casesOf.isUploaded(q.claimId)
         ? ukeTorikawasure(q.claimId, q.clerkId)
-        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
+        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), ...notes.textsOf(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
       return { ...generic, torikawasure };
     },
     explain,
@@ -196,6 +201,10 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     ...clock,
     ...clerks,
     ...ukeCheck,
+    /** カルテの構造化データ（design.md §16-1。段 19a） */
+    ...structured,
+    /** 画面の操作の前に、カルテの請求の構造化データを接続先から読んで残す（C-440） */
+    ensureStructuredOfNote: (noteId: number) => structured.ensureStructured(notes.claimIdOfNote(noteId)),
     /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
     ukeCheck: (claimId: string, clerkId?: string) => {
       const r = ukeCheck.ukeCheck(claimId, clerkId);

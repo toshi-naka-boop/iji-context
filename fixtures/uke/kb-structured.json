@@ -1,0 +1,367 @@
+{
+  "_note": "受け入れの症例 K12・K13 の合成の UKE の設定（scripts/gen-uke.ts の generateJitsurei が fixtures/uke/kozoka.UKE にする。設計 §16-10 の E-13）。作り方は取り忘れの症例 K8〜K11（kb.json → torikawasure.UKE）と同じ。患者は合成で、氏名・生年月日・番号はすべて架空。行は、fixtures/cases/K12・K13.json の版の区分の行と、EM §5-1 の「K12・K13 の行為」の表の「出るべき」行（規則の候補で出す行を含む。コード・点数は表のまま。数量は記録例の数量、時間の加算の数量は構造化データの訪問の時刻）。「出ないのが正しい（対照）」の行は入れない。日は EM §5-1-2 の「K12・K13 の書き方と日の割り付け」。管理料の行には訪問診療の年月日のコメント（850100106）、在宅酸素療法指導管理料には動脈血酸素飽和度のコメント（842100044。値は K1 と同じ 95。合成の設定）を付けた。X27 の部位（890000001）は K11 と同じく入れていない。rows・days・points・visits の意味は jitsurei.json と同じ",
+  "file": "fixtures/uke/kozoka.UKE",
+  "payer": "国保連",
+  "receipts": [
+    {
+      "patientNo": "K12",
+      "receiptType": "1318",
+      "patient": {
+        "name": "架空　十二郎",
+        "sex": 1,
+        "birth": "19391212",
+        "insurer": {
+          "number": "39139998",
+          "symbol": "",
+          "no": "00000121"
+        }
+      },
+      "diseases": [],
+      "visits": {
+        "14": 1,
+        "28": 1
+      },
+      "rows": [
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114001110",
+          "points": 890,
+          "days": {
+            "14": 1,
+            "28": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "80",
+          "code": "180725910",
+          "points": 79,
+          "days": {
+            "14": 1,
+            "28": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "80",
+          "code": "180820110",
+          "points": 3,
+          "days": {
+            "14": 1,
+            "28": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114746310",
+          "points": 11,
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114032510",
+          "points": 4585,
+          "days": {
+            "28": 1
+          },
+          "comments": [
+            [
+              "850100106",
+              "５０８１０１４"
+            ],
+            [
+              "850100106",
+              "５０８１０２８"
+            ]
+          ]
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114723810",
+          "points": 100,
+          "days": {
+            "28": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114034370",
+          "points": 300,
+          "days": {
+            "28": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114003710",
+          "points": 2400,
+          "days": {
+            "14": 1
+          },
+          "comments": [
+            [
+              "842100044",
+              "９５"
+            ]
+          ]
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114006210",
+          "points": 4000,
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114006310",
+          "points": 880,
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114041610",
+          "points": 100,
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114001470",
+          "points": 100,
+          "days": {
+            "14": 1
+          },
+          "quantity": "70"
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "31",
+          "code": "130000510",
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "code": "641140046",
+          "quantity": "1",
+          "points": 35,
+          "days": {
+            "14": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "33",
+          "code": "130005310",
+          "days": {
+            "28": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "code": "620007260",
+          "quantity": "1",
+          "days": {
+            "28": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "code": "620002613",
+          "quantity": "1",
+          "points": 103,
+          "days": {
+            "28": 1
+          }
+        }
+      ],
+      "notes": []
+    },
+    {
+      "patientNo": "K13",
+      "receiptType": "1318",
+      "patient": {
+        "name": "架空　十三子",
+        "sex": 2,
+        "birth": "19371013",
+        "insurer": {
+          "number": "39139998",
+          "symbol": "",
+          "no": "00000131"
+        }
+      },
+      "diseases": [],
+      "visits": {
+        "2": 1
+      },
+      "rows": [
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114000110",
+          "points": 720,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "14",
+          "code": "114000970",
+          "points": 100,
+          "days": {
+            "2": 1
+          },
+          "quantity": "75"
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "12",
+          "code": "112007410",
+          "points": 76,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "80",
+          "code": "180725810",
+          "points": 4,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "80",
+          "code": "180820010",
+          "points": 2,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "shikibetsu": "21",
+          "code": "620491801",
+          "quantity": "0.5",
+          "days": {
+            "2": 14
+          }
+        },
+        {
+          "rec": "IY",
+          "code": "610463223",
+          "quantity": "1",
+          "points": 1,
+          "days": {
+            "2": 14
+          }
+        },
+        {
+          "rec": "IY",
+          "shikibetsu": "21",
+          "code": "622095502",
+          "quantity": "1",
+          "points": 1,
+          "days": {
+            "2": 28
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "21",
+          "code": "120000710",
+          "points": 11,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "shikibetsu": "23",
+          "code": "620006480",
+          "quantity": "35",
+          "points": 64,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "shikibetsu": "23",
+          "code": "620631201",
+          "quantity": "5",
+          "points": 14,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "IY",
+          "shikibetsu": "23",
+          "code": "622096401",
+          "quantity": "14",
+          "points": 162,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "23",
+          "code": "120001010",
+          "points": 8,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "25",
+          "code": "120001210",
+          "points": 42,
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "shikibetsu": "26",
+          "code": "120000110",
+          "days": {
+            "2": 1
+          }
+        },
+        {
+          "rec": "SI",
+          "code": "120001310",
+          "points": 2,
+          "days": {
+            "2": 1
+          }
+        }
+      ],
+      "notes": []
+    }
+  ]
+}

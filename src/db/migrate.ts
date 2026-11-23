@@ -175,6 +175,40 @@ CREATE TABLE note14_worksheets (id INTEGER PRIMARY KEY AUTOINCREMENT, check_mont
 CREATE INDEX note14_worksheets_month ON note14_worksheets (check_month, id);
 `,
   },
+  {
+    // カルテの構造化データ（design.md §16-1・16-8。段 19a。L-165）。追記だけ。
+    // chart_structured：接続先から読んだ 4 種類を、その月の点検に使った形のまま残す（同じ患者・月・種類は最新の行を使う）。part は visits・orders・procedures・homeCare、
+    // status は supported・unsupported、items は行の JSON、gaps は欄ごとの欠けの数の JSON（手元で数えたもの）。
+    // structured_inputs：医療事務が入れた訪問の時刻（16-6）。どちらも患者 id を持つので、患者マスタを消すときに一緒に消す。ログ・監査ログ・AI に送る文脈に値を出さない
+    version: 17,
+    sql: `
+CREATE TABLE chart_structured (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, year_month TEXT NOT NULL, part TEXT NOT NULL, status TEXT NOT NULL, items TEXT NOT NULL, gaps TEXT NOT NULL, connector_id TEXT NOT NULL, fetched_at TEXT NOT NULL);
+CREATE INDEX chart_structured_month ON chart_structured (patient_id, year_month, part, id);
+CREATE TABLE structured_inputs (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, date TEXT NOT NULL, visit_ref TEXT, start TEXT NOT NULL, end TEXT NOT NULL, entered_by TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX structured_inputs_patient ON structured_inputs (patient_id, date, id);
+`,
+  },
+  {
+    // 電子カルテの独自コードの対応表（design.md §16-2・16-8。段 19b。L-167・L-213）。クリニックごとに、接続先・入力欄の種類（薬・材料・行為・指導管理・機器）・コードの体系・独自コードの組で 1 行。
+    // tbl はその欄の当ててよい表（機器は device）、code は当てたコード（機器は区分キー）。患者・請求の id を持たない（消す操作で残るもの。chart_act_aliases と同じ）。AI には送らない
+    version: 18,
+    sql: `
+CREATE TABLE ext_code_maps (connector_id TEXT NOT NULL, field TEXT NOT NULL, system TEXT NOT NULL, ext_code TEXT NOT NULL, tbl TEXT NOT NULL, code TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL, PRIMARY KEY (connector_id, field, system, ext_code));
+`,
+  },
+  {
+    // 患者の在宅療養の機器と、電子カルテからの変える案（design.md §16-5・16-8。段 19e。FR-208）。どちらも追記だけ。
+    // patient_devices：kind は機器の種類（DEVICE_KINDS のキー）か none（機器なし）。detail は C150 の段と患者の区分の JSON。source は「電子カルテ（確かめた）」か「医療事務が入れた」。
+    // device_proposals：電子カルテの指示と効く行の違い。kind は当てた種類（当てられなければ NULL）。decision は accept・reject（決めるまで NULL）。
+    // どちらも患者 id を持つので、患者マスタを消すときに一緒に消す。ログ・監査ログ・AI に送る文脈に機器の値を出さない（監査ログは種類の鍵だけ）
+    version: 19,
+    sql: `
+CREATE TABLE patient_devices (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, kind TEXT NOT NULL, from_month TEXT NOT NULL, end_month TEXT, detail TEXT, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_at TEXT NOT NULL);
+CREATE INDEX patient_devices_patient ON patient_devices (patient_id, id);
+CREATE TABLE device_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, kind TEXT, started_on TEXT, ended_on TEXT, ref TEXT NOT NULL, connector_id TEXT NOT NULL, received_at TEXT NOT NULL, decision TEXT, decided_by TEXT, decided_at TEXT);
+CREATE INDEX device_proposals_patient ON device_proposals (patient_id, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

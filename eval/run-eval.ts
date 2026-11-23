@@ -21,7 +21,8 @@ import type { UkePatient } from "../src/uke/types";
 import type { ChartAct } from "../src/chart/acts";
 import { extractFacts, type ChartNote } from "../src/chart/extract";
 import { withMasters } from "../src/masters/db";
-import { countActs, matchSaved, saveActs, wantOf, type ActsCount, type RefExclude, type SavedAct } from "./acts-count";
+import { assertGate, countActs, loadExclude, matchSaved, saveActs, wantOf, type ActsCount, type SavedAct } from "./acts-count";
+import { recordGate } from "./gate";
 
 type Expect = {
   noLeak?: boolean;
@@ -60,8 +61,8 @@ type Case = {
   smalltalkStreak?: number;
   /** 直前まで愚痴が続いた回数 */
   ventStreak?: number;
-  /** acts：参考の割合から除く正解（設計で取り出さない・選べないと決まったもの。理由を添える。L-163） */
-  refExclude?: RefExclude[];
+  /** acts：直しに使う組（tune）か、合否だけに使う組（gate）か（design.md §16-9。L-189）。線は gate だけに掛ける */
+  split?: "tune" | "gate";
   expect: Expect;
 };
 /** 失敗の種類（eval-loop の失敗カテゴリ） */
@@ -110,7 +111,8 @@ async function runActs(root: string, c: Case, by: Sender): Promise<ActsOutput> {
   const got = saveActs(r.acts);
   return withMasters((db) => {
     if (!db) throw new Error("masters.db がない（RESEMEN_MASTER_DIR）");
-    return { ...countActs(matchSaved(db, e.date.slice(0, 7), got), wantOf(e.acts), c.refExclude), got };
+    // 除く正解（規則・患者の情報で出すもの）は ID で eval/datasets/acts-exclude.json に持つ（design.md §16-9）
+    return { ...countActs(matchSaved(db, e.date.slice(0, 7), got), wantOf(e.acts, { chart: c.chart!, date: c.date! }), loadExclude(root)), got };
   });
 }
 
@@ -124,7 +126,8 @@ async function runCase(root: string, c: Case, by: Sender): Promise<Result> {
     if (c.kind === "acts") {
       const n = await runActs(root, c, by);
       output = n;
-      if (n.in20 < n.total * ACTS_PASS_RATE) fail("acts:in20", "抽出漏れ", `正しいコードが候補の 20 件に入った行為 ${n.in20} / ${n.total}`);
+      // 記載ごとの線（L-108）は直しに使う組だけ。合否だけの組は全部の記載を合わせた線（95%）で見る（design.md §16-9）
+      if (c.split !== "gate" && n.in20 < n.total * ACTS_PASS_RATE) fail("acts:in20", "抽出漏れ", `正しいコードが候補の 20 件に入った行為 ${n.in20} / ${n.total}`);
       return { id: c.id, title: c.title, pass: failures.length === 0, failures, output, ms: Date.now() - started };
     }
     if (c.kind === "scribe") {
@@ -212,6 +215,8 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l) as Case)
     .filter((c) => !opts.ids || opts.ids.includes(c.id));
+  // 合否だけの組を回すときは、読んだ束の指紋が固定した値と同じことを先に確かめる（違えば回さずに失敗。L-210）
+  const gateSha = cases.some((c) => c.kind === "acts" && c.split === "gate") ? assertGate(root) : null;
   const results: Result[] = [];
   for (const c of cases) results.push(await runCase(root, c, by));
   const runsDir = path.join(root, "eval", "runs");
@@ -232,8 +237,21 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
   for (const r of results) for (const f of r.failures) cats.set(f.category, (cats.get(f.category) ?? 0) + 1);
   const regress = results.filter((r) => prevResults.get(r.id) === true && !r.pass).map((r) => r.id);
   // 行ったことの候補出し（design.md §15-7・L-108）：全部の記載を合わせた割合と内訳
-  const acts = results.filter((r) => r.output && typeof r.output === "object" && "in20" in (r.output as object)).map((r) => r.output as ActsOutput);
-  const sum = (k: "total" | "in20" | "top5" | "ref" | "refIn20" | "refTop5" | "name" | "lookup" | "unmatched") => acts.reduce((a, x) => a + x[k], 0);
+  const splitOf = new Map(cases.map((c) => [c.id, c.split]));
+  const actsResults = results.filter((r) => r.output && typeof r.output === "object" && "in20" in (r.output as object));
+  // 記載ごとの割合（L-108）は直しに使う組だけで足し合わせる。合否だけの組は recordGate が数え、eval/gate-runs.jsonl に 1 行残す（design.md §16-9。C-424）
+  const acts = actsResults.filter((r) => splitOf.get(r.id) !== "gate").map((r) => r.output as ActsOutput);
+  // 合否の組は、評価セットの全部の gate の記載の id と照らす（絞った回・例外で出力のない記載がある回は、記録するが合否に使わない。C-431）
+  const gateIds = readFileSync(path.join(root, "eval", "datasets", "resemen.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as Case)
+    .filter((c) => c.kind === "acts" && c.split === "gate")
+    .map((c) => c.id);
+  const gateRows = results.filter((r) => splitOf.get(r.id) === "gate").map((r) => ({ id: r.id, split: "gate", output: actsResults.includes(r) ? (r.output as ActsOutput) : null }));
+  const tuneRows = actsResults.filter((r) => splitOf.get(r.id) !== "gate").map((r) => ({ id: r.id, split: splitOf.get(r.id), output: r.output as ActsOutput }));
+  const gate = actsResults.length > 0 || gateRows.length > 0 ? recordGate(root, [...gateRows, ...tuneRows], { at: new Date().toISOString(), gateSha256: gateSha ?? "", gateIds }) : null;
+  const sum = (k: "total" | "in20" | "top5" | "ref" | "refIn20" | "refTop5" | "name" | "lookup" | "unmatched" | "extra" | "ruleTaken") => acts.reduce((a, x) => a + x[k], 0);
   const pctOf = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "-");
   const pct = (a: number) => pctOf(a, sum("total"));
   const actsLine = Math.ceil(sum("total") * ACTS_PASS_RATE);
@@ -248,10 +266,12 @@ export async function runEval(root: string, opts: { ids?: string[]; runId?: stri
     ...(acts.length
       ? [
           `- 行ったことの候補出し（略した書き方の合成カルテ ${acts.length} 記載・行為 ${sum("total")}。1 対 1 で数える。L-163）：正しいコードが候補の 20 件に入った ${sum("in20")}/${sum("total")}（${pct(sum("in20"))}。${sum("in20") >= actsLine ? "合格" : "不合格"}：線 ${actsLine}/${sum("total")}＝${ACTS_PASS_RATE * 100}%）、上位 5 件 ${sum("top5")}/${sum("total")}（${pct(sum("top5"))}。報告だけ）`,
-          `  - 参考（設計で取り出さない・選べないと決まった正解 ${sum("total") - sum("ref")} 個を除いた ${sum("ref")} 行為。並べて出すだけ）：20 件 ${sum("refIn20")}/${sum("ref")}（${pctOf(sum("refIn20"), sum("ref"))}）、上位 5 件 ${sum("refTop5")}/${sum("ref")}（${pctOf(sum("refTop5"), sum("ref"))}）`,
+          `  - 文章から取り出すべき行為（規則・患者の情報で出す除く正解 ${sum("total") - sum("ref")} 個を除いた ${sum("ref")} 行為。並べて出すだけ）：20 件 ${sum("refIn20")}/${sum("ref")}（${pctOf(sum("refIn20"), sum("ref"))}）、上位 5 件 ${sum("refTop5")}/${sum("ref")}（${pctOf(sum("refTop5"), sum("ref"))}）`,
+          `  - 余計な取り出し ${sum("extra")}・規則で出すものを取り出した数 ${sum("ruleTaken")}`,
           `  - 内訳：名前で当たった ${sum("name")}・前に選んだもの 0・lookup の候補 ${sum("lookup")}・探して選んだ 0（評価では探さない）・当てられない ${sum("unmatched")}`,
         ]
       : []),
+    ...(gate ? ["- 合否だけの組（design.md §16-9）：", ...gate.lines.map((l) => `  ${l}`)] : []),
     "",
     "| id | 結果 | 内容 | 失敗 |",
     "|---|---|---|---|",
