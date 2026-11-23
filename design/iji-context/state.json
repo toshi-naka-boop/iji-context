@@ -1,14 +1,14 @@
 {
-  "currentNode": "批評",
-  "status": "in_progress",
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
   "designVersion": "v33",
   "approvedDesignVersion": null,
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v33:51f919833087",
+  "requiredApprovalFingerprint": "v33:4db86239b6c4",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 66,
+  "criticRound": 67,
   "openIssueIds": [],
   "requiredReads": [
     "design.md §16",
@@ -16,7 +16,7 @@
     "spec.md FR-205〜211",
     "sources/em-v33-draft.md"
   ],
-  "nextAction": "v33 の round-66 の直しの狭い確かめ（round-67）→ 承認",
+  "nextAction": "v33 の承認と、利用者に聞く 10 件の判断を待つ",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
