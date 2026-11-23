@@ -1,0 +1,54 @@
+{
+  "_note": "評価の合否だけの組の記載（K19。設計 §16-9・§16-10 の E-14。split: gate）。書き方・正解・日は EM §5-1-2 の「K14〜K24 の記載」の表のまま（作成手引きの記録例の事例文・表示の書き方。薬・器材の名前はマスターの名称）。臨床の文は足さない（S・A は空）。acts は正解（本人が確かめたあとの形。match のコードは EM §2-8 の症例のコード）。lookup は空（評価では AI が挙げる語を使う）。合否の組の束（acts-exclude.json・gate の記載・この記載の entry の全体）は eval/acts-count.ts の GATE_SHA256 で固定してある。直すときは設計の版を上げる",
+  "claimId": "K19-2026-10",
+  "entries": [
+    {
+      "date": "2026-10-30",
+      "s": "",
+      "o": "夜間に往診し、死亡診断を行った。",
+      "a": "",
+      "p": "",
+      "rx": "",
+      "acts": [
+        {
+          "category": "診療行為",
+          "written": "往診",
+          "lookup": [],
+          "quote": "往診",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114000110",
+            "name": "往診料",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "診療行為",
+          "written": "夜間に往診",
+          "lookup": [],
+          "quote": "夜間に往診",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114011670",
+            "name": "夜間往診加算（在支診等）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "診療行為",
+          "written": "死亡診断",
+          "lookup": [],
+          "quote": "死亡診断",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114007270",
+            "name": "死亡診断加算（往診料）",
+            "by": "candidate"
+          }
+        }
+      ],
+      "rxNotes": [],
+      "rxChoice": null
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 // 知識（一覧・検証・共感・提案）と、査定・返戻の通知の入力。検証した人の名前は受け取らない（セッションの本人が監査ログに残る）
 import { z } from "zod";
 import { LAYER_SLUG } from "../../lifecycle/layers";
+import { LOCAL_PAIR_BASES } from "../../messages";
+import { claimId } from "./cases";
 
 /**
  * 知識の id（src/lifecycle/store.ts の createKnowledge が作る「層/slug」の形）。knowledge/ の下のディレクトリ名になるので、
@@ -8,11 +10,16 @@ import { LAYER_SLUG } from "../../lifecycle/layers";
  */
 export const knowledgeId = z.string().regex(new RegExp(`^(${Object.values(LAYER_SLUG).join("|")})/[a-z0-9-]{1,60}$`));
 
+/** 公的文書の条件に当たるかの確認（design.md §11-3）。key は画面に出したときの文書の鍵（<id>#<ハッシュ 8 桁>）。確かめた人の名前は受け取らない */
+export const knowledgeParams = z.strictObject({ id: knowledgeId });
+export const officialCheckBody = z.strictObject({ docId: z.string().regex(/^[A-Z0-9][A-Za-z0-9-]{0,39}$/), key: z.string().regex(/^[A-Z0-9][A-Za-z0-9-]{0,39}#[0-9a-f]{8}$/) });
+
 export const knowledgeQuery = z.strictObject({ view: z.enum(["queue"]).optional() });
 
 // 要約・本文が空白だけのときの文言は propose（src/server/app/knowledge.ts）が持つ。要約は propose が 200 文字に切る
 export const knowledgeBody = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("verify"), id: knowledgeId, approve: z.boolean(), reason: z.string().max(500).optional() }),
+  // revisionSeen：承認の画面に出した改定の差の改定日（design.md §14-4 v28）
+  z.strictObject({ action: z.literal("verify"), id: knowledgeId, approve: z.boolean(), reason: z.string().max(500).optional(), revisionSeen: z.array(z.string().max(40)).max(20).optional() }),
   z.strictObject({ action: z.literal("empathy"), id: knowledgeId }),
   z.strictObject({ action: z.literal("propose"), summary: z.string().max(1024), body: z.string().max(4000), relatesTo: knowledgeId.nullable().optional() }),
 ]);
@@ -46,4 +53,22 @@ const notice = z.strictObject({
     )
     .max(200),
 });
-export const noticeRegisterBody = z.strictObject({ notice, index: z.number().int().min(0).max(199), reexamFiled: z.boolean().optional(), fileName });
+/** kubun は、項目名から区分が決まらなかったときに本人が選んだ区分（選べる区分かは処理が確かめる） */
+export const noticeRegisterBody = z.strictObject({ notice, index: z.number().int().min(0).max(199), reexamFiled: z.boolean().optional(), fileName, kubun: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional() });
+
+/** 「この請求のこの組が返戻・査定された」（design.md §14-4）の組。コードは小さい順 */
+export const localReturnBody = z.strictObject({ a: z.string().regex(/^\d{9}$/), b: z.string().regex(/^\d{9}$/), tani: z.literal([1, 2, 3]) });
+
+/**
+ * 背反の組の院内の知識を、取り込んだレセプトの点検の G05 の指摘から作る（design.md §14-2。POST /api/knowledge/pair）。
+ * condition は根拠を除いた条件の文（根拠と合わせて 200 字まで。長さの文言は処理が持つ）
+ */
+export const pairBody = z.strictObject({
+  claimId,
+  a: z.string().regex(/^\d{9}$/),
+  b: z.string().regex(/^\d{9}$/),
+  tani: z.literal([1, 2, 3]),
+  polarity: z.enum(["allow", "avoid"]),
+  basis: z.enum(LOCAL_PAIR_BASES),
+  condition: z.string().max(200),
+});

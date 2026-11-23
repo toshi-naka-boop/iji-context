@@ -24,6 +24,25 @@ describe("権限表", () => {
     expect(Object.keys(POLICY).sort()).toEqual(actual);
   });
 
+  it("すべての行が、外部へ送るか（external）と患者の情報を扱うか（patientData）を申告している（既定値はない。design.md §11-11）", () => {
+    for (const [key, r] of Object.entries(POLICY) as [string, Record<string, unknown>][]) {
+      expect([key, Object.keys(r).sort()]).toEqual([key, ["external", "patientData", "rule"]]);
+      expect([key, ["ai", "voice", "none"].includes(r.external as string), typeof r.patientData]).toEqual([key, true, "boolean"]);
+    }
+    // ログインなしで呼べる行は、外部へ送らず、患者の情報も扱わない（同意を確かめる相手がいない）
+    for (const [key, r] of Object.entries(POLICY)) if (r.rule === "public") expect([key, r.external, r.patientData]).toEqual([key, "none", false]);
+    // 設計書が挙げている入口（表が正）
+    const declared = (keys: string[]) => keys.map((k) => [k, POLICY[k as keyof typeof POLICY].external, POLICY[k as keyof typeof POLICY].patientData]);
+    const ai = ["POST /api/chart", "POST /api/chart/soap", "POST /api/chart/image", "POST /api/mentor", "POST /api/proxy", "POST /api/notice"];
+    expect(declared(ai)).toEqual(ai.map((k) => [k, "ai", true]));
+    const voice = ["POST /api/voice/listen", "POST /api/voice/speak"];
+    expect(declared(voice).map(([k, e]) => [k, e])).toEqual(voice.map((k) => [k, "voice"]));
+    const patient = ["POST /api/chart/[id]", "POST /api/uke/upload", "POST /api/uke", "GET /api/doctor", "POST /api/doctor/[id]/answer", "GET /api/peer", "POST /api/peer/[id]/answer", "POST /api/notice/register"];
+    expect(declared(patient)).toEqual(patient.map((k) => [k, "none", true]));
+    // 開発用の、AI を呼ぶ確認の入口
+    expect(declared(["GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]).map(([, e]) => e)).toEqual(["ai", "ai", "ai"]);
+  });
+
   it("すべてのルートが route() を使い、自分のパスとメソッドの行を allow() で引いている", () => {
     for (const r of routes) {
       expect(/\broute\(/.test(r.src), r.file).toBe(true);
@@ -33,11 +52,26 @@ describe("権限表", () => {
   });
 
   it("開発用（dev）の行は 3 つだけ。ログインの確かめは route() が持ち、ルートの中には書かない", () => {
-    const dev = Object.entries(POLICY).filter(([, rule]) => rule === "dev").map(([key]) => key);
+    const dev = Object.entries(POLICY).filter(([, r]) => r.rule === "dev").map(([key]) => key);
     expect(dev).toEqual(["GET /api/eval", "GET /api/mentor-check", "GET /api/sdk-check"]);
     for (const r of routes.filter((x) => x.keys.some((k) => dev.includes(k)))) expect(/ログインしてください|\bviewer\b/.test(r.src), r.file).toBe(false);
     // ログインした人なら、ロールは問わない
     for (const role of ["clerk", "veteran", "manager", "doctor"] as const) expect(permits("dev", { role }, () => false)).toBe(true);
+  });
+
+  it("時計を進めるのは、事務長と、開発ではどのロールでも（本番でも 404 にしない。real のクリニックで断るのはハンドラ）", () => {
+    const clock: Rule = POLICY["POST /api/clock"].rule;
+    expect(clock).toEqual({ roles: ["manager"], dev: true });
+    const env = process.env.NODE_ENV;
+    try {
+      (process.env as Record<string, string>).NODE_ENV = "production";
+      expect(permits(clock, { role: "manager" }, () => true)).toBe(true);
+      for (const role of ["clerk", "veteran", "doctor"] as const) expect(permits(clock, { role }, () => true)).toBe(false);
+      (process.env as Record<string, string>).NODE_ENV = "development";
+      for (const role of ["clerk", "veteran", "manager", "doctor"] as const) expect(permits(clock, { role }, () => false)).toBe(true);
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = env;
+    }
   });
 
   it("表にないキーは引けない", () => {
@@ -45,15 +79,15 @@ describe("権限表", () => {
   });
 
   it("ロールの行はそのロールだけ、solo の行は 1 人で使っているクリニックの持ち主にも許す", () => {
-    const doctorOnly: Rule = POLICY["POST /api/doctor/[id]/approve"];
+    const doctorOnly: Rule = POLICY["POST /api/doctor/[id]/approve"].rule;
     expect(permits(doctorOnly, { role: "doctor" }, () => true)).toBe(true);
     expect(permits(doctorOnly, { role: "clerk" }, () => true)).toBe(false);
     expect(permits(doctorOnly, { role: "manager" }, () => true)).toBe(false);
-    const invite: Rule = POLICY["POST /api/invites"];
+    const invite: Rule = POLICY["POST /api/invites"].rule;
     expect(permits(invite, { role: "manager" }, () => false)).toBe(true);
     expect(permits(invite, { role: "clerk" }, () => false)).toBe(false);
     expect(permits(invite, { role: "clerk" }, () => true)).toBe(true);
-    const switchRole: Rule = POLICY["POST /api/auth/role"];
+    const switchRole: Rule = POLICY["POST /api/auth/role"].rule;
     expect(permits(switchRole, { role: "manager" }, () => false)).toBe(false);
     expect(permits(switchRole, { role: "doctor" }, () => true)).toBe(true);
   });

@@ -5,10 +5,10 @@ import { getApp, talkToMentor } from "../../../src/server/instance";
 import { allow } from "../../../src/server/policy";
 import { mentorBody } from "../../../src/server/schemas/mentor";
 
-export const POST = route({ roles: allow("POST /api/mentor"), body: mentorBody, limit: "llm", audit: { target: ({ body }) => body.questionId } }, ({ body, clerkId }) => {
+export const POST = route({ roles: allow("POST /api/mentor"), body: mentorBody, limit: "llm", audit: { target: ({ body }) => body.questionId } }, ({ body, clerkId, user }) => {
   // 自分の問題についてだけ話せる（同じクリニックのほかの人の問題は、ないものとして扱う）
   if (getApp().question(body.questionId).clerkId !== clerkId) throw notFound(`問題がない: ${body.questionId}`);
-  return talkToMentor({ ...body, clerkId });
+  return talkToMentor({ ...body, clerkId, user });
 });
 
 export const runtime = "nodejs";

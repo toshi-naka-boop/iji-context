@@ -1,0 +1,22 @@
+{
+  "id": "GK-R8-12-Q3",
+  "kind": "疑義解釈",
+  "issuer": "厚生労働省保険局医療課",
+  "number": "その12 問3",
+  "issuedOn": "2026-09-02",
+  "url": "https://www.mhlw.go.jp/content/12400000/001744953.pdf",
+  "scope": {
+    "kubun": [
+      "A_DENSHI_RENKEI"
+    ],
+    "payer": null,
+    "prefecture": null,
+    "conditionNote": "マイナ保険証利用率の要件を欠く間"
+  },
+  "stance": "認めない",
+  "summary": "マイナ保険証利用率の要件を満たさなくなっても辞退の届出は要らないが、その間は算定できない",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

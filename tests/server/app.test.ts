@@ -1,6 +1,8 @@
 // 画面から呼ぶ処理の層（src/server/app.ts）。設定と合成データはリポジトリのものを使い、DB・知識・記録は一時ディレクトリに置く
 import Database from "better-sqlite3";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import iconv from "iconv-lite";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -8,9 +10,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applications } from "../../src/db/schema";
 import { seed } from "../../scripts/seed-knowledge";
 import { cleanName, openApp, type App } from "../../src/server/app";
-import { readKnowledge } from "../../src/lifecycle/store";
+import { listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import { evaluate } from "../../src/engine";
+import { period } from "../../src/demo/period";
+import { docKey } from "../../src/official/match";
 import { at, claimId, dateIn, day } from "../helpers/period";
+import { makeDoc } from "../official/helpers";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -63,6 +68,16 @@ describe("患者ごとに確かめた情報", () => {
     expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, value: 6 })).toThrow(/0〜5/);
     expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(3) })).toThrow(/今日より前/);
     expect(() => app.savePatientFact(claimId("K4"), "nobody", care)).toThrow(/登録されていない/);
+  });
+
+  it("K4 に要介護 2 と障害支援区分 2 を残すと、包括的支援加算の取り忘れが出る。障害支援区分は 0〜6 で、期限を付けない（design.md §11-4）", () => {
+    const level = { key: "disabilitySupportLevel" as const, value: 2, source: "受給者証" as const, validUntil: null };
+    app.savePatientFact(claimId("K4"), "new1", care);
+    app.savePatientFact(claimId("K4"), "new1", level);
+    expect(app.caseOf(claimId("K4")).facts.disabilitySupportLevel).toEqual({ known: true, value: 2 });
+    expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "取り忘れ"]]);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...level, value: 7 })).toThrow(/0〜6/);
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...level, validUntil: dateIn(2, 31) })).toThrow(/期限は付けない/);
   });
 });
 
@@ -226,7 +241,7 @@ describe("訪問カルテを書く（FR-69）", () => {
     const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
     expect(s.date).toBe(day(20));
     expect(app.visits("new1").some((v) => v.claimId === claimId("K4") && v.date === day(20))).toBe(false);
-    app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
+    app.confirmNote(s.id, "new1", [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
     const v = app.visits("new1").find((x) => x.claimId === claimId("K4") && x.date === day(20));
     // ほかの利用者には、この人が書いたカルテは重ならない
     const other = app.createClerk("審査員A");
@@ -239,7 +254,7 @@ describe("訪問カルテを書く（FR-69）", () => {
   it("カルテにない言葉の事実では確定できない。診療月の外の日には書けない", () => {
     app.advanceClock(at(20, "15:00:00"));
     const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
-    expect(() => app.confirmNote(s.id, [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
+    expect(() => app.confirmNote(s.id, "new1", [{ kind: "処方", value: "DOAC", quote: "エリキュース" }])).toThrow();
     app.advanceClock(`${dateIn(1, 2)}T09:00:00+09:00`);
     expect(() => app.saveNote(claimId("K4"), "new1", "訪問診療", note)).toThrow();
   });
@@ -270,6 +285,66 @@ describe("利用者ごとに使う・UKE を取り込む", () => {
     expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
     expect(app.ukeList(a.id).map((u) => [u.name, u.payer, u.imported])).toEqual([["kokuhoren.UKE", "国保連", false], ["shiharaikikin.UKE", "支払基金", true]]);
     expect(() => app.importUke(a.id, "other.UKE")).toThrow();
+  });
+  it("以前の作り物のコードで作られた取り込み済みの UKE は、一覧から落とさず、行をまるごと点検の対象外として出す。形式そのものが読めないファイルは「読めない」と出し、点検には並べない。ほかのレセプトは今までどおり読める（design.md §11-1 の移行・§11-12）", () => {
+    // 見本（K6）の請求 id とコードを差し替えて、以前の形式（99 で始まる作り物のコード）の UKE を置き場に置く
+    const sample = new TextDecoder("shift_jis").decode(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")).subarray(0, -1));
+    const old = sample.replace(claimId("K6"), `X9-${period.yearMonth}`).replace(/^(SI,\d+,\d+,)\d{9}/gm, `$1${"99"}0000031`);
+    const bytes = Buffer.concat([iconv.encode(old, "Shift_JIS"), Buffer.from([0x1a])]);
+    const name = `${createHash("sha256").update(bytes).digest("hex")}.UKE`;
+    mkdirSync(path.join(tmp, "uke"), { recursive: true });
+    writeFileSync(path.join(tmp, "uke", name), bytes);
+    // 形式そのものが読めないファイル（最後のレコードが CRLF で終わらない。EOF がないだけなら読める）
+    const broken = Buffer.concat([bytes.subarray(0, -3), Buffer.from([0x1a])]);
+    const brokenName = `${createHash("sha256").update(broken).digest("hex")}.UKE`;
+    writeFileSync(path.join(tmp, "uke", brokenName), broken);
+    app.setSetting("uke-uploads", JSON.stringify([name, brokenName]));
+    const a = app.createClerk("審査員A");
+    expect(app.ukeList(a.id).map((u) => [u.name, u.unreadable?.reason ?? null, u.payer, u.receipts.map((x) => [x.claimId, x.otherRows, x.unreadable]), u.imported])).toEqual([
+      ["kokuhoren.UKE", null, "国保連", ["K1", "K2", "K3", "K4", "K5", "K7"].map((k) => [claimId(k), 0, null]), false],
+      ["shiharaikikin.UKE", null, "支払基金", [[claimId("K6"), 0, null]], false],
+      // 以前のコードの行（2 行）は、版の表にないコードなので、点検の対象外の行として残る
+      [name, null, "支払基金", [["U1-1", 2, null]], false],
+      [brokenName, expect.stringContaining("いまの形式では読めない UKE"), null, [], false],
+    ]);
+    expect(() => app.importUke(a.id, brokenName)).toThrow("いまの形式では読めない UKE");
+    const checked = app.ukeCheck("U1-1");
+    if (!("lines" in checked)) throw new Error("読めるはずのレセプトが読めない");
+    expect([checked.lines, checked.otherRows, checked.partial, checked.subtotal, checked.declared]).toEqual([[], 2, true, 0, { ho: 274, ko: [] }]);
+    expect(app.cases().map((c) => c.claimId)).toEqual([...["K1", "K2", "K3", "K4", "K5", "K7", "K6"].map(claimId), "U1-1"]);
+    app.importUke(a.id, "shiharaikikin.UKE");
+    expect(app.importedClaims(a.id)).toEqual([claimId("K6")]);
+  });
+});
+
+describe("コメントを持つ請求か（commentsKnown。design.md §11-13）", () => {
+  it("UKE から作った請求は真。問題の請求（通常モード・選択モード・練習問題）は偽（行を入れ替えるだけで、コメントを直さないため）", () => {
+    expect(app.cases().map((c) => c.commentsKnown)).toEqual(Array.from({ length: 7 }, () => true));
+    app.importUke("new1", "kokuhoren.UKE");
+    const normal = app.start("new1", claimId("K1"));
+    const choice = app.start("new1", claimId("K2"), "選択");
+    const drill = app.startDrill("new1", "d04");
+    expect([normal, choice, drill].map((q) => app.caseFor(q).commentsKnown)).toEqual([false, false, false]);
+  });
+  it("摘要欄の記載（R17）は、UKE から作った請求をそのまま判定するときだけ当たる。問題の判定（下書き・確定・選択）には当たらない（§11-13 完了条件 (g)）", () => {
+    // UKE のままの請求：R17 が当たり、同梱の UKE は必須のコメントが付いているので指摘は出ない
+    for (const k of ["K1", "K2", "K3", "K4", "K5", "K7"]) {
+      const r = app.judgeFor(app.start("new1", claimId(k)))(app.caseOf(claimId(k)));
+      expect(r.applied, k).toContain("R17");
+      expect(r.findings.filter((f) => f.ruleId === "R17"), k).toEqual([]);
+    }
+    // 通常モードの月末の問題：行を消して下書き・確定しても、UKE のコメントと行を突き合わせた指摘（記載もれ）は出ない
+    const normal = app.start("new1", claimId("K2"));
+    const cut = app.caseFor(normal).lines.filter((l) => l.kubun !== "C002_N10_HOKATSU" && l.kubun !== "C002_2RO1");
+    const draft = app.draft(normal.id, cut).result;
+    const done = app.confirm(normal.id, cut).confirmed!.result;
+    for (const r of [draft, done]) expect([r.applied.includes("R17"), r.findings.some((f) => f.kind === "記載もれ")]).toEqual([false, false]);
+    // 選択モードと練習問題も同じ
+    const choice = app.start("new1", claimId("K2"), "選択");
+    const drill = app.startDrill("new1", "d04");
+    for (const q of [choice, drill]) expect(app.judgeFor(q)(app.caseFor(q)).applied).not.toContain("R17");
+    const item = app.choices(choice.id)[0];
+    if (item) expect(app.pick(choice.id, item.lineIndex, item.options[0]).findings.every((f) => f.ruleId !== "R17")).toBe(true);
   });
 });
 
@@ -364,6 +439,95 @@ describe("ローカルルール（FR-78・FR-79・FR-80）", () => {
     expect(st["local/seed-08"]).toBe("承認済み");
     expect(st["local/seed-10"]).toBe("保管");
     expect(st["local/seed-11"]).toBe("未検証");
+  });
+});
+
+describe("公的情報との突き合わせと、公的文書による再検証（FR-128〜131）", () => {
+  /** BNP（D008_19）を対象に持つ、同梱の支払基金の文書（evidence-master §2-4） */
+  const BNP_DOCS = ["SJ-133", "SJ-154", "SJ-210", "SJ-286", "SJ-319", "SJ-89"];
+  /** K6 の合成の査定通知から入る地域ルール（支払基金・東京都・BNP。条件の注記あり） */
+  function k6Rule() {
+    const q = app.start("new1", claimId("K6"));
+    return app.localRulesOf(q.id).find((r) => r.layer === "地域")!;
+  }
+  const historyEvents = () => listKnowledge(app.store).flatMap((m) => m.history.map((h) => h.event));
+
+  it("本番の配線は、同梱のレジストリを会議の整理に渡している", () => {
+    expect(app.deps.official?.docs.length).toBeGreaterThanOrEqual(10);
+    expect(app.deps.official?.generationOf(period.yearMonth)).toBe("R8");
+  });
+
+  it("K6 の地域ルールに「関連あり・未照合」の結果と、BNP の文書への出典リンクが出る。出すのは要旨とリンクだけで、「整合」とは出さない", () => {
+    app.seedLocalRules();
+    const rule = k6Rule();
+    expect(rule.official).toMatchObject({ verdict: "関連あり・未照合", approx: true });
+    expect(rule.official.conditionNote).toContain("通知の理由：");
+    expect(rule.official.docs.map((d) => d.id)).toEqual(BNP_DOCS);
+    for (const d of rule.official.docs) {
+      expect(d.url, d.id).toMatch(/^https:\/\/www\.hpdx\.or\.jp\/.+\.pdf#page=\d+$/);
+      expect(d.verdict, d.id).toBe("関連あり・未照合");
+      expect(Object.keys(d).sort(), d.id).toEqual(["id", "issuedOn", "issuer", "kind", "number", "stance", "summary", "url", "verdict"]);
+      expect(d.summary, d.id).not.toMatch(/[0-9０-９]\s*(点|円)/);
+    }
+    // 読み比べる相手：確定病名への連月は認める／疑いへの連月は認めない
+    expect(rule.official.docs.filter((d) => d.id === "SJ-133" || d.id === "SJ-319").map((d) => d.stance)).toEqual(["認める", "認めない"]);
+  });
+
+  it("どのローカルルールにも 4 つの結果のどれか 1 つが付く。当たる文書がなければ「公的根拠なし」で、出典は出ない", () => {
+    app.seedLocalRules();
+    const rules = [claimId("K1"), claimId("K6")].flatMap((c) => app.localRulesOf(app.start("new1", c).id));
+    expect(rules.length).toBeGreaterThan(3);
+    for (const r of rules) {
+      expect(["整合", "矛盾の恐れ", "公的根拠なし", "関連あり・未照合"], r.id).toContain(r.official.verdict);
+      expect(r.official.docs.length > 0, r.id).toBe(r.official.verdict !== "公的根拠なし");
+    }
+    // 血液採取の院内ルール（seed-07）には、当たる文書がない。管理料の院内ルール（seed-01）には、疑義解釈が当たる
+    expect(rules.find((r) => r.id === "local/seed-07")?.official).toMatchObject({ verdict: "公的根拠なし", approx: false, conditionNote: null, docs: [] });
+    expect(rules.find((r) => r.id === "local/seed-01")?.official.docs.map((d) => d.id)).toEqual(["GK-R8-02-Q66", "GK-R8-06-Q15", "GK-R8-08-Q9", "GK-R8-10-Q3"]);
+    // 同梱の文書はどれも条件の注記を持つので、矛盾の恐れ・整合は出ない
+    expect(rules.some((r) => r.official.verdict === "矛盾の恐れ" || r.official.verdict === "整合")).toBe(false);
+  });
+
+  it("K6 の地域ルールを承認して時計を改選日の後へ進めると、会議の議題（確かめ直し）に出る。同梱の文書では公的文書のトリガーは 1 件も出ない", () => {
+    app.seedLocalRules();
+    const rule = k6Rule();
+    app.verify(rule.id, true);
+    app.advanceClock(`${dateIn(8, 5)}T09:00:00+09:00`);
+    expect(readKnowledge(app.store, rule.id)?.status).toBe("要再検証");
+    const item = app.agenda().items.find((i) => i.kind === "recheck" && i.knowledgeId === rule.id)!;
+    expect(item.reason).toEqual({ kind: "recheck", event: "TRIGGER{reappointment}", trigger: "reappointment" });
+    expect(item.choices.map((c) => c.label)).toEqual(expect.arrayContaining(["その他", "判定不能"]));
+    expect(historyEvents()).not.toContain("TRIGGER{official}");
+    expect(historyEvents()).not.toContain("OFFICIAL_BASELINE");
+  });
+
+  it("（合成の文書）BNP を条件なしに認める文書がレジストリに入ると、K6 の地域ルールは「矛盾の恐れ」になり、時計を進めると要再検証になって議題に出る。自動では停止しない", () => {
+    app.seedLocalRules();
+    // 実在の文書ではない。レジストリに後から 1 件足された状況を作る
+    const added = makeDoc({ id: "X-BNP", stance: "認める", scope: { kubun: ["D008_19"], payer: "支払基金" } });
+    app.deps.official!.docs.push(added);
+    const rule = k6Rule();
+    expect(rule.official).toMatchObject({ verdict: "矛盾の恐れ", approx: true });
+    expect(rule.official.docs.map((d) => [d.id, d.verdict])).toEqual([...BNP_DOCS.map((id) => [id, "関連あり・未照合"]), ["X-BNP", "矛盾の恐れ"]]);
+    app.verify(rule.id, true);
+    // 未承認の間は動かない。承認の次の会議で議題に出る
+    app.advanceClock(at(14));
+    const after = readKnowledge(app.store, rule.id)!;
+    expect(after.status).toBe("要再検証");
+    expect(after.history.at(-1)).toMatchObject({ event: "TRIGGER{official}", basis: { trigger: "official", officialIds: [docKey(added)] } });
+    const item = app.agenda().items.find((i) => i.kind === "recheck" && i.knowledgeId === rule.id)!;
+    expect(item.reason).toMatchObject({ trigger: "official", official: [{ id: "X-BNP", url: added.url, summary: added.summary, seen: false }] });
+    expect((item.reason as { conditionNote?: string }).conditionNote).toContain("通知の理由：");
+    expect(app.agenda().items.some((i) => i.kind === "disposal" && i.knowledgeId === rule.id)).toBe(false);
+    // 要再検証の間は、メンターが助言に使わない
+    expect(k6Rule()).toMatchObject({ status: "要再検証", usedByMentor: false });
+    // 責任者が「今も正しい」と答えると承認済みに戻り、同じ文書では二度と要再検証にならない
+    expect(app.answerAgenda(item.itemId, 1)).toEqual({ status: "applied" });
+    expect(readKnowledge(app.store, rule.id)).toMatchObject({ status: "承認済み", official_seen: [docKey(added)] });
+    app.advanceClock(at(24));
+    expect(readKnowledge(app.store, rule.id)?.status).toBe("承認済み");
+    // 欄の表示は確認済みかどうかを見ない（矛盾の恐れと出続ける）
+    expect(k6Rule().official.verdict).toBe("矛盾の恐れ");
   });
 });
 

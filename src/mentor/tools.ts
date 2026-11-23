@@ -20,7 +20,7 @@ export type CrossItem = { ruleId: string; disease: string; why: string; draft: Q
 
 
 /** query_history：その請求の過去月の算定（設定ファイルの固定値。決定62） */
-export function queryHistory(ctx: ClaimContext): { yearMonth: string; kubun: string[] }[] {
+export function queryHistory(ctx: Pick<ClaimContext, "history">): { yearMonth: string; kubun: string[] }[] {
   return ctx.history ?? [];
 }
 

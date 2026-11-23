@@ -28,6 +28,12 @@
       "known": true,
       "value": true
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "パーキンソン病"
@@ -64,9 +70,24 @@
       "known": true,
       "value": {}
     },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
     "rapidSameDayDocumented": {
       "known": true,
       "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": true
     }
   },
   "events": [
@@ -131,6 +152,8 @@
       "sameBuildingCount": 1
     }
   ],
+  "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
       "kubun": "C001_1I",

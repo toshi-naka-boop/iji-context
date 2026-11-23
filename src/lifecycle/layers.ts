@@ -11,12 +11,15 @@ export const LAYER_SLUG: Record<Layer, string> = {
   院内: "local",
 };
 
-/** 層ごとに効く再検証トリガー（FR-66） */
+/**
+ * 層ごとに効く再検証トリガー（FR-66）。official（④ 公的文書）は v22 で足した列で、制度層には効かない。
+ * localRevision（改定で組に差が出た）・localReturn（その組が返戻・査定された）は層では効かせず、codePair を持つ知識だけに効く（machine.ts。design.md §14-4）
+ */
 export const LAYER_TRIGGERS: Record<Layer, Record<TriggerKind, boolean>> = {
-  制度: { revision: true, reappointment: false, idle: false },
-  地域: { revision: false, reappointment: true, idle: true },
-  ベテラン: { revision: false, reappointment: false, idle: true },
-  院内: { revision: false, reappointment: false, idle: true },
+  制度: { revision: true, reappointment: false, idle: false, official: false, localRevision: false, localReturn: false },
+  地域: { revision: false, reappointment: true, idle: true, official: true, localRevision: false, localReturn: false },
+  ベテラン: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
+  院内: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
 };
 
 /** ③ idle の日数（設計パラメータ N=180） */

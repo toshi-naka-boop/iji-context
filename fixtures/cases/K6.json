@@ -27,6 +27,12 @@
       "known": true,
       "value": false
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
       "value": "心不全の疑い"
@@ -63,7 +69,22 @@
       "known": true,
       "value": {}
     },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
     "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
+    },
+    "comprehensiveCare": {
       "known": true,
       "value": false
     }
@@ -77,6 +98,8 @@
       ]
     }
   ],
+  "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
       "kubun": "D008_19",

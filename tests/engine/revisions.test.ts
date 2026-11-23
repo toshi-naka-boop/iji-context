@@ -68,10 +68,10 @@ describe("仕組み", () => {
 
   it("evaluate(ctx, 作り物の版) の合計と指摘が版で変わり、使った版の id が返る", () => {
     const a = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 2, dates: ["2030-06-01", "2030-06-02"] }] }, FAKE_REVISIONS);
-    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"], excludedCount: 0 });
+    expect(a).toMatchObject({ revisionId: "fake-a", total: 20, applied: ["F01"] });
     expect(a.findings.map((f) => f.messageKey)).toEqual(["F01.over"]);
     const b = evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X2", count: 2, dates: ["2031-06-01", "2031-06-02"] }] }, FAKE_REVISIONS);
-    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"], excludedCount: 0 });
+    expect(b).toMatchObject({ revisionId: "fake-b", total: 50, applied: ["F01"] });
     expect(b.findings).toEqual([]);
   });
 
@@ -79,12 +79,6 @@ describe("仕組み", () => {
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2031-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2031-06-01"] }] }, FAKE_REVISIONS)).toThrow(/未知の区分/);
     expect(() => evaluate({ ...makeCtx({ yearMonth: "2032-01" }), lines: [] }, FAKE_REVISIONS)).toThrow(/版がない/);
     expect(() => pointsOf(FAKE_A, "X2")).toThrow(/未知の区分/);
-  });
-
-  it("判定の対象外の行（excluded）があれば、合計は出さず、行数を返す", () => {
-    const r = evaluate({ ...makeCtx({ yearMonth: "2030-06" }), lines: [{ kubun: "X1", count: 1, dates: ["2030-06-01"] }], excluded: [{ code: "990009999", count: 1 }] }, FAKE_REVISIONS);
-    expect(r.total).toBeNull();
-    expect(r.excludedCount).toBe(1);
   });
 
   it("rulesOf・ruleKubun は診療年月の版から取る。その版にないルールは空配列、版のない年月は例外", () => {
@@ -120,13 +114,22 @@ describe("同梱の版", () => {
     expect(Object.keys(r2027_06.points).sort()).toEqual(Object.keys(r2026.points).sort());
     expect(r2027_06.consts).toBe(r2026.consts);
     expect(r2027_06.rules).toBe(r2026.rules);
+    // 診療行為コードも引き継ぐ（design.md §11-1）
+    expect([r2027_06.codes, r2027_06.bundles, r2027_06.uncoded, r2027_06.shikibetsu]).toEqual([r2026.codes, r2026.bundles, r2026.uncoded, r2026.shikibetsu]);
     const changed = Object.keys(r2026.points).filter((k) => r2026.points[k].points !== r2027_06.points[k].points);
-    expect(changed.sort()).toEqual(["O001_1", "O001_2", "O001_3I", "O001_3RO", "O100_1HA", "O100_1I", "O100_1RO"]);
+    expect(changed.sort()).toEqual(["O001_1", "O001_1_N5", "O001_2", "O001_2_N5", "O001_3I", "O001_3I_N5", "O001_3RO", "O001_3RO_N5", "O100_1HA", "O100_1I", "O100_1RO"]);
     const pair = (k: string) => [pointsOf(r2026, k), pointsOf(r2027_06, k)];
     expect(pair("O001_1")).toEqual([17, 34]);
     expect(pair("O001_2")).toEqual([4, 8]);
     expect(pair("O001_3I")).toEqual([79, 158]);
     expect(pair("O001_3RO")).toEqual([19, 38]);
+    // 注5 の区分（EM §2-3 N-1〜N-4 の括弧の値）
+    expect(["O001_1_N5", "O001_2_N5", "O001_3I_N5", "O001_3RO_N5"].map(pair)).toEqual([
+      [23, 40],
+      [6, 10],
+      [107, 186],
+      [26, 45],
+    ]);
     expect(pair("O100_1I")).toEqual([2, 4]);
     expect(pair("O100_1RO")).toEqual([2, 4]);
     expect(pair("O100_1HA")).toEqual([3, 6]);
@@ -145,10 +148,13 @@ describe("同梱の版", () => {
       expect(Number(rev.effectiveFrom.slice(0, 4)) % 2).toBe(0);
     }
   });
-  it("どの版でも、点数表の値は EM の採用値（source が EM）で、点数未収載の区分はない", () => {
-    for (const rev of REVISIONS) for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual([k, "EM", "number"]);
+  it("どの版でも、点数表の値は EM の採用値（source が EM）。点数未収載は、所定点数の割合で決まる注8 の減算（C〜I に回した区分。L-92）だけ", () => {
+    for (const rev of REVISIONS)
+      for (const [k, d] of Object.entries(rev.points)) expect([k, d.source, typeof d.points]).toEqual(k === "C002_N8_GENSAN" ? [k, "未収載", "object"] : [k, "EM", "number"]);
+    for (const rev of REVISIONS) expect(rev.consts.deferred).toContain("C002_N8_GENSAN");
   });
-  it("ルールは R01〜R16 の 16 本", () => {
-    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 16 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
+  // R19（単一建物の人数。段 17f）を足して 19 本
+  it("ルールは R01〜R19 の 19 本", () => {
+    expect(rulesOf("2026-10").map((r) => r.id)).toEqual(Array.from({ length: 19 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
   });
 });

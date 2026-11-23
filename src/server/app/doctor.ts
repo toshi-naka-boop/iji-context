@@ -10,13 +10,14 @@ import type { Uke } from "./uke";
 import { badRequest, conflict, notFound } from "../errors";
 
 export function createDoctor(ctx: AppContext, clock: Clock, uke: Uke, cases: Cases, notes: Notes) {
-  const { queryLog } = ctx;
+  const { queryLog, hiddenClaim } = ctx;
   const { now } = clock;
   const { patientOf } = uke;
   const { caseOf } = cases;
   const { chartOf } = notes;
 
-  const doctorQueries = () => listQueries(queryLog);
+  // 見本の請求を指す医師確認は、demo 以外のクリニックでは出さない（記録は残す）
+  const doctorQueries = () => listQueries(queryLog).filter((q) => !hiddenClaim(q.claimId));
   const answerDoctor = (id: string, a: { option: string; freeText?: string; answeredBy: string; answeredById?: string }) => answerQuery(queryLog, id, a, now());
   const approveDoctor = (id: string, approver: string, approverId?: string) => approveQuery(queryLog, id, approver, now(), approverId);
 

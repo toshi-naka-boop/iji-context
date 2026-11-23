@@ -1,0 +1,123 @@
+{
+  "_note": "合成の接続先（FR-105）の構造化データ（K12。設計 §16-1・§16-10 の E-13）。値は EM §5-1 の「K12・K13 の構造化データ」の表のまま（時刻・オーダーの ref・機器の開始日は合成の設定）。visits・orders・procedures は日のある行で、接続先はその月の行だけを返す。orders は前の 12 か月（2025-10〜2026-09）も supported・0 件として読める（W-30）。patientDevices は患者の情報の機器（設計 16-5）の合成の設定で、接続先は返さない（テストとデモで患者の機器を入れるときの値）",
+  "visits": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "v1",
+        "date": "2026-10-14",
+        "start": "13:00",
+        "end": "14:10",
+        "kind": "訪問診療"
+      },
+      {
+        "ref": "v2",
+        "date": "2026-10-28",
+        "start": "13:00",
+        "end": "13:45",
+        "kind": "訪問診療"
+      }
+    ]
+  },
+  "orders": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "o1",
+        "date": "2026-10-14",
+        "place": "院内",
+        "refills": null,
+        "drugs": [
+          {
+            "code": {
+              "system": "rece",
+              "value": "610406079"
+            },
+            "name": "ガスター散２％",
+            "days": 7,
+            "quantity": "0.4g"
+          }
+        ]
+      }
+    ]
+  },
+  "procedures": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "p1",
+        "date": "2026-10-14",
+        "act": {
+          "code": {
+            "system": "rece",
+            "value": "130000510"
+          },
+          "name": "皮内、皮下及び筋肉内注射"
+        },
+        "count": 1,
+        "items": [
+          {
+            "code": {
+              "system": "rece",
+              "value": "641140046"
+            },
+            "name": "スルピリン注射液　２５％１ｍＬ",
+            "kind": "薬",
+            "quantity": 1,
+            "unit": "管"
+          }
+        ]
+      }
+    ]
+  },
+  "homeCare": {
+    "status": "supported",
+    "items": [
+      {
+        "ref": "h1",
+        "kind": {
+          "code": {
+            "system": "rece",
+            "value": "114003710"
+          },
+          "name": "在宅酸素療法指導管理料（その他）"
+        },
+        "startedOn": "2026-04-01",
+        "devices": [
+          {
+            "code": {
+              "system": "rece",
+              "value": "114006210"
+            },
+            "name": "酸素濃縮装置加算",
+            "startedOn": "2026-04-01",
+            "endedOn": null
+          },
+          {
+            "code": {
+              "system": "rece",
+              "value": "114006310"
+            },
+            "name": "酸素ボンベ加算（携帯用酸素ボンベ）",
+            "startedOn": "2026-04-01",
+            "endedOn": null
+          }
+        ]
+      }
+    ]
+  },
+  "patientDevices": [
+    {
+      "kind": "C158",
+      "fromMonth": "2026-04",
+      "endMonth": null,
+      "source": "電子カルテ（確かめた）"
+    },
+    {
+      "kind": "C157_1",
+      "fromMonth": "2026-04",
+      "endMonth": null,
+      "source": "電子カルテ（確かめた）"
+    }
+  ]
+}

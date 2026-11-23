@@ -35,7 +35,7 @@ export function contextAsOf(ctx: ClaimContext, date: string): ClaimContext {
 }
 
 /** 月の途中の判定：月末まで決まらないルールの指摘を外す */
-export function deferAtMidMonth(r: EngineResult): EngineResult {
+export function deferAtMidMonth<T extends Pick<EngineResult, "findings">>(r: T): T {
   return { ...r, findings: r.findings.filter((f) => !DEFERRED_RULES.includes(f.ruleId)) };
 }
 

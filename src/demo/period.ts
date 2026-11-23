@@ -30,3 +30,15 @@ export function monthFrom(months: number): string {
 }
 /** 基準月から months か月ずらした月の n 日（"YYYY-MM-DD"） */
 export const dateFrom = (months: number, day: number): string => `${monthFrom(months)}-${pad(day)}`;
+
+// 基準月によらない年月の小道具（どの診療年月にも使う）
+
+/** 診療年月（"YYYY-MM"。月は 01〜12）の形 */
+export const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** 診療年月（YYYY-MM）の初日と末日（YYYY-MM-DD） */
+export function monthRange(yearMonth: string): { start: string; end: string } {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { start: `${yearMonth}-01`, end: `${yearMonth}-${pad(last)}` };
+}

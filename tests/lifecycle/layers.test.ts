@@ -7,7 +7,7 @@ import { applyEvent, createKnowledge, listKnowledge, readKnowledge, type CreateI
 import { evaluateTriggers } from "../../src/lifecycle/triggers";
 import type { Calendar } from "../../src/lifecycle/calendar";
 import type { Layer, SourceType } from "../../src/lifecycle/types";
-import { isKnownKubun } from "../../src/engine/codes-fictional";
+import { isKnownKubun } from "../../src/engine/revisions";
 import { openApp, storeOptionsOf } from "../../src/server/app";
 
 /** 改選日が来ない設定（idle だけを見る） */
@@ -79,12 +79,12 @@ describe("層×生成元（§4-1）", () => {
     expect(defaultPolarity("院内", "手動")).toBe("allow");
   });
 
-  it("層ごとに効くトリガー（FR-66）", () => {
+  it("層ごとに効くトリガー（FR-66）。official（④ 公的文書）は v22 で足した列で、既存の 3 列の値は変えない", () => {
     expect(LAYER_TRIGGERS).toEqual({
-      制度: { revision: true, reappointment: false, idle: false },
-      地域: { revision: false, reappointment: true, idle: true },
-      ベテラン: { revision: false, reappointment: false, idle: true },
-      院内: { revision: false, reappointment: false, idle: true },
+      制度: { revision: true, reappointment: false, idle: false, official: false, localRevision: false, localReturn: false },
+      地域: { revision: false, reappointment: true, idle: true, official: true, localRevision: false, localReturn: false },
+      ベテラン: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
+      院内: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
     });
   });
 });
@@ -221,7 +221,7 @@ describe("区分のキーの検査（knownKubun）", () => {
     app.close();
     // クリニックを開く処理（src/server/instance.ts）も、同じ関数で StoreOptions を作る
     const src = readFileSync(path.join(__dirname, "..", "..", "src", "server", "instance.ts"), "utf8");
-    expect(src).toContain("const store = storeOptionsOf(paths);");
+    expect(src).toContain("const store = storeOptionsOf(paths, kind);");
     expect(src).not.toMatch(/const store = \{ knowledgeDir/);
   });
 });

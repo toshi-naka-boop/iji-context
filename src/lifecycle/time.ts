@@ -31,3 +31,8 @@ export function jstDayStart(date: string): string {
 export function jstYear(s: string): number {
   return new Date(ms(s) + 9 * 3_600_000).getUTCFullYear();
 }
+
+/** 日本時間での年月（"YYYY-MM"） */
+export function jstYearMonth(s: string): string {
+  return new Date(ms(s) + 9 * 3_600_000).toISOString().slice(0, 7);
+}

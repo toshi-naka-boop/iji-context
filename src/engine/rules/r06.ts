@@ -9,6 +9,15 @@ export function makeR06(c: RevisionConsts): Rule {
     id: "R06",
     kubun: [KUBUN],
     reference: "F400 注4 特定疾患処方管理加算",
+    // 処方の日数は出来事から読む（対象外の主病 excluded_disease は事実だけで決まる）
+    recordFindings: ["under_28_days"],
+    soundWhenPartial: ["excluded_disease"],
+    // 読むのは kubun の区分だけ
+    reads() {
+      return this.kubun;
+    },
+    // 対象外の主病かどうかを判定する（傷病名マスターでは、対象の傷病名があるか）。データで動く点検（G08）と重ねるための申告で、判定は変えない
+    covers: () => ({ kind: "傷病名", finding: "excluded_disease", kubun: [[KUBUN]] }),
     appliesTo: (ctx) => has(ctx, KUBUN),
     needs: () => ["mainDisease"],
     check(ctx) {

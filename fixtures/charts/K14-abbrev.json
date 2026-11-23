@@ -1,0 +1,138 @@
+{
+  "_note": "評価の合否だけの組の記載（K14。設計 §16-9・§16-10 の E-14。split: gate）。書き方・正解・日は EM §5-1-2 の「K14〜K24 の記載」の表のまま（作成手引きの記録例の事例文・表示の書き方。薬・器材の名前はマスターの名称）。臨床の文は足さない（S・A は空）。acts は正解（本人が確かめたあとの形。match のコードは EM §2-8 の症例のコード）。lookup は空（評価では AI が挙げる語を使う）。合否の組の束（acts-exclude.json・gate の記載・この記載の entry の全体）は eval/acts-count.ts の GATE_SHA256 で固定してある。直すときは設計の版を上げる",
+  "claimId": "K14-2026-10",
+  "entries": [
+    {
+      "date": "2026-10-30",
+      "s": "",
+      "o": "在宅患者訪問診療。ＴＰ、ＡＬＰ、γ－ＧＴ、ＬＡＰ、ＡＳＴ、ＡＬＴ、ケトン体、リポ蛋白分画（同一検体）。フェリチン定量。",
+      "a": "",
+      "p": "",
+      "rx": "",
+      "acts": [
+        {
+          "category": "診療行為",
+          "written": "在宅患者訪問診療",
+          "lookup": [],
+          "quote": "在宅患者訪問診療",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114001110",
+            "name": "在宅患者訪問診療料（１）１（同一建物居住者以外）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ＴＰ",
+          "lookup": [],
+          "quote": "ＴＰ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160017410",
+            "name": "ＴＰ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ＡＬＰ",
+          "lookup": [],
+          "quote": "ＡＬＰ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160020010",
+            "name": "ＡＬＰ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "γ－ＧＴ",
+          "lookup": [],
+          "quote": "γ－ＧＴ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160020410",
+            "name": "γ－ＧＴ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ＬＡＰ",
+          "lookup": [],
+          "quote": "ＬＡＰ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160020510",
+            "name": "ＬＡＰ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ＡＳＴ",
+          "lookup": [],
+          "quote": "ＡＳＴ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160022510",
+            "name": "ＡＳＴ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ＡＬＴ",
+          "lookup": [],
+          "quote": "ＡＬＴ",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160022610",
+            "name": "ＡＬＴ",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "ケトン体",
+          "lookup": [],
+          "quote": "ケトン体",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160024210",
+            "name": "ケトン体",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "リポ蛋白分画",
+          "lookup": [],
+          "quote": "リポ蛋白分画",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160026910",
+            "name": "リポ蛋白分画",
+            "by": "name"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "フェリチン定量",
+          "lookup": [],
+          "quote": "フェリチン定量",
+          "match": {
+            "tbl": "shinryo",
+            "code": "160192510",
+            "name": "フェリチン定量",
+            "by": "name"
+          }
+        }
+      ],
+      "rxNotes": [],
+      "rxChoice": null
+    }
+  ]
+}

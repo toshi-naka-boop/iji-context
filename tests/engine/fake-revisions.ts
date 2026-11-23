@@ -9,6 +9,8 @@ function fakeRule(kubun: string, maxCount: number): Rule {
     id: "F01",
     kubun: [kubun],
     reference: "作り物のルール",
+    recordFindings: [],
+    soundWhenPartial: [],
     appliesTo: (ctx) => ctx.lines.some((l) => l.kubun === kubun),
     needs: () => [],
     check(ctx) {
@@ -24,8 +26,16 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     generation: over.id,
     kind: "改定",
     points: { [kubun]: { name: `作り物の区分 ${kubun}`, no: kubun, points: unitPoints, source: "未収載" } },
+    // 作り物の区分はコードを持たない（UKE に書けない）
+    codes: {},
+    bundles: [],
+    uncoded: { [kubun]: "作り物の区分" },
+    shikibetsu: {},
     consts: {} as RevisionConsts,
+    comments: [],
+    commentCodes: {},
     rules: [fakeRule(kubun, maxCount)],
+    changes: [],
     ...over,
   };
 }

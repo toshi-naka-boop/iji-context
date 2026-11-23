@@ -13,15 +13,22 @@ import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
 import type { Doctor } from "./doctor";
+import { declarationViewOf } from "./facility";
+import { genericOfLines } from "./generic";
+import type { LocalAbout } from "./local-pairs";
 import type { Notes } from "./notes";
 import type { QuestionCase } from "./question-case";
 import { badRequest, conflict, notFound } from "../errors";
 
-export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, cases: Cases, notes: Notes, doctor: Doctor, questionCase: QuestionCase) {
-  const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups } = ctx;
+/** 実在のデータで使うクリニックで、練習問題を出さない理由（画面に出す） */
+const REAL_NO_DRILLS = "練習問題は、デモのクリニックだけで使えます（同梱の作り物の症例で始めるため）";
+
+/** reviewedCount は、問題のほかに処理件数へ足す件数（実在用のクリニックで点検を確かめた請求。src/server/app/claim-reviews.ts）。渡さなければ 0 */
+export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, cases: Cases, notes: Notes, doctor: Doctor, questionCase: QuestionCase, reviewedCount: (clerkId: string) => number = () => 0) {
+  const { sqlite, queryLog, deps, levels, levelCfg, choiceGroups, hiddenClaim } = ctx;
   const { now } = clock;
   const { clerk } = clerks;
-  const { caseOf } = cases;
+  const { isUploaded } = cases;
   const { monthOf } = notes;
   const { crosscheckOf } = doctor;
   const { caseFor, drillQuery, judgeFor, withLines } = questionCase;
@@ -53,11 +60,14 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     const bad = lines.find((l) => !Object.hasOwn(points, l.kubun));
     if (bad) throw badRequest(`未知の区分: ${bad.kubun}`);
   };
-  const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
+  // 見本の請求の問題は、demo 以外のクリニックでは一覧・集計に出さない（行は残す）
+  const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question).filter((q) => !hiddenClaim(q.claimId));
 
   /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
   function startDrill(clerkId: string, drillId: string): Question {
     clerk(clerkId);
+    // 練習問題は同梱の症例（作り物）で始める。実在のデータで使うクリニックには症例がないので、使えない
+    if (ctx.kind !== "demo") throw badRequest(REAL_NO_DRILLS);
     if (!isDoctorDrill(drillId) && !drillList().some((x) => x.id === drillId)) throw notFound(`練習問題がない: ${drillId}`);
     const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
     return createQ.immediate((id) => startQuestion(id, clerkId, d.claimId, now(), "通常", undefined, d.id));
@@ -65,6 +75,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
     clerk(clerkId);
     const c = monthOf(claimId, clerkId);
+    // 選択モードの正解は、カルテ側の記録を読むルールも使って 1 つに決める。記録のないレセプトでは決められないので、対象外にする
+    if (mode === "選択" && isUploaded(claimId)) throw badRequest("アップロードした UKE のレセプトは、選択モードの対象外です（カルテ側の記録がなく、正解を 1 つに決められないため）。通常モードで点検してください");
     if (asOf) {
       if (mode !== "通常") throw badRequest("訪問の時点の問題は通常モードだけ");
       if (!visitDays(c).some((d) => d.date === asOf)) throw notFound(`この日の訪問はない: ${claimId} ${asOf}`);
@@ -106,6 +118,11 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     saveQ(next);
     return next;
   }
+  /** 確定した明細に、データで動く点検（G01〜）を掛けた結果（design.md §12-5）。区分をコードに直して掛け、確定のときの手書きの結果との重なりの規則を通す。読むだけで、問題には保存しない */
+  function genericOf(q: Question, local?: LocalAbout) {
+    const { yearMonth, recordsKnown } = caseFor(q);
+    return genericOfLines(q.confirmed?.lines ?? [], resolveRevision(yearMonth), yearMonth, q.confirmed?.result ?? { findings: [] }, recordsKnown, local, declarationViewOf(ctx, clock));
+  }
   function explain(id: string) {
     const cur = loadQ(id);
     inPhase(cur, "判定", "解説に進めない段階");
@@ -127,19 +144,19 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     if (q.phase !== "ヒント") throw conflict(`選べない段階: ${q.phase}`);
     return q;
   }
-  const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
+  const choices = (id: string) => choiceItems(caseFor(choiceQ(id)), choiceGroups);
   function pick(id: string, lineIndex: number, option: string) {
     const q = choiceQ(id);
-    const item = choiceItems(caseOf(q.claimId), choiceGroups).find((x) => x.lineIndex === lineIndex);
+    const item = choiceItems(caseFor(q), choiceGroups).find((x) => x.lineIndex === lineIndex);
     if (!item) throw badRequest(`選択の問題がない行: ${lineIndex}`);
     if (!item.options.includes(option)) throw badRequest(`選択肢にない: ${option}`);
-    const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
+    const r = judgePick(caseFor(q), choiceGroups, lineIndex, option);
     saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
     return r;
   }
   // 件数・レベル・防いだ額は月末の UKE の問題（提出）だけで数える。訪問の時点の問題は数えない（FR-68）
   const submitted = () => allQ().filter((q) => !q.asOf);
-  const status = (clerkId: string) => myStatus(submitted(), clerkId, levels, levelCfg.choiceWeight ?? 1);
+  const status = (clerkId: string) => myStatus(submitted(), clerkId, levels, levelCfg.choiceWeight ?? 1, reviewedCount(clerkId));
   const questionsOf = (clerkId: string) => allQ().filter((q) => q.clerkId === clerkId);
 
   /** 医師確認の練習問題で、医師に聞く（推測で算定しない）。同じ問題から 2 回は送らない */
@@ -170,12 +187,13 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
   }
   /** 練習問題の一覧。cleared は本人がその練習を正解で終えたか（画面のカードの状態に使う。2026-11-08） */
   const drills = (clerkId?: string) => {
+    if (ctx.kind !== "demo") return { fix: [], doctor: [], unavailable: REAL_NO_DRILLS };
     const done = new Set(clerkId ? questionsOf(clerkId).filter((q) => q.drill && q.correct === true).map((q) => q.drill) : []);
     const mark = <T extends { id: string }>(xs: T[]) => xs.map((d) => ({ ...d, cleared: done.has(d.id) }));
-    return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
+    return { fix: mark(drillList()), doctor: mark(doctorDrillList()), unavailable: null };
   };
 
-  return { loadQ, checkLines, startDrill, start, draft, confirmQ, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
+  return { loadQ, checkLines, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, submitted, status, questionsOf, askDoctorForDrill, drillState, drills };
 }
 
 export type Questions = ReturnType<typeof createQuestions>;

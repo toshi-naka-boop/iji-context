@@ -7,6 +7,8 @@ import { dateFrom, period } from "../demo/period";
 import { resolveRevision } from "../engine/revisions";
 import { applyEvent, createKnowledge, listKnowledge, type StoreOptions } from "./store";
 import type { LifecycleEvent, SourceType } from "./types";
+import { conflictKeys } from "../official/match";
+import type { OfficialInput } from "../official/types";
 
 type Step = { at: string; event: LifecycleEvent };
 type Seed = { slug: string; kubun: string; source: SourceType; created: string; steps: Step[]; empathy?: number };
@@ -50,8 +52,34 @@ export const LOCAL_SEEDS: Seed[] = [
 /** 区分の名前は基準月の版の点数表から取る */
 const nameOf = (kubun: string) => resolveRevision(period.yearMonth).points[kubun]?.name ?? kubun;
 
-/** 院内ルールの種を入れる（すでにあるものは入れない）。入れた知識の id を返す */
-export function seedLocalRules(store: StoreOptions): string[] {
+/** 種として入った知識か（種を入れる処理が source_event.ref に付けている印） */
+export const SEED_REF = "seed:";
+
+/**
+ * 種として承認済みで入った知識に、その時点で矛盾の恐れになる公的文書を「確認済み」として記録する（OFFICIAL_BASELINE。design.md §4-3）。
+ * これらの矛盾は、ローカルルール欄には出続け、トリガー④だけが黙る。後から足した・直した文書では ④ が出る。
+ * now は種の遷移の古い日付ではなく、種を入れた時点の時計にする（古い日付だと、その年月の版がなく鍵が空になる）。
+ * 種でない承認済みの知識（ベテランが承認したものなど）には出さない。記録した知識の id を返す。
+ * 段 4 を、作り直さないデータに後から入れるときも、同じ操作を 1 回行う（only を省くと種の全部が対象）
+ */
+export function baselineSeeds(store: StoreOptions, official: OfficialInput, now: string, only?: string[]): string[] {
+  const done: string[] = [];
+  for (const m of listKnowledge(store)) {
+    if (m.status !== "承認済み" || !m.source_event.ref.startsWith(SEED_REF)) continue;
+    if (only && !only.includes(m.id)) continue;
+    const keys = conflictKeys(m, official, now).filter((k) => !m.official_seen.includes(k));
+    if (keys.length === 0) continue;
+    applyEvent(store, m.id, { type: "OFFICIAL_BASELINE", officialKeys: keys }, now, { officialIds: keys });
+    done.push(m.id);
+  }
+  return done;
+}
+
+/**
+ * 院内ルールの種を入れる（すでにあるものは入れない）。入れた知識の id を返す。
+ * baseline を渡すと、最後に、入れた種のうち承認済みのものに OFFICIAL_BASELINE を出す
+ */
+export function seedLocalRules(store: StoreOptions, baseline?: { official: OfficialInput; now: string }): string[] {
   const have = new Set(listKnowledge(store).map((m) => m.id));
   const made: string[] = [];
   for (const s of LOCAL_SEEDS) {
@@ -64,7 +92,7 @@ export function seedLocalRules(store: StoreOptions): string[] {
         slug: s.slug,
         summary: `${name}に関する院内ローカル`,
         body: [`# ${name}に関する院内ローカル`, "", "中身は伏せています（合成データのデモ。院内ルールの中身は作り足さない）。", "", `対象の区分：${name}（${s.kubun}）`].join("\n"),
-        source: { type: s.source, ref: `seed:${s.slug}` },
+        source: { type: s.source, ref: `${SEED_REF}${s.slug}` },
         empathy: s.empathy ?? 0,
         match: { kubunAll: [s.kubun] },
       },
@@ -73,5 +101,6 @@ export function seedLocalRules(store: StoreOptions): string[] {
     for (const step of s.steps) applyEvent(store, meta.id, step.event, step.at);
     made.push(meta.id);
   }
+  if (baseline && made.length > 0) baselineSeeds(store, baseline.official, baseline.now, made);
   return made;
 }

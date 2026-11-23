@@ -5,7 +5,7 @@ import { allow } from "../../../../src/server/policy";
 import { noticeRegisterBody } from "../../../../src/server/schemas/knowledge";
 
 export const POST = route({ roles: allow("POST /api/notice/register"), body: noticeRegisterBody }, ({ body }) =>
-  getApp().registerNotice(body.notice, body.index, { reexamFiled: !!body.reexamFiled, fileName: body.fileName }),
+  getApp().registerNotice(body.notice, body.index, { reexamFiled: !!body.reexamFiled, fileName: body.fileName, kubun: body.kubun }),
 );
 
 export const runtime = "nodejs";

@@ -24,6 +24,11 @@ export type StoreOptions = {
   skillsDir: string;
   /** 区分のキーの検査（任意）。渡されたときだけ、match の区分をすべて確かめ、偽なら書き込みを拒否する。本番の配線が渡す（design.md §3） */
   knownKubun?: (kubun: string) => boolean;
+  /**
+   * このクリニックでは使わない知識（任意。2026-11-22 利用者の判断「印で除外する」）。真になる知識は、listKnowledge と Skill の同期から外れる
+   * （判断・会議・トリガーの対象にしない）。状態と history は変えない。一覧で見せるときは listKnowledge(opts, { withExcluded: true })
+   */
+  excluded?: (meta: KnowledgeMeta) => boolean;
 };
 
 export type CreateInput = {
@@ -104,6 +109,31 @@ function validate(input: CreateInput, knownKubun?: (kubun: string) => boolean): 
   if (input.matchApprox && (!input.conditionNote || input.conditionNote.trim() === "")) {
     throw new Error("matchApprox の知識には conditionNote が必須");
   }
+  if (m.codePair !== undefined) validatePair(input);
+}
+
+/** 背反の組の知識の 1 件の条件文の上限（字。design.md §14-1） */
+export const PAIR_NOTE_MAX = 200;
+
+/**
+ * codePair を持つ知識（design.md §14-1）：ほかの match のキーを持たない・コードは 9 桁で小さい順・表は 1〜3・院内層かベテラン層・いつも近似で条件の文（1〜200 字）が要る。
+ * 院内層の生成元は、allow は手動だけ、avoid は手動か返戻（ベテラン層は会議の修正版で、生成元はエスカレーション）
+ */
+function validatePair(input: CreateInput): void {
+  const m = input.match;
+  const p = m.codePair!;
+  const others = (Object.keys(m) as (keyof Match)[]).filter((k) => k !== "codePair" && m[k] !== undefined);
+  if (others.length > 0) throw new Error(`codePair を持つ知識は、ほかの match のキーを持たない: ${others.join(", ")}`);
+  if (!/^\d{9}$/.test(p.a) || !/^\d{9}$/.test(p.b) || !(p.a < p.b)) throw new Error("codePair のコードは 9 桁で、小さい順に 2 つ");
+  if (![1, 2, 3].includes(p.tani)) throw new Error("codePair の表は 1 日・同一月・同時（tani 1〜3）だけ");
+  if (input.layer !== "院内" && input.layer !== "ベテラン") throw new Error("codePair を持てるのは院内層とベテラン層だけ");
+  if (input.matchApprox !== true) throw new Error("codePair の知識は、いつも近似（matchApprox）");
+  const note = input.conditionNote ?? "";
+  if (note.trim() === "" || note.length > PAIR_NOTE_MAX) throw new Error(`codePair の知識の条件（conditionNote）は 1〜${PAIR_NOTE_MAX} 字`);
+  const polarity = input.polarity ?? defaultPolarity(input.layer, input.source.type);
+  if (input.layer === "院内" && !(polarity === "allow" ? input.source.type === "手動" : input.source.type === "手動" || input.source.type === "返戻")) {
+    throw new Error(`院内層の背反の組の知識の生成元は、allow は手動、avoid は手動か返戻: ${polarity}・${input.source.type}`);
+  }
 }
 
 /** 新しい知識を作る。層×生成元の組み合わせと match の必須項目を検証し、作成後に同期する */
@@ -138,6 +168,7 @@ export function createKnowledge(opts: StoreOptions, input: CreateInput, now: str
     status_since: now,
     retired_reason: null,
     empathy: input.empathy ?? 0,
+    official_seen: [],
     match: input.match,
     history: [{ at: now, from: "", to: status, event: "CREATE", actor: "system", basis: null }],
   };
@@ -156,11 +187,14 @@ export function createKnowledge(opts: StoreOptions, input: CreateInput, now: str
 
 export function readKnowledge(opts: StoreOptions, id: string): KnowledgeMeta | undefined {
   const file = path.join(dirOf(opts, id), "meta.json");
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as KnowledgeMeta) : undefined;
+  if (!existsSync(file)) return undefined;
+  const meta = JSON.parse(readFileSync(file, "utf8")) as KnowledgeMeta;
+  // official_seen を足す前に書かれた meta.json は、空として読む（design.md §10 段 4）
+  return { ...meta, official_seen: meta.official_seen ?? [] };
 }
 
-/** 全知識の meta（id 昇順） */
-export function listKnowledge(opts: StoreOptions): KnowledgeMeta[] {
+/** 全知識の meta（id 昇順）。このクリニックでは使わない知識（opts.excluded）は、withExcluded を付けたときだけ入れる */
+export function listKnowledge(opts: StoreOptions, view: { withExcluded?: boolean } = {}): KnowledgeMeta[] {
   const out: KnowledgeMeta[] = [];
   if (!existsSync(opts.knowledgeDir)) return out;
   for (const layerSlug of readdirSync(opts.knowledgeDir).sort()) {
@@ -168,7 +202,7 @@ export function listKnowledge(opts: StoreOptions): KnowledgeMeta[] {
     for (const slug of readdirSync(path.join(opts.knowledgeDir, layerSlug)).sort()) {
       if (slug.includes(".tmp-")) continue; // 作成途中の一時ディレクトリは知識ではない（round-15 X-59）
       const meta = readKnowledge(opts, `${layerSlug}/${slug}`);
-      if (meta) out.push(meta);
+      if (meta && (view.withExcluded || !opts.excluded?.(meta))) out.push(meta);
     }
   }
   return out;
@@ -207,18 +241,59 @@ export function writeCounts(
   return next;
 }
 
+/** 改定の棚卸の記録を書く（状態・history は変えない。design.md §14-4）。diffs を渡したときは、承認済みでないあいだに出た差の中身も置き換える */
+export function writeRevisionChecks(opts: StoreOptions, id: string, checks: NonNullable<KnowledgeMeta["revision_checks"]>, diffs?: NonNullable<KnowledgeMeta["revision_diffs"]>): KnowledgeMeta {
+  const meta = readKnowledge(opts, id);
+  if (!meta) throw new Error(`知識が見つからない: ${id}`);
+  const next = { ...meta, revision_checks: checks, ...(diffs ? { revision_diffs: diffs } : {}) };
+  writeAtomic(path.join(dirOf(opts, id), "meta.json"), `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
+/**
+ * 承認済みでないあいだに出た改定の差を、見たうえで承認した（design.md §14-4 v28）：その改定日の棚卸を済み（accepted）にし、差の中身を消す。
+ * dates を省くと、今ある差の全部。何度呼んでも同じ結果
+ */
+export function acceptRevisionDiffs(opts: StoreOptions, id: string, dates?: string[]): KnowledgeMeta | undefined {
+  const meta = readKnowledge(opts, id);
+  if (!meta) return undefined;
+  const checks = { ...meta.revision_checks };
+  const diffs = { ...meta.revision_diffs };
+  const targets = (dates ?? Object.keys(checks)).filter((d) => checks[d] === "diff");
+  if (targets.length === 0) return meta;
+  for (const d of targets) {
+    checks[d] = "accepted";
+    delete diffs[d];
+  }
+  return writeRevisionChecks(opts, id, checks, diffs);
+}
+
+/** 承認済みでないあいだに出た改定の差（改定日 → 差の中身。revision_checks が diff のものだけ） */
+export function pendingRevisionDiffs(meta: KnowledgeMeta): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [d, v] of Object.entries(meta.revision_checks ?? {})) if (v === "diff") out[d] = meta.revision_diffs?.[d] ?? [];
+  return out;
+}
+
 /** SKILL.md の本文 */
 export function readBody(opts: StoreOptions, id: string): string {
   return readFileSync(path.join(dirOf(opts, id), "SKILL.md"), "utf8").replace(/\s+$/, "");
 }
 
-/** 未検証の候補の本文に書き足す（round-9 C-44）。rev は内容が変わるので計算し直す */
-export function appendBody(opts: StoreOptions, id: string, text: string): KnowledgeMeta {
+/**
+ * 未検証の候補の本文に書き足す（round-9 C-44）。rev は内容が変わるので計算し直す。
+ * over は、背反の組の知識（match.codePair）の修正版の向きと条件の文を、会議の回答の値に置き換えるとき（design.md §14-1。X-118）。
+ * dropLinePrefix があれば、今の本文からその文字で始まる行を外してから書き足す（前の回答の「修正版の扱い」の行を置き換える。round-46 C-212）
+ */
+export function appendBody(opts: StoreOptions, id: string, text: string, over?: { polarity: Polarity; conditionNote: string; summary?: string; dropLinePrefix?: string }): KnowledgeMeta {
   const meta = readKnowledge(opts, id);
   if (!meta) throw new Error(`知識が見つからない: ${id}`);
   if (meta.status !== "未検証") throw new Error(`未検証でない知識には書き足さない: ${id}`);
-  const body = `${readBody(opts, id)}\n\n${text.replace(/\s+$/, "")}`;
-  const next = { ...meta, rev: computeRev(body, meta.match, meta) };
+  const { dropLinePrefix, ...metaOver } = over ?? {};
+  const current = dropLinePrefix ? readBody(opts, id).split("\n").filter((l) => !l.startsWith(dropLinePrefix)).join("\n").replace(/\n{3,}/g, "\n\n") : readBody(opts, id);
+  const body = `${current}\n\n${text.replace(/\s+$/, "")}`;
+  const merged = { ...meta, ...metaOver };
+  const next = { ...merged, rev: computeRev(body, merged.match, merged) };
   writeAtomic(path.join(dirOf(opts, id), "SKILL.md"), `${body}\n`);
   writeAtomic(path.join(dirOf(opts, id), "meta.json"), `${JSON.stringify(next, null, 2)}\n`);
   return next;

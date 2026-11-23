@@ -15,8 +15,10 @@ const EVENTS: { key: string; event: LifecycleEvent }[] = [
   { key: "TRIGGER:revision", event: { type: "TRIGGER", trigger: "revision" } },
   { key: "TRIGGER:reappointment", event: { type: "TRIGGER", trigger: "reappointment" } },
   { key: "TRIGGER:idle", event: { type: "TRIGGER", trigger: "idle" } },
+  { key: "TRIGGER:official", event: { type: "TRIGGER", trigger: "official" } },
   { key: "COUNTER_EXAMPLE", event: { type: "COUNTER_EXAMPLE" } },
   { key: "USED", event: { type: "USED" } },
+  { key: "OFFICIAL_BASELINE", event: { type: "OFFICIAL_BASELINE", officialKeys: ["X-1#aaaaaaaa"] } },
   { key: "RECHECK_PASS:claim", event: { type: "RECHECK_PASS", via: "claim" } },
   { key: "RECHECK_PASS:veteran", event: { type: "RECHECK_PASS", via: "veteran" } },
   { key: "RECHECK_FAIL", event: { type: "RECHECK_FAIL" } },
@@ -37,8 +39,10 @@ const ALLOWED: Record<string, KnowledgeStatus> = {
   "承認済み|TRIGGER:revision": "要再検証",
   "承認済み|TRIGGER:reappointment": "要再検証",
   "承認済み|TRIGGER:idle": "要再検証",
+  "承認済み|TRIGGER:official": "要再検証",
   "承認済み|COUNTER_EXAMPLE": "要再検証",
   "承認済み|USED": "承認済み",
+  "承認済み|OFFICIAL_BASELINE": "承認済み",
   "要再検証|RECHECK_PASS:claim": "承認済み",
   "要再検証|RECHECK_PASS:veteran": "承認済み",
   "要再検証|RECHECK_FAIL": "停止",
@@ -76,9 +80,9 @@ describe("transition: 6 状態 × 全イベント", () => {
       }
     }
   }
-  it("組み合わせの総数が想定どおり（102 件中 20 件が許可）", () => {
-    expect(ALL_STATUSES.length * EVENTS.length).toBe(102);
-    expect(Object.keys(ALLOWED).length).toBe(20);
+  it("組み合わせの総数が想定どおり（114 件中 22 件が許可）", () => {
+    expect(ALL_STATUSES.length * EVENTS.length).toBe(114);
+    expect(Object.keys(ALLOWED).length).toBe(22);
   });
 });
 
@@ -170,5 +174,43 @@ describe("付随処理", () => {
   it("DISPOSAL_REJECT で承認済みに戻ると status_since が更新される", () => {
     const r = transition(makeMeta({ status: "停止" }), { type: "DISPOSAL_REJECT" }, NOW).meta;
     expect([r.status, r.status_since]).toEqual(["承認済み", NOW]);
+  });
+});
+
+describe("公的文書（v22。トリガー④と確認済みの記録）", () => {
+  it("TRIGGER{official} は地域・ベテラン・院内で要再検証、制度で例外。修正版（relates_to あり）でも制度層には効かない", () => {
+    const t = (layer: "制度" | "地域" | "ベテラン" | "院内", relates_to: string | null = null) =>
+      transition(makeMeta({ layer, relates_to }), { type: "TRIGGER", trigger: "official" }, NOW, { trigger: "official", officialIds: ["X-1#aaaaaaaa"] });
+    for (const layer of ["地域", "ベテラン", "院内"] as const) {
+      const r = t(layer);
+      expect(r.meta.status).toBe("要再検証");
+      expect(r.meta.history.at(-1)).toMatchObject({ event: "TRIGGER{official}", actor: "system", basis: { trigger: "official", officialIds: ["X-1#aaaaaaaa"] } });
+      // 停止にはしない（廃棄提案を出さない）
+      expect(r.effects).toEqual([]);
+    }
+    expect(() => t("制度")).toThrow();
+    expect(() => t("制度", "system/r02")).toThrow();
+  });
+
+  it("RECHECK_PASS{veteran}・DISPOSAL_REJECT に付けた officialKeys が official_seen に和集合（昇順）で入る", () => {
+    const seen = ["B-2#bbbbbbbb"];
+    const a = transition(makeMeta({ status: "要再検証", official_seen: seen }), { type: "RECHECK_PASS", via: "veteran", officialKeys: ["C-3#cccccccc", "A-1#aaaaaaaa", "B-2#bbbbbbbb"] }, NOW).meta;
+    expect([a.status, a.official_seen]).toEqual(["承認済み", ["A-1#aaaaaaaa", "B-2#bbbbbbbb", "C-3#cccccccc"]]);
+    const b = transition(makeMeta({ status: "停止", official_seen: seen }), { type: "DISPOSAL_REJECT", officialKeys: ["A-1#aaaaaaaa"] }, NOW).meta;
+    expect([b.status, b.official_seen]).toEqual(["承認済み", ["A-1#aaaaaaaa", "B-2#bbbbbbbb"]]);
+    // 鍵を付けない遷移では変わらない
+    expect(transition(makeMeta({ status: "要再検証", official_seen: seen }), { type: "RECHECK_PASS", via: "veteran" }, NOW).meta.official_seen).toEqual(seen);
+    expect(seen).toEqual(["B-2#bbbbbbbb"]);
+  });
+
+  it("OFFICIAL_BASELINE は承認済みでだけ通り、状態と status_since を変えずに official_seen に足し、history に鍵を残す", () => {
+    const before = makeMeta({ official_seen: ["B-2#bbbbbbbb"] });
+    const r = transition(before, { type: "OFFICIAL_BASELINE", officialKeys: ["A-1#aaaaaaaa"] }, NOW, { officialIds: ["A-1#aaaaaaaa"] }).meta;
+    expect([r.status, r.status_since]).toEqual(["承認済み", before.status_since]);
+    expect(r.official_seen).toEqual(["A-1#aaaaaaaa", "B-2#bbbbbbbb"]);
+    expect(r.history.at(-1)).toEqual({ at: NOW, from: "承認済み", to: "承認済み", event: "OFFICIAL_BASELINE", actor: "system", basis: { officialIds: ["A-1#aaaaaaaa"] } });
+    for (const status of ALL_STATUSES.filter((s) => s !== "承認済み")) {
+      expect(() => transition(makeMeta({ status }), { type: "OFFICIAL_BASELINE", officialKeys: ["A-1#aaaaaaaa"] }, NOW)).toThrow();
+    }
   });
 });

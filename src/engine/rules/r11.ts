@@ -16,6 +16,14 @@ export function makeR11(c: RevisionConsts): Rule {
     id: "R11",
     kubun: [...D026, BNP, RAPID],
     reference: "D026 検体検査判断料・外来迅速検体検査加算（第3部第1節第1款 通則3）",
+    recordFindings: [],
+    soundWhenPartial: [],
+    // 外来迅速検体検査加算の日が、訪問診療料・往診料の日か（rapidAtHome）
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun, c.oushin.kubun])];
+    },
+    // 判断料は区分ごとに月 1 回（電子点数表では算定回数の月 1 回）。BNP の判断料の区分・外来迅速検体検査加算は、表に載らないので申告しない
+    covers: () => ({ kind: "回数", finding: "judgement_once_a_month", kubun: D026.map((k) => [k]) }),
     appliesTo: (ctx) => [...D026, BNP, RAPID].some((k) => has(ctx, k)),
     needs: (ctx) => (rapidAtHome(ctx) ? ["rapidSameDayDocumented"] : []),
     check(ctx) {

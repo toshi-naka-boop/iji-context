@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import type { Role } from "../../src/server/roles";
 import { at, claimId } from "../helpers/period";
+import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
 let instance: typeof import("../../src/server/instance");
@@ -16,6 +17,7 @@ beforeAll(async () => {
   process.env.RESEMEN_WORKSPACES = path.join(tmp, "ws");
   delete process.env.RESEMEN_OPEN_SIGNUP;
   instance = await import("../../src/server/instance");
+  autoConsent(instance.getAuth());
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
@@ -97,13 +99,19 @@ describe("招待制の登録", () => {
     expect(auth().login("walk_in", "password123")).toBeNull();
 
     process.env.RESEMEN_OPEN_SIGNUP = "1";
-    const open = await register({ login: "walk_in", name: "とびこみ", password: "password123" });
+    // クリニックの種類を選ばないと、開放していても登録できない
+    const unchosen = await register({ login: "walk_in", name: "とびこみ", password: "password123" });
+    expect(unchosen.status).toBe(400);
+    expect(auth().login("walk_in", "password123")).toBeNull();
+    const open = await register({ login: "walk_in", name: "とびこみ", password: "password123", kind: "real" });
     delete process.env.RESEMEN_OPEN_SIGNUP;
     expect(open.status).toBe(200);
+    expect((await open.json()).kind).toBe("real");
     expect(open.headers.get("set-cookie")).toContain("resemen_session=");
     const u = auth().login("walk_in", "password123")!;
     expect(u.tenantId).toBe(u.id);
     expect(u.role).toBe("clerk");
+    expect(auth().tenantKind(u.tenantId)).toBe("real");
   });
 
   it("招待コードは 1 回だけ使え、招待のクリニックとロールで登録される。DB にはコードそのものを置かない", async () => {
@@ -252,6 +260,27 @@ describe("招待制の登録", () => {
     expect(events.map((e) => e.event).filter((e) => e.startsWith("invite.revoke"))).toEqual(["invite.revoke:clerk", "invite.revoke:doctor"]);
     const all = JSON.stringify([audit, events, instance.runAs(other, () => instance.getApp().audit.list())]);
     expect(all.includes(usedCode) || all.includes(keptCode)).toBe(false);
+  });
+});
+
+describe("マスターの状態", () => {
+  it("事務長だけが読める。データがなければ「入っていない」を返す", async () => {
+    const GET = (await import("../../app/api/masters/route")).GET;
+    const owner = auth().register("clinic_masters", "ますた", "password123");
+    const cookie = cookieOf(owner);
+    const get = () => GET(new Request("http://localhost/api/masters", { headers: { cookie } }));
+    expect((await get()).status).toBe(403);
+    await switchTo(cookie, "manager");
+    const before = process.env.RESEMEN_MASTER_DIR;
+    // テストのデータ置き場には masters.db を置いていない
+    delete process.env.RESEMEN_MASTER_DIR;
+    try {
+      const r = await get();
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ present: false, sources: [], checks: [], rejected: [] });
+    } finally {
+      if (before !== undefined) process.env.RESEMEN_MASTER_DIR = before;
+    }
   });
 });
 
