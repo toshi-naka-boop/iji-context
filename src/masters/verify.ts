@@ -230,11 +230,24 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   const snapshotsOf = (table: string): string[] => src.filter((s) => s.tbl === table).map((s) => s.snapshot);
   const where = (p: Pairs, ne: Pairs = {}) => [...Object.keys(p).map((k) => `${k} = ?`), ...Object.keys(ne).map((k) => `${k} != ?`)].join(" AND ") || "1 = 1";
 
+  // 列を足す前に作った masters.db（例：医薬品マスターの麻薬等の区分・薬価基準収載医薬品コードの列。design.md §16-10 E-12）では、その列を読む錨と件数は確かめない。
+  // 外れでも通ったのでもない（錨のない列として、使う側が「見ていません」にする）。masters:build で作り直せば確かめる
+  const columnsOf = new Map<string, Set<string>>();
+  const missingColumns = (table: string, pairs: Pairs[]): string[] => {
+    if (!columnsOf.has(table)) columnsOf.set(table, new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)));
+    return [...new Set(pairs.flatMap((p) => Object.keys(p)))].filter((k) => !columnsOf.get(table)!.has(k));
+  };
+
   // 1. 錨
   const passed = new Set<string>();
   let anchorRuns = 0;
   for (const a of em.anchors) {
     const snaps = snapshotsOf(a.table);
+    const absent = snaps.length > 0 ? missingColumns(a.table, [a.where, a.expect]) : [];
+    if (absent.length > 0) {
+      lines.push(`錨 ${a.id} は確かめていない（${a.table} に列 ${absent.join("・")} がない古い masters.db。masters:build で作り直す）`);
+      continue;
+    }
     let ok = snaps.length > 0;
     for (const s of snaps) {
       anchorRuns++;
@@ -271,6 +284,7 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
   let countRuns = 0;
   for (const c of em.counts) {
     const verified = em.verified[ds[c.table]];
+    if (snapshotsOf(c.table).length > 0 && missingColumns(c.table, [c.where, c.not ?? {}]).length > 0) continue;
     for (const s of snapshotsOf(c.table)) {
       countRuns++;
       const ne = c.not ?? {};
