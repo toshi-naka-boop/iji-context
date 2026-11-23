@@ -1,20 +1,22 @@
 {
-  "currentNode": "実装",
+  "currentNode": "批評",
   "status": "in_progress",
-  "designVersion": "v30",
-  "approvedDesignVersion": "v30",
-  "approvedDesignSha256": "1226ef5db0f79a466837a7a6313ee07a77e202817000395468da6bab98aa36d6",
-  "approvedAt": "2026-11-22T14:42:20.384Z",
-  "approvalEvidence": "v30:1226ef5db0f7 を承認",
-  "requiredApprovalFingerprint": "v30:1226ef5db0f7",
+  "designVersion": "v31",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v31:96d458dbeb2c",
   "baseline": "feat/integration（16e3499）",
-  "criticRound": 53,
+  "criticRound": 57,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md（§15）"
+    "design.md（§15。v31）",
+    "v31-inputs.md",
+    "sources/em-v31-draft.md"
   ],
-  "nextAction": "段 17c から実装（§15-10）。段の前に要る EM の追記 E-1〜E-8 は利用者の承認を取ってから",
-  "lastUpdated": "2026-11-22",
+  "nextAction": "v31 の批評（round-57）。v30 の承認は v30:1226ef5db0f7 のまま実装済みの段の根拠",
+  "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
     "批評": "claude/claude-opus-5-5, codex/gpt-6.1-sol",
