@@ -111,6 +111,12 @@ describe("取り込んだファイルを消す", () => {
         out[`question:${id}`] = q.id;
       }
       a.runMeeting();
+      // 査定・返戻の突き合わせ（spec FR-202 の I-1）：消すファイルの請求（U1-2）に当てた増減点連絡書の明細と、その判定
+      const zogen = ["1,50810,1,医科,9999999", "3,,2,0001-00000001,,,,06139991,,,,,,本外,,,,架空 片方,A2,60,,,-130,A,,BNP 130×1,,0×0,,"].join("\r\n");
+      const review = a.importReview(me, "RIzogn1131999999950811.csv", Buffer.from(zogen, "utf8"));
+      expect(review.items.map((i) => [i.claimId, i.line])).toEqual([["U1-2", "160162350"]]);
+      a.confirmMatch(review.items[0].id, me);
+      a.judgeItem(review.items[0].id, me, { result: "指摘なし", reason: "その他" });
       return out;
     });
     // 訪問カルテは、取り込んだ請求には画面から書けない。表に行があっても消えることを確かめるため、行を直接入れる
@@ -130,6 +136,8 @@ describe("取り込んだファイルを消す", () => {
     expect(tablesWith(before, "U1-1")).toEqual(expect.arrayContaining(["chart_comments", "chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(before, made["question:U1-1"])).toEqual(expect.arrayContaining(["applications", "claim_results", "questions", "submissions"]));
     expect(tablesWith(before, goes)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));
+    expect(tablesWith(before, "U1-2")).toEqual(expect.arrayContaining(["review_items"]));
+    expect(JSON.parse(before.review_judgments)).toHaveLength(1);
     const queryFiles = () => readdirSync(instance.tenantPaths(owner.tenantId).queryLogDir);
     expect(queryFiles().filter((f) => f.startsWith(made["query:U1-1"]))).toHaveLength(2);
     const ukeDir = path.join(path.dirname(dbFile), "uke");
@@ -160,6 +168,9 @@ describe("取り込んだファイルを消す", () => {
     // 全表の走査：消したファイルの請求 id・問題（提出）の id・そのファイルにだけいた患者の id が、どの表にもない
     const after = dump(dbFile);
     for (const id of ["U1-1", "U1-2", made["question:U1-1"], made["question:U1-2"], goes, sha(bytesA)]) expect([id, tablesWith(after, id)]).toEqual([id, []]);
+    // 査定・返戻の明細は残り（消すのは取り込んだ CSV の単位）、当て方と判定が外れる
+    expect(JSON.parse(after.review_items)).toMatchObject([{ claim_id: null, claim_by: null, line_code: null, confirmed_at: null }]);
+    expect(after.review_judgments).toBe("[]");
     // 別のファイルの請求と、そこに残る患者（消したファイルにもいた人）は残る
     expect(tablesWith(after, "U2-1")).toEqual(expect.arrayContaining(["chart_comments", "chart_notes", "claim_facts", "peer_questions", "questions", "submissions"]));
     expect(tablesWith(after, stays)).toEqual(expect.arrayContaining(["patient_coverages", "patient_facts", "patients"]));

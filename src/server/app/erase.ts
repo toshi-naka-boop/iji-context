@@ -1,5 +1,5 @@
 // 取り込んだファイルを消す（design.md §11-11「消す」・X-87）。単位は取り込んだファイル（アップロード 1 回）。請求ごとには消さない。
-// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ・算定プレビューで入れた摘要欄の記載・請求ごとに確かめた事実・医師が「その他」「判定不能」と答えた記録、
+// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ・算定プレビューで入れた摘要欄の記載・請求ごとに確かめた事実・医師が「その他」「判定不能」と答えた記録・査定・返戻の明細の当て方と判定、
 // ほかのどの請求からも参照されなくなった患者マスタ・加入情報・確かめた患者情報。読み直しのキャッシュと、取り込みの記録も捨てる。
 // 残るもの：監査ログ（id だけ）、その請求から作った知識の候補（文は人が書いたもの。消すかは責任者が知識の画面で決める）、AI のサービス側に送った内容。
 // メンターのやり取り（セッション）と作業場所は DB の外にあるので、消す相手（医療事務と、その人がこれまでに使ったセッションの全部）を返し、呼び出し側（src/server/instance.ts）が消す
@@ -76,6 +76,9 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           sqlite.prepare(`DELETE FROM claim_facts WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_reviews WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM doctor_fact_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
+          // 査定・返戻の突き合わせ（spec FR-202 の I-1）：その請求に当てた明細の判定を消し、当て方を外す（明細そのものは、取り込んだ CSV を消すまで残る。当てられないものに戻る）
+          sqlite.prepare(`DELETE FROM review_judgments WHERE item_id IN (SELECT id FROM review_items WHERE claim_id IN (${marks(claimIds)}))`).run(...claimIds);
+          sqlite.prepare(`UPDATE review_items SET claim_id = NULL, claim_by = NULL, claim_note = NULL, line_code = NULL, line_by = NULL, confirmed_by = NULL, confirmed_at = NULL WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           // ベテランへの問い。ベテランのメンターにも同じ問いが渡っているので、そのやり取りも消す
           const peers = sqlite.prepare(`DELETE FROM peer_questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds).changes;
           if (peers > 0) clerkIds.add(VETERAN_CLERK);
