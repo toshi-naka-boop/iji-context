@@ -6,7 +6,8 @@ import { STRUCTURED_PARTS, type Coded, type ConnectorChart, type HomeCareOrder, 
 export const BAD_ROW = "形が違う行";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME = /^\d{2}:\d{2}$/;
+/** 時刻は "HH:MM"（時 00〜23・分 00〜59）。存在しない時刻（10:99・24:00）や形の違いは欠け（手入力の API と同じ検査。X-283） */
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const strOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
 const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);

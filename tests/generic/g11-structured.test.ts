@@ -4,11 +4,12 @@
 import type Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import type { ChartAct } from "../../src/chart/acts";
-import type { RxOrder, StructuredChart, Visit } from "../../src/connect/types";
+import type { Part, ProcRecord, RxOrder, StructuredChart, Visit } from "../../src/connect/types";
 import type { DeclarationView } from "../../src/facility/declaration";
 import { evaluateG11, type ConfirmedAct, type G11About, type G11Claim, type G11Devices, type G11Finding, type G11Result, type G11Structured, type RxDay } from "../../src/generic/g11";
 import { resolveRevision } from "../../src/engine/revisions";
 import { withStructured } from "../../src/structured/g11-input";
+import { readStructured } from "../../src/structured/read";
 import { FR207_CELLS } from "../../src/structured/fr207-table";
 import { isOutsideText, OUTSIDE_WORDS } from "../../src/structured/outside-words";
 import type { SItem } from "../../src/structured/overlap";
@@ -125,17 +126,25 @@ type Opt = {
   noStructured?: boolean;
   /** 材料加算の入力（段 19e） */
   devices?: G11Devices;
+  /** 接続先が返したままの処方のオーダー・訪問（readStructured で読む。捨てた行・欠けの数を持つ） */
+  rawOrders?: unknown[];
+  rawVisits?: unknown[];
+  /** 注射・処置の実施と、その当てたコードつきの行為 */
+  procedures?: { records: ProcRecord[]; items: SItem[] };
 };
+/** 接続先が返したままの行を、読み出し（16-1）に通した種類 */
+const readPart = <K extends "orders" | "visits">(k: K, items: unknown[]) => readStructured({ structured: { [k]: { status: "supported", items } } } as never)[k];
 const emptyHistory = (): G11Structured["history"] => Array.from({ length: 12 }, (_, i) => ({ yearMonth: month(-(i + 1)), orders: sup<RxOrder>([]), items: [] }));
 function about(o: Opt = {}): G11About {
-  const orders = o.orders === "unsupported" ? null : (o.orders ?? []);
+  const rawOrders = o.rawOrders ? (readPart("orders", o.rawOrders) as Part<RxOrder>) : null;
+  const orders = rawOrders?.status === "supported" ? rawOrders.items : o.orders === "unsupported" ? null : (o.orders ?? []);
   const chart: StructuredChart = {
-    visits: o.visits === "unsupported" || o.visits === undefined ? UNS : sup(o.visits),
-    orders: orders === null ? UNS : sup(orders),
-    procedures: UNS,
+    visits: o.rawVisits ? readPart("visits", o.rawVisits) : o.visits === "unsupported" || o.visits === undefined ? UNS : sup(o.visits),
+    orders: rawOrders ?? (orders === null ? UNS : sup(orders)),
+    procedures: o.procedures ? sup(o.procedures.records) : UNS,
     homeCare: UNS,
   };
-  const items = orders ? itemsOf(orders, o.unmapped) : [];
+  const items = [...(orders ? itemsOf(orders, o.unmapped) : []), ...(o.procedures?.items ?? [])];
   const S: G11Structured = { chart, items, history: o.history ?? emptyHistory(), lookbackMonths: 12, texts: o.texts ?? [], times: o.times ?? [], ...(o.devices ? { devices: o.devices } : {}), ...(o.pastTextsUnreadable ? { pastTextsUnreadable: true } : {}) };
   const acts = o.noStructured ? (o.acts ?? []) : withStructured(o.acts ?? [], { chart, items }, rev).acts;
   return {
@@ -1108,6 +1117,19 @@ describe("構造化データのない請求（v32 の入力）", () => {
     expect(rules(r)).toEqual([]);
     expect(r.scope.filter((s) => s.includes("処方箋を交付しない") || s.includes("時間の加算") || s.includes("材料加算"))).toEqual(["電子カルテの構造化データがないので、処方箋を交付しない場合の加算・患家診療時間加算・材料加算は見ていません"]);
     expect(r.scope.filter((s) => s.startsWith("電子カルテの構造化データがない"))).toHaveLength(1);
+  });
+});
+
+describe("反証 round-69（X-280〜X-284）", () => {
+  /** 接続先の院外のオーダーで ref のない行（読み出しで捨てる行） */
+  const badOutside = (d: string) => ({ ref: null, date: d, place: "院外", refills: 0, drugs: [{ code: { system: "rece", value: D.carve }, name: "薬", days: 14, quantity: "1錠" }] });
+  const rawInside14 = () => inside14([[D.carve, 14]]);
+  it("X-283：接続先の訪問の存在しない時刻（10:99）は欠けとして扱い、時間の加算の計算に使わない", () => {
+    const db = rdb();
+    const r = run(db, { units: [unit([VISIT], 5)] }, { rawVisits: [{ ref: "v1", date: date(5), kind: "訪問診療", start: "10:99", end: "12:40" }] });
+    expect(rules(r)).toEqual([]);
+    expect(r.scope).toContain("患家診療時間加算は見ていません（時刻の分からない訪問の日：1 日）");
+    expect(readPart("visits", [{ ref: "v1", date: date(5), kind: "訪問診療", start: "24:00", end: "9:5" }])).toEqual({ status: "supported", items: [{ ref: "v1", date: date(5), kind: "訪問診療", start: null, end: null }], gaps: { start: 1, end: 1 } });
   });
 });
 

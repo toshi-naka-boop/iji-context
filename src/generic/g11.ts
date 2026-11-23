@@ -576,7 +576,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 訪問の時刻（16-4-6・16-6）：電子カルテの時刻と医療事務が入れた時刻。日をまたぐ記録（終了が開始以前）は見ない（欠け）
   const minutesOf = (start: string | null, end: string | null): number | null => {
-    const p = (s: string | null) => (s && /^\d{2}:\d{2}$/.test(s) ? Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)) : null);
+    // 存在しない時刻（時 0〜23・分 0〜59 の外）は欠け（読み出しと手入力の API と同じ検査。X-283）
+    const p = (s: string | null) => (s && /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)) : null);
     const a = p(start);
     const b = p(end);
     return a !== null && b !== null && b > a ? b - a : null;
