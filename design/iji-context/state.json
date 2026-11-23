@@ -1,11 +1,11 @@
 {
-  "currentNode": "承認CP",
-  "status": "awaiting_user",
+  "currentNode": "実装",
+  "status": "in_progress",
   "designVersion": "v31",
-  "approvedDesignVersion": null,
-  "approvedDesignSha256": null,
-  "approvedAt": null,
-  "approvalEvidence": null,
+  "approvedDesignVersion": "v31",
+  "approvedDesignSha256": "960235aa4187a0fc2b16a2e8a3fe1edf8249c28607144cd91e280dae90bfd0da",
+  "approvedAt": "2026-11-23",
+  "approvalEvidence": "v31（v31:960235aa4187）承認します（直前の提示で、返事の範囲を v31 と EM 追記案 em-v31-draft.md の残りの W〔W-1・W-3〜W-10・W-13〕とし、個別に見たいものは番号を、と添えた）",
   "requiredApprovalFingerprint": "v31:960235aa4187",
   "baseline": "feat/integration（16e3499）",
   "criticRound": 59,
@@ -15,7 +15,7 @@
     "v31-inputs.md",
     "sources/em-v31-draft.md"
   ],
-  "nextAction": "v31（v31:960235aa4187）と EM 追記案 em-v31-draft.md の残りの W（W-1・W-3〜W-10・W-13）の承認を待つ。L-157・L-160 は利用者が決定済み",
+  "nextAction": "EM 追記案を両ブランチの EM に入れ、段 17f・17h → 17i → 17j・17k の順に実装（17f と 17h、17j と 17k は束ねて出す）",
   "lastUpdated": "2026-11-23",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
