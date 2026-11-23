@@ -1124,6 +1124,40 @@ describe("反証 round-69（X-280〜X-284）", () => {
   /** 接続先の院外のオーダーで ref のない行（読み出しで捨てる行） */
   const badOutside = (d: string) => ({ ref: null, date: d, place: "院外", refills: 0, drugs: [{ code: { system: "rece", value: D.carve }, name: "薬", days: 14, quantity: "1錠" }] });
   const rawInside14 = () => inside14([[D.carve, 14]]);
+  it("X-280：当月の処方のオーダーに捨てた行があれば、注2 を出さず理由つきで「見ていません」にする（欠けを院外 0 件と読まない）", () => {
+    const db = rdb();
+    const kanri = { units: [unit([KANRI], 14)] };
+    const texts = [text(14, "定期処方を院内で投薬")];
+    // 捨てた行がなければ注2 が出る（同じ入力の対照）
+    expect(rules(run(db, kanri, { rawOrders: rawInside14(), texts })).some((f) => f.codes.includes(N2))).toBe(true);
+    const r = run(db, kanri, { rawOrders: [...rawInside14(), badOutside(date(14))], texts });
+    expect(rules(r).some((f) => f.codes.includes(N2))).toBe(false);
+    expect(n2Scope(r)).toContain("処方箋を交付しない場合の加算は見ていません（処方のオーダーに読めない行がある：1 件）");
+  });
+  it("X-280：当月の処方のオーダーに捨てた行があれば、オーダーから出す調剤料・処方料・処方箋料を出さず「見ていません」に数える", () => {
+    const db = rdb();
+    const r = run(db, { units: [] }, { rawOrders: [...rawInside14(), order("o2", date(21), "院外", [[D.carve, 7]]), badOutside(date(14))] });
+    expect(rules(r)).toEqual([]);
+    expect(r.scope).toContain("処方のオーダーに読めない行があるので、調剤料・処方料・処方箋料は見ていません：1 件");
+  });
+  it("X-280：過去の月の処方のオーダーに捨てた行があれば、注2 は「前の処方を読めない」で見ていません", () => {
+    const db = rdb();
+    const history = emptyHistory();
+    history[0] = { yearMonth: month(-1), orders: readPart("orders", [badOutside(dateIn(-1, 25))]) as Part<RxOrder>, items: [] };
+    const r = run(db, { units: [unit([KANRI], 14)] }, { orders: rawInside14(), texts: [text(14, "定期処方を院内で投薬")], history });
+    expect(rules(r).some((f) => f.codes.includes(N2))).toBe(false);
+    expect(n2Scope(r)).toContain("処方箋を交付しない場合の加算は見ていません（前の処方を読めない）");
+  });
+  it("X-280：訪問の記録に捨てた行があれば、注2 は理由つきで「見ていません」（捨てた訪問の日にカルテの文章があるかを確かめられない）", () => {
+    const db = rdb();
+    const kanri = { units: [unit([KANRI], 14)] };
+    const texts = [text(14, "定期処方を院内で投薬")];
+    const v14 = { ref: "v1", date: date(14), kind: "訪問診療", start: "10:00", end: "10:30" };
+    expect(rules(run(db, kanri, { orders: rawInside14(), texts, rawVisits: [v14] })).some((f) => f.codes.includes(N2))).toBe(true);
+    const r = run(db, kanri, { orders: rawInside14(), texts, rawVisits: [v14, { ref: null, date: date(21), kind: "訪問診療", start: "10:00", end: "10:30" }] });
+    expect(rules(r).some((f) => f.codes.includes(N2))).toBe(false);
+    expect(n2Scope(r)).toContain("処方箋を交付しない場合の加算は見ていません（訪問の記録に読めない行がある：1 件）");
+  });
   it("X-281：構造化データの処置の欄から来た材料加算のコードも、機器を確かめていない患者では候補にせず「見ていません」にたたむ", () => {
     const db = rdb();
     const rec: ProcRecord = { ref: "p1", date: date(5), act: { code: { system: "rece", value: M.c158 }, name: "酸素濃縮装置加算" }, count: 1, items: [] };

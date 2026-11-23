@@ -25,6 +25,7 @@ import type { SItem } from "../structured/overlap";
 import { RULE_CODES } from "../structured/rule-codes";
 import { isOutsideText } from "../structured/outside-words";
 import { hasTimeHint } from "../structured/time-hint";
+import { BAD_ROW } from "../structured/read";
 import { OUT_REASONS } from "../structured/code-map";
 import { codeOfDevice, DEVICE_KINDS, MATERIAL_MONTH_COMMENTS, OXYGEN_KINDS, unitOfDevice, type C150Detail, type DeviceKey } from "../structured/devices";
 
@@ -540,6 +541,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   };
   const ordersPart = S?.chart.orders ?? null;
   const orderMonth = ordersPart?.status === "supported";
+  /** 読み出しで捨てた行の数（16-1。X-280）。あれば、その種類に依る規則は「見ていません」にする（捨てた行を「0 件」と読まない） */
+  const droppedOf = (p: Part<unknown> | null | undefined) => (p?.status === "supported" ? (p.gaps[BAD_ROW] ?? 0) : 0);
+  const ordersDropped = droppedOf(ordersPart);
   const ordersOn = new Map<string, RxOrder[]>();
   if (ordersPart?.status === "supported") for (const o of ordersPart.items) if (inMonth(o.date)) ordersOn.set(o.date, [...(ordersOn.get(o.date) ?? []), o]);
   /** オーダーの日の院内・院外（16-4-1。オーダーを受け取っている月は、オーダーで決める） */
@@ -572,7 +576,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     return !ordersOn.has(date) && about.dispensing === "inside" && !!r?.rx && r.choice === "inside" && r.confirmed === true;
   };
   /** 規則が調剤料・処方料を見る日（文章の調剤料・処方料の行為は、規則の側にたたむ。16-3） */
-  const ruleDrugDay = (date: string) => orderDay(date)?.place === "inside" || confirmedInside(date);
+  const ruleDrugDay = (date: string) => ordersDropped === 0 && (orderDay(date)?.place === "inside" || confirmedInside(date));
 
   // 訪問の時刻（16-4-6・16-6）：電子カルテの時刻と医療事務が入れた時刻。日をまたぐ記録（終了が開始以前）は見ない（欠け）
   const minutesOf = (start: string | null, end: string | null): number | null => {
@@ -943,7 +947,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     const NARCOTIC = new Set(["1", "2", "3", "5"]);
     let mayakuUnread = 0;
     let formUnread = 0;
-    const dates = [...new Set([...ordersOn.keys(), ...(about.rxDays ?? []).filter((r) => inMonth(r.date)).map((r) => r.date)])].sort();
+    // 処方のオーダーに捨てた行があれば、オーダーに依る調剤料・処方料・処方箋料は見ない（捨てた行の日・院内院外が分からない。X-280）
+    if (ordersDropped > 0) tally("処方のオーダーに読めない行があるので、調剤料・処方料・処方箋料は見ていません", ordersDropped);
+    const dates = ordersDropped > 0 ? [] : [...new Set([...ordersOn.keys(), ...(about.rxDays ?? []).filter((r) => inMonth(r.date)).map((r) => r.date)])].sort();
     for (const date of dates) {
       const day = Number(date.slice(8, 10));
       const od = orderDay(date);
@@ -995,7 +1001,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
     if (mayakuUnread > 0) tally("麻薬等の区分を医薬品マスターから読めないので、麻薬等加算は見ていません", mayakuUnread);
 
     // 処方箋料（T5）：オーダーの院外の日。同じ日に院内と院外のオーダーがある日は、調剤料・処方料を出さず、処方箋料に R8-239 の添え書き
-    for (const [date] of [...ordersOn].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    for (const [date] of ordersDropped > 0 ? [] : [...ordersOn].sort(([a], [b]) => (a < b ? -1 : 1))) {
       const od = orderDay(date)!;
       if ((od.place !== "outside" && od.place !== "mixed") || info.rxPrimary === null) continue;
       const day = Number(date.slice(8, 10));
@@ -1034,6 +1040,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       if (!orderMonth) reasons.push("処方のオーダーを受け取っていない");
       else {
         const monthOrders = [...ordersOn.values()].flat();
+        // 捨てた行は院外かもしれない（院外 0 件と読まない。X-280）
+        if (ordersDropped > 0) reasons.push(`処方のオーダーに読めない行がある：${ordersDropped} 件`);
         // 院外のオーダーがその月に 1 件でもあれば出さない（R8-241 (c)）
         if (monthOrders.some((o) => o.place === "院外")) blocked = true;
         insideN = monthOrders.filter((o) => o.place === "院内").length;
@@ -1050,7 +1058,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
         let refill = 0;
         let unknownPeriod = 0;
         for (const h of S.history) {
-          if (!h.orders || h.orders.status !== "supported") {
+          if (!h.orders || h.orders.status !== "supported" || droppedOf(h.orders) > 0) {
             unreadable++;
             continue;
           }
@@ -1090,6 +1098,9 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
         ...acts.filter((a) => a.source !== "structured").map((a) => a.date),
       ]);
       const textDates = new Set(textsNow.map((x) => x.date));
+      // 訪問の記録に捨てた行があれば、その日にカルテの文章があるかを確かめられない（X-280）
+      const visitsDropped = droppedOf(S.chart.visits);
+      if (visitsDropped > 0) reasons.push(`訪問の記録に読めない行がある：${visitsDropped} 件`);
       // カルテを 1 日も持たない請求では、注2 だけを回さない（16-4-5 (e)。調剤料・処方料はオーダーで出す）
       if (textDates.size === 0) reasons.push("カルテの文章がない月");
       const noText = [...visitDates].filter((d) => !textDates.has(d));
