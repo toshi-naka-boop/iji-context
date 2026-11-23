@@ -273,6 +273,10 @@ describe("中身の突き合わせ（完了条件 (d)）", () => {
     const wrong = replaceText(K1, "850100106", warekiOf(day(15))!);
     expect(r17(wrong)).toEqual([expect.objectContaining({ kind: "記載もれ", messageKey: "R17.comment_mismatch_visitDates", lineRefs: ["C002_2I1"], params: expect.objectContaining({ rule: "T176-date", lacking: day(14), extra: day(15) }) })]);
     expect(findingText(r17(wrong)[0])).toMatch(/記載のない日：\d+\/14。算定のない日：\d+\/15）$/);
+    // 重なりに使う通し番号は、多い日（15 日）の記載だけ。正しい日（28 日）の記載は指していない（X-340）
+    const seqd: ClaimContext = { ...wrong, comments: wrong.comments!.map((c, seq) => ({ ...c, seq })) };
+    const extraSeqs = seqd.comments!.filter((x) => x.code === "850100106" && x.text === warekiOf(day(15))).map((x) => String(x.seq));
+    expect(r17(seqd)[0].params?.seqs).toBe(extraSeqs.join(","));
     // 1 日分だけ消すと、数は足りている（1 件以上）が、日が足りない
     const one: ClaimContext = { ...K1, comments: K1.comments!.filter((x) => !(x.code === "850100106" && x.text === warekiOf(day(28)))) };
     expect(r17(one).map((f) => [keyOf(f), f.params?.lacking, f.params?.extra])).toEqual([["comment_mismatch_visitDates", day(28), undefined]]);
@@ -359,11 +363,13 @@ describe("週 4 回以上の訪問（完了条件 (f)）", () => {
     expect(tags({ ...ACUTE, comments: [...ACUTE.comments!, commentOf("850100095", warekiOf(day(12))!, [])] })).toEqual([]);
   });
 
-  it("比べる指摘に添えるコメントの通し番号は、実際に比べたコメント（訪問診療を行った年月日）だけ。必要性・必要を認めた年月日は添えない（X-331）", () => {
+  it("比べる指摘に添えるコメントの通し番号は、指摘が中身を言っているコメントだけ。足りない日だけの指摘（急性増悪の訪問日）はどのコメントも添えない（X-331・X-340）", () => {
     const oneDay: ClaimContext = { ...ACUTE, comments: ACUTE.comments!.filter((x) => x.code !== "850100095" || x.text === warekiOf(ACUTE_DAYS[0])).map((c, seq) => ({ ...c, seq })) };
     expect(oneDay.comments!.some((x) => x.code === "850100094")).toBe(true);
     const found = r17(oneDay).find((x) => keyOf(x) === "comment_mismatch_acuteVisitDates")!;
-    expect(found.params?.seqs?.split(",")).toEqual(oneDay.comments!.filter((x) => x.code === "850100095").map((x) => String(x.seq)));
+    expect(found.params?.lacking).toBeTruthy();
+    // 書いてある訪問日（正しい日）も、別の年月日のコードも、指摘の対象ではないので、G07 の形の指摘を落とさない
+    expect(found.params?.seqs ?? "").toBe("");
   });
 
   it("別表第七に当たるか・急性増悪かが不明なら情報不足（宛先は医師）。看取りの場所が不明でも同じ", () => {

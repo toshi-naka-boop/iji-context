@@ -41,7 +41,7 @@ export function makeR17(spec: CommentSpec): Rule {
           params: { rule: rule.id, what: rule.summary, ...params },
           reference: this.reference,
         });
-        // seqs は、その指摘が言っているコメントの通し番号（通し番号を持つコメントだけ。「,」区切り）：形の指摘は形が誤ったコメント、比べる指摘は実際に比べたコメントだけ。
+        // seqs は、その指摘が言っているコメントの通し番号（通し番号を持つコメントだけ。「,」区切り）：形の指摘は形が誤ったコメント、比べる指摘は中身を言っているコメント（多い日の記載）だけ。
         // データで動く点検の記載の形の指摘と、コメント 1 つの単位で重ねる（design.md §17-3。X-321・X-330・X-331）
         const seqsOf = (list: typeof comments): Record<string, string> => {
           const seqs = list.flatMap((x) => (x.seq === undefined ? [] : [String(x.seq)]));
@@ -76,7 +76,7 @@ export function makeR17(spec: CommentSpec): Rule {
 
   /**
    * 中身の突き合わせ。食い違えば、文言に埋める値（values：足りない日 lacking・多い日 extra。"YYYY-MM-DD" の「,」区切り）と、実際に比べたコメント（used）を返す。比べない場合と一致は null。
-   * used は、比べる対象のコードのコメントだけ（例：急性増悪の訪問日の比べ方では「訪問診療を行った年月日」だけで、「必要を認めた診療年月日」は入れない。X-331）
+   * used は、比べる対象のコードのコメントのうち、指摘が中身を言っているもの（多い日の記載）だけ。足りない日だけの指摘では空（X-331・X-340）
    */
   function compare(kind: NonNullable<CommentRule["compare"]>, ctx: ClaimContext, codes: string[]): { values: Record<string, string>; used: Comment[] } | null {
     const mine = (ctx.comments ?? []).filter((x) => codes.includes(x.code));
@@ -85,7 +85,9 @@ export function makeR17(spec: CommentSpec): Rule {
       const written = datesOf(used);
       const lacking = billed.filter((d) => !written.includes(d));
       const extra = both ? written.filter((d) => !billed.includes(d)) : [];
-      return lacking.length || extra.length ? { values: { ...(lacking.length ? { lacking: lacking.join(",") } : {}), ...(extra.length ? { extra: extra.join(",") } : {}) }, used } : null;
+      // 重なりに使うコメントは、指摘が中身を言っているもの（多い日＝extra の記載）だけ。足りない日はコメントがないことなので、どのコメントも指していない（X-340）
+      const pointed = used.filter((x) => extra.includes(dateOfWareki(x.text) as string));
+      return lacking.length || extra.length ? { values: { ...(lacking.length ? { lacking: lacking.join(",") } : {}), ...(extra.length ? { extra: extra.join(",") } : {}) }, used: pointed } : null;
     };
     switch (kind) {
       case "visitDates":
