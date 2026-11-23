@@ -149,8 +149,8 @@ export function conditionalOf(claim: GenericClaim, masters: MastersDb, about: Ge
   const items = [...byItem.values()].map((i): ConditionalItem => {
     const sheet = SHEET[i.kind].name;
     const y = yoshi.find((x) => x.sheet === sheet && x.kouban === i.kouban);
-    // 要旨のない項番は、記載要領の同じ表の PDF へのリンクだけ（版の表に同じ表の行があるときだけ。ない表はリンクを持たない）
-    const url = y?.url ?? yoshi.find((x) => x.sheet === sheet)?.url;
+    // 要旨のない項番は、記載要領の PDF へのリンクだけ（ページは付けない）。記載要領の PDF は別表Ⅰ・Ⅱ・Ⅳ で 1 つ（EM §2-5 L-4）なので、別表によらず版の要旨の行の URL を使う（C-481・X-324）
+    const url = y?.url ?? yoshi[0]?.url;
     return {
       sheet,
       kouban: String(Number(i.kouban)),

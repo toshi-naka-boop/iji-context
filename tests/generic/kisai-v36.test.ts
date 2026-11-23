@@ -86,6 +86,9 @@ describe("条件区分 00：判定せず、記載が要ることがある項目�
     expect(shibou.branches[0].comments[3]).toBe("ほか 1 個");
     const oushin = r.items.find((x) => x.kouban === "162")!;
     expect([oushin.summary, oushin.source]).toEqual([null, { url: yoshi.url }]);
+    // 別表Ⅱ（医薬品）の 00 の項目にも、同じ記載要領の PDF へのリンクを付ける（ページは付けない。C-481・X-324）
+    const iy = conditionalOf(claimOf([unit("IY", K.adtralza)]), db, { ...about, kisai: kisaiOf(rev, []) })!.items.find((x) => x.sheet === "別表Ⅱ")!;
+    expect([iy.summary, iy.source]).toEqual([null, { url: yoshi.url }]);
   });
 });
 
