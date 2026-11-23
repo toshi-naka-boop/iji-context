@@ -114,11 +114,11 @@ export function overlap(hand: Pick<EngineResult, "findings"> & { applied?: strin
         continue;
       }
     }
-    // 記載の形（G07.form・form_day00・form_future。design.md §17-3）：同じコメントについて R17 が形の指摘（R17.comment_format）を出しているときだけ出さない。
-    // R17 は対応する算定行がなければ形を見ないので、R17 のコードでも R17 が見なかったコメントは G07 が言う（判定の関数は同じ commentFormatOk）
+    // 記載の形（G07.form・form_day00・form_future。design.md §17-3）：同じコメントの行（UKE の行番号）について R17 が指摘（形 comment_format、中身の食い違い comment_mismatch_* など）を
+    // 出しているときだけ出さない（X-321・C-480）。別の行の G07 の指摘は残す。R17 は対応する算定行がなければ形を見ないので、R17 のコードでも R17 が見なかったコメントは G07 が言う
     if (g.messageKey.startsWith("G07.form")) {
-      const code = g.params.commentCode;
-      if (hand.findings.some((f) => f.ruleId === "R17" && f.messageKey === "R17.comment_format" && rev.comments.some((r) => r.id === f.params?.rule && r.codes.includes(code)))) out.duplicate++;
+      const line = g.params.line;
+      if (line !== undefined && hand.findings.some((f) => f.ruleId === "R17" && f.kind !== "情報不足" && (f.params?.lines ?? "").split(",").includes(line))) out.duplicate++;
       else out.findings.push(g);
       continue;
     }

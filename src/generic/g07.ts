@@ -226,8 +226,8 @@ function formFindings(claim: GenericClaim, about: GenericAbout, label: (code: st
       units: c.unit === null || c.unit === undefined ? [] : [c.unit],
       codes: [],
       messageKey: key,
-      // commentCode は、重なりの規則（src/generic/overlap.ts）が R17 の形の指摘と同じコメントかを見るのに使う
-      params: { comment: label(c.code), commentCode: c.code, text, form: FORMS[prefix] },
+      // line（UKE の行番号）は、重なりの規則（src/generic/overlap.ts）が、同じコメントの行に R17 の指摘があるかを見るのに使う
+      params: { comment: label(c.code), commentCode: c.code, text, form: FORMS[prefix], ...(c.line === undefined ? {} : { line: String(c.line) }) },
       source: { data: "コメントの形式", ref: `EM §2-10 表 3 先頭 3 桁=${prefix}, コード=${c.code}` },
     });
   }

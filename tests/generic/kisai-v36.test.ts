@@ -167,6 +167,27 @@ describe("記載の形：R17 と同じ commentFormatOk で見る（design.md §1
     expect(evaluateGeneric(bad, bare, about).findings.filter((f) => f.check === "G07").map((f) => [f.messageKey, f.certainty])).toEqual([["G07.form", "確定"]]);
   });
 
+  it("重なりはコメントの行の単位（X-321・C-480）：同じ行に R17 の指摘（形でも中身の食い違いでも）があれば G07 の形の指摘を落とし、別の行の G07 の指摘は残す", () => {
+    const k1 = () => structuredClone(claimsOf("kokuhoren.UKE")[0]);
+    // 訪問日のコメントを翌月の日付にする：R17 は中身の食い違い（comment_mismatch_visitDates）を言うので、G07.form_future は出さない（同じことを 2 回言わない）
+    const a = k1();
+    const i = a.comments.findIndex((c) => c.code === "850100106");
+    a.comments[i] = { ...a.comments[i], raw: warekiOf(`${month(1)}-05`)! };
+    const ra = checkUke(a, commentMasters());
+    const mismatch = ra.hand.findings.find((f) => f.messageKey === "R17.comment_mismatch_visitDates")!;
+    expect(mismatch.params?.lines?.split(",")).toContain(String(a.comments[i].line));
+    expect(ra.generic.map((f) => f.messageKey)).toContain("G07.form_future");
+    expect(ra.shown.filter((f) => f.messageKey.startsWith("G07.form"))).toEqual([]);
+    // 同じコードの 2 行：形の誤り（13 月 32 日）と、翌月の日付。R17 は形の誤りの行だけを言い（形が誤ると中身は比べない）、翌月の日付の行の G07.form_future は残る
+    const b = k1();
+    const j = b.comments.findIndex((c) => c.code === "850100106");
+    b.comments[j] = { ...b.comments[j], raw: `${warekiOf(day(1))!.slice(0, 3)}1332` };
+    b.comments.push({ ...b.comments[j], line: 99999, raw: warekiOf(`${month(1)}-01`)! });
+    const rb = checkUke(b, commentMasters());
+    expect(rb.hand.findings.find((f) => f.messageKey === "R17.comment_format")!.params?.lines).toBe(String(b.comments[j].line));
+    expect(rb.shown.filter((f) => f.messageKey.startsWith("G07.form")).map((f) => [f.messageKey, f.params.line])).toEqual([["G07.form_future", "99999"]]);
+  });
+
   it("R17 の規則に当たる算定行があるレセプトの形の誤りは R17.comment_format だけ。算定行がないレセプトの同じコードの形の誤りは G07.form", () => {
     const [k1] = structuredClone(claimsOf("kokuhoren.UKE"));
     const i = k1.comments.findIndex((c) => c.code === "850100106");

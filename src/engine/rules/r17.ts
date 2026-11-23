@@ -41,8 +41,14 @@ export function makeR17(spec: CommentSpec): Rule {
           params: { rule: rule.id, what: rule.summary, ...params },
           reference: this.reference,
         });
-        const badFormat = comments.some((x) => rule.codes.includes(x.code) && !commentFormatOk(x.code, x.text));
-        if (badFormat) out.push(found("comment_format"));
+        // lines は、その指摘が言っているコメントの UKE の行番号（行番号を持つコメントだけ。「,」区切り）。データで動く点検の記載の形の指摘と、行の単位で重ねる（design.md §17-3。X-321）
+        const linesOf = (list: typeof comments): Record<string, string> => {
+          const lines = list.flatMap((x) => (x.line === undefined ? [] : [String(x.line)]));
+          return lines.length > 0 ? { lines: lines.join(",") } : {};
+        };
+        const bad = comments.filter((x) => rule.codes.includes(x.code) && !commentFormatOk(x.code, x.text));
+        const badFormat = bad.length > 0;
+        if (badFormat) out.push(found("comment_format", linesOf(bad)));
         const when = commentWhen(rule, ctx, spec);
         if (when.known === false) {
           // 条件を決める事実（別表第七・急性増悪・看取りの場所）は、どれも医師が確かめる
@@ -61,7 +67,7 @@ export function makeR17(spec: CommentSpec): Rule {
         // 形式の合わない記載がある項目は、中身を比べない（読めない値を「食い違い」と言わない）
         if (badFormat || rule.compare === undefined) continue;
         const mismatch = compare(rule.compare, ctx, codes);
-        if (mismatch) out.push(found(`comment_mismatch_${rule.compare}`, mismatch));
+        if (mismatch) out.push(found(`comment_mismatch_${rule.compare}`, { ...mismatch, ...linesOf(comments.filter((x) => codes.includes(x.code))) }));
       }
       return out;
     },

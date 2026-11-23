@@ -14,7 +14,7 @@ import { conditionalOf, kisaiOf } from "../src/generic/g07";
 import { mappedLinesOf, overlap } from "../src/generic/overlap";
 import type { GenericAboutMore } from "../src/generic/types";
 import { mastersDbPath, openMasters, pickSnapshot } from "../src/masters/db";
-import { mapClaim, parseUke } from "../src/uke/uke";
+import { mapClaim, parseUke, withCommentLines } from "../src/uke/uke";
 
 const files = process.argv.slice(2);
 if (files.length === 0) {
@@ -49,7 +49,7 @@ for (const file of files) {
     const g = evaluateGeneric(claim, db, about);
     let shown = g.findings;
     if (mapped && rev) {
-      const ctx: ClaimContext = { claimId: "count", yearMonth: claim.yearMonth, facility, payer: parsed.payer, prefecture: parsed.prefecture, facts: unknown, events: [], recordsKnown: false, lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })), comments: mapped.comments, commentsKnown: true, partial: mapped.others.length > 0 };
+      const ctx: ClaimContext = { claimId: "count", yearMonth: claim.yearMonth, facility, payer: parsed.payer, prefecture: parsed.prefecture, facts: unknown, events: [], recordsKnown: false, lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })), comments: withCommentLines(mapped.comments, claim), commentsKnown: true, partial: mapped.others.length > 0 };
       const o = overlap(evaluate(ctx), rev, false, mappedLinesOf(mapped.lines, mapped.origins), g.findings);
       total.formDuplicate += g.findings.filter((f) => f.messageKey.startsWith("G07.form")).length - o.findings.filter((f) => f.messageKey.startsWith("G07.form")).length;
       shown = o.findings;

@@ -14,7 +14,7 @@ import { mappedLinesOf, overlap } from "../../src/generic/overlap";
 import type { GenericAboutMore } from "../../src/generic/types";
 import { diseaseCodeOf } from "../../src/uke/diseases";
 import type { UkeClaim } from "../../src/uke/types";
-import { mapClaim, parseUke } from "../../src/uke/uke";
+import { mapClaim, parseUke, withCommentLines } from "../../src/uke/uke";
 import { put, smallMasters, source } from "./small-masters";
 
 /** 錨のコード（EM §2-11 表 2） */
@@ -116,7 +116,7 @@ export function checkUke(claim: UkeClaim, db: Database.Database, facts: ClaimCon
   const rev = resolveRevision(claim.yearMonth);
   const mapped = mapClaim(claim, rev);
   const g = evaluateGeneric(claim, db, aboutOf(claim));
-  const ctx: ClaimContext = { claimId: "t", yearMonth: claim.yearMonth, facility, payer: "支払基金", prefecture: "", facts, events: [], recordsKnown: false, lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })), comments: mapped.comments, commentsKnown: true, partial: mapped.others.length > 0 };
+  const ctx: ClaimContext = { claimId: "t", yearMonth: claim.yearMonth, facility, payer: "支払基金", prefecture: "", facts, events: [], recordsKnown: false, lines: mapped.lines.map(({ kubun, count, dates }) => ({ kubun, count, dates })), comments: withCommentLines(mapped.comments, claim), commentsKnown: true, partial: mapped.others.length > 0 };
   const hand = evaluate(ctx);
   const o = overlap(hand, rev, false, mappedLinesOf(mapped.lines, mapped.origins), g.findings);
   const mine = (fs: typeof g.findings) => fs.filter((f) => f.check === "G07" || f.check === "G08");

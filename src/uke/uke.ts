@@ -607,6 +607,15 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
  * lenient は試算（診療年月の版とは限らない版で読む。§11-12）：点数だけが版と違う単位は断らずに行を引き（UnitMapping.revPoints）、
  * ほかの食い違い（数量データが読めないなど）の単位は、点検の対象外の単位として others に残す
  */
+/**
+ * コメントに、UKE の行番号（line）を添える（design.md §17-3。X-321：R17 の指摘と、データで動く点検の記載の形の指摘を、コメントの行の単位で重ねるため）。
+ * comments は、claim から作ったコメント（mapClaim の comments・取り込んだレセプトの comments。同じ並び）。並びとコードが全部合うときだけ添え、合わなければそのまま返す
+ */
+export function withCommentLines(comments: Comment[], claim: UkeClaim): Comment[] {
+  if (comments.length !== claim.comments.length || comments.some((c, i) => c.code !== claim.comments[i].code)) return comments;
+  return comments.map((c, i) => ({ ...c, line: claim.comments[i].line }));
+}
+
 export function mapClaim(claim: UkeClaim, rev: Revision, lenient = false): MappedClaim {
   // 算定日の列は「日ごとの回数 × 数量データ」個できる。作る前に数え、レセプト 1 件の上限を超えた単位からは行にしない
   // （小さなファイルでも、回数と数量を掛けると数億個になり得る。取り込みでも、保存済みの読み直しでも、試算でも同じ）。
