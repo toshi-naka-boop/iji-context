@@ -75,7 +75,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
         </div>
       ) : (
         <div>
-          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} />
+          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={claimId} date={ex.date} />
           {ex.actsDropped.length > 0 && <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました。</div>}
           <button className="primary" onClick={save}>これで確かめる（{ex.date}）</button>
         </div>

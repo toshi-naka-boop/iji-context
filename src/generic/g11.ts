@@ -174,6 +174,8 @@ export type G11Result =
       ruleGuides: string[];
       /** 時刻の入力を案内する日（16-6 の 2 つの場面。B の欄で時刻を入れる欄を出す日） */
       visitTimeDays: string[];
+      /** 案内の日の、電子カルテの訪問の記録（ref・種類）。入力欄でどの訪問かを選び、ref を送る（C-442） */
+      visitTimeRefs: Record<string, { ref: string; kind: "訪問診療" | "往診" | null }[]>;
       /** 材料加算の候補の欄の上に出す 1 行ずつ（見ていないもの。design.md §16-4-7。L-181・L-186） */
       materialNotes: string[];
       /** 点検の範囲（見ていないもの・言わなかった数・注意つきの数） */
@@ -574,15 +576,21 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const timesOn = new Map<string, TimeEntry[]>();
   if (S?.chart.visits.status === "supported")
     for (const v of S.chart.visits.items) if (inMonth(v.date)) timesOn.set(v.date, [...(timesOn.get(v.date) ?? []), { ref: v.ref, kind: v.kind, ehr: minutesOf(v.start, v.end), clerk: null }]);
+  /** 医療事務の時刻を訪問の記録に結び付けられない日（当たらない ref・同じ日に 2 件以上で ref なし。足さず「見ていません」に数える。C-442） */
+  const unboundTimeDays = new Set<string>();
+  const ehrVisitDays = new Set(S?.chart.visits.status === "supported" ? S.chart.visits.items.filter((v) => inMonth(v.date)).map((v) => v.date) : []);
   for (const t of [...(S?.times ?? [])].filter((x) => inMonth(x.date)).sort((a, b) => (a.at < b.at ? -1 : 1))) {
     const min = minutesOf(t.start, t.end);
     if (min === null) continue;
     const list = timesOn.get(t.date) ?? [];
-    // 医療事務の値は、入れたときのその日の訪問の ref に結び付ける。訪問の記録がない日は日で結ぶ
-    const e = t.ref !== null ? list.find((x) => x.ref === t.ref) : list.length === 1 ? list[0] : list.length === 0 ? undefined : null;
-    if (e === null) continue;
+    // 医療事務の値は、入れたときのその日の訪問の ref に結び付ける。訪問の記録がない日は日で結ぶ（医療事務の値どうしは同じ 1 件にまとめ、二重に足さない）
+    const e = ehrVisitDays.has(t.date) ? (t.ref !== null ? list.find((x) => x.ref === t.ref) : list.length === 1 ? list[0] : undefined) : (list[0] ?? null);
+    if (e === undefined) {
+      unboundTimeDays.add(t.date);
+      continue;
+    }
     if (e) e.clerk = { min, by: t.by, at: t.at };
-    else timesOn.set(t.date, [...list, { ref: t.ref, kind: null, ehr: null, clerk: { min, by: t.by, at: t.at } }]);
+    else timesOn.set(t.date, [{ ref: t.ref, kind: null, ehr: null, clerk: { min, by: t.by, at: t.at } }]);
   }
   const timeKnown = (date: string) => (timesOn.get(date) ?? []).some((e) => e.ehr !== null || e.clerk !== null);
   const KAKA = new Set<string>([RULE_CODES.kakaVisit, RULE_CODES.kakaOushin, RULE_CODES.kakaOushinSpecial]);
@@ -904,6 +912,7 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const ruleScope: string[] = [];
   const ruleGuides: string[] = [];
   const visitTimeDays: string[] = [];
+  const visitTimeRefs: Record<string, { ref: string; kind: "訪問診療" | "往診" | null }[]> = {};
   const dayList = (dates: Iterable<string>) => [...new Set(dates)].sort().map((d) => `${md(d)}日`).join("・");
   const ruleCand = (date: string, units: AddedUnit[], rc: RuleCand, notes: Note[] = [], alt?: AddedUnit[]) =>
     add({ kind: "rule", date, day: Number(date.slice(8, 10)) || 0, units, ...(alt ? { alt } : {}), rule: rc, report: [{ code: units[0].items[0].code, written: rc.label, quote: rc.dayQuote, name: rc.label }] }, notes);
@@ -1203,10 +1212,15 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       }
     }
     if (unknown > 0) ruleScope.push(`患家診療時間加算は見ていません（時刻の分からない訪問の日：${unknown} 日）`);
+    if (unboundTimeDays.size > 0) ruleScope.push(`患家診療時間加算は見ていません（医療事務が入れた時刻を訪問の記録に結び付けられない日：${unboundTimeDays.size} 日）`);
     if (unknownKind > 0) ruleScope.push(`患家診療時間加算は見ていません（訪問の種類が分からない日：${unknownKind} 日）`);
     if (noBase > 0) ruleScope.push(`訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：${noBase} 日`);
     if (guideDays.length > 0) ruleGuides.push(`${dayList(guideDays)}の訪問の開始・終了の時刻を入れると、患家診療時間加算を見ます`);
     visitTimeDays.push(...guideDays);
+    for (const d of guideDays) {
+      const vs = (timesOn.get(d) ?? []).flatMap((e) => (e.ref !== null && e.clerk === null ? [{ ref: e.ref, kind: e.kind }] : []));
+      if (vs.length > 0) visitTimeRefs[d] = vs;
+    }
   }
 
   // 在宅療養指導管理材料加算（T8〜T15。16-4-7）：患者の機器の行だけから出す。請求に「ある」は EM の区分と組の単位で見る（C-401）。前の 2 か月の請求のコメントで当月分を見る（C-411）
@@ -1635,5 +1649,5 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   }
   const unmatchedKey = (u: G11Unmatched) => `${u.date}|${u.written}|${u.noteId ?? ""}|${u.index ?? ""}|${u.child?.index ?? ""}`;
   unmatchedActs.sort((a, b) => (unmatchedKey(a) < unmatchedKey(b) ? -1 : 1));
-  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, materialNotes, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
+  return { findings, hidden, unmatchedActs, kubunDoubts, handNotes, guide, ruleGuides, visitTimeDays, visitTimeRefs, materialNotes, scope, counts: { acts: acts.length, unmatched, notSeen: counts.notSeen, hidden: hiddenBy, caution, byKind } };
 }

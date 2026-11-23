@@ -5,10 +5,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { User } from "../../src/server/auth";
+import { resetLimits } from "../../src/server/rate-limit";
 import { autoConsent } from "../helpers/consent";
 import { claimId, month, YM } from "../helpers/period";
 
-vi.mock("@anthropic-ai/claude-agent-sdk", async (original) => (await import("../helpers/sdk")).fakeSdk(await original<object>(), () => ({ structured: null })));
+/** 取り出しの返事：行ったことはなく、その日の処方の記載が 1 つ */
+vi.mock("@anthropic-ai/claude-agent-sdk", async (original) =>
+  (await import("../helpers/sdk")).fakeSdk(await original<object>(), (call: import("../helpers/sdk").SdkCall) => {
+    const props = Object.keys(((call.options.outputFormat as { schema?: { properties?: object } } | undefined)?.schema?.properties ?? {}) as object);
+    return props.includes("facts") ? { structured: { facts: [], acts: [], rx: [{ quote: "湿布を院内で" }] } } : { structured: null };
+  }),
+);
 /** 合成の接続先のうち K1 だけが構造化データを返す形にする（同梱の structured/ のファイルを持つ K12・K13 は見本の UKE にないので、ここでは K1 で経路を確かめる） */
 vi.mock("../../src/connect/fixture", async (original) => {
   const mod = await original<typeof import("../../src/connect/fixture")>();
@@ -23,10 +30,11 @@ vi.mock("../../src/connect/fixture", async (original) => {
             const chart = await c.chart!.getChart(q);
             if (q.patientId !== "K1") return chart;
             const sup = <X,>(items: X[]) => ({ status: "supported" as const, items, gaps: {} });
-            const orders = q.yearMonth.endsWith("-10")
-              ? [{ ref: "o1", date: `${q.yearMonth}-14`, place: "院内", refills: 0, drugs: [{ code: { system: "rece", value: "622095502" }, name: "薬", days: 14, quantity: null }] }]
-              : [];
-            return { ...chart, structured: { visits: sup([]), orders: sup(orders), procedures: { status: "unsupported" }, homeCare: { status: "unsupported" } } };
+            const now = q.yearMonth.endsWith("-10");
+            const orders = now ? [{ ref: "o1", date: `${q.yearMonth}-14`, place: "院内", refills: 0, drugs: [{ code: { system: "rece", value: "622095502" }, name: "薬", days: 14, quantity: null }] }] : [];
+            // 13 日（時計の初期値の日）の訪問は時刻が欠けている
+            const visits = now ? [{ ref: "v13", date: `${q.yearMonth}-13`, start: null, end: null, kind: "訪問診療" }] : [];
+            return { ...chart, structured: { visits: sup(visits), orders: sup(orders), procedures: { status: "unsupported" }, homeCare: { status: "unsupported" } } };
           },
         },
       };
@@ -82,5 +90,16 @@ describe("画面の操作で構造化データを読んで残す（C-440）", ()
     expect(body.structured).toBe(false);
     const b1 = (await (await dev.GET(get(`/api/patient/devices?claimId=${claimId("K1")}`))).json()) as { structured: boolean };
     expect(b1.structured).toBe(true);
+  });
+
+  it("カルテの確かめる画面：その日の訪問の時刻が欠けていて S・O・A・P に時間の語がある日だけ、時刻の入力欄（その日の訪問の ref つき）を出す。処方の印は、在医総管の月のオーダーのない日に注2 の側で効く（C-442・C-441）", async () => {
+    resetLimits();
+    const me = instance.clerkIdOf(user);
+    const timed = await as(() => instance.writeChart({ user, claimId: claimId("K1"), clerkId: me, kind: "訪問診療", note: { s: "診療時間 1時間10分", o: "", a: "", p: "", rx: "湿布を院内で" } }));
+    expect(timed.review.visitTime).toEqual({ visits: [{ ref: "v13", kind: "訪問診療" }] });
+    expect(timed.review.rxMark).toBe("n2");
+    resetLimits();
+    const plain = await as(() => instance.writeChart({ user, claimId: claimId("K1"), clerkId: me, kind: "訪問診療", note: { s: "経過良好", o: "", a: "", p: "", rx: "分3 毎食後" } }));
+    expect(plain.review.visitTime).toBeNull();
   });
 });

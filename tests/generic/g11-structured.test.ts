@@ -663,6 +663,16 @@ describe("T7 患家診療時間加算（114001470・114000970。R8-202〜R8-207�
     const none = run(db, { units: [] }, { visits: "unsupported", times: [{ date: date(14), ref: null, start: "10:00", end: "11:10", by: "たいおう", at }] });
     expect(none.scope).toContain("訪問診療料・往診料・初診料・再診料のない日の時間の加算は見ていません：1 日");
   });
+  it("医療事務の時刻の ref が訪問の記録のどれにも当たらない・同じ日に 2 件以上で ref がないときは、別の訪問として足さず（二重に数えない）、黙って捨てずに「見ていません」に数える（C-442＝C-452）", () => {
+    const db = rdb();
+    const stale = run(db, visitDay, { visits: [visit("v1", 5, "訪問診療", "10:00", "10:40")], times: [{ date: date(5), ref: "v1-old", start: "10:00", end: "10:40", by: "たいおう", at }] });
+    expect(rules(stale)).toEqual([]);
+    expect(stale.scope).toContain("患家診療時間加算は見ていません（医療事務が入れた時刻を訪問の記録に結び付けられない日：1 日）");
+    const two = run(db, { units: [{ ...unit([OUSHIN], 5), count: 2, days: dayArr(5, 5) }] }, { visits: [visit("v1", 5, "往診", null, null), visit("v2", 5, "往診", null, null)], texts: [text(5, "診療時間 1時間15分")], times: [{ date: date(5), ref: null, start: "10:00", end: "11:15", by: "たいおう", at }] });
+    expect(two.scope).toContain("患家診療時間加算は見ていません（医療事務が入れた時刻を訪問の記録に結び付けられない日：1 日）");
+    // 案内の日には、その日の訪問の記録（ref・種類）を並べ、どの訪問かを選べるようにする
+    expect(two.visitTimeRefs).toEqual({ [date(5)]: [{ ref: "v1", kind: "往診" }, { ref: "v2", kind: "往診" }] });
+  });
   it("往診は 114000970。請求に 114002470（特別往診）があれば出ない（L-179）", () => {
     const db = rdb();
     const v = { visits: [visit("v1", 5, "往診", "21:00", "22:10")] };

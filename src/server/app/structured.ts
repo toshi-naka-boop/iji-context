@@ -235,9 +235,17 @@ export function createStructured(ctx: AppContext, clock: Clock, uke: Uke, patien
     const ym = uke.receiptOf(input.claimId).receipt.yearMonth;
     if (!input.date.startsWith(`${ym}-`)) throw badRequest(`日付が診療年月（${ym}）の外です`, ["date"]);
     if (!(input.end > input.start)) throw badRequest("終了の時刻は開始の時刻より後にしてください（日をまたぐ記録は入れられません）", ["end"]);
+    const patientId = structuredPatientOf(input.claimId);
+    // ref は、その日の残した電子カルテの訪問の記録（最新）と照らす（C-442＝C-452）。訪問の記録が 1 件の日の ref なしは、その訪問に結び付ける。2 件以上の日は選んでもらう
+    const visits = storedStructured(patientId, ym)?.chart.visits;
+    const onDay = visits?.status === "supported" ? visits.items.filter((v) => v.date === input.date) : [];
+    let ref = input.ref ?? null;
+    if (ref !== null && !onDay.some((v) => v.ref === ref)) throw badRequest("その日の電子カルテの訪問の記録にない訪問です。点検を開き直して選んでください", ["ref"]);
+    if (ref === null && onDay.length >= 2) throw badRequest(`その日の訪問の記録が ${onDay.length} 件あります。どの訪問の時刻かを選んでください`, ["ref"]);
+    if (ref === null && onDay.length === 1) ref = onDay[0].ref;
     sqlite
       .prepare("INSERT INTO structured_inputs (patient_id, date, visit_ref, start, end, entered_by, entered_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(structuredPatientOf(input.claimId), input.date, input.ref ?? null, input.start, input.end, clerkId, clock.now());
+      .run(patientId, input.date, ref, input.start, input.end, clerkId, clock.now());
     return { saved: true };
   }
   /** その患者・月の、医療事務が入れた時刻（誰は医療事務の名前） */

@@ -8,6 +8,7 @@ import { tableKeyOfAct, tableKeyOfChild, type ActMatch } from "../src/chart/acts
 import type { G11Result, G11Unmatched } from "../src/generic/g11";
 import { MatchPicker } from "./chart/acts-review";
 import { postJson } from "./get-json";
+import { VisitTimeInput } from "./visit-time-input";
 
 export type TorikawasureView = G11Result & { coverage?: string };
 
@@ -26,7 +27,7 @@ export function Torikawasure({ data, chartHref, claimId }: { data: TorikawasureV
         <>
           {data.guide && <div className="notice">{chartHref ? <a href={chartHref}>{data.guide}</a> : data.guide}</div>}
           {(data.ruleGuides ?? []).map((g, i) => <div key={i} className="notice">{chartHref ? <a href={chartHref}>{g}</a> : g}</div>)}
-          {claimId && (data.visitTimeDays ?? []).map((d) => <VisitTimeInput key={d} claimId={claimId} date={d} />)}
+          {claimId && (data.visitTimeDays ?? []).map((d) => <VisitTimeInput key={d} claimId={claimId} date={d} visits={data.visitTimeRefs?.[d] ?? []} />)}
           {(data.materialNotes ?? []).map((n, i) => <p key={`m${i}`} className="muted" style={{ margin: 0 }}>{n}</p>)}
           {data.findings.length === 0 && <p className="muted" style={{ margin: 0 }}>カルテに書かれた行為で、請求にないものは見つかりませんでした（見ていないものは下に並べたとおり）。</p>}
           {data.findings.map((f, i) => (
@@ -97,33 +98,6 @@ function UnmatchedPick({ u }: { u: G11Unmatched }) {
       ) : (
         <div className="muted">このカルテの行為は、ここでは選べません</div>
       )}
-      {msg && <div className="muted">{msg}</div>}
-    </div>
-  );
-}
-
-/** 訪問の開始・終了の時刻を入れる欄（design.md §16-6。案内の出た日だけ。POST /api/chart/structured/visit-time。入れた値は「医療事務が入れた」の印で残る） */
-function VisitTimeInput({ claimId, date }: { claimId: string; date: string }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [msg, setMsg] = useState("");
-  async function save() {
-    setMsg("");
-    try {
-      await postJson("/api/chart/structured/visit-time", { claimId, date, start, end });
-      setMsg("残しました。点検を開き直すと、患家診療時間加算を見ます");
-    } catch (e) {
-      setMsg((e as Error).message);
-    }
-  }
-  return (
-    <div className="notice">
-      <div className="chips">
-        <span>{md(date)} の訪問</span>
-        <label>開始 <input type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-        <label>終了 <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
-        <button disabled={start === "" || end === ""} onClick={save}>時刻を残す</button>
-      </div>
       {msg && <div className="muted">{msg}</div>}
     </div>
   );

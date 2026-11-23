@@ -5,10 +5,15 @@
 import { useState } from "react";
 import { ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
+import { VisitTimeInput, type VisitRef } from "../visit-time-input";
 import type { StructuredReview } from "../../src/structured/overlap";
 import { getJson } from "../get-json";
 
-export type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[]; structured?: StructuredReview | null };
+/**
+ * rxMark：処方の日の「確かめた」の印が効く日か（n2＝在医総管の月のオーダーのない処方の日、chozai＝オーダーのない在医総管のない月の院内の日。効かない日は null。design.md §16-4-1）。
+ * visitTime：訪問の時刻の入力欄を出す日か（design.md §16-6。visits はその日の電子カルテの訪問）
+ */
+export type ActsReview = { dispensing: RxChoice; rxDefault: RxChoice; aliasCount: number; mastersPresent: boolean; matches: { act: ItemMatch; with: ItemMatch[] }[]; structured?: StructuredReview | null; rxMark?: "n2" | "chozai" | null; visitTime?: { visits: VisitRef[] } | null };
 type Sel = { m: ItemMatch; sel: ActMatch | null };
 export type ChildRow = ActChild & Sel & { keep: boolean };
 export type ActRow = Omit<ChartAct, "with"> & Sel & { keep: boolean; with: ChildRow[] };
@@ -107,6 +112,9 @@ export function ActsReviewPanel(props: {
   /** 「この日の院内・院外を確かめた」の印（design.md §16-4-1。値を選び直したときは押さなくても付く） */
   rxConfirmed?: boolean;
   setRxConfirmed?: (b: boolean) => void;
+  /** 時刻の入力欄に使う請求とその日（design.md §16-6。カルテの画面のその日の欄） */
+  claimId?: string;
+  date?: string;
 }) {
   const { ym, review, rows, setRows, rx, rxChoice } = props;
   const set = (i: number, r: ActRow) => setRows(rows.map((x, j) => (j === i ? r : x)));
@@ -227,6 +235,7 @@ export function ActsReviewPanel(props: {
           )}
         </div>
       )}
+      {props.claimId && props.date && review.visitTime && <VisitTimeInput claimId={props.claimId} date={props.date} visits={review.visitTime.visits} />}
       {others.filter((i) => !folded(i)).map((i) => withMarks(i, line(i)))}
       {toyaku.length + groups.optional.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

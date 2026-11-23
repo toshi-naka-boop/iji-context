@@ -155,4 +155,26 @@ describe("医療事務が入れる訪問の時刻（16-6。POST /api/chart/struc
     const times = as(() => app().visitTimesOf(app().structuredPatientOf(id), YM));
     expect(times).toEqual([{ date: `${YM}-05`, ref: null, start: "10:00", end: "11:10", by: "かくにん", at: expect.any(String) }]);
   });
+  it("ref はサーバーでその日の残した訪問の記録と照らす：違う日・古い ref は 400。同じ日に訪問が 2 件以上なら ref なしは 400。訪問が 1 件の日の ref なしは、その訪問の ref に結び付けて残す（C-442＝C-452）", async () => {
+    const { POST } = await import("../../app/api/chart/structured/visit-time/route");
+    const id = claimId("K5");
+    const pid = as(() => app().structuredPatientOf(id));
+    const v = (ref: string, d: string) => ({ ref, date: `${YM}-${d}`, start: null, end: null, kind: "訪問診療" as const });
+    as(() =>
+      app().saveStructured(pid, YM, "fixture", {
+        visits: { status: "supported", items: [v("v1", "05"), v("v2", "12"), v("v3", "12")], gaps: { start: 3, end: 3 } },
+        orders: { status: "unsupported" },
+        procedures: { status: "unsupported" },
+        homeCare: { status: "unsupported" },
+      }),
+    );
+    const send = (body: object) => POST(post("/api/chart/structured/visit-time", { claimId: id, start: "10:00", end: "11:10", ...body }));
+    expect((await send({ date: `${YM}-05`, ref: "v9" })).status).toBe(400);
+    expect((await send({ date: `${YM}-05`, ref: "v2" })).status).toBe(400);
+    expect((await send({ date: `${YM}-12` })).status).toBe(400);
+    expect((await send({ date: `${YM}-12`, ref: "v3" })).status).toBe(200);
+    expect((await send({ date: `${YM}-05` })).status).toBe(200);
+    const times = as(() => app().visitTimesOf(pid, YM)).map((t) => [t.date.slice(8), t.ref]);
+    expect(times).toEqual([["12", "v3"], ["05", "v1"]]);
+  });
 });

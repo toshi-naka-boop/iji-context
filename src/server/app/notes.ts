@@ -35,7 +35,8 @@ import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
 import { createTorikawasure, type TextDay } from "./torikawasure";
-import { structuredConfig } from "../../structured/rule-codes";
+import { RULE_CODES, structuredConfig } from "../../structured/rule-codes";
+import { hasTimeHint } from "../../structured/time-hint";
 import { rxHashOf } from "../../structured/rx-mark";
 import type { LocalAbout } from "./local-pairs";
 import type { Structured } from "./structured";
@@ -158,12 +159,45 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
     });
   }
-  /** カルテの id から、確かめる画面の当て方 */
-  function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview & { structured: StructuredReview | null } {
+  /** カルテの id から、確かめる画面の当て方と、その日の入力の場面（処方の日の印・訪問の時刻。design.md §16-6） */
+  function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview & { structured: StructuredReview | null } & DayInputs {
     const r = noteRow(id);
     const yearMonth = caseOf(r.claim_id).yearMonth;
     const review = actsReview(yearMonth, acts, rx);
-    return { ...review, structured: structuredReview(r.claim_id, yearMonth, r.date, acts.map((a, i) => ({ ...a, match: review.matches[i]?.act.initial ?? null }))) };
+    const n = JSON.parse(r.note) as ChartNote;
+    return {
+      ...review,
+      structured: structuredReview(r.claim_id, yearMonth, r.date, acts.map((a, i) => ({ ...a, match: review.matches[i]?.act.initial ?? null }))),
+      ...dayInputsOf(r.claim_id, yearMonth, r.date, review.rxDefault, [n.s, n.o, n.a, n.p].filter(Boolean).join("\n")),
+    };
+  }
+  type VisitRef = { ref: string; kind: "訪問診療" | "往診" | null };
+  /**
+   * その日の入力の場面（design.md §16-4-1・16-6。効く日だけ。決まった規則だけで、LLM は使わない）：
+   * rxMark：処方の日の「確かめた」の印が効くか（n2＝オーダーを受け取っている在医総管の月のオーダーのない日、chozai＝オーダーを受け取っていない在医総管のない月の院内の日。C-441）。
+   * visitTime：訪問の時刻の入力欄を出すか（その日の訪問の時刻が受け取れない・欠けていて、S・O・A・P に時間の語があるか請求のその日に患家診療時間加算がある日。visits はその日の電子カルテの訪問。C-442）
+   */
+  type DayInputs = { rxMark: "n2" | "chozai" | null; visitTime: { visits: VisitRef[] } | null };
+  function dayInputsOf(claimId: string, yearMonth: string, date: string, choice: RxChoice | null, soap: string): DayInputs {
+    if (!structured || !hasRevision(yearMonth)) return { rxMark: null, visitTime: null };
+    const rev = resolveRevision(yearMonth);
+    const lines = caseOf(claimId).lines;
+    const kanriKubun = new Set(rev.consts.kanri.rows.map((k) => k.kubun));
+    const kanri = lines.some((l) => kanriKubun.has(l.kubun));
+    const s = withMasters((db) => structured.structuredItemsOf(claimId, yearMonth, db));
+    // 構造化データのない請求は、注2・時間の加算を見ないので印・時刻の入力を促さない（v34 の 16-4-1）。調剤料・処方料の印（オーダーのない月の院内の日）は出す
+    const orders = s?.chart.orders;
+    const rxMark = orders?.status === "supported" ? (kanri && !orders.items.some((o) => o.date === date) ? "n2" : null) : !kanri && dispensingFor(yearMonth) === "inside" && choice === "inside" ? "chozai" : null;
+    if (!s) return { rxMark, visitTime: null };
+    const full = (v: { start: string | null; end: string | null }) => !!v.start && !!v.end && v.end > v.start;
+    const onDay = s.chart.visits.status === "supported" ? s.chart.visits.items.filter((v) => v.date === date) : [];
+    const clerkTimes = structured.visitTimesOf(structured.structuredPatientOf(claimId), yearMonth).filter((t) => t.date === date);
+    const missing = onDay.filter((v) => !full(v) && !clerkTimes.some((t) => t.ref === v.ref));
+    const known = onDay.some(full) || (onDay.length === 0 && clerkTimes.length > 0);
+    if (known || (onDay.length > 0 && missing.length === 0)) return { rxMark, visitTime: null };
+    const KAKA: string[] = [RULE_CODES.kakaVisit, RULE_CODES.kakaOushin, RULE_CODES.kakaOushinSpecial];
+    const kaka = lines.some((l) => l.dates.includes(date) && Object.hasOwn(rev.codes, l.kubun) && [rev.codes[l.kubun].primary, ...rev.codes[l.kubun].accept].some((c) => KAKA.includes(c)));
+    return { rxMark, visitTime: hasTimeHint(soap) || kaka ? { visits: missing.map((v) => ({ ref: v.ref, kind: v.kind })) } : null };
   }
   /**
    * 確かめる画面の構造化データの欄（design.md §16-3・16-7）：その日の構造化データの行為（読むだけ。出どころの印つき）と、行為ごとの見分け（初期値の当て方で突き合わせた結果）。

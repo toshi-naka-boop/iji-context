@@ -253,7 +253,7 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} />
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={p.claimId} date={ex.date} />
                 {ex.actsDropped.length > 0 && (
                   <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
                 )}
