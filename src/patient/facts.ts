@@ -161,26 +161,20 @@ export function careCertFor(certs: PatientFact[], yearMonth: string): CareState 
   return decide(remainingOf(certs, yearMonth), yearMonth);
 }
 
-/** 申請中が残っているか（M で、語って負けていない申請中がある） */
-export function applicationPending(rows: PatientFact[], yearMonth: string): boolean {
-  return remainingOf(rows.filter((r) => r.key === "careCert"), yearMonth).some((r) => (r.value as CareCertValue).kind === "申請中");
-}
-
 /**
- * 期間つきの認定を入れるときに「この認定は申請の結果ですか」を聞くか（round-87 C-560）：入れる認定の期間のどこかの月に、負けずに残っている申請中が 1 行でもあれば聞く。
- * 入れる請求の月だけでは決めない（後の月の「分からない」に負けていても、申請中の月を覆う認定なら聞く）。見る月は、期間と申請中の 6 か月の窓が重なる月だけ
+ * 期間つきの認定を入れるときに「この認定は申請の結果ですか」を聞くか（round-87 C-560・round-88 C-570。v43）：
+ * 入れる認定の期間のどこかの月に、6 か月の窓が重なる申請中の行が 1 行でもあれば聞く。その申請中がほかの行（「分からない」や「いいえ」と答えた認定など）に負けているかは見ない
  */
 export function applicationPendingFor(rows: PatientFact[], validFrom: string, validUntil: string | null): boolean {
   const certs = rows.filter((r) => r.key === "careCert");
   const fromMonth = validFrom.slice(0, 7);
   const untilMonth = (validUntil ?? "9999-12-31").slice(0, 7);
-  const months = new Set<string>();
   for (const r of certs) {
     if ((r.value as CareCertValue).kind !== "申請中") continue;
     const a = (r.value as { forMonth?: string }).forMonth ?? r.checkedAt.slice(0, 7);
-    for (let k = a, n = 0; n < CARE_NONE_RECHECK_MONTHS; n++, k = addMonthsTo(`${k}-01`, 1).slice(0, 7)) if (k >= fromMonth && k <= untilMonth) months.add(k);
+    for (let k = a, n = 0; n < CARE_NONE_RECHECK_MONTHS; n++, k = addMonthsTo(`${k}-01`, 1).slice(0, 7)) if (k >= fromMonth && k <= untilMonth) return true;
   }
-  return [...months].some((m) => applicationPending(certs, m));
+  return false;
 }
 
 /** 1・2 段：M について語り、負けていない行 */
