@@ -333,6 +333,26 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
     lines.push(`版の表との食い違い：${hits} 件`);
   }
 
+  // 3-2. 撮影部位のコメントの許可リスト（design.md §19-1・§19-10 完了条件 4）：コメントマスターの「撮影部位（」の行と、版の imagingSiteComments が同じこと
+  if (snapshotsOf("comment").length === 0) lines.push("撮影部位のコメントの許可リスト：コメントマスターがないので飛ばした");
+  else {
+    let diff = 0;
+    for (const rev of (opt.revisions ?? REVISIONS).filter((r) => r.generation === generation && r.imagingSiteComments.length > 0)) {
+      const mine = new Set(rev.imagingSiteComments);
+      for (const s of snapshotsOf("comment")) {
+        const master = new Set((db.prepare("SELECT code FROM comment WHERE snapshot = ? AND name LIKE '撮影部位（%'").all(s) as { code: string }[]).map((r) => r.code));
+        const onlyMaster = [...master].filter((x) => !mine.has(x));
+        const onlyMine = [...mine].filter((x) => !master.has(x));
+        if (onlyMaster.length + onlyMine.length > 0) {
+          diff++;
+          lines.push(`撮影部位のコメントの許可リストがマスターと違う（${rev.id} comment ${s}）：マスターだけ ${onlyMaster.join("・") || "なし"}／版だけ ${onlyMine.join("・") || "なし"}`);
+        }
+      }
+    }
+    failures += diff;
+    lines.push(`撮影部位のコメントの許可リスト：食い違い ${diff} 件`);
+  }
+
   // 4. 点検の準備
   // 医薬品の式の錨は、薬価（金額種別 1 の新又は現金額）の読み方を縛る：薬価 × 使用量が、原文の点数になる
   const priced = passedFormulas.some((f) => f.items[0].kind === "IY");

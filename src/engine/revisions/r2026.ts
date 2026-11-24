@@ -27,7 +27,7 @@ import { withVisit2Reads } from "../visit2";
 import { changes } from "./r2026-changes";
 import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
 import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
-import { bundles, codes as baseCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
+import { bundles, codes as baseCodes, imagingSiteComments, shikibetsu as baseShikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
 import { kisaiYoshi } from "./r2026-kisai";
 import { kanriRows } from "./kanri";
@@ -276,6 +276,7 @@ export const r2026: Revision = {
   points,
   codes,
   bundles,
+  imagingSiteComments,
   // EM §2-8 で、r2026 の点数表の区分はすべてコード（か包括の項目）が決まっている
   uncoded: {},
   shikibetsu,

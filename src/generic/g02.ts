@@ -57,7 +57,11 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
       }
   }
   // コメントの行（行のコメント欄は、その行と同じ行番号）。コメントレコード（CO）は、行のない行番号のもの
-  const commentLines = ((claim as { comments?: UkeComment[] }).comments ?? []).map((c) => c.line);
+  const comments = (claim as { comments?: UkeComment[] }).comments ?? [];
+  const commentLines = comments.map((c) => c.line);
+  // 撮影部位のコメント（版の許可リスト）は点数を変えないので、「コメントが付いている」に数えない（design.md §19-4 の 2。R8-314）
+  const allowed = new Set(hasRevision(about.yearMonth) ? resolveRevision(about.yearMonth).imagingSiteComments : []);
+  const countedLines = comments.filter((c) => !allowed.has(c.code)).map((c) => c.line);
   const itemLines = new Set(units.flatMap((u) => u.items.flatMap((it) => (it.line !== undefined ? [it.line] : []))));
   const coLines = commentLines.filter((line) => !itemLines.has(line));
   /** 単位の行番号の範囲（行番号のない単位は null） */
@@ -82,7 +86,7 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     // その単位に付いたコメント：行のコメント欄、単位の中のコメントレコード、直前・直後（前の単位の終わりから、次の単位の始まりまで）のコメントレコード
     const from = span(units[i - 1])?.[1] ?? 0;
     const to = span(units[i + 1])?.[0] ?? Infinity;
-    const commented = span(u) !== null && commentLines.some((line) => line > from && line < to);
+    const commented = span(u) !== null && countedLines.some((line) => line > from && line < to);
     const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1, uke: u.points });
     if ("reason" in r) {
       out.push({ unit: i, uke: u.points, status: "excluded", reason: r.reason });

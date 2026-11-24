@@ -269,6 +269,23 @@ describe("G02 点数の検算", () => {
     expect(recalcClaim(withCo, db, about)).toMatchObject([{ status: "match" }, { status: "excluded", reason: "commented" }]);
   });
 
+  it("撮影部位のコメント（版の許可リスト）だけが付いたきざみの単位は検算する。ほかのコメントが 1 つでも並べば対象外（design.md §19-4 の 2。完了条件 4）", () => {
+    const db = masters();
+    const IMAGING = "830189000"; // 撮影部位（単純撮影）：その他；（EM 5-1 K10）
+    const OTHER = "842100072"; // 動脈血酸素分圧（在宅酸素療法指導管理料）（EM 5-1 K10）
+    expect(r2026.imagingSiteComments).toContain(IMAGING);
+    expect(r2026.imagingSiteComments).not.toContain(OTHER);
+    const unit = claimOf({ items: [si(JINSOKU, "2")], points: 20, shikibetsu: "60" });
+    const line = (unit.units[0] as GenericUnitDetail).items[0].line!;
+    const only = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(only, db, about)).toMatchObject([{ status: "match" }]);
+    const both = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: OTHER, raw: "", unit: null }] };
+    expect(recalcClaim(both, db, about)).toMatchObject([{ status: "excluded", reason: "commented" }]);
+    // 行のコメント欄（行と同じ行番号）に撮影部位のコメントだけ
+    const own = { ...unit, comments: [{ line, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(own, db, about)).toMatchObject([{ status: "match" }]);
+  });
+
   it("同じ群の包括の検査が、同じ日の 2 つの単位に分かれていれば対象外。点数のない単位（区分キーから作った単位）は数えない", () => {
     const db = masters();
     const split = claimOf({ items: MEMBERS.slice(0, 3).map((m) => si(m)), points: 0 }, { items: MEMBERS.slice(3, 6).map((m) => si(m)), points: 0 });
