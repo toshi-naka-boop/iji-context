@@ -259,6 +259,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     // 介護保険・ほかの医療機関との調整の申告（design.md §18-2・§18-5）。答えの月は、開いた請求の診療年月（C-513）
     /** 届け出た酸素の単価（任意。design.md §19-3・§19-8） */
     oxygenPrices: oxygen.oxygenPrices,
+    oxygenPriceKindOf: oxygen.oxygenPriceKindOf,
     saveOxygenPrice: (clerkId: string, input: OxygenPriceInput) => oxygen.saveOxygenPrice(clerkId, input),
     careHomes: care.careHomes,
     saveCareHome: (clerkId: string, input: CareHomeInput) => care.saveCareHome(clerkId, input),

@@ -8,7 +8,7 @@ import { oxygenPriceBody } from "../../../../src/server/schemas/facility";
 export const GET = route({ roles: allow("GET /api/facility/oxygen-prices") }, () => getApp().oxygenPrices());
 
 export const POST = route(
-  { roles: allow("POST /api/facility/oxygen-prices"), body: oxygenPriceBody, audit: { target: ({ body }) => ("revokes" in body ? `oxygenPrice:取り消し:${getApp().oxygenPrices().rows.find((r) => r.id === body.revokes)?.kind ?? "?"}` : `oxygenPrice:入れた:${body.kind}`) } },
+  { roles: allow("POST /api/facility/oxygen-prices"), body: oxygenPriceBody, audit: { target: ({ body }) => ("revokes" in body ? `oxygenPrice:取り消し:${getApp().oxygenPriceKindOf(body.revokes) ?? "?"}` : `oxygenPrice:入れた:${body.kind}`) } },
   ({ clerkId, body }) => getApp().saveOxygenPrice(clerkId, body),
 );
 

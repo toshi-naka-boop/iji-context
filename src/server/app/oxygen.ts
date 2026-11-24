@@ -67,5 +67,8 @@ export function createOxygenPrices(ctx: Pick<AppContext, "sqlite">, clock: Pick<
     return oxygenPrices();
   }
 
-  return { oxygenPrices, saveOxygenPrice };
+  /** 監査ログの区分：取り消しの行（取り消した行の値の写し）を含む全部の行から、その id の行の区分を引く（取り消したあとでも引ける。反証 round-94 X-473・C-620） */
+  const oxygenPriceKindOf = (id: number): OxygenKind | null => readOxygenPrices(ctx).find((r) => r.id === id)?.kind ?? null;
+
+  return { oxygenPrices, saveOxygenPrice, oxygenPriceKindOf };
 }
