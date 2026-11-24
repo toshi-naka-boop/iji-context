@@ -1,6 +1,7 @@
 // テスト用：行ったことを当てる小さな masters.db（データは同梱しない。design.md §12-7）。
 // tests/generic/small-masters.ts の表に、略した書き方の合成カルテ（fixtures/charts/K8〜K11-abbrev.json）が当てるコードを、EM §2-8 の症例のコードの表の名称で足す。
-// 区分番号の英字は、コードの先頭 2 桁から（12＝第5部 投薬 F など。本物のマスターの値と同じ）
+// 区分番号の英字は、コードの先頭 2 桁から（12＝第5部 投薬 F など。本物のマスターの値と同じ）。
+// 傷病名は、略語の印（FR-211。tests/chart/abbrev-mark.test.ts）の病名の記載の完全一致に使う 1 つ（EM §2-8「傷病名」の K4 の心房細動）を足す
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
@@ -10,6 +11,8 @@ import { put, smallMasters } from "../generic/small-masters";
 export type AbbrevEntry = { date: string; s: string; o: string; a: string; p: string; rx: string; acts: ChartAct[]; rxNotes: RxNote[]; rxChoice: RxChoice | null };
 export type AbbrevChart = { claimId: string; entries: AbbrevEntry[] };
 export const ABBREV_CASES = ["K8", "K9", "K10", "K11"] as const;
+/** 足す傷病名（EM §2-8「傷病名」。K4） */
+export const AF_DISEASE = { code: "4273006", name: "心房細動" };
 export const abbrevOf = (k: string): AbbrevChart => JSON.parse(readFileSync(path.join(__dirname, "..", "..", "fixtures", "charts", `${k}-abbrev.json`), "utf8")) as AbbrevChart;
 
 const ALPHA: Record<string, string> = { "11": "C", "12": "F", "13": "G", "14": "J", "15": "K", "16": "D", "17": "E" };
@@ -31,5 +34,6 @@ export function chartMasters(file = ":memory:", snapshot = "20261001"): Database
     if (has) db.prepare(`UPDATE ${c.tbl} SET name = ? WHERE snapshot = ? AND code = ?`).run(c.name, snapshot, c.code);
     else put(db, c.tbl, snapshot, c.tbl === "shinryo" ? { code: c.code, name: c.name, alpha: ALPHA[c.code.slice(0, 2)] ?? "*" } : { code: c.code, name: c.name });
   }
+  put(db, "shobyo", snapshot, AF_DISEASE);
   return db;
 }

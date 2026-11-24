@@ -1,0 +1,5 @@
+{
+  "_note": "分かる略語の固定の一覧（spec FR-211。design/iji-context/plan-fr211.md の確かめる点 2）。基本マスターの名称に出ない英字の語のうち、医師に聞かなくてよい単位とバイタルだけを持つ。制度・点数の値ではなく設計の値なので、evidence-master ではなくここに置く。大文字・小文字は区別する。BT は多義（docs/sources/report-A.md §22）なので入れない。足すときは利用者の承認を取り、approved を書き直す",
+  "approved": "2026-11-24",
+  "words": ["mg", "mL", "ml", "dL", "mm", "cm", "kg", "mmHg", "mEq", "BP", "HR", "PR", "RR", "SpO2"]
+}
