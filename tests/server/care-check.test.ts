@@ -115,3 +115,12 @@ describe("申請中は要介護認定の期限の知らせ（P07）に出さな�
     expect(app.patientProfile(id).findings.filter((f) => f.checkId === "P07")).toEqual([]);
   });
 });
+
+describe("?claim= で開く（round-82 C-543）", () => {
+  it("請求を名指しすると、その請求の診療年月の一覧を返す（ほかの月を先に取り込んでいても）", () => {
+    const [, next] = upload(app, fileOf([receiptOf(1, month(-1), zaii.map((l) => ({ ...l, dates: l.dates.map((d) => d.replace(YM, month(-1))) }))), receiptOf(1, YM, zaii)]));
+    const r = app.careCheck(undefined, next);
+    expect(r.month).toBe(YM);
+    expect(r.targets.some((t) => t.claimId === next)).toBe(true);
+  });
+});

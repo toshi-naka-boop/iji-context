@@ -272,13 +272,15 @@ export default function CareCheck() {
     if (!user) return;
     const q = new URLSearchParams(window.location.search);
     const m = month ?? q.get("month");
-    const url = m ? `/api/uke/care-check?month=${encodeURIComponent(m)}` : "/api/uke/care-check";
+    // ?claim= で開いたときは、その請求の診療年月を開く（round-82 C-543）
+    const claim = month === null ? q.get("claim") : null;
+    const url = m ? `/api/uke/care-check?month=${encodeURIComponent(m)}` : claim ? `/api/uke/care-check?claim=${encodeURIComponent(claim)}` : "/api/uke/care-check";
     getJson<Check>(url)
       .then((d) => {
-        if (!m && d.months.length > 0) return setMonth(d.months[0].month);
+        if (!m && !d.month && d.months.length > 0) return setMonth(d.months[0].month);
         setData(d);
         setHomes(d.homes);
-        if (m && month === null) setMonth(m);
+        if (month === null && (m ?? d.month)) setMonth(m ?? d.month);
       })
       .catch((e: Error) => setErr(e.message));
   }, [user, month, tick]);

@@ -4,10 +4,11 @@ import { z } from "zod";
 import { route } from "../../../../src/server/http";
 import { getApp } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";
+import { claimId } from "../../../../src/server/schemas/cases";
 
-const query = z.strictObject({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() });
+const query = z.strictObject({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), claim: claimId.optional() });
 
-export const GET = route({ roles: allow("GET /api/uke/care-check"), query }, ({ query }) => getApp().careCheck(query.month));
+export const GET = route({ roles: allow("GET /api/uke/care-check"), query }, ({ query }) => getApp().careCheck(query.month, query.claim));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

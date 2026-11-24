@@ -253,7 +253,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
      * 認定の期限が診療年月の中か前・確かめ直す日を過ぎた患者（1 患者 1 枚。聞く問いだけ）と、点検の範囲に「見ていません」がある患者の数。
      * month を省くと、月ごとの数だけを返す（月の一覧の入口）
      */
-    careCheck: (month?: string) => {
+    careCheck: (monthIn?: string, claimId?: string) => {
+      // ?claim= で開いたときは、その請求の診療年月を開く（C-513。round-82 C-543）
+      const month = monthIn ?? (claimId ? uke.receiptOf(claimId).receipt.yearMonth : undefined);
       const all = casesOf.cases().filter((c) => !month || c.yearMonth === month);
       const rows = all.flatMap((c) => {
         const rev = resolveRevision(c.yearMonth);
