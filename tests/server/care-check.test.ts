@@ -107,3 +107,11 @@ describe("判定に要る項目の「分からない」「欠け」も聞く（r
     expect(all.targets.filter((t) => t.notDone).length).toBe(m.notDone);
   });
 });
+
+describe("申請中は要介護認定の期限の知らせ（P07）に出さない（round-82 C-542）", () => {
+  it("申請中を残しても P07.missing は出ない", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null });
+    expect(app.patientProfile(id).findings.filter((f) => f.checkId === "P07")).toEqual([]);
+  });
+});

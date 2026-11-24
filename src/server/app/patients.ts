@@ -224,7 +224,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     if (!p) throw notFound("患者マスタにない患者");
     // 要介護認定の期限（P07）：最後に残した認定の行。認定なし・分からないの行は期限を持たないので、出さない（design.md §18-1）
     const care = careRows(patientId).at(-1);
-    const dated = care && !(care.key === "careCert" && ["認定なし", "分からない"].includes((care.value as { kind: string }).kind));
+    const dated = care && !(care.key === "careCert" && ["認定なし", "申請中", "分からない"].includes((care.value as { kind: string }).kind));
     return { patientId, name: p.name, sex: p.sex, birth: p.birth, coverages: coveragesOf(patientId), careCertification: care && dated ? { validUntil: care.validUntil } : null, receiptType };
   }
 
