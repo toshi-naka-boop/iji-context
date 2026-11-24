@@ -49,11 +49,11 @@ export type AbbrevToken = {
 };
 /**
  * 略語の印のまとめ（FR-211。plan-fr211.md「辞書方式の決め」）：カルテの文全体の印の語と、略語ごとの候補・扱い。
- * hold は辞書にない略語があり、このカルテだけ LLM の lookup と自動選択（初期値）を止めていること。mustAsk は事務のレベルが Lv.4 までで、辞書の略語を必ず医師確認に回すこと。
+ * hold は辞書にない略語があること。stopped は、このカルテだけ LLM の lookup と自動選択（初期値）を止めていること（辞書にない略語が残るか、辞書の略語の意味を選び終えていない）。mustAsk は事務のレベルが Lv.4 までで、辞書の略語を必ず医師確認に回すこと。
  * credit は万病辞書の候補を出すときの出典。マスターがなければ「見ていません」の文
  */
 export type AbbrevSummary =
-  | { marks: string[]; yearMonth: string; hold: boolean; mustAsk: boolean; credit: { credit: string; name: string; url: string } | null; tokens: AbbrevToken[] }
+  | { marks: string[]; yearMonth: string; hold: boolean; stopped: boolean; mustAsk: boolean; credit: { credit: string; name: string; url: string } | null; tokens: AbbrevToken[] }
   | { unseen: string };
 /**
  * たたむ印（design.md §16-3）。kind：order＝構造化データの行為／rule＝規則で出す算定／device＝患者の情報の機器。by：rule＝規則でたたんだ／person＝本人が選んだ。

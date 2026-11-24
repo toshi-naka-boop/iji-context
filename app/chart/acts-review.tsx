@@ -127,7 +127,13 @@ export function AbbrevSummaryNote({ abbrev, noteId }: { abbrev: AbbrevSummary | 
   return (
     <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div>略語：{a.marks.join("・")}。意味を選んでください（選ばなくても確定できます）。</div>
-      {a.hold && <div className="muted">辞書にない略語があるので、このカルテの行ったことは自動で当てず、AI の挙げた語でも候補を出しません。名前の候補と、名前で探す欄から選んでください。</div>}
+      {a.stopped ? (
+        <div className="muted">
+          {a.hold ? "辞書にない略語があるので" : "略語の意味を選び終えるまで"}、このカルテの行ったことは自動で当てず、AI の挙げた語でも候補を出しません。名前の候補と、名前で探す欄から選んでください。
+        </div>
+      ) : (
+        <div className="muted">略語の意味を選び終えました。行ったことの「候補を引き直す」で、AI の挙げた語と自動の当て方が戻ります。</div>
+      )}
       {a.tokens.map((t) => {
         const d = draft[t.token] ?? { option: t.selection?.option ?? "", meaning: t.selection?.meaning ?? "", ask: t.selection?.askDoctor ?? false };
         const set = (n: Partial<typeof d>) => setDraft({ ...draft, [t.token]: { ...d, ...n } });

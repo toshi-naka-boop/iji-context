@@ -150,6 +150,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       marks: st.marks,
       yearMonth: st.yearMonth,
       hold: st.hold,
+      stopped: abbrevModeOf(id) === "hold",
       mustAsk: levelOf(clerkId) <= MUST_ASK_MAX_LEVEL,
       credit: st.tokens.some((t) => t.candidates.some((c) => c.source === "万病辞書")) && MANBYO_CREDIT ? { credit: MANBYO_CREDIT.credit, name: MANBYO_CREDIT.name, url: MANBYO_CREDIT.url } : null,
       tokens: st.tokens.map((t) => {
@@ -159,13 +160,11 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     };
   }
   /**
-   * 取り出した直後の行ったこと・事実と、画面に出す略語のまとめ（FR-211。辞書方式の決め 2・4）。
-   * 略語のあるカルテは、行ったことの LLM の lookup を空にする（推し量りを見せない・残さない）。行為・事実には結び付けない
+   * 取り出した直後の行ったこと・事実と、画面に出す略語のまとめ（FR-211。辞書方式の決め 2・4。行為・事実には結び付けない）。
+   * 取り出した lookup はそのまま返す（略語の意味を選び終えたら候補に戻すため）。止めているあいだは、当て方の側（matchFor）で使わず、保存もしない
    */
   function markExtracted(id: number, clerkId: string, acts: ChartAct[], facts: ExtractedFact[]): { acts: ChartAct[]; facts: ExtractedFact[]; abbrev: AbbrevSummary } {
-    const st = abbrevStateOf(id);
-    const a = st && st.marks.length > 0 ? stripLookup(acts) : acts;
-    return { acts: a, facts, abbrev: abbrevSummaryOf(id, clerkId) };
+    return { acts, facts, abbrev: abbrevSummaryOf(id, clerkId) };
   }
   const stripLookup = (acts: ChartAct[]): ChartAct[] => acts.map((a) => ({ ...a, lookup: [], ...(a.with ? { with: a.with.map((c) => ({ ...c, lookup: [] })) } : {}) }));
   /**
@@ -196,17 +195,19 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return abbrevSummaryOf(input.noteId, clerkId);
   }
   /**
-   * 略語による当て方の止め方（辞書方式の決め 2・4。そのカルテだけ）：none＝略語なし／noLookup＝辞書にある略語だけ（LLM の lookup を使わない）／
-   * hold＝辞書にない略語がある（LLM の lookup・前に選んだ対応・初期値〔名称の完全一致〕を止め、名称の決まった規則の候補から事務が選ぶ）
+   * 略語による当て方の止め方（そのカルテだけ。辞書方式の決め 2・4、「意味を選び終えたカルテの候補」）：
+   * hold＝略語があり、辞書にない略語が残るか、辞書の略語の意味を選び終えていない（LLM の lookup・前に選んだ対応・初期値〔名称の完全一致〕を止め、名称の決まった規則の候補から事務が選ぶ）／
+   * none＝略語がない、又は略語がすべて辞書にあり、事務がすべての意味を選び終えた（lookup と初期値を戻す。選んだ意味は行為の候補に入れない。医師確認は今までどおり回る）
    */
-  type AbbrevMode = "none" | "noLookup" | "hold";
+  type AbbrevMode = "none" | "hold";
   function abbrevModeOf(id: number): AbbrevMode {
     const st = abbrevStateOf(id);
-    return !st || st.marks.length === 0 ? "none" : st.hold ? "hold" : "noLookup";
+    if (!st || st.marks.length === 0) return "none";
+    return st.tokens.every((t) => t.inDict && abbrevs.selectionOf(id, t.token) !== null) ? "none" : "hold";
   }
   function matchFor(mode: AbbrevMode, rows: ReturnType<typeof rowsFor>, key: TableKey, written: string, lookup: string[], yearMonth: string): ItemMatch {
     if (mode === "hold") return { initial: null, candidates: matchItem(rows, key, written, [], null).candidates };
-    return matchItem(rows, key, written, mode === "noLookup" ? [] : lookup, aliasOf(written, key, yearMonth));
+    return matchItem(rows, key, written, lookup, aliasOf(written, key, yearMonth));
   }
   /** 自由記述の印の語（SOAP に整えたときに消えた略語を見るため）。請求がなければ・マスターがなければ空 */
   function abbrevMarksOf(claimId: string | undefined, text: string): string[] {
@@ -387,14 +388,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, c.quote, src.with?.[j]?.match) }));
         return act;
       });
-      // 略語（FR-211。辞書方式の決め 2・4）：略語のあるカルテは LLM の lookup を残さない。辞書にない略語のあるカルテは、選んだ対応をクリニックごとに覚えない
+      // 略語（FR-211。辞書方式の決め 2・4）：止めているカルテは LLM の lookup を残さず、選んだ対応をクリニックごとに覚えない
       vocab = abbrevVocabOf(db, yearMonth);
       return checked;
     });
     const mode = abbrevModeOf(id);
     hold = mode === "hold";
     if (hold) chosen.length = 0;
-    const acts = mode === "none" ? checkedActs : stripLookup(checkedActs);
+    const acts = hold ? stripLookup(checkedActs) : checkedActs;
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
@@ -440,7 +441,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
     const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : kid ? { ...a, with: a.with!.map((x, j) => (j === child ? { ...x, match: m } : x)) } : { ...a, match: m })) };
     const wn = normName((kid ?? act).written);
-    // 辞書にない略語のあったカルテ（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない
+    // 保存のときに略語で止めていたカルテ（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない
     const ab = stored.abbrev;
     const remember = !(ab && "marks" in ab && ab.hold);
     sqlite.transaction(() => {

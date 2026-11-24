@@ -202,8 +202,7 @@ describe("辞書にない略語は、そのカルテだけ自動選択と LLM �
   it("DOAC のあるカルテは初期値に当てず、lookup も前に選んだ対応も使わない。同じ行為を書いた別のカルテは名前で当たる", async () => {
     const held = await write(claimId("K4"), { o: `${VISIT.name}。DOAC継続。` }, [visitAct()]);
     const free = await write(claimId("K1"), { o: `${VISIT.name}。` }, [visitAct()]);
-    expect(held.abbrev).toMatchObject({ hold: true, tokens: [{ token: "DOAC", inDict: false }] });
-    expect(held.acts[0].lookup).toEqual([]);
+    expect(held.abbrev).toMatchObject({ hold: true, stopped: true, tokens: [{ token: "DOAC", inDict: false }] });
     expect(held.review.matches[0].act.initial).toBeNull();
     expect(held.review.matches[0].act.candidates.map((c) => c.code)).toContain(VISIT.code);
     expect(free.abbrev.marks).toEqual([]);
@@ -220,6 +219,8 @@ describe("辞書にない略語は、そのカルテだけ自動選択と LLM �
     // 辞書にない略語は「算定に関係なし」か「医師に聞く」。辞書の扱いは選べない。選ばなくても確定できる
     expect((await select(held.id, "DOAC", "辞書の意味", { meaning: "x" })).status).toBe(400);
     expect((await confirm(held)).status).toBe(200);
+    // 止めているカルテは、LLM の lookup を保存しない
+    expect(app().savedActs(held.id)!.acts[0].lookup).toEqual([]);
     // 選んだ当て方は、辞書にない略語のあったカルテでは書き方の表に覚えない
     const aliases = () => query<{ n: number }[]>("SELECT COUNT(*) AS n FROM chart_act_aliases")[0].n;
     const n = aliases();
@@ -348,5 +349,51 @@ describe("辞書で意味が複数ある略語の印（医師確認の画面の�
     const DOCTOR_ABBREV = (await import("../../config/doctor-abbrev.json")).default;
     expect(JSON.stringify(qs)).not.toContain(DOCTOR_ABBREV.notice);
     for (const t of ["AF", "AMI", "TTE"]) expect(abbrevQueryErrors(qs.find((x) => x.token === t)!)).toEqual([]);
+  });
+});
+
+describe("意味を選び終えたカルテの候補（plan-fr211.md「意味を選び終えたカルテの候補」）", () => {
+  const visitAct = (): ChartAct => ({ category: "診療行為", written: VISIT.name, lookup: ["特異的ＩｇＥ半定量・定量"], quote: VISIT.name });
+  const cand = async (noteId: number) => {
+    setRole("clerk");
+    const r = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: YM, written: VISIT.name, lookup: "特異的ＩｇＥ半定量・定量", noteId: String(noteId), index: "0" })}`));
+    return (await r.json()) as { initial: { code: string; by: string } | null; candidates: { code: string }[] };
+  };
+  it("辞書の略語だけのカルテ：選ぶ前は lookup と初期値を止め、すべての意味を選び終えたら戻る（医師確認は回る）", async () => {
+    setCount(0);
+    const w = await write(claimId("K4"), { o: `${VISIT.name}。`, a: "AF。AMI。" }, [visitAct()]);
+    // 選ぶ前は止まる
+    expect(w.abbrev).toMatchObject({ hold: false, stopped: true });
+    expect(w.review.matches[0].act.initial).toBeNull();
+    expect((await cand(w.id)).initial).toBeNull();
+    expect((await cand(w.id)).candidates.map((c) => c.code)).not.toContain("160056110");
+    // 1 つだけ選んでも、まだ止まる
+    expect(((await (await select(w.id, "AF", "辞書の意味", { meaning: "心房細動" })).json()) as Summary).stopped).toBe(true);
+    expect((await cand(w.id)).initial).toBeNull();
+    // すべて選び終えたら、lookup と初期値が戻る
+    const s = (await (await select(w.id, "AMI", "判定不能")).json()) as Summary;
+    expect(s.stopped).toBe(false);
+    const c = await cand(w.id);
+    expect(c.initial).toMatchObject({ code: VISIT.code, by: "name" });
+    expect(c.candidates.map((x) => x.code)).toContain("160056110");
+    // 医師確認は今までどおり回る（Lv.4 まで）
+    expect(tokenOf({ abbrev: s }, "AF").doctorPending).toBe(true);
+    // 選び終えたあとに確定すると、lookup も残る
+    expect((await confirm(w)).status).toBe(200);
+    expect(app().savedActs(w.id)!.acts[0].lookup).toEqual(["特異的ＩｇＥ半定量・定量"]);
+    for (const t of ["AF", "AMI"]) {
+      const q = (await list()).find((x) => x.token === t);
+      if (q) expect((await answer(q, "判定不能")).status).toBe(200);
+    }
+  });
+  it("辞書にない略語が残るカルテは、辞書の略語の意味を選び終え、辞書にない略語の扱いを選んでも、止めたまま", async () => {
+    const w = await write(claimId("K1"), { o: `${VISIT.name}。`, a: "AF。DOAC継続。" }, [visitAct()]);
+    await select(w.id, "AF", "辞書の意味", { meaning: "心房細動" });
+    const s = (await (await select(w.id, "DOAC", "算定に関係なし")).json()) as Summary;
+    expect(s).toMatchObject({ hold: true, stopped: true });
+    expect((await cand(w.id)).initial).toBeNull();
+    expect((await cand(w.id)).candidates.map((x) => x.code)).not.toContain("160056110");
+    const q = (await list()).find((x) => x.token === "AF");
+    if (q) expect((await answer(q, "判定不能")).status).toBe(200);
   });
 });
