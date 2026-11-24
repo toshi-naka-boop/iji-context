@@ -9,6 +9,7 @@ import { SignIn, useClerk } from "../../clerk";
 import { PageGuide } from "../../page-guide";
 import { getJson, postJson } from "../../get-json";
 import { CareCertForm } from "../../care-cert-input";
+import { careValueText } from "../../../src/care/text";
 
 type Ask = "careCert" | "residenceType" | "shortStay" | "others";
 type Target = { claimId: string; yearMonth: string; patient: string; asks: Ask[]; notDone: boolean; notes: string[] };
@@ -219,7 +220,7 @@ function Card(props: { t: Target; homes: Home[]; onHomes: (h: Home[]) => void; e
   }, [t.claimId]);
   const now = (k: string) => {
     const r = view?.care[k];
-    return r ? `${JSON.stringify(r.value).replace(/[{}"]/g, "")}（${r.checkedOn} ${r.source}）` : "申告なし";
+    return r ? `${careValueText(k, r.value, props.homes)}（${r.checkedOn} ${r.source}）` : "申告なし";
   };
   return (
     <article className="card">
