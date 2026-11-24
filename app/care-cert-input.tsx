@@ -39,12 +39,15 @@ export function CareCertForm(props: { claimId: string; onSaved: (facts: unknown)
   /** 申請中が残っている患者か（そのときだけ「この認定は申請の結果ですか」を聞く。design.md §18-12 の 1 v40） */
   const [pending, setPending] = useState(false);
   const [fromApp, setFromApp] = useState("");
+  /** 申請中かを取り直す（入れる期間が決まったとき・残したあと。round-87 C-560・C-563） */
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`)
+    const q = validFrom ? `?validFrom=${encodeURIComponent(validFrom)}${validUntil ? `&validUntil=${encodeURIComponent(validUntil)}` : ""}` : "";
+    fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts${q}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { applicationPending?: boolean } | null) => setPending(d?.applicationPending === true))
       .catch(() => setPending(false));
-  }, [props.claimId]);
+  }, [props.claimId, validFrom, validUntil, tick]);
   const dated = choice.startsWith("要介護") || choice.startsWith("要支援");
   const askApp = dated && pending;
   async function save() {
@@ -52,8 +55,14 @@ export function CareCertForm(props: { claimId: string; onSaved: (facts: unknown)
     const fact = { key: "careCert", value: careCertValueOf(choice, validFrom, askApp ? fromApp : undefined), source, validUntil: dated ? validUntil || null : null };
     const r = await fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json().catch(() => null);
-    if (!r.ok) return setErr(d?.error ?? "エラー");
+    if (!r.ok) {
+      // サーバーが「申請の結果ですか」を求めたら、同じ画面で問いを出す（C-563）
+      if (typeof d?.error === "string" && d.error.includes("申請の結果")) setPending(true);
+      return setErr(d?.error ?? "エラー");
+    }
     setChoice("");
+    setFromApp("");
+    setTick((n) => n + 1);
     setValidFrom("");
     setValidUntil("");
     props.onSaved(d?.facts);

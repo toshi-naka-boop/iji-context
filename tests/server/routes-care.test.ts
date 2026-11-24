@@ -86,3 +86,17 @@ describe("申告のルート", () => {
     for (const secret of ["架空の特養ひかり", "架空のあおば医院", "特養（地域密着型を含む）", "施設との契約"]) expect(text).not.toContain(secret);
   });
 });
+
+describe("申請中かの取り直し（round-87 C-563）", () => {
+  it("GET の facts は、入れる期間を付けると、その期間で「申請の結果ですか」を聞くかを返す。画面は期間の変化と残したあとに取り直し、サーバーが求めたら問いを出す", async () => {
+    setRole("clerk");
+    const facts = await import("../../app/api/patients/[claimId]/facts/route");
+    expect((await facts.POST(post(`/api/patients/${ID}/facts`, { fact: { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null } }), params)).status).toBe(200);
+    const res = await facts.GET(get(`/api/patients/${ID}/facts?validFrom=${YM}-01&validUntil=${YM}-28`), params);
+    expect(((await res.json()) as { applicationPending: boolean }).applicationPending).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(path.join(__dirname, "..", "..", "app", "care-cert-input.tsx"), "utf8");
+    expect(src).toContain("[props.claimId, validFrom, validUntil, tick]");
+    expect(src).toContain('d.error.includes("申請の結果")) setPending(true)');
+  });
+});
