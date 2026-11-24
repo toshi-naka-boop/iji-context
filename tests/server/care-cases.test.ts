@@ -203,3 +203,21 @@ describe("完了条件 7：消す・監査ログ・AI に送る文脈", () => {
     }
   });
 });
+
+describe("誤りを含む合成の UKE を、実在のデータで使うクリニックは断る（design.md §18-12 の 6）", () => {
+  it("fixtures/care の UKE も同梱の内容のハッシュに入る：real では断り、demo では取り込める", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { openApp } = await import("../../src/server/app");
+    const dir = mkdtempSync(path.join(tmpdir(), "iji-care-real-"));
+    const real = openApp({ root: repo, dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: path.join(dir, "q") }, { kind: "real" });
+    try {
+      real.upsertClerk({ id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" });
+      expect(() => real.uploadUke("new1", readFileSync(path.join(repo, KAIGO_FILE)))).toThrow(/同梱の見本/);
+    } finally {
+      real.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+    expect(Object.keys(ids)).toHaveLength(7);
+  });
+});

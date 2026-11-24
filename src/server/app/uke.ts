@@ -18,11 +18,18 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
   const { kind, paths, sqlite, setting, setSetting } = ctx;
   /** 見本を請求に並べ、ダウンロードさせるか（デモのクリニックだけ） */
   const withSamples = kind === "demo";
-  /** 同梱の UKE（fixtures/uke/*.UKE）の内容のハッシュ。demo 以外のクリニックで、同じ内容のアップロードを断るのに使う */
+  /**
+   * 同梱の UKE（fixtures/uke/*.UKE と、誤りを含む合成の fixtures/care/*.UKE。design.md §18-12 の 6）の内容のハッシュ。
+   * demo 以外のクリニックで、同じ内容のアップロードを断るのに使う（実在のデータで使うクリニックに作り物の患者を入れない）
+   */
   let bundled: Set<string> | null = null;
   const bundledHashes = (): Set<string> => {
-    const dir = path.join(paths.root, "fixtures", "uke");
-    bundled ??= new Set(readdirSync(dir).filter((f) => /\.UKE$/i.test(f)).map((f) => createHash("sha256").update(readFileSync(path.join(dir, f))).digest("hex")));
+    bundled ??= new Set(
+      ["uke", "care"].flatMap((d) => {
+        const dir = path.join(paths.root, "fixtures", d);
+        return existsSync(dir) ? readdirSync(dir).filter((f) => /\.UKE$/i.test(f)).map((f) => createHash("sha256").update(readFileSync(path.join(dir, f))).digest("hex")) : [];
+      }),
+    );
     return bundled;
   };
   const { clerk } = clerks;

@@ -1,7 +1,8 @@
 // 介護保険・ほかの医療機関との調整の合成の UKE（fixtures/care/kaigo.UKE）を書き出す（design.md §18-7。v37 21e）。`npx tsx scripts/gen-care-uke.ts`
 // 設定は fixtures/care/kaigo.json（症例 K25〜K31。EM §5-1 の行）。請求は基準月の分と、K26 の前の月の分（利用前 30 日の当院の訪問を見るため）。出力は設定だけで決まる。
 // 申告（聞き取りの画面で答える内容）は UKE に入らない。アップロードして、聞き取りの画面で答えて試す。
-// 誤りを含む請求（R20・R21 の場面のほか、データで動く点検の記載もれ・背反も出る）なので、正しい請求として並べる同梱の見本（fixtures/uke）とは別の置き場に置く
+// 誤りを含む請求（R20・R21 の場面のほか、データで動く点検の記載もれ・背反も出る）なので、正しい請求として並べる同梱の見本（fixtures/uke）とは別の置き場に置く。
+// 同梱の内容のハッシュには入る（実在のデータで使うクリニックは取り込めない。src/server/app/uke.ts）
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
