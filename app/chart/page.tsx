@@ -264,8 +264,8 @@ export default function Chart() {
                       <input type="checkbox" checked={r.keep} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, keep: e.target.checked } : x)))} /> {r.kind}：
                     </label>
                     <input value={r.value} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} style={{ width: 160 }} />
-                    {/* 略語の印（FR-211）：病名の記載は確定すると医師に確かめる。処方は札だけ（問いは作らない） */}
-                    {r.abbrev && r.abbrev.length > 0 && <span className="badge">{r.kind === "病名の記載" ? `略語：${r.abbrev.join("・")}（確定すると医師に確かめます）` : "略語あり"}</span>}
+                    {/* 略語の印（FR-211）：結び付くのは病名の記載だけ。確定すると医師に確かめる（ほかの事実の略語は、上の「結び付かない略語」で選ぶ） */}
+                    {r.abbrev && r.abbrev.length > 0 && <span className="badge">略語：{r.abbrev.join("・")}（確定すると医師に確かめます）</span>}
                     <div className="muted">カルテの「{r.quote}」から</div>
                   </div>
                 ))}

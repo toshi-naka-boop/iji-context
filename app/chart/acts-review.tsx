@@ -3,11 +3,11 @@
 // 候補はどれも診療年月の基本マスターに実在するコードだけ。名前の完全一致が 1 つのときだけ当てた状態で出し、ほかは本人が選ぶ（選ばなければ「当てられない」のまま残る）。
 // 前に選んだものは選んだ状態の初期値で出す（L-95）。請求は見ない（C-233）。保存は、事実と同じ 1 回の確かめ（呼び出し側の「確定する」）
 import { useState } from "react";
-import { ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
+import { ABBREV_CHOICES, ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevChoice, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
 import { VisitTimeInput, type VisitRef } from "../visit-time-input";
 import type { StructuredReview } from "../../src/structured/overlap";
-import { getJson } from "../get-json";
+import { getJson, postJson } from "../get-json";
 
 /**
  * rxMark：処方の日の「確かめた」の印が効く日か（n2＝在医総管の月のオーダーのない処方の日、chozai＝オーダーのない在医総管のない月の院内の日。効かない日は null。design.md §16-4-1）。
@@ -113,12 +113,48 @@ export function DoctorAnswerBadge({ value, answers }: { value: string; answers: 
 
 /** 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない */
 export function AbbrevSummaryNote({ abbrev }: { abbrev: AbbrevSummary | undefined }) {
+  const [chosen, setChosen] = useState<Record<string, AbbrevChoice>>({});
+  const [err, setErr] = useState("");
   if (!abbrev) return null;
   if ("unseen" in abbrev) return <p className="muted" style={{ margin: 0 }}>{abbrev.unseen}</p>;
   if (abbrev.marks.length === 0) return null;
+  const ym = abbrev.yearMonth;
+  /** どの記載にも結び付かない語の扱いを、その月のその語の分として残す（POST /api/chart/abbrev-choices。規則の作り直し 4） */
+  async function choose(token: string, choice: AbbrevChoice) {
+    setErr("");
+    try {
+      await postJson("/api/chart/abbrev-choices", { yearMonth: ym, token, choice });
+      setChosen((cur) => ({ ...cur, [token]: choice }));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  const open = abbrev.unlinked.filter((u) => (chosen[u.token] ?? u.choice) === null);
   return (
-    <div className="notice">
-      略語の印：{abbrev.marks.length} 語（{abbrev.marks.join("・")}）。医師に聞く記載：{abbrev.asked} 件。答えが来るまで、その行為の候補は書かれた名前からだけ出します（名前で探して当てることはできます）
+    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div>
+        略語の印：{abbrev.marks.length} 語（{abbrev.marks.join("・")}）。医師に聞く記載：{abbrev.asked} 件。答えが来るまで、その行為の候補は書かれた名前からだけ出します（名前で探して当てることはできます）
+      </div>
+      {abbrev.unlinked.length > 0 && (
+        <div role="group" aria-label="どの記載にも結び付かない略語">
+          <div>どの記載にも結び付かない略語があります。語ごとに選んでください（この月の分だけ残ります。選ぶまで確定できません）</div>
+          {abbrev.unlinked.map((u) => {
+            const cur = chosen[u.token] ?? u.choice;
+            return (
+              <div key={u.token} className="chips" style={{ alignItems: "center" }}>
+                <span className="badge">{u.token}</span>
+                {ABBREV_CHOICES.map((c) => (
+                  <button key={c} className={cur === c ? "primary" : ""} aria-pressed={cur === c} onClick={() => void choose(u.token, c)}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+          {open.length > 0 && <div className="muted">略語の確かめ待ち：{open.map((u) => u.token).join("・")}</div>}
+        </div>
+      )}
+      {err && <div className="muted">{err}</div>}
     </div>
   );
 }
