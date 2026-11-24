@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { activeOxygenPrices, centiOf, fiscalYearOf, oxygenPriceForDates, oxygenPriceOn, type OxygenPriceRow } from "../../src/facility/oxygen";
+import { activeOxygenPrices, centiOf, fiscalYearOf, oxygenPriceForDates, oxygenPriceOn, unitDates, type OxygenPriceRow } from "../../src/facility/oxygen";
 import { claimForAi } from "../../src/llm/outbound";
 import type { App } from "../../src/server/app";
 import { oxygenPriceBody } from "../../src/server/schemas/facility";
@@ -58,6 +58,15 @@ describe("届け出た酸素の単価（段 22e）", () => {
     expect(oxygenPriceForDates(active, "large", ["2026-10-03", "2026-10-20"])).toEqual({ priceCenti: null, split: true });
     expect(oxygenPriceForDates(active, "small", ["2026-10-03"])).toEqual({ priceCenti: null, split: false });
     expect(oxygenPriceForDates([row(5, 30, "2026-10-10", "2026-10-31")], "large", ["2026-10-03", "2026-10-20"])).toEqual({ priceCenti: null, split: true });
+  });
+
+  it("算定日のない単位は、その月の日数だけ日を作る（11 月は 30 日まで。C-624）。11 月末までと 12 月からの届出で 11 月の単位は分かれない", () => {
+    expect(unitDates("2026-11", undefined)).toHaveLength(30);
+    expect(unitDates("2026-11", []).at(-1)).toBe("2026-11-30");
+    expect(unitDates("2027-02", undefined)).toHaveLength(28);
+    expect(unitDates("2026-10", [0, 1, 0, 2])).toEqual(["2026-10-02", "2026-10-04"]);
+    const row = (id: number, priceCenti: number, validFrom: string, validUntil: string): OxygenPriceRow => ({ id, kind: "small", priceCenti, validFrom, validUntil, basis: "前年の購入実績", enteredBy: "x", enteredAt: "x", revokes: null });
+    expect(oxygenPriceForDates([row(1, 180, "2026-04-01", "2026-11-30"), row(2, 200, "2026-12-01", "2027-03-31")], "small", unitDates("2026-11", undefined))).toEqual({ priceCenti: 180, split: false });
   });
 
   it("届け出た単価は、AI に送る文脈と UKE の書き出しに入らない", () => {

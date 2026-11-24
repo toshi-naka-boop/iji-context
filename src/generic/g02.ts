@@ -4,7 +4,7 @@
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import { pickSnapshot, tokuteiOf, type MastersDb } from "../masters/db";
 import type { UkeComment } from "../uke/types";
-import { activeOxygenPrices, oxygenKindOf, oxygenPriceForDates } from "../facility/oxygen";
+import { activeOxygenPrices, oxygenKindOf, oxygenPriceForDates, unitDates } from "../facility/oxygen";
 import { EXCLUDE_TEXT, recalcUnit, type ExcludeReason, type RecalcBundle } from "./points";
 import type { GenericAbout, GenericCheck, GenericClaim, GenericFinding, GenericUnitDetail, RecalcSummary } from "./types";
 
@@ -90,7 +90,7 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const to = span(units[i + 1])?.[0] ?? Infinity;
     const commented = span(u) !== null && countedLines.some((line) => line > from && line < to);
     // 単価の欄が空の酸素の行は、届け出た単価があれば、その単価で検算する（design.md §19-5。算定日で単価が分かれる単位は使わない）
-    const dates = ((u.days ?? []).some((n) => n > 0) ? (u.days ?? []).flatMap((n, d) => (n > 0 ? [d + 1] : [])) : Array.from({ length: 31 }, (_, d) => d + 1)).map((d) => `${about.yearMonth}-${String(d).padStart(2, "0")}`);
+    const dates = unitDates(about.yearMonth, u.days);
     const declaredOxygen = active.length === 0 ? undefined : (code: string) => {
       const kind = oxygenKindOf(code);
       // 上限（マスターの金額）を当てた効く単価で、算定日による分かれを見る（X-472）

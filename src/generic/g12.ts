@@ -1,7 +1,7 @@
 // G12 酸素（design.md §19-5。v44 段 22f）：在宅酸素療法指導管理料・酸素療法加算の月の酸素の行、上限を超えた単価、離島等のコード、届け出た単価との違い。
 // 酸素の行＝特定器材で酸素の 8 コード（EM §2-8「G・H のコード」）。酸素吸入の行は G05 の背反に任せ、ここでは指摘しない（同じことを 2 回言わない）。
 // 使うコード・決まりは EM の行だけ（R8-317・R8-318・R8-330・R8-331。U-73・U-75・U-79）。LLM には判定させない
-import { activeOxygenPrices, OXYGEN_CODES, OXYGEN_ISLAND_CODES, oxygenKindOf, oxygenPriceForDates, yenText } from "../facility/oxygen";
+import { activeOxygenPrices, unitDates, OXYGEN_CODES, OXYGEN_ISLAND_CODES, oxygenKindOf, oxygenPriceForDates, yenText } from "../facility/oxygen";
 import { pickSnapshot, tokuteiOf, type MastersDb } from "../masters/db";
 import { LATER_NOTE } from "./g02";
 import type { GenericAbout, GenericCheck, GenericClaim, GenericFinding, GenericUnitDetail } from "./types";
@@ -20,7 +20,6 @@ export const R8_330_OUTSIDE = [
 ];
 
 type Unit = GenericUnitDetail;
-const pad = (n: number) => String(n).padStart(2, "0");
 /** 単位の算定日（回数が 0 でない日。1 始まり） */
 const daysOf = (u: Unit): number[] => (u.days ?? []).flatMap((n, i) => (n > 0 ? [i + 1] : []));
 const has = (u: Unit, codes: string[]) => u.items.some((it) => it.kind === "SI" && codes.includes(it.code));
@@ -110,7 +109,7 @@ export const g12: GenericCheck = {
       // 2. 酸素療法加算の月の酸素
       if (addition) out.push(finding("条件つき", i, codes, "G12.therapy_addition"));
       // 3〜5. 行ごと
-      const dates = (daysOf(u).length > 0 ? daysOf(u) : Array.from({ length: 31 }, (_, k) => k + 1)).map((d) => `${about.yearMonth}-${pad(d)}`);
+      const dates = unitDates(about.yearMonth, u.days);
       for (const it of u.items) {
         if (it.kind !== "TO" || !OXYGEN_CODES.includes(it.code)) continue;
         // 4. 離島等のコード（3 と 5 は掛けない）
@@ -152,7 +151,7 @@ export function g12NotDone(claim: GenericClaim, masters: MastersDb, about: Gener
   let none = false;
   let split = false;
   for (const { u, it } of oxygen) {
-    const dates = (daysOf(u).length > 0 ? daysOf(u) : Array.from({ length: 31 }, (_, k) => k + 1)).map((d) => `${about.yearMonth}-${pad(d)}`);
+    const dates = unitDates(about.yearMonth, u.days);
     const eff = oxygenPriceForDates(active, oxygenKindOf(it.code)!, dates, limitOf(masters, about, it.code)?.centi ?? null);
     if (eff.split) split = true;
     else if (eff.priceCenti === null) none = true;

@@ -70,3 +70,13 @@ export function centiOf(text: string): number | null {
 
 /** 0.01 円の整数を「0.30」の形に */
 export const yenText = (centi: number): string => `${Math.floor(centi / 100)}.${String(centi % 100).padStart(2, "0")}`;
+
+/**
+ * 単位の算定日（YYYY-MM-DD の並び）：days（1 日〜の回数）で回数が 0 でない日。算定日がなければ、その月の全部の日（月の日数だけ。2026-11 なら 30 日まで。反証 round-94 C-624）
+ */
+export function unitDates(yearMonth: string, days: number[] | undefined): string[] {
+  const on = (days ?? []).flatMap((n, i) => (n > 0 ? [i + 1] : []));
+  const [y, m] = yearMonth.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return (on.length > 0 ? on : Array.from({ length: last }, (_, i) => i + 1)).map((d) => `${yearMonth}-${String(d).padStart(2, "0")}`);
+}
