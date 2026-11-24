@@ -13,6 +13,12 @@ const lastDay = (m: number) => {
   const [y, mm] = month(m).split("-").map(Number);
   return `${month(m)}-${String(new Date(Date.UTC(y, mm, 0)).getUTCDate()).padStart(2, "0")}`;
 };
+/** forMonth を持たない今までの行（確かめた日の月を答えた月として読む）：答えた月を確かめた日に移す */
+const legacyRows = (specs: Spec[]): PatientFact[] =>
+  rows(specs).map((r, i) => {
+    const { forMonth, ...v } = r.value as { forMonth: string };
+    return { ...r, value: v as PatientFact["value"], checkedAt: `${forMonth}-${String(10 + i).padStart(2, "0")}T09:00:00+09:00` };
+  });
 const rows = (specs: Spec[]): PatientFact[] =>
   specs.map((s, i) => {
     const base = { patientId: "P1", key: "careCert" as const, source: "介護保険証" as const, checkedAt: `${month(0)}-${String(10 + (i % 18)).padStart(2, "0")}T09:00:00+09:00`, checkedBy: "new1" };
@@ -35,7 +41,7 @@ const TABLE: [string, Spec[], Record<number, number | "?">][] = [
   ["認定なしは答えた月から 6 か月。前の月には効かない（X-354）", [["認定なし", 0]], { [-1]: "?", 0: 0, 5: 0, 6: "?" }],
   ["X-370：翌月からの要介護 3（翌月に答えた）のあとで、基準月の認定なしを答えても、翌月は 3", [["要介護", 3, 1, 7], ["認定なし", 0]], { 0: 0, 1: 3, 3: 3 }],
   ["X-380：要介護 1 を残したあと、翌月分で分からない → 翌月だけ分からない", [["要介護", 1, -9, 4], ["分からない", 1]], { 0: 1, 1: "?", 2: 1 }],
-  ["要介護 1 を残したあと、翌月分で認定なしを答えると、月と残した順で最新なので翌月から 0（v39 (a)）", [["要介護", 1, -9, 4], ["認定なし", 1]], { 0: 1, 1: 0, 2: 0 }],
+  ["要介護 1 を残したあと、翌月分で認定なしを答えると、その月だけ 0。期間つきの認定はそれが当たる月について語るので、次の月は 1（v39 (a)・X-420）", [["要介護", 1, -9, 4], ["認定なし", 1]], { 0: 1, 1: 0, 2: 1 }],
   ["C-530：前月の認定なし → 基準月の申請中 → 以降は分からない", [["認定なし", -1], ["申請中", 0]], { [-1]: 0, 0: "?", 1: "?", 2: "?" }],
   ["X-400：基準月の申請中を残したあとに、前月分の認定なしを残しても、基準月以降は分からない", [["申請中", 0], ["認定なし", -1]], { [-1]: 0, 0: "?", 1: "?" }],
   ["X-410：翌月分の認定なし → あとから基準月分の申請中 → 翌月以降は分からない", [["認定なし", 1], ["申請中", 0]], { 0: "?", 1: "?", 2: "?" }],
@@ -47,7 +53,8 @@ const TABLE: [string, Spec[], Record<number, number | "?">][] = [
   ["X-401：期限が実在しない要介護 3 は、その期間を分からないにし、古い認定なしを復活させない", [["認定なし", -1], ["要介護", 3, 0, "bad"]], { [-1]: 0, 0: "?", 1: "?", 4: "?" }],
   ["X-401：同じ始まりの日で残し直せば（訂正）、効く", [["認定なし", -1], ["要介護", 3, 0, "bad"], ["要介護", 3, 0, 6]], { 0: 3, 1: 3 }],
   ["X-411：開始日が実在しない行を、正しい開始日で残し直せば、不正な行は消えたとみなす", [["要介護", 3, "bad", 4], ["要介護", 3, -7, 4, 0]], { [-1]: 3, 0: 3, 1: 3 }],
-  ["(d)：不正な行は、あとに残した前の月の「認定なし」では消えない（その期間は分からない）", [["要介護", 3, "bad", 4], ["認定なし", -1]], { [-1]: 0, 0: "?", 1: "?" }],
+  ["(d)：不正な行は、あとに残した前の月の「認定なし」では消えない（その月より後は分からない。答えた前の月は同じ月の訂正で 0）", [["要介護", 3, "bad", 4], ["認定なし", -1]], { [-1]: 0, 0: "?", 1: "?" }],
+  ["X-420：forMonth のない今までの行。10/10 に認定なし、11/10 に要介護 3（10/1〜1/31）を残すと、10 月は 3", [["認定なし", 0], ["要介護", 3, 0, 3, 1]], { 0: 3, 1: 3, 3: 3, 4: "?" }],
   ["認定なし 10 月 → 要介護 3（11/1〜1/31）で、2・3 月は分からない（認定なしは復活しない）", [["認定なし", 0], ["要介護", 3, 1, 3]], { 0: 0, 1: 3, 3: 3, 4: "?", 5: "?" }],
 ];
 
@@ -55,6 +62,14 @@ describe("careCertFor の名前つきの表", () => {
   for (const [name, specs, want] of TABLE) {
     it(name, () => {
       expect(Object.fromEntries(Object.keys(want).map((m) => [m, level(specs, Number(m))]))).toEqual(want);
+    });
+    // forMonth を持たない今までの行（確かめた日の月で読む）でも同じ答え（X-420）
+    it(`${name}（forMonth のない行）`, () => {
+      const lv = (m: number) => {
+        const c = careLevelOf(careCertFor(legacyRows(specs), month(m)), 3);
+        return c.known ? c.value : "?";
+      };
+      expect(Object.fromEntries(Object.keys(want).map((m) => [m, lv(Number(m))]))).toEqual(want);
     });
   }
   it("表の月は基準月からのずれ（基準月は config/demo.json）", () => {
@@ -77,7 +92,7 @@ describe("careCertFor の総当たり（行の種類 4 つと不正な日付 × 
   const invalid = (s: Spec) => s[0] === "要介護" && (s[2] === "bad" || s[3] === "bad");
   const isNone = (st: CareState) => st.known && st.segments.length === 1 && st.segments[0].kind === "認定なし";
 
-  it(`性質 1：認定なし（0）が効く月には、それより後の月か後に残した申請中・期間つきの認定・（消えていない）不正な行がない（${seqs.length} 通り × 3 か月）`, () => {
+  it(`性質 1：認定なし（0）が効く月には、それより後の月（期間つきの認定は当たる月）か後に残した申請中・期間つきの認定・（消えていない）不正な行がない（${seqs.length} 通り × 3 か月）`, () => {
     const bad: string[] = [];
     for (const seq of seqs)
       for (const m of [0, 1, 2]) {
@@ -85,7 +100,13 @@ describe("careCertFor の総当たり（行の種類 4 つと不正な日付 × 
         // 消えていない行（不正な行は、後に残した期間つきの行があれば消えたとみなす）
         const live = seq.map((s, i) => ({ s, i })).filter(({ s, i }) => !invalid(s) || !seq.slice(i + 1).some((x) => x[0] === "要介護"));
         const nones = live.filter(({ s }) => s[0] === "認定なし" && answerMonth(s) <= m && m <= answerMonth(s) + 5);
-        const ok = nones.some((h) => live.every(({ s, i }) => s[0] === "認定なし" || s[0] === "分からない" || answerMonth(s) > m || (answerMonth(s) <= answerMonth(h.s) && i < h.i)));
+        // 期間つきの認定は、それが当たる月について語る（X-420）：始まり（基準月）が M 以前なので相手に入り、語る月は終わりの月（2 か月後）と M の早い方。不正な行は M
+        const talk = (s: Spec) => (s[0] !== "要介護" ? (answerMonth(s) <= m ? answerMonth(s) : null) : invalid(s) ? m : Math.min(2, m));
+        const ok = nones.some((h) => live.every(({ s, i }) => {
+          if (s[0] === "認定なし" || s[0] === "分からない") return true;
+          const t = talk(s);
+          return t === null || (t <= answerMonth(h.s) && i < h.i);
+        }));
         if (!ok) bad.push(`${JSON.stringify(seq)} @${m}`);
       }
     expect(bad).toEqual([]);

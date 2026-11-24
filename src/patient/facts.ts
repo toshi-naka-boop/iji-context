@@ -176,7 +176,20 @@ export function careCertFor(certs: PatientFact[], yearMonth: string): CareState 
   const noneHolds = ({ r, i }: { r: PatientFact; i: number }) => {
     const a = monthOf(r);
     if (!(a <= yearMonth && yearMonth <= addMonthsTo(`${a}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7))) return false;
-    return alive.every(({ r: x, i: j }) => j === i || kindOf(x) === "分からない" || kindOf(x) === "認定なし" || monthOf(x) > yearMonth || (monthOf(x) <= a && j < i));
+    // 比べる相手は M 以前の月について語る行。期間つきの認定は、答えた月にかかわらず、それが当たる月について語る（X-420）：
+    // 始まりが M の末日以前なら相手に入れ、語る月は「終わりの月と M の早い方」（日付が実在しなければ M）。ほかの行は答えた月
+    const talk = (x: PatientFact): string | null => {
+      if (!isDated(x)) return monthOf(x) <= yearMonth ? monthOf(x) : null;
+      if (!valid(x)) return !isRealDate(from(x)) || from(x) <= end ? yearMonth : null;
+      if (from(x) > end) return null;
+      const u = (x.validUntil ?? "9999-12").slice(0, 7);
+      return u < yearMonth ? u : yearMonth;
+    };
+    return alive.every(({ r: x, i: j }) => {
+      if (j === i || kindOf(x) === "分からない" || kindOf(x) === "認定なし") return true;
+      const t = talk(x);
+      return t === null || (t <= a && j < i);
+    });
   };
   const answer = (x: { r: PatientFact; i: number }): CareState => {
     const k = kindOf(x.r);
