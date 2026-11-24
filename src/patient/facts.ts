@@ -193,13 +193,14 @@ export function careCertFor(certs: PatientFact[], yearMonth: string): CareState 
   };
   const answer = (x: { r: PatientFact; i: number }): CareState => {
     const k = kindOf(x.r);
-    if (k === "認定なし") return noneHolds(x) ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: x.r.source, checkedAt: x.r.checkedAt } : { known: false };
+    if (k === "認定なし") return { known: true, segments: [{ kind: "認定なし", level: 0 }], source: x.r.source, checkedAt: x.r.checkedAt };
     if (k === "申請中") return { known: true, segments: [{ kind: "申請中", level: 0 }], source: x.r.source, checkedAt: x.r.checkedAt };
     return { known: false };
   };
   // (c) 同じ月の訂正
   const here = alive.filter(({ r }) => monthOf(r) === yearMonth).at(-1);
-  if (here && here.i > lastCovering && !isDated(here.r)) return answer(here);
+  // 認定なしは (a) を満たすときだけ。満たさなければ (b) へ（X-421）
+  if (here && here.i > lastCovering && !isDated(here.r) && (kindOf(here.r) !== "認定なし" || noneHolds(here))) return answer(here);
   // (a) その月に効く認定なし（後に残したもの）
   const none = alive.filter(({ r }) => kindOf(r) === "認定なし").filter(noneHolds).at(-1);
   if (none) return answer(none);
