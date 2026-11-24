@@ -208,7 +208,8 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     const patientId = patientIdOf(claimId);
     // 「認定なし（確かめた）」と「分からない」には、答えた診療月（答えた請求の診療年月）を付ける（design.md §18-12 の 1。X-380：同じ月の訂正）
     const kind = f.key === "careCert" ? (f.value as { kind: string }).kind : null;
-    const value = kind === "認定なし" || kind === "申請中" || kind === "分からない" ? { kind, forMonth: receiptOf(claimId).yearMonth } : f.value;
+    // 期間つきの認定にも答えた診療月を付ける（月の優先の規則 (a)。design.md §18-12 の 1。v39）
+    const value = kind === "認定なし" || kind === "申請中" || kind === "分からない" ? { kind, forMonth: receiptOf(claimId).yearMonth } : kind !== null ? { ...(f.value as object), forMonth: receiptOf(claimId).yearMonth } : f.value;
     sqlite
       .prepare("INSERT INTO patient_facts (patient_id, fact_key, value, source, valid_until, checked_at, checked_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(patientId, f.key, JSON.stringify(value), f.source, f.validUntil, now(), clerkId);

@@ -23,7 +23,7 @@ export type BuildingBandValue = { band: BuildingBand; fromMonth: string };
  * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない。
  * 認定なし・分からないの forMonth は答えた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
  */
-export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "申請中"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
+export type CareCertValue = { kind: "要介護"; level: number; validFrom: string; forMonth?: string } | { kind: "要支援"; level: number; validFrom: string; forMonth?: string } | { kind: "認定なし"; forMonth?: string } | { kind: "申請中"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
 /** 申請中（EM §7-2 U-71。2026-11-24 利用者の判断）：R03 には「分からない」、④・短期入所には「認定なし」に準じて読む。答えた診療月だけに効く（6 か月は残さず、翌月の点検でまた聞く） */
 export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "申請中", "分からない"] as const;
 /** 「認定なし」を確かめ直すまでの月数（設計で置いた値。制度の数字ではない。design.md §18-1） */
@@ -146,46 +146,53 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
 }
 
 /**
- * careCert の行（古い順）から診療年月 M の認定を決める、月の優先の規則（1 か所。design.md §18-12 の 1。X-370・X-380・C-530・C-533・X-400・X-401）。
- * 行の「答えた診療月」：認定なし・申請中・分からないは forMonth（持たない行は確かめた日の月）。期間つきの認定（要介護・要支援）は期間で効く。
- *  1. 期間つきの認定は始まりの日ごとに後に残した行を使う（訂正）。日付が実在しない行（X-401）は、その期間（始まりが読めればそこから先、読めなければ全部の月）を「分からない」として覆う
- *  2. 同じ月の訂正（X-380）：M について答えた期間のない行が、M に当たる期間つきの行より後に残したものなら、M ではそれを採る
- *  3. M に当たる期間つきの行があれば、それで決める（不正な行が当たれば分からない。期間のない行は、ほかの月の答えなら上書きしない。X-370）
- *  4. 当たらなければ、M に効く期間のない行のうち、答えた診療月が最も新しいもの（同じ月なら後に残したもの）を採る：
- *     認定なしは答えた月から 6 か月。ただし、その月より後〔同じ月なら後に残した〕の M 以前の月に答えた「申請中」があれば効かない（C-530・X-400）。申請中・分からないは答えた月だけ（U-71・C-533）
+ * careCert の行（古い順）から診療年月 M の認定を決める、月の優先の規則（1 か所。design.md §18-12 の 1「月の優先の規則の置き換え」。v39）。
+ * 行の「答えた診療月」は forMonth（答えた請求の診療年月。持たない行は確かめた日の月）。
+ *  (c) M について答えた行のうち最後に残した行が、M に当たる期間つきの行（不正な日付の行を含む）より後に残したものなら、M ではそれが効く（同じ月の訂正）。
+ *      ただし「認定なし」は (a) も満たすときだけ
+ *  (a) 「認定なし」が M で効くのは、答えた月から 6 か月の中で、M 以前の月について答えたほかの全部の行（申請中・期間つきの認定・不正な日付の行。分からないは除く）より、
+ *      答えた診療月が同じか後で、かつ後に残したときだけ
+ *  (b) (a) を満たさなければ、M に当たる期間つきの認定で決め、なければ分からない（聞き取りの対象）
+ *  (d) 不正な日付の行は、それより後に残した期間つきの認定があるときだけ消えたとみなす（後の「認定なし」では消さない）。消えていなければ、その期間（始まりが読めればそこから先、読めなければ全部の月）を分からないにする
+ * 申請中・分からないは答えた月だけに効く（U-71・C-533）。疑わしい組はすべて分からないに落ち、確定の 0（認定なし）は、月と残した順の両方で最新のときだけ出る
  */
 export function careCertFor(certs: PatientFact[], yearMonth: string): CareState {
   const { start, end } = monthRange(yearMonth);
+  const rows = certs.map((r, i) => ({ r, i }));
   const monthOf = (r: PatientFact) => (r.value as { forMonth?: string }).forMonth ?? r.checkedAt.slice(0, 7);
   const kindOf = (r: PatientFact) => (r.value as CareCertValue).kind;
+  const isDated = (r: PatientFact) => kindOf(r) === "要介護" || kindOf(r) === "要支援";
   const from = (r: PatientFact) => (r.value as { validFrom: string }).validFrom;
-  const byFrom = new Map<string, PatientFact>();
-  for (const r of certs) if (kindOf(r) === "要介護" || kindOf(r) === "要支援") byFrom.set(from(r), r);
   const valid = (r: PatientFact) => isRealDate(from(r)) && (r.validUntil === null || isRealDate(r.validUntil));
-  const covers = (r: PatientFact) => (valid(r) ? from(r) <= end && (r.validUntil ?? "9999-12-31") >= start : !isRealDate(from(r)) || from(r) <= end);
-  const dated = [...byFrom.values()].filter(covers).sort((a, b) => from(a).localeCompare(from(b)));
-  const undated = certs.map((r, i) => ({ r, i })).filter(({ r }) => ["認定なし", "申請中", "分からない"].includes(kindOf(r)));
-  const answer = (r: PatientFact): CareState => {
-    const k = kindOf(r);
-    return k === "認定なし" || k === "申請中" ? { known: true, segments: [{ kind: k, level: 0 }], source: r.source, checkedAt: r.checkedAt } : { known: false };
-  };
-  if (dated.length > 0) {
-    const lastDated = Math.max(...dated.map((r) => certs.indexOf(r)));
-    const same = undated.filter(({ r, i }) => i > lastDated && monthOf(r) === yearMonth).at(-1);
-    if (same) return answer(same.r);
-    if (dated.some((r) => !valid(r))) return { known: false };
-    return segmentsOf(dated, yearMonth);
-  }
-  const effective = undated.filter(({ r, i }) => {
-    const k = kindOf(r);
+  // (d) 不正な日付の行：後に残した期間つきの認定があれば消えたとみなす
+  const alive = rows.filter(({ r, i }) => !isDated(r) || valid(r) || !rows.some(({ r: x, i: j }) => j > i && isDated(x)));
+  // 期間つきの行（実在する日付）は始まりの日ごとに後に残した行を使う（訂正）
+  const byFrom = new Map<string, { r: PatientFact; i: number }>();
+  for (const x of alive) if (isDated(x.r) && valid(x.r)) byFrom.set(from(x.r), x);
+  const invalid = alive.filter(({ r }) => isDated(r) && !valid(r));
+  const covering = [...[...byFrom.values()].filter(({ r }) => from(r) <= end && (r.validUntil ?? "9999-12-31") >= start), ...invalid.filter(({ r }) => !isRealDate(from(r)) || from(r) <= end)];
+  const lastCovering = Math.max(-1, ...covering.map((x) => x.i));
+  // (a) 認定なしが M で効くか
+  const noneHolds = ({ r, i }: { r: PatientFact; i: number }) => {
     const a = monthOf(r);
-    if (k !== "認定なし") return a === yearMonth;
     if (!(a <= yearMonth && yearMonth <= addMonthsTo(`${a}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7))) return false;
-    const cut = undated.some(({ r: x, i: j }) => kindOf(x) === "申請中" && monthOf(x) <= yearMonth && (monthOf(x) > a || (monthOf(x) === a && j > i)));
-    return !cut;
-  });
-  const hit = effective.sort((x, y) => monthOf(x.r).localeCompare(monthOf(y.r)) || x.i - y.i).at(-1);
-  return hit ? answer(hit.r) : { known: false };
+    return alive.every(({ r: x, i: j }) => j === i || kindOf(x) === "分からない" || kindOf(x) === "認定なし" || monthOf(x) > yearMonth || (monthOf(x) <= a && j < i));
+  };
+  const answer = (x: { r: PatientFact; i: number }): CareState => {
+    const k = kindOf(x.r);
+    if (k === "認定なし") return noneHolds(x) ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: x.r.source, checkedAt: x.r.checkedAt } : { known: false };
+    if (k === "申請中") return { known: true, segments: [{ kind: "申請中", level: 0 }], source: x.r.source, checkedAt: x.r.checkedAt };
+    return { known: false };
+  };
+  // (c) 同じ月の訂正
+  const here = alive.filter(({ r }) => monthOf(r) === yearMonth).at(-1);
+  if (here && here.i > lastCovering && !isDated(here.r)) return answer(here);
+  // (a) その月に効く認定なし（後に残したもの）
+  const none = alive.filter(({ r }) => kindOf(r) === "認定なし").filter(noneHolds).at(-1);
+  if (none) return answer(none);
+  // (b) 期間つきの認定で決める。不正な日付の行が当たれば分からない
+  if (covering.length === 0 || invalid.some((x) => covering.includes(x))) return { known: false };
+  return segmentsOf(covering.map((x) => x.r).sort((a, b) => from(a).localeCompare(from(b))), yearMonth);
 }
 
 /** M に当たる期間つきの行（実在する日付だけ）から区間を作る：1 行で月の全部の日を覆うか、続いた 2 行 */
