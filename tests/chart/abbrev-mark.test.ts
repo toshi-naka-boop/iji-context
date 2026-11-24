@@ -4,8 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { abbrevMarks, abbrevTokens, abbrevVocabOf, askedItems, diseaseExact, itemKeyOf, KNOWN_WORDS, markDay, NO_MASTER_NOTE, sentenceWith } from "../../src/chart/abbrev";
-import type { ChartAct } from "../../src/chart/acts";
+import { abbrevMarks, abbrevTokens, abbrevVocabOf, KNOWN_WORDS, NO_MASTER_NOTE, sentenceWith } from "../../src/chart/abbrev";
 import { lostAbbrevs } from "../../src/chart/soap";
 import { noteText } from "../../src/chart/extract";
 import { openMasters } from "../../src/masters/db";
@@ -44,12 +43,8 @@ describe("手で作った小さな表で", () => {
   });
   it("samples.json の K4 の「AF」に印が付く。Af と AF は別の語になる", () => {
     expect(abbrevMarks(samples[claimId("K4")].lacking, vocab)).toContain("AF");
-    expect(abbrevMarks("Af。AF。", { words: new Set(["AF"]), diseases: new Set() })).toEqual(["Af"]);
-    expect(abbrevMarks("Af。AF。", { words: new Set(["Af"]), diseases: new Set() })).toEqual(["AF"]);
-  });
-  it("病名の記載は、傷病名マスターの名称と完全に一致するかを見る（心房細動は一致、AF は一致しない）", () => {
-    expect(diseaseExact("心房細動", vocab)).toBe(true);
-    expect(diseaseExact("AF", vocab)).toBe(false);
+    expect(abbrevMarks("Af。AF。", { words: new Set(["AF"]) })).toEqual(["Af"]);
+    expect(abbrevMarks("Af。AF。", { words: new Set(["Af"]) })).toEqual(["AF"]);
   });
   it("マスターがない・版のない診療年月は印を付けない（null）。そのときの文は「見ていません」", () => {
     expect(abbrevVocabOf(null, YM)).toBeNull();
@@ -58,133 +53,13 @@ describe("手で作った小さな表で", () => {
   });
 });
 
-describe("印の付け直しと聞く記載（保存のとき）", () => {
-  const vocab = { words: new Set<string>(["IgE"]), diseases: new Set<string>(["心房細動"]) };
-  const acts: ChartAct[] = [
-    { category: "検査", written: "ＥＣＧ１２", lookup: ["心電図"], quote: "ＥＣＧ１２。", abbrev: ["XX"] },
-    { category: "検査", written: "特異的ＩｇＥ", lookup: ["特異的ＩｇＥ"], quote: "特異的ＩｇＥ" },
-    { category: "注射", written: "注射", lookup: [], quote: "注射", with: [{ kind: "薬", written: "ABC液", lookup: ["推し量り"], quote: "ABC液" }] },
-  ];
-  /** その日の行ったこと・事実の印（原文は省くと、引用をつないだ文） */
-  type V = typeof vocab;
-  const markActs = (a: ChartAct[], v: V, text = a.flatMap((x) => [x.quote, ...(x.with ?? []).map((c) => c.quote)]).join("\n")) => markDay(a, [], v, text).acts;
-  const markFacts = (f: Parameters<typeof markDay>[1], v: V, text = f.map((x) => x.quote).join("\n")) => markDay([], f, v, text).facts;
-  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、書かれた名前の語が分かる語なら印を付けない", () => {
-    const m = markActs(acts, vocab);
-    expect(m.map((a) => [a.abbrev, a.lookup])).toEqual([[["ECG12"], []], [undefined, ["特異的ＩｇＥ"]], [undefined, []]]);
-    expect(m[2].with?.[0]).toMatchObject({ abbrev: ["ABC"], lookup: [] });
-    expect(markActs([{ ...acts[0], quote: "ＥＣＧ１２施行" }], { ...vocab, words: new Set(["ECG12"]) })[0].abbrev).toBeUndefined();
-  });
-  describe("語を単位にした規則（plan-fr211.md「規則の作り直し」6 の例）", () => {
-    const linkedOf = (d: ReturnType<typeof markDay>) => ({ acts: d.acts.map((a) => [a.written, a.abbrev, a.lookup]), facts: d.facts.map((f) => [f.kind, f.value, f.abbrev]), unlinked: d.unlinked });
-    it("AF→心房細動・ECG12→心電図：書かれた名前が引用に含まれず、引用に略語があれば結び付き、lookup は空・医師に聞く（X-490）", () => {
-      const d = markDay([{ category: "検査", written: "心電図", lookup: ["心電図"], quote: "ＥＣＧ１２" }], [{ kind: "病名の記載", value: "心房細動", quote: "AF" }], vocab, "O: ＥＣＧ１２。\nA: AF");
-      expect(linkedOf(d)).toEqual({ acts: [["心電図", ["ECG12"], []]], facts: [["病名の記載", "心房細動", ["AF"]]], unlinked: [] });
-      expect(askedItems("訪問診療", { acts: d.acts, rx: [], rxChoice: null, rxChoiceBy: null }, d.facts).map((x) => [x.place, x.written, x.tokens])).toEqual([
-        ["act", "心電図", ["ECG12"]],
-        ["fact", "心房細動", ["AF"]],
-      ]);
-    });
-    it("引用を別の文にした組：言い換えの疑いだけでは結び付けず聞かない。原文の略語は結び付かない語として事務が選ぶ（C-642・round-97 の「施行」「継続」）", () => {
-      const a = markDay([{ category: "検査", written: "心電図", lookup: ["心電図"], quote: "前回の心電図" }], [], vocab, "O: ECG12施行。前回の心電図と著変なし");
-      expect(linkedOf(a)).toEqual({ acts: [["心電図", undefined, ["心電図"]]], facts: [], unlinked: ["ECG12"] });
-      const b = markDay([{ category: "検査", written: "心電図", lookup: ["心電図"], quote: "施行" }], [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], vocab, "O: AF 継続。ECG12 施行");
-      expect(linkedOf(b)).toEqual({ acts: [["心電図", undefined, ["心電図"]]], facts: [["病名の記載", "心房細動", undefined]], unlinked: ["AF", "ECG12"] });
-    });
-    it("ADL・NRS3（C-640）：どの記載にも結び付かず、言い換えた行為・処方・急性増悪の事実に付かない。結び付かない語として事務が選ぶ", () => {
-      const d = markDay(
-        [{ category: "診療行為", written: "在宅酸素療法指導管理", lookup: ["在宅酸素療法指導管理料"], quote: "在宅酸素療法の指導" }],
-        [
-          { kind: "処方", value: "利尿薬", quote: "フロセミド" },
-          { kind: "急性増悪", value: "あり", quote: "急変" },
-        ],
-        vocab,
-        "S: ADL低下、NRS3\nO: 在宅患者訪問診療。急変。\nP: 在宅酸素療法の指導。\n処方: フロセミド",
-      );
-      expect(linkedOf(d)).toEqual({ acts: [["在宅酸素療法指導管理", undefined, ["在宅酸素療法指導管理料"]]], facts: [["処方", "利尿薬", undefined], ["急性増悪", "あり", undefined]], unlinked: ["ADL", "NRS3"] });
-    });
-    it("処方の分類名：処方の事実には結び付けない（K4 の見本の DOAC は結び付かない語。AF は病名の記載に結び付く）", () => {
-      const d = markDay([], [{ kind: "病名の記載", value: "AF", quote: "AF" }, { kind: "処方", value: "DOAC", quote: "DOAC継続" }], vocab, "変わりなし。AF。DOAC継続。");
-      expect(linkedOf(d)).toEqual({ acts: [], facts: [["病名の記載", "AF", ["AF"]], ["処方", "DOAC", undefined]], unlinked: ["DOAC"] });
-    });
-    it("「の」「料」の違い・酸素ボンベ加算（C-641）：言い換えの疑いでも略語がなければ聞かず、lookup も残る", () => {
-      const d = markDay(
-        [
-          { category: "診療行為", written: "在宅酸素療法指導", lookup: ["在宅酸素療法指導管理料"], quote: "在宅酸素療法の指導" },
-          { category: "診療行為", written: "在宅患者訪問診療料", lookup: ["在宅患者訪問診療料"], quote: "在宅患者訪問診療" },
-          { category: "診療行為", written: "酸素ボンベ加算", lookup: ["酸素ボンベ加算"], quote: "酸素ボンベ使用" },
-        ],
-        [],
-        vocab,
-        "O: 在宅患者訪問診療。\nP: 在宅酸素療法の指導。酸素ボンベ使用。",
-      );
-      expect(linkedOf(d)).toEqual({
-        acts: [
-          ["在宅酸素療法指導", undefined, ["在宅酸素療法指導管理料"]],
-          ["在宅患者訪問診療料", undefined, ["在宅患者訪問診療料"]],
-          ["酸素ボンベ加算", undefined, ["酸素ボンベ加算"]],
-        ],
-        facts: [],
-        unlinked: [],
-      });
-    });
-    it("ECG12 の引用に AF が入った組（C-632）：書かれた名前が引用に含まれれば引用のほかの略語は結び付けない。AF は結び付かない語になる", () => {
-      const d = markDay([{ category: "検査", written: "ECG12", lookup: ["ECG12"], quote: "AF継続、ECG12施行" }], [], { ...vocab, words: new Set(["ECG12"]) }, "O: AF継続、ECG12施行");
-      expect(linkedOf(d)).toEqual({ acts: [["ECG12", undefined, ["ECG12"]]], facts: [], unlinked: ["AF"] });
-    });
-    it("書かれた名前にそのままある略語は結び付く（ECG12 を書いた行為）。言い換えた事実の AF は結び付かない語", () => {
-      const d = markDay([{ category: "検査", written: "ECG12", lookup: [], quote: "ECG12 施行" }], [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], vocab, "O: AF 継続。ECG12 施行");
-      expect(linkedOf(d)).toEqual({ acts: [["ECG12", ["ECG12"], []]], facts: [["病名の記載", "心房細動", undefined]], unlinked: ["AF"] });
-    });
-    it("引用が 2 文にまたがる組（round-99 C-650）：言い換えた訪問診療の行為は、名前と重なる節の語だけを結ぶ。ECG12 は結び付かない語になり、訪問診療は確かめ待ちにならない", () => {
-      const d = markDay(
-        [
-          { category: "診療行為", written: "在宅患者訪問診療料", lookup: ["在宅患者訪問診療料"], quote: "在宅患者訪問診療。ECG12、採血。" },
-          { category: "検査", written: "心電図", lookup: ["心電図（１２誘導）"], quote: "前回の心電図" },
-        ],
-        [],
-        vocab,
-        "O: 在宅患者訪問診療。ECG12、採血。前回の心電図と著変なし",
-      );
-      expect(linkedOf(d)).toEqual({
-        acts: [
-          ["在宅患者訪問診療料", undefined, ["在宅患者訪問診療料"]],
-          ["心電図", undefined, ["心電図（１２誘導）"]],
-        ],
-        facts: [],
-        unlinked: ["ECG12"],
-      });
-      expect(askedItems("訪問診療", { acts: d.acts, rx: [], rxChoice: null, rxChoiceBy: null }, d.facts)).toEqual([]);
-    });
-    it("重なる節がない言い換え（AF→心房細動）は、今までどおり引用全体の語を結ぶ（引用「AF」・「AF継続」）", () => {
-      for (const quote of ["AF", "AF継続"]) {
-        const d = markDay([], [{ kind: "病名の記載", value: "心房細動", quote }], vocab, `A: ${quote}`);
-        expect([quote, linkedOf(d)]).toEqual([quote, { acts: [], facts: [["病名の記載", "心房細動", ["AF"]]], unlinked: [] }]);
-      }
-    });
-    it("問いの引用は、原文のその語を含む文", () => {
-      const note = { s: "ADL低下、NRS3", o: "在宅患者訪問診療。ＥＣＧ１２施行。前回の心電図と著変なし", a: "AF", p: "", rx: "" };
-      expect(sentenceWith(note, "ECG12")).toBe("ＥＣＧ１２施行。");
-      expect(sentenceWith(note, "NRS3")).toBe("ADL低下、NRS3");
-      expect(sentenceWith(note, "AF")).toBe("AF");
-      expect(sentenceWith(note, "XYZ")).toBeNull();
-    });
-  });
-  it("当てた・たたんだ行為は聞かない。病名の記載は名前に分からない略語がなければ印を付けない。貼ったカルテは病名を聞かない", () => {
-    const m = markActs(acts, vocab);
-    // 処方の事実には結び付けない（DOAC は結び付かない語。規則の作り直し 3・4）
-    const facts = markFacts([{ kind: "病名の記載", value: "AF", quote: "AF" }, { kind: "病名の記載", value: "心房細動", quote: "心房細動" }, { kind: "処方", value: "DOAC", quote: "DOAC継続" }], vocab);
-    expect(facts.map((f) => f.abbrev)).toEqual([["AF"], undefined, undefined]);
-    const stored = { acts: m, rx: [], rxChoice: null, rxChoiceBy: null };
-    expect(askedItems("訪問診療", stored, facts).map((x) => [x.place, x.written, x.tokens])).toEqual([["act", "ＥＣＧ１２", ["ECG12"]], ["child", "ABC液", ["ABC"]], ["fact", "AF", ["AF"]]]);
-    expect(askedItems("記録", stored, facts).map((x) => x.place)).toEqual(["act", "child"]);
-    const matched = { ...stored, acts: [{ ...m[0], match: { tbl: "shinryo" as const, code: "160068410", name: "ＥＣＧ１２", by: "search" as const } }, { ...m[2], fold: { kind: "order" as const, ref: "o1", by: "person" as const } }] };
-    expect(askedItems("記録", matched, null)).toEqual([]);
-    // 「違う」（same: false）はたたまない印なので、行為も子も聞く（X-491）
-    const differ = { ...stored, acts: [{ ...m[0], fold: { kind: "order" as const, by: "person" as const, same: false as const } }, { ...m[2], fold: { kind: "order" as const, by: "person" as const, same: false as const } }] };
-    expect(askedItems("記録", differ, null).map((x) => [x.place, x.written])).toEqual([["act", "ＥＣＧ１２"], ["child", "ABC液"]]);
-    // 指紋は書かれた名前と引用で決まる（位置によらない）
-    expect(askedItems("記録", stored, null)[0].key).toBe(itemKeyOf("ＥＣＧ１２", "ＥＣＧ１２。"));
+describe("問いの引用と整形の確かめ", () => {
+  it("問いの引用は、原文のその語を含む文", () => {
+    const note = { s: "ADL低下、NRS3", o: "在宅患者訪問診療。ＥＣＧ１２施行。前回の心電図と著変なし", a: "AF", p: "", rx: "" };
+    expect(sentenceWith(note, "ECG12")).toBe("ＥＣＧ１２施行。");
+    expect(sentenceWith(note, "NRS3")).toBe("ADL低下、NRS3");
+    expect(sentenceWith(note, "AF")).toBe("AF");
+    expect(sentenceWith(note, "XYZ")).toBeNull();
   });
   it("整形で消えた略語：原文の印の語が、整えた欄のどこにもなければ返す", () => {
     expect(lostAbbrevs({ s: "", o: "ＥＣＧ１２", a: "心房細動", p: "", rx: "" }, ["ECG12", "AF"])).toEqual(["AF"]);

@@ -280,13 +280,16 @@ CREATE INDEX abbrev_answer_items_note ON abbrev_answer_items (note_id);
 `,
   },
   {
-    // どの記載にも結び付かない略語の扱い（spec FR-211。plan-fr211.md「規則の作り直し」4・「作り直しの補い」C-652）。事務が「算定に関係なし」か「医師に聞く」を選ぶ。
-    // 追記だけで、カルテと語の組ごとに、いちばん新しい行が効く。note_hash は選んだときのカルテの文の指紋で、カルテが直れば効かない（選び直し）。
-    // カルテを消すと、そのカルテの行も消す（FR-168 の全表走査）。語は英字の略語だけで、患者の id は持たない
+    // 略語の辞書方式（spec FR-211。plan-fr211.md「辞書方式の決め」2〜5）。どちらも追記だけ。25 は feat/fr211 の中だけの番号で、まだ出していないので形を直した。
+    // abbrev_selections：事務がカルテの略語に選んだ扱い（辞書の意味・その他・判定不能／算定に関係なし・医師に聞く）と、医師確認に回したか。カルテと語の組ごとに、いちばん新しい行が効く。
+    //   カルテを消すと、そのカルテの行も消す（FR-168 の全表走査）。患者の id は持たない
+    // abbrev_dictionary：クリニックの辞書（医師の答えから書き足した略語の意味。足した人・日・元の問い〔診療年月|語|答えの id〕）。万病辞書の本体は書き換えない。患者のデータではないので消さない
     version: 25,
     sql: `
-CREATE TABLE abbrev_choices (id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL, token TEXT NOT NULL, choice TEXT NOT NULL, note_hash TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL);
-CREATE INDEX abbrev_choices_note ON abbrev_choices (note_id, token);
+CREATE TABLE abbrev_selections (id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL, token TEXT NOT NULL, option TEXT NOT NULL, meaning TEXT, ask_doctor INTEGER NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL);
+CREATE INDEX abbrev_selections_note ON abbrev_selections (note_id, token);
+CREATE TABLE abbrev_dictionary (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL, meaning TEXT NOT NULL, added_by TEXT NOT NULL, added_at TEXT NOT NULL, question TEXT NOT NULL);
+CREATE INDEX abbrev_dictionary_token ON abbrev_dictionary (token);
 `,
   },
 ];

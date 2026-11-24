@@ -1,12 +1,11 @@
 "use client";
 // 確かめたあとで付け直す欄（design.md §16-4-1・16-3・16-7。C-441）：確かめて残したカルテのうち、処方の日の「確かめた」の印が効く日で印のない日と、
 // 当てられない行為に同じ日の電子カルテの同じ種類の行為がある日を並べ、その日の処方の欄の値と印（POST /api/chart/acts/rx-confirm）・「同じ／違う／選ばない」（POST /api/chart/acts/fold）を付け直す。
-// 病名の記載に医師が略語の答え（指すものを記入する）を返していれば、その記載に「医師の答え：…」の札を出す（FR-211。表示だけ。X-492）。
 // G11 の結果の「見ていません」の案内から飛ぶ先（id="chart-fixes"）。一括の操作は作らない（1 日ずつ）。選ぶのは任意で、初期値は出さない
 import { useEffect, useState } from "react";
 import type { RxChoice } from "../../src/chart/acts";
 import { getJson, postJson } from "../get-json";
-import { DoctorAnswerBadge, RX_LABEL } from "./acts-review";
+import { RX_LABEL } from "./acts-review";
 
 type Fix = {
   noteId: number;
@@ -15,8 +14,6 @@ type Fix = {
   rxChoice: RxChoice | null;
   rxMark: "n2" | "chozai" | null;
   pairs: { index: number; written: string; pairs: { ref: string; name: string }[]; fold: { ref?: string; same?: boolean } | null }[];
-  /** 病名の記載への医師の「指すものを記入する」の答え（FR-211。表示だけ） */
-  doctorAnswers?: { index: number; value: string; quote: string; answers: { token: string; text: string }[] }[];
 };
 
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -82,11 +79,6 @@ function FixDay({ f, onSaved }: { f: Fix; onSaved: () => void }) {
           </div>
         );
       })}
-      {(f.doctorAnswers ?? []).map((d) => (
-        <div key={`d${d.index}`}>
-          病名の記載「{d.quote}」：<DoctorAnswerBadge value={d.value} answers={d.answers} />
-        </div>
-      ))}
       {msg && <div className="muted">{msg}</div>}
     </div>
   );

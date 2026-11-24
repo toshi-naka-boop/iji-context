@@ -14,7 +14,7 @@ import { listKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import { evaluate } from "../../src/engine";
 import { period } from "../../src/demo/period";
 import { docKey } from "../../src/official/match";
-import { at, claimId, dateIn, day, YM } from "../helpers/period";
+import { at, claimId, dateIn, day } from "../helpers/period";
 import { makeDoc } from "../official/helpers";
 
 const repo = path.join(__dirname, "..", "..");
@@ -249,11 +249,6 @@ describe("訪問カルテを書く（FR-69）", () => {
     const s = app.saveNote(claimId("K4"), "new1", "訪問診療", note);
     expect(s.date).toBe(day(20));
     expect(app.visits("new1").some((v) => v.claimId === claimId("K4") && v.date === day(20))).toBe(false);
-    // どの記載にも結び付かない略語（AF・DOAC）は、このカルテの扱いを一覧から選んでから確かめる（FR-211 の規則の作り直し 4・補い C-652。マスターがあるときだけ一覧に出る）
-    for (const token of ["AF", "DOAC"]) {
-      const noteIds = app.abbrevChoiceList("new1", YM, token).map((x) => x.noteId);
-      if (noteIds.length > 0) app.chooseAbbrev("new1", { yearMonth: YM, token, noteIds, choice: "算定に関係なし" });
-    }
     app.confirmNote(s.id, "new1", [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }]);
     const v = app.visits("new1").find((x) => x.claimId === claimId("K4") && x.date === day(20));
     // ほかの利用者には、この人が書いたカルテは重ならない

@@ -3,7 +3,7 @@
 // 候補はどれも診療年月の基本マスターに実在するコードだけ。名前の完全一致が 1 つのときだけ当てた状態で出し、ほかは本人が選ぶ（選ばなければ「当てられない」のまま残る）。
 // 前に選んだものは選んだ状態の初期値で出す（L-95）。請求は見ない（C-233）。保存は、事実と同じ 1 回の確かめ（呼び出し側の「確定する」）
 import { useState } from "react";
-import { ABBREV_CHOICES, ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevChoice, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
+import { ABBREV_DICT_OPTIONS, ABBREV_NODICT_OPTIONS, ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
 import { VisitTimeInput, type VisitRef } from "../visit-time-input";
 import type { StructuredReview } from "../../src/structured/overlap";
@@ -40,7 +40,7 @@ export const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", 
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
 /** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
-export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void; at?: { noteId: number; index: number; child?: number }; quote?: string }) {
+export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void; at?: { noteId: number; index: number; child?: number } }) {
   const { item, onChange } = props;
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Candidate[]>([]);
@@ -51,8 +51,9 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
     setErr("");
     try {
       // at（保存したカルテの行為の位置）を渡すと、略語を医師に聞いた行為には医師の答えの語で候補を出す（FR-211）
+      // at（そのカルテの行為の位置）を渡すと、そのカルテの略語による止め方で候補を出す（FR-211 辞書方式の決め 2・4）
       const at = props.at ? { noteId: String(props.at.noteId), index: String(props.at.index), ...(props.at.child !== undefined ? { child: String(props.at.child) } : {}) } : {};
-      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|"), ...at, ...(props.quote ? { quote: props.quote } : {}) })}`);
+      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|"), ...at })}`);
       onChange({ m, sel: m.initial });
     } catch (e) {
       setErr((e as Error).message);
@@ -102,108 +103,74 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
   );
 }
 
-/** 印のある行為・子の札（FR-211）。当てていない間だけ出す。候補は医師の答えが来てから（自分で探して当てることはできる） */
-const abbrevBadge = (abbrev: string[] | undefined, sel: ActMatch | null) =>
-  abbrev && abbrev.length > 0 && !sel ? <span className="badge">略語：{abbrev.join("・")}（医師に確かめ中）</span> : null;
-
-/** 病名の記載への医師の答えの札（FR-211。反証 round-96 X-492）。表示するだけで、事実の値は書き換えない（取り出し・判定にも使わない） */
-export function DoctorAnswerBadge({ value, answers }: { value: string; answers: { token: string; text: string }[] }) {
-  return <span className="badge">{value}　医師の答え：{answers.map((a) => `${a.token}＝${a.text}`).join("、")}</span>;
-}
-
 /**
- * 確定の前に、残した記載で略語の印を判定し直す（POST /api/chart/abbrev-check。round-99 C-651。保存しない）。
- * 返したまとめで選ぶボタンを出し直し、選んでいない語があれば waiting に並べる（呼び出し側は確定を送らない）
- */
-export async function recheckAbbrevs(noteId: number, facts: unknown[], acts: ChartAct[]): Promise<{ abbrev: AbbrevSummary; waiting: string[] }> {
-  const abbrev = await postJson<AbbrevSummary>("/api/chart/abbrev-check", { noteId: String(noteId), facts, acts });
-  return { abbrev, waiting: "unseen" in abbrev ? [] : abbrev.unlinked.filter((u) => u.choice === null).map((u) => u.token) };
-}
-export const ABBREV_WAITING = (w: string[]) => `略語の確かめ待ちです：${w.join("・")} は、残した記載のどれにも結び付いていません。上の「どの記載にも結び付かない略語」で選んでから確定してください`;
-
-/** 選ぶ一覧の 1 行（GET /api/chart/abbrev-choices） */
-type ChoiceRow = { noteId: number; claimId: string; date: string; sentence: string; choice: AbbrevChoice | null };
-
-/**
- * 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない。
- * どの記載にも結び付かない語は、語ごとに一覧（その月にその語が出ているカルテと、その語を含む文）を開いて、並んだカルテにまとめて選ぶ（作り直しの補い C-652）。
- * 選んだ扱いは、選んだときに並んでいたカルテにだけ効く
+ * 略語のまとめ（FR-211。plan-fr211.md「辞書方式の決め」2〜4。カルテを書いた直後と貼った直後に出す）。印がなければ何も出さない。
+ * 辞書にある略語は、意味の候補（万病辞書・クリニックの辞書）と「その他」「判定不能」から選ぶ。候補は正しいとはかぎらない。Lv.4 までは必ず医師確認に回し、Lv.5 からは回すかを選ぶ。
+ * 辞書にない略語は「算定に関係なし」か「医師に聞く」を選び、このカルテだけ LLM の候補と自動の当て方を止める。どれも確定と月末の点検は止めない（「医師確認中」の札だけ）
  */
 export function AbbrevSummaryNote({ abbrev, noteId }: { abbrev: AbbrevSummary | undefined; noteId: number }) {
-  const [chosen, setChosen] = useState<Record<string, AbbrevChoice | null>>({});
-  const [lists, setLists] = useState<Record<string, { rows: ChoiceRow[]; picked: number[] }>>({});
+  const [cur, setCur] = useState<AbbrevSummary | undefined>(abbrev);
+  const [draft, setDraft] = useState<Record<string, { option: string; meaning: string; ask: boolean }>>({});
   const [err, setErr] = useState("");
-  if (!abbrev) return null;
-  if ("unseen" in abbrev) return <p className="muted" style={{ margin: 0 }}>{abbrev.unseen}</p>;
-  if (abbrev.marks.length === 0) return null;
-  const ym = abbrev.yearMonth;
-  async function open(token: string) {
+  const a = cur ?? abbrev;
+  if (!a) return null;
+  if ("unseen" in a) return <p className="muted" style={{ margin: 0 }}>{a.unseen}</p>;
+  if (a.marks.length === 0) return null;
+  async function save(token: string, d: { option: string; meaning: string; ask: boolean }) {
     setErr("");
     try {
-      const rows = await getJson<ChoiceRow[]>(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: ym, token })}`);
-      setLists((cur) => ({ ...cur, [token]: { rows, picked: rows.map((r) => r.noteId) } }));
+      setCur(await postJson<AbbrevSummary>("/api/chart/abbrev-selections", { noteId: String(noteId), token, option: d.option, ...(d.meaning.trim() ? { meaning: d.meaning.trim() } : {}), askDoctor: d.ask }));
     } catch (e) {
       setErr((e as Error).message);
     }
   }
-  async function choose(token: string, choice: AbbrevChoice) {
-    const l = lists[token];
-    if (!l || l.picked.length === 0) return;
-    setErr("");
-    try {
-      const rows = await postJson<ChoiceRow[]>("/api/chart/abbrev-choices", { yearMonth: ym, token, noteIds: l.picked.map(String), choice });
-      setLists((cur) => ({ ...cur, [token]: { rows, picked: rows.filter((r) => r.choice === null).map((r) => r.noteId) } }));
-      setChosen((cur) => ({ ...cur, [token]: rows.find((r) => r.noteId === noteId)?.choice ?? null }));
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
-  const choiceOf = (u: { token: string; choice: AbbrevChoice | null }) => (u.token in chosen ? chosen[u.token] : u.choice);
-  const waiting = abbrev.unlinked.filter((u) => choiceOf(u) === null);
   return (
-    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div>
-        略語の印：{abbrev.marks.length} 語（{abbrev.marks.join("・")}）。医師に聞く記載：{abbrev.asked} 件。答えが来るまで、その行為の候補は書かれた名前からだけ出します（名前で探して当てることはできます）
-      </div>
-      {abbrev.unlinked.length > 0 && (
-        <div role="group" aria-label="どの記載にも結び付かない略語" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div>どの記載にも結び付かない略語があります。語ごとに一覧を開き、並んだカルテについて選んでください（選んだときに並んでいたカルテだけに効きます。選ぶまで確定できません）</div>
-          {abbrev.unlinked.map((u) => {
-            const l = lists[u.token];
-            const cur = choiceOf(u);
-            return (
-              <div key={u.token} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div className="chips" style={{ alignItems: "center" }}>
-                  <span className="badge">{u.token}</span>
-                  <span className="muted">このカルテ：{cur ?? "未選択"}</span>
-                  <button onClick={() => void open(u.token)}>{l ? "一覧を開き直す" : "一覧を開く"}</button>
-                </div>
-                {l && (
-                  <>
-                    <ul style={{ margin: 0, paddingLeft: 20 }}>
-                      {l.rows.map((r) => (
-                        <li key={r.noteId}>
-                          <label>
-                            <input type="checkbox" checked={l.picked.includes(r.noteId)} onChange={(e) => setLists((c) => ({ ...c, [u.token]: { ...l, picked: e.target.checked ? [...l.picked, r.noteId] : l.picked.filter((x) => x !== r.noteId) } }))} />{" "}
-                            {r.claimId}　{r.date}：「{r.sentence}」{r.noteId === noteId ? "（このカルテ）" : ""}　{r.choice ?? "未選択"}
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="chips">
-                      {ABBREV_CHOICES.map((c) => (
-                        <button key={c} disabled={l.picked.length === 0} onClick={() => void choose(u.token, c)}>
-                          選んだカルテを「{c}」にする
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-          {waiting.length > 0 && <div className="muted">略語の確かめ待ち：{waiting.map((u) => u.token).join("・")}</div>}
-        </div>
+    <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div>略語：{a.marks.join("・")}。意味を選んでください（選ばなくても確定できます）。</div>
+      {a.hold && <div className="muted">辞書にない略語があるので、このカルテの行ったことは自動で当てず、AI の挙げた語でも候補を出しません。名前の候補と、名前で探す欄から選んでください。</div>}
+      {a.tokens.map((t) => {
+        const d = draft[t.token] ?? { option: t.selection?.option ?? "", meaning: t.selection?.meaning ?? "", ask: t.selection?.askDoctor ?? false };
+        const set = (n: Partial<typeof d>) => setDraft({ ...draft, [t.token]: { ...d, ...n } });
+        const options = t.inDict ? ABBREV_DICT_OPTIONS : ABBREV_NODICT_OPTIONS;
+        return (
+          <div key={t.token} role="group" aria-label={`略語 ${t.token}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div className="chips" style={{ alignItems: "center" }}>
+              <span className="badge">{t.token}</span>
+              {!t.inDict && <span className="muted">辞書にない略語</span>}
+              {t.selection && <span className="muted">選んだ扱い：{t.selection.option}{t.selection.meaning ? `（${t.selection.meaning}）` : ""}</span>}
+              {t.doctorPending && <span className="badge">医師確認中</span>}
+            </div>
+            {t.inDict && (
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {t.candidates.map((c) => (
+                  <li key={c.meaning}>
+                    <label>
+                      <input type="radio" name={`abbrev-${noteId}-${t.token}`} checked={d.option === "辞書の意味" && d.meaning === c.meaning} onChange={() => set({ option: "辞書の意味", meaning: c.meaning })} /> {c.meaning}
+                      <span className="muted">（{c.source}{c.reliability ? `・信頼度 ${c.reliability}` : ""}）</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="chips">
+              {options.filter((o) => o !== "辞書の意味").map((o) => (
+                <label key={o}><input type="radio" name={`abbrev-${noteId}-${t.token}`} checked={d.option === o} onChange={() => set({ option: o, meaning: "" })} /> {o}</label>
+              ))}
+              {d.option === "その他" && <input aria-label="意味" placeholder="意味" maxLength={100} value={d.meaning} onChange={(e) => set({ meaning: e.target.value })} />}
+              {t.inDict && (
+                <label className="muted">
+                  <input type="checkbox" disabled={a.mustAsk} checked={a.mustAsk || d.ask} onChange={(e) => set({ ask: e.target.checked })} /> 医師確認に回す{a.mustAsk ? "（Lv.4 までは必ず回します）" : ""}
+                </label>
+              )}
+              <button disabled={!d.option || (d.option === "その他" && !d.meaning.trim())} onClick={() => void save(t.token, d)}>残す</button>
+            </div>
+          </div>
+        );
+      })}
+      {a.credit && (
+        <p className="muted" style={{ margin: 0 }}>
+          出典：{a.credit.credit}（<a href={a.credit.url} target="_blank" rel="noreferrer">{a.credit.name}</a>）
+        </p>
       )}
       {err && <div className="muted">{err}</div>}
     </div>
@@ -225,6 +192,8 @@ export function ActsReviewPanel(props: {
   /** 時刻の入力欄に使う請求とその日（design.md §16-6。カルテの画面のその日の欄） */
   claimId?: string;
   date?: string;
+  /** そのカルテの id（候補の引き直しで、そのカルテの略語による止め方を使う。FR-211） */
+  noteId?: number;
 }) {
   const { ym, review, rows, setRows, rx, rxChoice } = props;
   const set = (i: number, r: ActRow) => setRows(rows.map((x, j) => (j === i ? r : x)));
@@ -246,10 +215,9 @@ export function ActsReviewPanel(props: {
           </select>
           <input value={r.written} aria-label="書かれた名前" onChange={(e) => set(i, { ...r, written: e.target.value })} style={{ width: 200 }} />
           <input value={r.quantity ?? ""} aria-label="回数・量" placeholder="回数・量" onChange={(e) => set(i, { ...r, quantity: e.target.value })} style={{ width: 90 }} />
-          {abbrevBadge(r.abbrev, r.sel)}
         </div>
         <label className="muted">カルテの「<input value={r.quote} aria-label="カルテの文字" onChange={(e) => set(i, { ...r, quote: e.target.value })} style={{ width: 260 }} />」から</label>
-        {picker && r.keep && <MatchPicker item={r} table={tableKeyOfAct(r.category)} ym={ym} written={r.written} lookup={r.lookup} quote={r.quote} onChange={(s) => set(i, { ...r, ...s })} />}
+        {picker && r.keep && <MatchPicker item={r} table={tableKeyOfAct(r.category)} ym={ym} written={r.written} lookup={r.lookup} {...(props.noteId ? { at: { noteId: props.noteId, index: i } } : {})} onChange={(s) => set(i, { ...r, ...s })} />}
         {r.with.map((c, j) => {
           const setC = (n: ChildRow) => set(i, { ...r, with: r.with.map((x, k) => (k === j ? n : x)) });
           return (
@@ -259,9 +227,8 @@ export function ActsReviewPanel(props: {
                 <input value={c.written} aria-label="使った薬・器材の名前" onChange={(e) => setC({ ...c, written: e.target.value })} style={{ width: 200 }} />
                 <input value={c.quantity ?? ""} aria-label="使った量" placeholder="量" onChange={(e) => setC({ ...c, quantity: e.target.value })} style={{ width: 90 }} />
                 <span className="muted">カルテの「{c.quote}」から</span>
-                {abbrevBadge(c.abbrev, c.sel)}
               </div>
-              {c.keep && r.keep && <MatchPicker item={c} table={tableKeyOfChild(c.kind)} ym={ym} written={c.written} lookup={c.lookup} quote={c.quote} onChange={(s) => setC({ ...c, ...s })} />}
+              {c.keep && r.keep && <MatchPicker item={c} table={tableKeyOfChild(c.kind)} ym={ym} written={c.written} lookup={c.lookup} {...(props.noteId ? { at: { noteId: props.noteId, index: i, child: j } } : {})} onChange={(s) => setC({ ...c, ...s })} />}
             </div>
           );
         })}

@@ -3,7 +3,7 @@
 // 訪問・往診の出来事は作らない。確かめたあとは、点検をやり直すと B の欄（取り忘れ）がこのカルテで動く。同意・外部送信の注意書きは、今のカルテの保存と同じ
 import { useState } from "react";
 import type { AbbrevSummary, ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
-import { ABBREV_WAITING, AbbrevSummaryNote, ActsReviewPanel, actsToSave, recheckAbbrevs, rowsOf, type ActRow, type ActsReview } from "../chart/acts-review";
+import { AbbrevSummaryNote, ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "../chart/acts-review";
 import { Notice } from "../consent";
 import { postJson } from "../get-json";
 
@@ -41,10 +41,6 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
     if (!ex) return;
     setErr("");
     try {
-      // 外した行為に結び付いていた略語があれば、選ぶボタンを出し直して止める（FR-211。round-99 C-651）
-      const check = await recheckAbbrevs(ex.id, [], actsToSave(rows));
-      setEx({ ...ex, abbrev: check.abbrev });
-      if (check.waiting.length > 0) return setErr(ABBREV_WAITING(check.waiting));
       await postJson("/api/chart/acts", { noteId: String(ex.id), facts: [], acts: actsToSave(rows), rx: ex.rx, rxChoice, rxConfirmed });
       setMsg(`${ex.date} のカルテを確かめて残しました。`);
       setEx(null);
@@ -80,7 +76,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
       ) : (
         <div>
           <AbbrevSummaryNote abbrev={ex.abbrev} noteId={ex.id} />
-          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={claimId} date={ex.date} />
+          <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={claimId} date={ex.date} noteId={ex.id} />
           {ex.actsDropped.length > 0 && <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました。</div>}
           <button className="primary" onClick={save}>これで確かめる（{ex.date}）</button>
         </div>

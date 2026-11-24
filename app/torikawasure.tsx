@@ -4,7 +4,7 @@
 // 言わなかったもの（理由ごとの数。たたむ。開くと候補ごとの書かれた名前・日・理由）→ 当てられない行為（候補から選ぶ入口。たたむ。X-157）→ 見ていないもの（たたむ）。
 // 指摘はどれも条件つき（控えめな見た目）。点数・金額は出さない。指摘がないことを「取り忘れなし」とは言わない
 import { useState } from "react";
-import { tableKeyOfAct, tableKeyOfChild, type AbbrevState, type ActMatch } from "../src/chart/acts";
+import { tableKeyOfAct, tableKeyOfChild, type ActMatch } from "../src/chart/acts";
 import type { G11Result, G11Unmatched } from "../src/generic/g11";
 import { MatchPicker } from "./chart/acts-review";
 import { postJson } from "./get-json";
@@ -73,9 +73,6 @@ export function Torikawasure({ data, chartHref, claimId }: { data: TorikawasureV
   );
 }
 
-/** 略語を医師に聞く行為の札（FR-211） */
-const ABBREV_LABEL: Record<AbbrevState, string> = { asking: "略語を医師に確かめ中", unresolved: "医師が判定不能・その他と答えた略語", answered: "医師の答えあり（候補から選んでください）" };
-
 /** 当てられない行為 1 つ：保存したカルテの行為なら、候補・探すから選んで残す（POST /api/chart/acts。選ぶのは本人。design.md §15-9）。手技で使った薬・器材は child を付ける（X-161） */
 function UnmatchedPick({ u }: { u: G11Unmatched }) {
   const [item, setItem] = useState<{ m: { initial: ActMatch | null; candidates: { tbl: ActMatch["tbl"]; code: string; name: string; prior: boolean }[] }; sel: ActMatch | null }>({ m: { initial: null, candidates: [] }, sel: null });
@@ -96,11 +93,10 @@ function UnmatchedPick({ u }: { u: G11Unmatched }) {
     <div className="notice">
       <div>
         {md(u.date)} {u.child ? `「${u.child.parent}」で使った${u.written}（${u.child.kind}）` : `${u.written}（${u.category}）`}
-        {u.abbrev && <span className="badge">{ABBREV_LABEL[u.abbrev]}</span>}
       </div>
       {canPick ? (
         <>
-          {/* 略語を医師に聞いた行為は、医師の「指すものを記入する」の答えの語で候補を出す（FR-211。位置を渡す） */}
+          {/* そのカルテの略語による止め方で候補を出す（FR-211 辞書方式の決め 2・4。位置を渡す） */}
           <MatchPicker item={item} table={u.child ? tableKeyOfChild(u.child.kind) : tableKeyOfAct(u.category)} ym={u.date.slice(0, 7)} written={u.written} lookup={[]} onChange={setItem} at={{ noteId: u.noteId!, index: u.index!, ...(u.child ? { child: u.child.index } : {}) }} />
           <button disabled={!item.sel} onClick={save}>選んで残す</button>
         </>

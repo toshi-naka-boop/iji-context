@@ -19,7 +19,7 @@ import { colorOf } from "../work/board";
 import { ClaimPreview } from "./claim-preview";
 import { NoteList } from "./note-list";
 import { ConfirmedFixes } from "./confirmed-fixes";
-import { ABBREV_WAITING, AbbrevSummaryNote, ActsReviewPanel, actsToSave, recheckAbbrevs, rowsOf, type ActRow, type ActsReview } from "./acts-review";
+import { AbbrevSummaryNote, ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "./acts-review";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[]; acts: ChartAct[]; rx: RxNote[]; actsDropped: { fact: unknown; why: string }[]; review: ActsReview; abbrev?: AbbrevSummary };
@@ -123,11 +123,7 @@ export default function Chart() {
     if (!ex || !p) return;
     setErr("");
     try {
-      // 外した記載に結び付いていた略語があれば、選ぶボタンを出し直して止める（FR-211。round-99 C-651）
       const kept = rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f);
-      const check = await recheckAbbrevs(ex.id, kept, actsToSave(actRows));
-      setEx({ ...ex, abbrev: check.abbrev });
-      if (check.waiting.length > 0) return setErr(ABBREV_WAITING(check.waiting));
       // 事実と行ったことを、1 回の確かめで保存する（design.md §15-6）
       const r = await postJson<{ claimId: string; date: string }>("/api/chart/acts", {
         noteId: String(ex.id),
@@ -269,15 +265,13 @@ export default function Chart() {
                       <input type="checkbox" checked={r.keep} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, keep: e.target.checked } : x)))} /> {r.kind}：
                     </label>
                     <input value={r.value} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} style={{ width: 160 }} />
-                    {/* 略語の印（FR-211）：結び付くのは病名の記載だけ。確定すると医師に確かめる（ほかの事実の略語は、上の「結び付かない略語」で選ぶ） */}
-                    {r.abbrev && r.abbrev.length > 0 && <span className="badge">略語：{r.abbrev.join("・")}（確定すると医師に確かめます）</span>}
                     <div className="muted">カルテの「{r.quote}」から</div>
                   </div>
                 ))}
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={p.claimId} date={ex.date} />
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={p.claimId} date={ex.date} noteId={ex.id} />
                 {ex.actsDropped.length > 0 && (
                   <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
                 )}

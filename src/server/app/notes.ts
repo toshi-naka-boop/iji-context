@@ -1,10 +1,11 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
 import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
-import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActChild, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
+import { ABBREV_DICT_OPTIONS, ABBREV_NODICT_OPTIONS, tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type AbbrevToken, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
-import { abbrevMarks, abbrevVocabOf, askedItems, itemKeyOf, linkedTokens, markDay, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { abbrevMarks, abbrevVocabOf, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { candidatesOf, MANBYO_CREDIT, manbyoOf } from "../../chart/abbrev-dict";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
 import { withMasters } from "../../masters/db";
@@ -36,7 +37,7 @@ import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
 import { createTorikawasure, type TextDay } from "./torikawasure";
-import { ABBREV_WRITE_IN, createDoctorAbbrevs, forgetAbbrevAnswers } from "./doctor-abbrevs";
+import { createDoctorAbbrevs, forgetAbbrevAnswers } from "./doctor-abbrevs";
 import { RULE_CODES, structuredConfig } from "../../structured/rule-codes";
 import { hasTimeHint } from "../../structured/time-hint";
 import { rxConfirmedOf, rxHashOf } from "../../structured/rx-mark";
@@ -56,7 +57,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { cases, caseOf, isUploaded } = casesOf;
   // 略語の医師への確認（FR-211）：問いと答え。答えは候補を作るときと B の欄の数に使う
   const abbrevs = createDoctorAbbrevs(ctx, clock, clerks, (claimId) => caseOf(claimId).yearMonth);
-  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined, abbrevs.stateOf);
+  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -115,56 +116,97 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
     const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
     if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
-    // 略語の印（FR-211）は保存のときにサーバーが付け直す（画面から来た値は使わない）
-    const vocab = withMasters((db) => abbrevVocabOf(db, caseOf(r.claim_id).yearMonth));
-    const note = JSON.parse(r.note) as ChartNote;
-    const day = vocab ? markDay([], v.facts, vocab, noteText(note)) : null;
-    if (day) assertChosen(id, day.unlinked);
-    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(day ? day.facts : v.facts), id);
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
   // ───────────────────────────────────────────────────────────────────────
   // 分からない略語の印（spec FR-211。src/chart/abbrev.ts）。決まった規則だけで、LLM は使わない
 
-  /**
-   * 略語に結び付く書き方か（src/chart/abbrev.ts の linkedTokens と同じ規則。plan-fr211.md「規則の作り直し」3）：書かれた名前に分からない略語があるか、
-   * 引用を渡したときは、書かれた名前が引用に含まれず引用に分からない略語があるか。結び付く書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さず、初期値に当てない
-   */
-  const markedIn = (vocab: AbbrevVocab | null) => (written: string, quote?: string) => vocab !== null && linkedTokens(written, quote ?? written, vocab).length > 0;
-  /**
-   * 取り出した直後の行ったこと・事実に印を付ける（FR-211）。聞く行為の lookup は空にする（保存もしない）。
-   * 返すのは、印を付けた行ったこと・事実と、画面に出す印のまとめ
-   */
-  function markExtracted(id: number, acts: ChartAct[], facts: ExtractedFact[]): { acts: ChartAct[]; facts: ExtractedFact[]; abbrev: AbbrevSummary } {
+  /** 事務のレベル（略語を必ず医師確認に回すかを決める。辞書方式の決め 3。今のレベルの仕組みから、src/server/app.ts が渡す） */
+  let levelOf: (clerkId: string) => number = () => 0;
+  const setLevelOf = (fn: (clerkId: string) => number) => {
+    levelOf = fn;
+  };
+  /** 略語を必ず医師確認に回すレベルの上限（Lv.4 まで。Lv.5 からは事務が選べる） */
+  const MUST_ASK_MAX_LEVEL = 4;
+  /** そのカルテの略語の状態：印の語・略語ごとの辞書の候補・辞書にない略語があるか（hold）。マスターがなければ null */
+  function abbrevStateOf(id: number): { yearMonth: string; marks: string[]; tokens: { token: string; inDict: boolean; candidates: AbbrevToken["candidates"] }[]; hold: boolean } | null {
     const r = noteRow(id);
     const yearMonth = caseOf(r.claim_id).yearMonth;
     return withMasters((db) => {
       const vocab = abbrevVocabOf(db, yearMonth);
-      if (!vocab) return { acts, facts, abbrev: { unseen: NO_MASTER_NOTE } };
-      const { acts: a, facts: f, marks, unlinked } = markDay(acts, facts, vocab, noteText(JSON.parse(r.note) as ChartNote));
-      const asked = a.flatMap((x) => [x.abbrev && !x.match ? 1 : 0, ...(x.with ?? []).map((c) => (c.abbrev && !c.match ? 1 : 0))]).reduce<number>((n, k) => n + k, 0) + (r.kind === "記録" ? 0 : f.filter((x) => x.kind === "病名の記載" && x.abbrev).length);
-      return { acts: a, facts: f, abbrev: { marks, asked, yearMonth, unlinked: unlinked.map((token) => ({ token, choice: abbrevs.choiceFor(id, token) })) } };
+      if (!vocab) return null;
+      const marks = abbrevMarks(noteText(JSON.parse(r.note) as ChartNote), vocab);
+      const manbyo = manbyoOf(db);
+      const tokens = marks.map((token) => ({ token, ...candidatesOf(token, manbyo, abbrevs.clinicMeanings(token)) }));
+      return { yearMonth, marks, tokens, hold: tokens.some((t) => !t.inDict) };
     });
   }
-  /**
-   * 確定の前に、残した記載（画面で外したものを除いた行為・事実）で印を判定し直す（round-99 C-651。保存しない）。
-   * 外した記載に結び付いていた語は、結び付かない語として戻り、画面がその語の選ぶボタンを出し直す。権限は確定と同じ（訪問カルテは書いた本人だけ）
-   */
-  function recheckAbbrev(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[] }): AbbrevSummary {
-    clerk(clerkId);
-    const r = noteRow(id);
-    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
-    const note = JSON.parse(r.note) as ChartNote;
-    const facts = validateFacts({ facts: input.facts }, note).facts;
-    const acts = validateActs({ acts: input.acts, rx: [] }, noteText(note), true).acts;
-    return markExtracted(id, acts, r.kind === "記録" ? [] : facts).abbrev;
+  /** 画面に出す略語のまとめ（候補・事務の選んだ扱い・医師確認中か） */
+  function abbrevSummaryOf(id: number, clerkId: string): AbbrevSummary {
+    const st = abbrevStateOf(id);
+    if (!st) return { unseen: NO_MASTER_NOTE };
+    return {
+      marks: st.marks,
+      yearMonth: st.yearMonth,
+      hold: st.hold,
+      mustAsk: levelOf(clerkId) <= MUST_ASK_MAX_LEVEL,
+      credit: st.tokens.some((t) => t.candidates.some((c) => c.source === "万病辞書")) && MANBYO_CREDIT ? { credit: MANBYO_CREDIT.credit, name: MANBYO_CREDIT.name, url: MANBYO_CREDIT.url } : null,
+      tokens: st.tokens.map((t) => {
+        const sel = abbrevs.selectionOf(id, t.token);
+        return { ...t, selection: sel ? { option: sel.option, meaning: sel.meaning, askDoctor: sel.askDoctor } : null, doctorPending: abbrevs.doctorPending(id, t.token) };
+      }),
+    };
   }
   /**
-   * 略語の確かめ待ち（規則の作り直し 4）：どの記載にも結び付かない語に、その月の扱い（算定に関係なし・医師に聞く）を選んでいなければ、確かめ済みにしない（409）
+   * 取り出した直後の行ったこと・事実と、画面に出す略語のまとめ（FR-211。辞書方式の決め 2・4）。
+   * 略語のあるカルテは、行ったことの LLM の lookup を空にする（推し量りを見せない・残さない）。行為・事実には結び付けない
    */
-  function assertChosen(noteId: number, unlinked: string[]) {
-    const open = unlinked.filter((t) => abbrevs.choiceFor(noteId, t) === null);
-    if (open.length > 0) throw conflict(`略語の確かめ待ちです：${open.join("・")} は、どの記載にも結び付いていません。「算定に関係なし」か「医師に聞く」を選んでから確かめてください`);
+  function markExtracted(id: number, clerkId: string, acts: ChartAct[], facts: ExtractedFact[]): { acts: ChartAct[]; facts: ExtractedFact[]; abbrev: AbbrevSummary } {
+    const st = abbrevStateOf(id);
+    const a = st && st.marks.length > 0 ? stripLookup(acts) : acts;
+    return { acts: a, facts, abbrev: abbrevSummaryOf(id, clerkId) };
+  }
+  const stripLookup = (acts: ChartAct[]): ChartAct[] => acts.map((a) => ({ ...a, lookup: [], ...(a.with ? { with: a.with.map((c) => ({ ...c, lookup: [] })) } : {}) }));
+  /**
+   * 事務がカルテの略語の扱いを選ぶ（POST /api/chart/abbrev-selections。決め 2〜4。追記だけ）。権限は確定と同じ（訪問カルテは書いた本人だけ）。
+   * 辞書にある略語：辞書の意味（候補から 1 つ）・その他（意味を書く）・判定不能。事務のレベルが Lv.4 までなら必ず医師確認に回し、Lv.5 からは askDoctor で選ぶ。
+   * 辞書にない略語：算定に関係なし・医師に聞く。どれもカルテの確かめと月末の点検は止めない。返すのは、選んだあとのまとめ
+   */
+  function selectAbbrev(clerkId: string, input: { noteId: number; token: string; option: string; meaning?: string; askDoctor?: boolean }): AbbrevSummary {
+    clerk(clerkId);
+    const r = noteRow(input.noteId);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの略語を選べるのは、書いた本人だけです");
+    const st = abbrevStateOf(input.noteId);
+    const t = st?.tokens.find((x) => x.token === input.token);
+    if (!t) throw badRequest("このカルテの略語ではありません", ["token"]);
+    const meaning = input.meaning?.trim() ?? "";
+    if (t.inDict) {
+      if (!(ABBREV_DICT_OPTIONS as readonly string[]).includes(input.option)) throw badRequest("辞書にある略語は、辞書の意味・その他・判定不能から選びます", ["option"]);
+      if (input.option === "辞書の意味" && !t.candidates.some((c) => c.meaning === meaning)) throw badRequest("辞書の候補にない意味です", ["meaning"]);
+      if (input.option === "その他" && meaning === "") throw badRequest("「その他」は、意味を書いてください", ["meaning"]);
+      if (input.option === "判定不能" && meaning !== "") throw badRequest("「判定不能」に、意味は付けません", ["meaning"]);
+      const ask = levelOf(clerkId) <= MUST_ASK_MAX_LEVEL ? true : input.askDoctor === true;
+      abbrevs.saveSelection(clerkId, input.noteId, input.token, { option: input.option, meaning: input.option === "判定不能" ? null : meaning, askDoctor: ask });
+    } else {
+      if (!(ABBREV_NODICT_OPTIONS as readonly string[]).includes(input.option)) throw badRequest("辞書にない略語は、算定に関係なし・医師に聞くから選びます", ["option"]);
+      if (meaning !== "") throw badRequest("辞書にない略語に、意味は付けません", ["meaning"]);
+      abbrevs.saveSelection(clerkId, input.noteId, input.token, { option: input.option, meaning: null, askDoctor: input.option === "医師に聞く" });
+    }
+    return abbrevSummaryOf(input.noteId, clerkId);
+  }
+  /**
+   * 略語による当て方の止め方（辞書方式の決め 2・4。そのカルテだけ）：none＝略語なし／noLookup＝辞書にある略語だけ（LLM の lookup を使わない）／
+   * hold＝辞書にない略語がある（LLM の lookup・前に選んだ対応・初期値〔名称の完全一致〕を止め、名称の決まった規則の候補から事務が選ぶ）
+   */
+  type AbbrevMode = "none" | "noLookup" | "hold";
+  function abbrevModeOf(id: number): AbbrevMode {
+    const st = abbrevStateOf(id);
+    return !st || st.marks.length === 0 ? "none" : st.hold ? "hold" : "noLookup";
+  }
+  function matchFor(mode: AbbrevMode, rows: ReturnType<typeof rowsFor>, key: TableKey, written: string, lookup: string[], yearMonth: string): ItemMatch {
+    if (mode === "hold") return { initial: null, candidates: matchItem(rows, key, written, [], null).candidates };
+    return matchItem(rows, key, written, mode === "noLookup" ? [] : lookup, aliasOf(written, key, yearMonth));
   }
   /** 自由記述の印の語（SOAP に整えたときに消えた略語を見るため）。請求がなければ・マスターがなければ空 */
   function abbrevMarksOf(claimId: string | undefined, text: string): string[] {
@@ -207,19 +249,15 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 確かめる画面に並べる当て方（行為ごと・with の子ごと）と、その診療年月の申告の院内・院外、処方の文から決めた院内・院外の初期値（C-243）。
    * 前に選んだ対応は選んだ状態の初期値で出す（保存は本人の確かめのあと。L-95）。引数に請求を持たない（C-233）
    */
-  function actsReview(yearMonth: string, acts: ChartAct[], rx: RxNote[]): ActsReview {
+  function actsReview(yearMonth: string, acts: ChartAct[], rx: RxNote[], mode: AbbrevMode = "none"): ActsReview {
     return withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
       const rowsOf = (k: TableKey) => {
         if (!rows.has(k)) rows.set(k, rowsFor(db, k, yearMonth));
         return rows.get(k)!;
       };
-      // 印のある書き方（FR-211）は、前に選んだ対応を読まず、LLM の lookup で候補を出さない（書かれた名前の部分一致の候補は出す）
-      const marked = markedIn(abbrevVocabOf(db, yearMonth));
-      // 印のある記載は、名称の完全一致でも自動では当てない（初期値を出さない。X-490：言い換えた書き方が名称と一致しても、原文の略語は医師に聞く）
-      const one = (k: TableKey, written: string, quote: string, lookup: string[]) =>
-        marked(written, quote) ? { initial: null, candidates: matchItem(rowsOf(k), k, written, [], null).candidates } : matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
-      const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.quote, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.quote, c.lookup)) }));
+      const one = (k: TableKey, written: string, lookup: string[]) => matchFor(mode, rowsOf(k), k, written, lookup, yearMonth);
+      const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.lookup)) }));
       const aliasCount = matches.flatMap((m) => [m.act, ...m.with]).filter((m) => m.initial?.by === "alias").length;
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
     });
@@ -228,7 +266,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   function actsReviewOf(id: number, acts: ChartAct[], rx: RxNote[]): ActsReview & { structured: StructuredReview | null } & DayInputs {
     const r = noteRow(id);
     const yearMonth = caseOf(r.claim_id).yearMonth;
-    const review = actsReview(yearMonth, acts, rx);
+    const review = actsReview(yearMonth, acts, rx, abbrevModeOf(id));
     const n = JSON.parse(r.note) as ChartNote;
     return {
       ...review,
@@ -298,30 +336,11 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /**
    * 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで。
-   * 印のある書き方（FR-211）は、前に選んだ対応と画面の lookup を使わない。at（保存したカルテの行為の位置）を渡すと、その記載に効く医師の「指すものを記入する」の答えの語だけを lookup にする（自動では当てない）
+   * noteId（そのカルテ）を渡すと、略語のあるカルテでは画面の lookup を使わず、辞書にない略語のあるカルテでは前に選んだ対応も初期値も出さない（辞書方式の決め 2・4）
    */
-  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], at?: { noteId: number; index: number; child?: number }, quote?: string): ItemMatch {
-    return withMasters((db) =>
-      // 保存したカルテの位置を渡したときは、保存のときの印（引用の原文の語を含む。X-490）も見る
-      // 確かめる画面の引き直しは引用も渡す（C-630。引用で決めた印を、引き直しで外さない）
-      markedIn(abbrevVocabOf(db, yearMonth))(written, quote) || (at !== undefined && storedItemAt(at, written)?.abbrev?.length)
-        ? { initial: null, candidates: matchItem(rowsFor(db, key, yearMonth), key, written, at ? doctorWordsAt(at, written) : [], null).candidates }
-        : matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)),
-    );
-  }
-  /** 保存したカルテの行為・子に効く、医師の「指すものを記入する」の答えの語（書かれた名前が合わない・印がなければ空） */
-  /** 保存したカルテの行為・子（書かれた名前が合わなければ null） */
-  function storedItemAt(at: { noteId: number; index: number; child?: number }, written?: string): ChartAct | ActChild | null {
-    const r = sqlite.prepare("SELECT acts FROM chart_notes WHERE id = ?").get(at.noteId) as { acts: string | null } | undefined;
-    if (!r?.acts) return null;
-    const act = (JSON.parse(r.acts) as StoredActs).acts[at.index];
-    const item = at.child === undefined ? act : act?.with?.[at.child];
-    return item && (written === undefined || normName(item.written) === normName(written)) ? item : null;
-  }
-  function doctorWordsAt(at: { noteId: number; index: number; child?: number }, written?: string): string[] {
-    const item = storedItemAt(at, written);
-    if (!item?.abbrev?.length) return [];
-    return abbrevs.writtenIn(at.noteId, at.child === undefined ? "act" : "child", itemKeyOf(item.written, item.quote), item.abbrev);
+  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], noteId?: number): ItemMatch {
+    const mode = noteId === undefined ? "none" : abbrevModeOf(noteId);
+    return withMasters((db) => matchFor(mode, rowsFor(db, key, yearMonth), key, written, lookup, yearMonth));
   }
   /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
   function searchMasters(key: TableKey, yearMonth: string, q: string) {
@@ -347,9 +366,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const chosen: { written: string; quote: string; key: TableKey; m: ActMatch }[] = [];
     const at = now();
     let vocab: AbbrevVocab | null = null;
-    let markedFacts: ExtractedFact[] = v.facts;
-    let unlinked: string[] = [];
-    const acts = withMasters((db) => {
+
+    let hold = false;
+    const checkedActs = withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
       const check = (key: TableKey, written: string, quote: string, m: ActMatch | null | undefined): ActMatch | null => {
         if (!m) return null;
@@ -368,26 +387,23 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, c.quote, src.with?.[j]?.match) }));
         return act;
       });
-      // 略語の印（FR-211）：当てたあとに付け直す（聞く行為の lookup は残さない）。印のある書き方は、選んだ対応をクリニックごとに覚えない
+      // 略語（FR-211。辞書方式の決め 2・4）：略語のあるカルテは LLM の lookup を残さない。辞書にない略語のあるカルテは、選んだ対応をクリニックごとに覚えない
       vocab = abbrevVocabOf(db, yearMonth);
-      if (!vocab) return checked;
-      const marked = markedIn(vocab);
-      for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].written, chosen[k].quote)) chosen.splice(k, 1);
-      const day = markDay(checked, v.facts, vocab, noteText(note));
-      markedFacts = day.facts;
-      unlinked = day.unlinked;
-      return day.acts;
+      return checked;
     });
-    assertChosen(id, unlinked);
+    const mode = abbrevModeOf(id);
+    hold = mode === "hold";
+    if (hold) chosen.length = 0;
+    const acts = mode === "none" ? checkedActs : stripLookup(checkedActs);
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
     // 「確かめた」の印（design.md §16-4-1）：値を選び直したか、「確かめた」を押したときだけ。初期値のまま保存しただけでは付けない
     const marked = choice !== null && (choice !== rule || input.rxConfirmed === true);
-    const abbrev: StoredActs["abbrev"] = vocab ? { marks: abbrevMarks(noteText(note), vocab), at } : { noMaster: true, at };
+    const abbrev: StoredActs["abbrev"] = vocab ? { marks: abbrevMarks(noteText(note), vocab), at, ...(hold ? { hold: true } : {}) } : { noMaster: true, at };
     const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person", rxConfirmed: marked ? { by: clerkId, at, rxHash: rxHashOf(a.rx) } : null, abbrev };
     sqlite.transaction(() => {
-      sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(markedFacts), JSON.stringify(stored), id);
+      sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(v.facts), JSON.stringify(stored), id);
       for (const c of chosen) {
         const wn = normName(c.written);
         // 投薬は医薬品と第5部の両方を引くので、別の表に残した対応は外す（同じ書き方の対応は 1 つ）
@@ -419,18 +435,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if ((kid ?? act).match) throw conflict("この行為はもう当たっています");
     if (match.by === "name") throw badRequest("選んだ当て方ではありません", ["match"]);
     const key = kid ? tableKeyOfChild(kid.kind) : tableKeyOfAct(act.category);
-    // 医師の答えの語の候補から選んだもの（FR-211）は by を doctor にする（その記載に効く「指すものを記入する」の答えの語で、同じ並べ方の候補に入るとき）
-    const words = (kid ?? act).abbrev?.length ? doctorWordsAt({ noteId: id, index, ...(child !== undefined ? { child } : {}) }) : [];
-    const { row, fromDoctor } = withMasters((db) => {
-      const rows = rowsFor(db, key, caseOf(r.claim_id).yearMonth);
-      return { row: rowIn(rows, match.tbl, match.code), fromDoctor: words.length > 0 && matchItem(rows, key, "", words, null).candidates.some((c) => c.tbl === match.tbl && c.code === match.code) };
-    });
+    const row = withMasters((db) => rowIn(rowsFor(db, key, caseOf(r.claim_id).yearMonth), match.tbl, match.code));
     if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${match.code}`, ["match"]);
-    const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: fromDoctor ? "doctor" : match.by };
+    const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
     const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : kid ? { ...a, with: a.with!.map((x, j) => (j === child ? { ...x, match: m } : x)) } : { ...a, match: m })) };
     const wn = normName((kid ?? act).written);
-    // 印のある書き方（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない
-    const remember = !(kid ?? act).abbrev?.length;
+    // 辞書にない略語のあったカルテ（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない
+    const ab = stored.abbrev;
+    const remember = !(ab && "marks" in ab && ab.hold);
     sqlite.transaction(() => {
       sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
       if (!remember) return;
@@ -505,14 +517,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
           ? [{ index, written: stored.acts[index].written, pairs: o.pairs.map((x) => ({ ref: x.ref, name: x.name })), fold: stored.acts[index].fold ?? null }]
           : [],
       );
-      // 病名の記載への医師の「指すものを記入する」の答え（FR-211。反証 round-96 X-492）：表示するだけで、事実の値は書き換えず、取り出し・判定にも使わない
-      const facts = r.facts === null ? null : (JSON.parse(r.facts) as ExtractedFact[]);
-      const doctorAnswers = askedItems(r.kind, null, facts).flatMap((it) => {
-        const got = abbrevs.answersOf(r.id, "fact", it.key, it.tokens).filter((x) => x.answer.option === ABBREV_WRITE_IN && x.answer.freeText);
-        return got.length > 0 ? [{ index: it.index, value: it.written, quote: it.quote, answers: got.map((x) => ({ token: x.token, text: x.answer.freeText! })) }] : [];
-      });
-      if (mark === null && pairs.length === 0 && doctorAnswers.length === 0) return [];
-      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs, ...(doctorAnswers.length > 0 ? { doctorAnswers } : {}) }];
+      if (mark === null && pairs.length === 0) return [];
+      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs }];
     });
   }
   /** 保存した行ったこと（確かめていなければ null） */
@@ -749,9 +755,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  /** どの記載にも結び付かない語の扱いを、一覧でまとめて選ぶ（事務。GET・POST /api/chart/abbrev-choices） */
-  const { chooseAbbrev, abbrevChoiceList } = abbrevs;
-  return { abbrevs, chooseAbbrev, abbrevChoiceList, recheckAbbrev, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { abbrevs, setLevelOf, selectAbbrev, abbrevSummaryOf, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

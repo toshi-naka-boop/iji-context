@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["abbrev_answer_items", "abbrev_answers", "abbrev_choices", "app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "structured_inputs", "submissions"];
+const APP_TABLES = ["abbrev_answer_items", "abbrev_answers", "abbrev_dictionary", "abbrev_selections", "app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "structured_inputs", "submissions"];
 
 /** マイグレーション 21・22 の表（介護保険・ほかの医療機関との調整。design.md §18-2） */
 const V21_22 = ["care_homes", "patient_care", "other_institutions", "other_institutions_none"];
@@ -19,7 +19,7 @@ const V23 = ["oxygen_prices"];
 /** マイグレーション 24 の表（略語の医師への確認の答え。spec FR-211） */
 const V24 = ["abbrev_answer_items", "abbrev_answers"];
 /** マイグレーション 25 の表（どの記載にも結び付かない略語の扱い。FR-211 の規則の作り直し 4） */
-const V25 = ["abbrev_choices"];
+const V25 = ["abbrev_dictionary", "abbrev_selections"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -245,7 +245,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     expect(migrate(db, APP_MIGRATIONS.slice(0, 25))).toBe(25);
     expect(tables(db).filter((x) => !before.includes(x))).toEqual(V25);
     expect(db.prepare("SELECT COUNT(*) AS n FROM abbrev_answers").get()).toEqual({ n: 1 });
-    expect((db.prepare("PRAGMA table_info(abbrev_choices)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "note_id", "token", "choice", "note_hash", "chosen_by", "chosen_at"]);
+    expect((db.prepare("PRAGMA table_info(abbrev_selections)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "note_id", "token", "option", "meaning", "ask_doctor", "chosen_by", "chosen_at"]);
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {

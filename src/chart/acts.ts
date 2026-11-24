@@ -11,11 +11,10 @@ export type ChildKind = (typeof CHILD_KINDS)[number];
 export const MASTER_TABLES = ["shinryo", "iyakuhin", "tokutei"] as const;
 export type Tbl = (typeof MASTER_TABLES)[number];
 
-/** 当てた結果。by：name＝名称の完全一致が 1 つ／alias＝前に選んだもの／candidate＝候補から選んだ／search＝探して選んだ／doctor＝医師の略語の答えの語の候補から選んだ（FR-211） */
-export type ActMatch = { tbl: Tbl; code: string; name: string; by: "name" | "alias" | "candidate" | "search" | "doctor" };
+/** 当てた結果。by：name＝名称の完全一致が 1 つ／alias＝前に選んだもの／candidate＝候補から選んだ／search＝探して選んだ */
+export type ActMatch = { tbl: Tbl; code: string; name: string; by: "name" | "alias" | "candidate" | "search" };
 
-/** abbrev：書かれた名前の分からない略語の印（FR-211。保存のときにサーバーが付け直す。src/chart/abbrev.ts） */
-export type ActChild = { kind: ChildKind; written: string; lookup: string[]; quantity?: string; quote: string; match?: ActMatch | null; abbrev?: string[] };
+export type ActChild = { kind: ChildKind; written: string; lookup: string[]; quantity?: string; quote: string; match?: ActMatch | null };
 export type ChartAct = {
   category: ActCategory;
   /** カルテに書かれた名前（書かれたとおり） */
@@ -31,25 +30,31 @@ export type ChartAct = {
   match?: ActMatch | null;
   /** たたんだ印（design.md §16-3）。当てられない行為に本人が「同じ（ref の構造化データの行為）」「違う（same: false）」を選んだときだけ持つ */
   fold?: ActFold;
-  /** 書かれた名前の分からない略語の印（FR-211。保存のときにサーバーが付け直す。画面から来た値は使わない） */
-  abbrev?: string[];
 };
 /**
  * 医師に略語を聞く行為か（FR-211）：印があり、当てておらず、たたんでもいない（「違う」を選んだ行為は聞く）。
  * 子（with）は、子に印があり当てておらず、親をたたんでいないとき
  */
-/** 取り出した直後に画面に出す略語の印のまとめ（FR-211）：カルテの文全体の印の語と、医師に聞く記載の数。マスターがなければ「見ていません」の文 */
-/** unlinked は、どの記載にも結び付かない語と、その月に事務が選んだ扱い（選んでいなければ null。選ぶまで確かめ済みにしない） */
-export type AbbrevSummary = { marks: string[]; asked: number; yearMonth: string; unlinked: { token: string; choice: AbbrevChoice | null }[] } | { unseen: string };
-/** どの記載にも結び付かない語の扱い（事務が選ぶ。その月のその語の分として残し、翌月は選び直す。規則の作り直し 4） */
-export const ABBREV_CHOICES = ["算定に関係なし", "医師に聞く"] as const;
-export type AbbrevChoice = (typeof ABBREV_CHOICES)[number];
-/** 聞く記載の答えの状態（FR-211）：asking＝医師に確かめ中／unresolved＝医師が判定不能・その他と答えた／answered＝指すものの記入がある（候補から選ぶ） */
-export type AbbrevState = "asking" | "unresolved" | "answered";
-/** たたんだ行為か（「違う」〔same: false〕はたたまない印なので、たたんだに数えない。反証 round-96 X-491） */
-const foldedAct = (a: Pick<ChartAct, "fold">): boolean => !!a.fold && a.fold.same !== false;
-export const askedAct = (a: Pick<ChartAct, "abbrev" | "match" | "fold">): boolean => (a.abbrev?.length ?? 0) > 0 && !a.match && !foldedAct(a);
-export const askedChild = (a: Pick<ChartAct, "fold">, c: Pick<ActChild, "abbrev" | "match">): boolean => (c.abbrev?.length ?? 0) > 0 && !c.match && !foldedAct(a);
+/** 辞書にある略語に事務が選ぶ扱い（決め 2）：辞書の意味（候補から 1 つ）・その他（意味を書く）・判定不能 */
+export const ABBREV_DICT_OPTIONS = ["辞書の意味", "その他", "判定不能"] as const;
+/** 辞書にない略語に事務が選ぶ扱い（決め 4） */
+export const ABBREV_NODICT_OPTIONS = ["算定に関係なし", "医師に聞く"] as const;
+/** 略語 1 つ：辞書にあるか、意味の候補（万病辞書・クリニックの辞書）、事務の選んだ扱い、医師確認中か */
+export type AbbrevToken = {
+  token: string;
+  inDict: boolean;
+  candidates: { meaning: string; source: "万病辞書" | "クリニックの辞書"; reliability?: string }[];
+  selection: { option: string; meaning: string | null; askDoctor: boolean } | null;
+  doctorPending: boolean;
+};
+/**
+ * 略語の印のまとめ（FR-211。plan-fr211.md「辞書方式の決め」）：カルテの文全体の印の語と、略語ごとの候補・扱い。
+ * hold は辞書にない略語があり、このカルテだけ LLM の lookup と自動選択（初期値）を止めていること。mustAsk は事務のレベルが Lv.4 までで、辞書の略語を必ず医師確認に回すこと。
+ * credit は万病辞書の候補を出すときの出典。マスターがなければ「見ていません」の文
+ */
+export type AbbrevSummary =
+  | { marks: string[]; yearMonth: string; hold: boolean; mustAsk: boolean; credit: { credit: string; name: string; url: string } | null; tokens: AbbrevToken[] }
+  | { unseen: string };
 /**
  * たたむ印（design.md §16-3）。kind：order＝構造化データの行為／rule＝規則で出す算定／device＝患者の情報の機器。by：rule＝規則でたたんだ／person＝本人が選んだ。
  * same が false の印は「違う」を選んだ記録（たたまない）
@@ -180,5 +185,5 @@ export type StoredActs = {
    * 略語の印（FR-211）：marks はカルテの文全体の印の語（S・O だけの語を含む。数を出すだけ）、at は保存した日時（医師への問いの営業日を数える起点）。
    * noMaster はマスターがない・版のない診療年月で、印を付けていない（見ていません）
    */
-  abbrev?: { marks: string[]; at: string } | { noMaster: true; at: string };
+  abbrev?: { marks: string[]; at: string; hold?: true } | { noMaster: true; at: string };
 };

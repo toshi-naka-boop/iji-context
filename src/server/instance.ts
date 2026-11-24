@@ -372,8 +372,8 @@ export async function writeChart(input: { user: User; claimId: string; clerkId: 
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
-  // 分からない略語の印（FR-211）：取り出した直後に付け、聞く行為の lookup を空にする
-  const m = a.markExtracted(saved.id, r.acts, r.facts);
+  // 略語のまとめ（FR-211）：略語のあるカルテは LLM の lookup を空にし、辞書の候補を添える
+  const m = a.markExtracted(saved.id, input.clerkId, r.acts, r.facts);
   // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
   await a.ensureStructured(input.claimId);
   return { ...saved, ...r, ...m, review: a.actsReviewOf(saved.id, m.acts, r.rx) };
@@ -387,8 +387,8 @@ export async function pasteRecord(input: { user: User; claimId: string; clerkId:
   const a = getApp();
   const saved = a.saveRecord(input.claimId, input.clerkId, input.date, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
-  // 分からない略語の印（FR-211）：取り出した直後に付け、聞く行為の lookup を空にする（貼ったカルテは事実を使わないので、行為だけ）
-  const m = a.markExtracted(saved.id, r.acts, []);
+  // 略語のまとめ（FR-211）：略語のあるカルテは LLM の lookup を空にし、辞書の候補を添える（貼ったカルテは事実を使わない）
+  const m = a.markExtracted(saved.id, input.clerkId, r.acts, []);
   // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
   await a.ensureStructured(input.claimId);
   return { ...saved, acts: m.acts, rx: r.rx, actsDropped: r.actsDropped, abbrev: m.abbrev, review: a.actsReviewOf(saved.id, m.acts, r.rx) };

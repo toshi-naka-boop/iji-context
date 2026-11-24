@@ -1,7 +1,7 @@
 // 訪問カルテの入力。書いた人は受け取らない（セッションの本人から決める）
 import { z } from "zod";
 import { FACT_KINDS } from "../../chart/extract";
-import { ABBREV_CHOICES, ACT_CATEGORIES, CHILD_KINDS, MASTER_TABLES, MAX_LOOKUP, TABLE_KEYS } from "../../chart/acts";
+import { ACT_CATEGORIES, CHILD_KINDS, MASTER_TABLES, MAX_LOOKUP, TABLE_KEYS } from "../../chart/acts";
 import { YEAR_MONTH } from "../../demo/period";
 import { SELECTABLE_REVISIONS } from "../../engine/revisions";
 import { MAX_IMAGE_BYTES } from "../../chart/image";
@@ -32,21 +32,19 @@ export const CHART_BODY_BYTES = 5 * MAX_CHART_TEXT * 3 + 4096;
 
 /** カルテの id（chart_notes の連番） */
 export const noteParams = z.strictObject({ id: z.string().regex(/^[1-9][0-9]{0,9}$/) });
-/** 略語の印（FR-211）。画面が受け取った形のまま返してよいが、使わない（保存のときにサーバーが付け直す） */
-const abbrev = z.array(z.string().max(100)).max(50).optional();
 export const confirmBody = z.strictObject({
-  facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT), abbrev })).max(50),
+  facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
 });
 
 /** 行ったこと（design.md §15-6・15-7）。当てたコードは処理の中で、診療年月の 1 枚に実在するかを確かめる */
 const name200 = z.string().max(200);
 const lookup = z.array(z.string().max(100)).max(MAX_LOOKUP);
 const actMatch = z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["name", "alias", "candidate", "search"]) }).nullable().optional();
-const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch, abbrev });
+const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch });
 /** 本人が選んだ「同じ（ref）／違う（same: false）」の印（design.md §16-3）。処理の中で、その日の同じ種類の電子カルテの行為かを確かめる */
 const ref = z.string().min(1).max(100);
 const actFold = z.strictObject({ kind: z.literal("order"), ref: ref.optional(), by: z.literal("person"), same: z.literal(false).optional() }).optional();
-const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch, fold: actFold, abbrev });
+const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch, fold: actFold });
 /** 事実と行ったことを、確かめた 1 回の操作で保存する本文（POST /api/chart/acts） */
 export const actsBody = z.strictObject({
   noteId: noteParams.shape.id,
@@ -89,8 +87,6 @@ export const candidatesQuery = z.strictObject({
   noteId: noteParams.shape.id.optional(),
   index: z.string().regex(/^[0-9]{1,2}$/).optional(),
   child: z.string().regex(/^[0-9]{1,2}$/).optional(),
-  /** その行為の引用（確かめる画面の引き直し。引用で略語の印を決めるので、渡すと自動では当てない。反証 round-97 C-630） */
-  quote: z.string().max(MAX_CHART_TEXT).optional(),
 });
 /** マスターを名前で探す（GET /api/masters/search） */
 /** カルテの構造化データ（GET /api/chart/structured）。患者は患者マスタの id */
@@ -121,13 +117,3 @@ export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT), c
 /** base64 にした画像の長さの上限（5MB の画像は 4/3 倍に膨らむ） */
 export const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 export const imageBody = z.strictObject({ imageBase64: z.string().max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/]*={0,2}$/) });
-const abbrevToken = z.string().regex(/^[A-Za-z]+[0-9]*$/).max(100);
-/** 結び付かない略語を選ぶ一覧（GET /api/chart/abbrev-choices。FR-211 の作り直しの補い C-652）。語は英字の略語の形だけ */
-export const abbrevChoiceQuery = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: abbrevToken });
-/**
- * 結び付かない略語の扱いを、一覧でまとめて選ぶ本文（POST /api/chart/abbrev-choices）。noteIds は選んだときに並んでいたカルテ（効くのはそのカルテだけ）。
- * 選んだ人は受け取らない（セッションの本人から決める）
- */
-export const abbrevChoiceBody = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: abbrevToken, noteIds: z.array(noteParams.shape.id).min(1).max(500), choice: z.enum(ABBREV_CHOICES) });
-/** 確定の前に、残した記載で略語の印を判定し直す本文（POST /api/chart/abbrev-check。round-99 C-651）。形は確かめて保存する本文の行為・事実と同じ */
-export const abbrevCheckBody = z.strictObject({ noteId: noteParams.shape.id, facts: confirmBody.shape.facts, acts: z.array(act).max(100) });

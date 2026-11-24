@@ -1,7 +1,7 @@
 // カルテ・患者・症例・UKE のルート（app/api/**/route.ts）を実際に呼んで確かめる：ログイン・スキーマ・請求 id の形・画像の大きさ・監査ログ。
 // LLM（Agent SDK）は呼ばない。SDK の query を差し替える（llm.runOnce が返した値の structured が、モデルの返事になる）
 import Database from "better-sqlite3";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,28 +58,6 @@ const auditRows = (since = 0) => instance.runAs(user, () => instance.getApp().au
 const fieldsOf = async (r: Response) => ((await r.json()) as { fields?: string[] }).fields;
 
 const NOTE = { s: "動悸なし", o: "脈不整", a: "AF", p: "DOAC 継続", rx: "DOAC" };
-/**
- * NOTE の略語（AF・DOAC）は、取り出した事実・行為のどれにも結び付かない。マスターがあるときは、そのカルテの扱いを選ぶまで確定できない（FR-211 の規則の作り直し 4・補い C-652）。
- * 確定を確かめるテストは、先に一覧（GET /api/chart/abbrev-choices）に並んだカルテに「算定に関係なし」を選んでおく（マスターがなければ一覧は空で、選ばない）。
- * via: "app" は監査ログの行を数えるテストのため、ルートを通さずに同じ処理を呼ぶ
- */
-async function chooseNoteAbbrevs(c: string = cookie, via: { app: User } | null = null) {
-  const { GET, POST } = await import("../../app/api/chart/abbrev-choices/route");
-  for (const token of ["AF", "DOAC"]) {
-    if (via) {
-      instance.runAs(via.app, () => {
-        const a = instance.getApp();
-        const me = instance.clerkIdOf(via.app);
-        const noteIds = a.abbrevChoiceList(me, YM, token).map((x) => x.noteId);
-        if (noteIds.length > 0) a.chooseAbbrev(me, { yearMonth: YM, token, noteIds, choice: "算定に関係なし" });
-      });
-      continue;
-    }
-    const listed = (await (await GET(get(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: YM, token })}`, c))).json()) as { noteId: number }[];
-    if (listed.length === 0) continue;
-    expect((await POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token, noteIds: listed.map((x) => String(x.noteId)), choice: "算定に関係なし" }, c))).status).toBe(200);
-  }
-}
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
 
 describe("ログイン", () => {
@@ -157,8 +135,6 @@ describe("訪問カルテ", () => {
     const before = auditRows().length;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }, { kind: "病名の記載", value: "心不全", quote: "カルテにない言葉" }] }, sessionId: "", stats: {} });
     const written = await chart(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }));
-    // 書いたカルテの略語の扱いを選ぶ（監査ログの行を数えているので、ルートを通さずに同じ処理を呼ぶ）
-    await chooseNoteAbbrevs(cookie, { app: user });
     expect(written.status).toBe(200);
     const w = (await written.json()) as { id: number; date: string; facts: unknown[]; dropped: unknown[] };
     expect(w).toMatchObject({ date: day(13), facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] });
@@ -207,7 +183,6 @@ describe("訪問カルテ", () => {
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] }, sessionId: "", stats: {} });
     const w = (await (await chart(post("/api/chart", { claimId: claimId("K5"), kind: "訪問診療", note: NOTE }))).json()) as { id: number; facts: unknown[] };
-    await chooseNoteAbbrevs();
     // 招待で同じクリニックに入ったベテランが確かめる
     const { code } = instance.getAuth().createInvite(user, "veteran");
     const mate = instance.getAuth().registerWithInvite("chart_mate", "どうりょう", "password123", code);
@@ -228,7 +203,6 @@ describe("訪問カルテ", () => {
     const [mine, theirs] = [owner, mate].map((u) => `resemen_session=${a.createSession(u.id).token}`);
     llm.runOnce.mockResolvedValue({ structured: { facts: [], acts: [], rx: [] }, sessionId: "", stats: {} });
     const w = (await (await chart(post("/api/chart", { claimId: claimId("K5"), kind: "訪問診療", note: NOTE }, mine))).json()) as { id: number };
-    await chooseNoteAbbrevs(mine);
     const body = { noteId: String(w.id), facts: [], acts: [], rx: [] };
     const refused = await acts(post("/api/chart/acts", body, theirs));
     expect([refused.status, ((await refused.json()) as { error: string }).error]).toEqual([403, "この訪問カルテの行ったことを確かめられるのは、書いた本人だけです"]);
@@ -244,7 +218,6 @@ describe("訪問カルテ", () => {
     const w = (await (await chart(post("/api/chart", { claimId: claimId("K1"), kind: "訪問診療", note: NOTE }))).json()) as { id: number };
     const at = params({ id: String(w.id) });
     expect((await claim(get(`/api/chart/${w.id}/claim`), at)).status).toBe(409);
-    await chooseNoteAbbrevs();
     expect((await confirm(post(`/api/chart/${w.id}`, { facts: [] }), at)).status).toBe(200);
     const before = auditRows().length;
 
@@ -392,24 +365,6 @@ describe("訪問カルテ", () => {
     ]);
   });
 
-  const mastersDb = process.env.RESEMEN_MASTER_DIR ? path.join(process.env.RESEMEN_MASTER_DIR, "masters.db") : "";
-  it.skipIf(!mastersDb || !existsSync(mastersDb))("マスターがあるとき、結び付かない略語（AF・DOAC）の扱いを選ばないと確定は 409（略語の確かめ待ち）。選ぶと確定できる（FR-211 の規則の作り直し 4）", async () => {
-    const chart = (await import("../../app/api/chart/route")).POST;
-    const confirm = (await import("../../app/api/chart/[id]/route")).POST;
-    // 選んだ扱いの残っていない別のクリニックで確かめる
-    const a = instance.getAuth();
-    const owner = a.register("chart_abbrev_wait", "かるて", "password123");
-    const mine = `resemen_session=${a.createSession(owner.id).token}`;
-    llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] }, sessionId: "", stats: {} });
-    const w = (await (await chart(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }, mine))).json()) as { id: number; facts: unknown[] };
-    const at = params({ id: String(w.id) });
-    const ng = await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }, mine), at);
-    expect(ng.status).toBe(409);
-    expect(((await ng.json()) as { error: string }).error).toContain("略語の確かめ待ち");
-    await chooseNoteAbbrevs(mine);
-    expect((await confirm(post(`/api/chart/${w.id}`, { facts: w.facts }, mine), at)).status).toBe(200);
-  });
-
   it("摘要欄の「入力が要る」記載（FR-176）：入れると R17 の記載もれが消える。形の合わない値・表にないコードは 400 で残らない。値は監査ログに入らず、カルテを消すと消える", async () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const { POST: confirm, DELETE: remove } = await import("../../app/api/chart/[id]/route");
@@ -429,7 +384,6 @@ describe("訪問カルテ", () => {
     const ok = { slot: SLOT, code: "842100044", text: "９５" };
     // 確かめる前のカルテには入れられない
     expect((await send(ok)).status).toBe(409);
-    await chooseNoteAbbrevs(mine);
     expect((await confirm(post(`/api/chart/${w.id}`, { facts: [] }, mine), at)).status).toBe(200);
     type Entry = { code: string | null; text: string | null; status: string; input?: { slot: string; codes: string[] } };
     const preview = async () => {

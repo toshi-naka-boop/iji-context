@@ -106,10 +106,8 @@ export const POLICY = {
   // 事実と行ったことを、確かめた 1 回の操作で保存する（design.md §15-6）。カルテの保存と同じ
   "POST /api/chart/acts": row(WORK, "none", true),
   // どの記載にも結び付かない略語の扱い（FR-211。規則の作り直し 4）：カルテを確かめる人（事務・ベテラン）が選ぶ。語はカルテの文から拾うので patientData は真
-  "GET /api/chart/abbrev-choices": row(WORK, "none", true),
-  // 確定の前に、残した記載で略語の印を判定し直す（FR-211。round-99 C-651。保存しない）
-  "POST /api/chart/abbrev-check": row(WORK, "none", true),
-  "POST /api/chart/abbrev-choices": row(WORK, "none", true),
+  // 略語の扱いを事務が選ぶ（FR-211 辞書方式の決め 2〜4）：カルテを確かめる人（事務・ベテラン）。カルテの語を受け取るので patientData は真
+  "POST /api/chart/abbrev-selections": row(WORK, "none", true),
   // 行ったことの候補（design.md §15-7）。読むだけ。書かれた名前（カルテの語）を受け取るので、患者の情報として扱う
   "GET /api/chart/acts/candidates": row(WORK, "none", true),
   // カルテの構造化データ（design.md §16-7。段 19a）。読むだけ。今のカルテの読み出しと同じ役割で、患者の情報として扱う（実在のデータは同意のあとだけ）

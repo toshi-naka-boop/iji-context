@@ -69,6 +69,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
   const localPairs = createLocalPairs(ctx, questions);
+  // 略語を必ず医師確認に回すかは、事務のレベルで決める（FR-211 辞書方式の決め 3。今のレベルの仕組み）
+  notes.setLevelOf(localPairs.levelOf);
   const meeting = createMeeting(ctx, clock);
   const prevented = createPrevented(questions, doctor);
   const erase = createErase(ctx, uke, patientFactsOf);
@@ -162,15 +164,11 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     confirmNote,
     confirmActs,
     actsReviewOf,
-    /** 分からない略語の印（FR-211）：取り出した直後の印と、自由記述の印の語 */
+    /** 略語（FR-211。辞書方式）：取り出した直後のまとめ・自由記述の印の語・事務が選ぶ扱い・医師確認の問いと答え */
     markExtracted: notes.markExtracted,
     abbrevMarksOf: notes.abbrevMarksOf,
-    /** 略語の医師への確認（FR-211）：問いの一覧と答え（医師の役割だけ） */
+    selectAbbrev: notes.selectAbbrev,
     doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
-    /** どの記載にも結び付かない略語の扱い（FR-211。事務が選ぶ） */
-    chooseAbbrev: notes.chooseAbbrev,
-    abbrevChoiceList: notes.abbrevChoiceList,
-    recheckAbbrev: notes.recheckAbbrev,
     answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
     actCandidates,
     searchMasters,
