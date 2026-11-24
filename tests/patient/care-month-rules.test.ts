@@ -85,19 +85,20 @@ describe("careCertFor の名前つきの表", () => {
   });
 });
 
-describe("careCertFor の総当たり（C-553）", () => {
-  // 期間つきの行：M に当たる要介護 3（0〜2 月）／要介護 1（0〜2 月。3 未満）／M に当たらないことがある要介護 3（1〜2 月。始まりの日が違う）／
-  // 申請の結果ですか「いいえ」の要介護 3（0〜2 月）／不正な日付。期間のない行：認定なし・申請中・分からない。答えた月はそれぞれ 0〜2
+describe("careCertFor の総当たり（C-553・C-562）", () => {
+  // 月の幅は 0〜5（6 か月の窓の切れ目と、認定が終わったあとの月を含む）。期間つきの行：0〜1 月で終わる要介護 3／0〜5 月の要介護 1（3 未満）／
+  // 2 月から始まる要介護 3（始まりの日が違い、0・1 月には当たらない）／申請の結果「いいえ」の要介護 3（0〜5 月）／不正な日付。期間のない行：認定なし・申請中・分からない。答えた月は 0〜2
   const kinds: Spec[] = [0, 1, 2].flatMap((a): Spec[] => [
-    ["要介護", 3, 0, 2, a],
-    ["要介護", 1, 0, 2, a],
-    ["要介護", 3, 1, 2, a],
-    ["要介護", 3, 0, 2, a, "いいえ"],
+    ["要介護", 3, 0, 1, a],
+    ["要介護", 1, 0, 5, a],
+    ["要介護", 3, 2, 5, a],
+    ["要介護", 3, 0, 5, a, "いいえ"],
     ["要介護", 3, 0, "bad", a],
     ["認定なし", a],
     ["申請中", a],
     ["分からない", a],
   ]);
+  const MONTHS = [0, 1, 2, 3, 4, 5];
   const seqs: Spec[][] = [];
   for (const a of kinds) {
     seqs.push([a]);
@@ -106,28 +107,37 @@ describe("careCertFor の総当たり（C-553）", () => {
       for (const c of kinds) seqs.push([a, b, c]);
     }
   }
-  /** 設計の文：月 m について語る行と、その行の値（確定の値は "要介護3" のような文字、ほかは null） */
-  const talkValue = (s: Spec, m: number): { talks: boolean; value: string | null } => {
+  /**
+   * 設計の文から（実装の式は写さない）：行が語る月の一覧と、行の値（確定の値は "要介護3"・"認定なし"、ほかは null）。
+   * 期間つきの認定は期間の月、認定なし・申請中は答えた月から 6 か月、分からないは答えた月だけ、不正な日付の行は答えた月から先のずっと（ここでは 0〜5 の範囲で）
+   */
+  const spoken = (s: Spec): { months: number[]; value: string | null } => {
+    const range = (a: number, b: number) => MONTHS.filter((k) => k >= a && k <= b);
     if (s[0] === "要介護") {
-      if (s[2] === "bad" || s[3] === "bad") return { talks: answerOf(s) <= m, value: null };
-      return { talks: s[2] <= m && m <= s[3], value: `要介護${s[1]}` };
+      if (s[2] === "bad" || s[3] === "bad") return { months: range(answerOf(s), 99), value: null };
+      return { months: range(s[2], s[3]), value: `要介護${s[1]}` };
     }
-    const a = s[1];
-    if (s[0] === "分からない") return { talks: a === m, value: null };
-    return { talks: a <= m && m <= a + 5, value: s[0] === "認定なし" ? "認定なし" : null };
+    if (s[0] === "分からない") return { months: [s[1]], value: null };
+    return { months: range(s[1], s[1] + 5), value: s[0] === "認定なし" ? "認定なし" : null };
   };
-  /** 設計の文（v41）：y が月 m で x を負かすか：y は x の答えた月から m までのどれかの月について語り（分からないは m について語るときだけ）、答えた月が x と同じか後で、
-   * かつ後に残した。いいえ・分からないの期間つきの認定は申請中を負かさない。期間の重ならない期間つきの認定どうしは負かさない */
-  const periodOf = (s: Spec): [number, number] | null => (s[0] === "要介護" && s[2] !== "bad" && s[3] !== "bad" ? [s[2], s[3]] : null);
-  const defeats = (y: Spec, j: number, x: Spec, i: number, m: number) => {
-    if (!(j > i && answerOf(y) >= answerOf(x))) return false;
-    if (x[0] === "申請中" && y[0] === "要介護" && (y[5] === "いいえ" || y[5] === "分からない")) return false;
-    const px = periodOf(x);
-    const py = periodOf(y);
-    if (px && py && (px[1] < py[0] || py[1] < px[0])) return false;
-    if (y[0] === "分からない") return talkValue(y, m).talks;
-    for (let k = Math.min(answerOf(x), m); k <= m; k++) if (talkValue(y, k).talks) return true;
-    return false;
+  /**
+   * 設計の文（v40・v41）：「行 X は、X の答えた月から M までのどれかの月について語る別の行 Y が、答えた月が X と同じか後で、かつ X より後に残したとき、M では捨てる」。
+   * 例外：いいえ・分からないの期間つきの認定は申請中を捨てない（v40）／期間の重ならない認定どうしは捨て合わない（v41 (2)）／分からないは M について語るときだけ（C-533）
+   */
+  const isDiscarded = (seq: Spec[], xi: number, m: number): boolean => {
+    const x = seq[xi];
+    const window = MONTHS.filter((k) => k >= Math.min(answerOf(x), m) && k <= m);
+    return seq.some((y, yi) => {
+      const ys = spoken(y);
+      const speaksInWindow = y[0] === "分からない" ? ys.months.includes(m) : ys.months.some((k) => window.includes(k));
+      if (!speaksInWindow) return false;
+      if (answerOf(y) < answerOf(x) || yi <= xi) return false;
+      if (x[0] === "申請中" && y[0] === "要介護" && y[5] !== undefined && y[5] !== "はい") return false;
+      const px = x[0] === "要介護" && x[2] !== "bad" && x[3] !== "bad" ? spoken(x).months : null;
+      const py = y[0] === "要介護" && y[2] !== "bad" && y[3] !== "bad" ? ys.months : null;
+      if (px && py && !px.some((k) => py.includes(k))) return false;
+      return true;
+    });
   };
   const valueOf = (st: CareState): string | null => {
     if (!st.known) return null;
@@ -136,34 +146,27 @@ describe("careCertFor の総当たり（C-553）", () => {
     return g.kind === "認定なし" ? "認定なし" : g.kind === "要介護" ? `要介護${g.level}` : null;
   };
 
-  it(`性質 1：値が出た月では、その値と違う M について語る行は、どれも後の行（その行の答えた月から M までのどれかの月について語る行）に答えた月と残した順の両方で負けている（${seqs.length} 通り × 3 か月）`, () => {
+  it(`性質 1：値が出た月では、M について語る行のうち捨てられていない行はすべてその値を持つ（${seqs.length} 通り × ${MONTHS.length} か月）`, () => {
     const bad: string[] = [];
     for (const seq of seqs)
-      for (const m of [0, 1, 2]) {
+      for (const m of MONTHS) {
         const v = valueOf(careCertFor(rows(seq), month(m)));
         if (v === null) continue;
-        const talking = seq.map((s, i) => ({ s, i, ...talkValue(s, m) })).filter((x) => x.talks);
-        const all = seq.map((s, i) => ({ s, i }));
-        const lost = (x: { s: Spec; i: number }) => all.some((y) => defeats(y.s, y.i, x.s, x.i, m));
-        if (talking.some((x) => x.value !== v && !lost(x))) bad.push(`${JSON.stringify(seq)} @${m} → ${v}`);
-        if (!talking.some((x) => x.value === v && !lost(x))) bad.push(`${JSON.stringify(seq)} @${m} → ${v}（その値の行が残っていない）`);
+        const kept = seq.map((_, i) => i).filter((i) => spoken(seq[i]).months.includes(m) && !isDiscarded(seq, i, m));
+        if (kept.length === 0 || kept.some((i) => spoken(seq[i]).value !== v)) bad.push(`${JSON.stringify(seq)} @${m} → ${v}`);
       }
     expect(bad.slice(0, 5)).toEqual([]);
   });
 
-  it("性質 2（逆）：負けていない行の中に、値の違う行か、申請中・分からない・不正な行があれば、分からない（申請中のときは申請中）", () => {
+  it("性質 2（逆）：捨てられていない行の中に、値の違う行か、申請中・分からない・不正な行があれば、分からない（申請中だけなら申請中）", () => {
     const bad: string[] = [];
     for (const seq of seqs)
-      for (const m of [0, 1, 2]) {
-        const talking = seq.map((s, i) => ({ s, i, ...talkValue(s, m) })).filter((x) => x.talks);
-        const all = seq.map((s, i) => ({ s, i }));
-        const rest = talking.filter((x) => !all.some((y) => defeats(y.s, y.i, x.s, x.i, m)));
-        const values = new Set(rest.map((x) => x.value));
-        const conflict = rest.length === 0 || values.has(null) || values.size > 1;
-        if (!conflict) continue;
+      for (const m of MONTHS) {
+        const kept = seq.map((_, i) => i).filter((i) => spoken(seq[i]).months.includes(m) && !isDiscarded(seq, i, m));
+        const values = new Set(kept.map((i) => spoken(seq[i]).value));
+        if (!(kept.length === 0 || values.has(null) || values.size > 1)) continue;
         const st = careCertFor(rows(seq), month(m));
-        const ok = !st.known || st.segments.every((g) => g.kind === "申請中");
-        if (!ok) bad.push(`${JSON.stringify(seq)} @${m} → ${JSON.stringify(st)}`);
+        if (st.known && !st.segments.every((g) => g.kind === "申請中")) bad.push(`${JSON.stringify(seq)} @${m} → ${JSON.stringify(st)}`);
       }
     expect(bad.slice(0, 5)).toEqual([]);
   });
