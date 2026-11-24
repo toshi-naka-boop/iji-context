@@ -7,8 +7,11 @@ import { BUILDING_BAND_GUIDE } from "../../src/messages";
 import type { PatientFinding } from "../../src/patient/checks";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES, type BuildingBandValue, type CareCertValue, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
 
-/** 入力で選べる項目：要介護度は認定（careCert）で入れる（design.md §18-1。今までの careLevel の行は読むだけ） */
-export const INPUT_KEYS = PATIENT_FACT_KEYS.filter((k) => k !== "careLevel");
+/**
+ * 入力で選べる項目：要介護度は認定（careCert）で入れる（design.md §18-1。今までの careLevel の行は読むだけ）。
+ * 居住の場所の 2 値は入れない（住まいの種別を聞き取りの画面で入れる。design.md §18-2。今までの行は、住まいの種別の申告がない月だけ判定に使う）
+ */
+export const INPUT_KEYS = PATIENT_FACT_KEYS.filter((k) => k !== "careLevel" && k !== "residence");
 import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patient/profile";
 import { DevicePanel } from "./device-panel";
 import { CareCertForm, careCertText } from "../care-cert-input";
@@ -171,6 +174,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
                     ? `${rec.checkedAt.slice(0, 10)} に${how(rec.source)}（${show(rec.key, rec.value, rec.validUntil)}）${rec.validUntil ? `・${rec.validUntil} まで` : ""}`
                     : "カルテの値"}
                   {rec?.expired && <span className="notice warn">　有効期間が切れています。確かめ直してください</span>}
+                  {k === "residence" && rec && <span className="notice warn">　古い入力です。住まいの種別で入れ直してください（<a href={`/uke/care-check?claim=${encodeURIComponent(props.claimId)}`}>聞き取りの画面</a>）</span>}
                 </td>
               </tr>
             );

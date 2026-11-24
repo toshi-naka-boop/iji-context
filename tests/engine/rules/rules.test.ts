@@ -419,9 +419,9 @@ describe("R13 週 3 回（算定した行の日で数える）", () => {
 });
 
 describe("R16 管理料の族", () => {
-  it("居宅の患者に施設総管 → use_zaii。居住の場所が不明なら情報不足（clerk）", () => {
+  it("居宅の患者に施設総管 → use_zaii。居住の場所が不明なら情報不足（clerk）（聞くのは住まいの種別。design.md §18-2 C-494）", () => {
     expect(tags(replaceKubun(K2, "C002_2RO1", "C002-2_2RO1"), "R16")).toEqual(["R16:区分誤り:use_zaii"]);
-    expect(of(withFact(K4, "residence", unknown), "R16")).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "residence" } })]);
+    expect(of(withFact(K4, "residence", unknown), "R16")).toEqual([expect.objectContaining({ kind: "情報不足", missing: { target: "clerk", field: "residenceType" } })]);
   });
 });
 

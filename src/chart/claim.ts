@@ -1,6 +1,6 @@
 // カルテの画面の算定プレビュー（spec FR-101。design.md §2-8）：導出の結果（行・根拠・保留・未対応）と検証の結果を、画面に出す形にまとめる。
 // ここは並べ替えと文言だけで、判定はしない（導出は deriveLines、検証は evaluate）。宛先は医療事務なので点数を出してよい
-import type { DeriveResult, LineBasis, Pending, Unsupported } from "../engine/derive";
+import type { DeriveResult, LineBasis, Pending, PendingReason, Unsupported } from "../engine/derive";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimEvent, EngineResult } from "../engine/types";
 import { BY_DECLARATION_NOTE, DECLARED_FACILITY_KEYS, DERIVE_TEXT, findingText, needLabel, pendingText } from "../messages";
@@ -40,7 +40,7 @@ export type ClaimPreview = {
   /** 合計。保留・未対応があるとき（withheld）は出さない */
   total: number | null;
   pending: (
-    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[]; reason?: "note14_conflict" | "note8" | "declaration_conflict" }
+    | { kind: "事実不足"; id: string; text: string; target: "doctor" | "clerk"; blocks: string[]; reason?: PendingReason }
     | { kind: "要選択"; id: string; text: string; options: { id: string; label: string }[]; blocks: string[] }
   )[];
   unsupported: { code: string; text: string }[];

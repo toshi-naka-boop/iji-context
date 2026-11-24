@@ -1,6 +1,7 @@
 // 画面から呼ぶ処理をまとめた層（API Route はここを薄く呼ぶだけ）。データは SQLite と、knowledge/・query-log/ のファイル
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
+import { createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
 import { createClaimReviews } from "./app/claim-reviews";
@@ -46,7 +47,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const uke = createUke(ctx, clerks);
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
   const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
-  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
+  // 介護保険・ほかの医療機関との調整の申告（design.md §18-2。v37）
+  const care = createCare(ctx, clock, clerks);
+  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf, care);
   const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
   const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
@@ -230,6 +233,30 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
     createPair: localPairOps.createPair,
+    // 介護保険・ほかの医療機関との調整の申告（design.md §18-2・§18-5）。答えの月は、開いた請求の診療年月（C-513）
+    careHomes: care.careHomes,
+    saveCareHome: (clerkId: string, input: CareHomeInput) => care.saveCareHome(clerkId, input),
+    careView: (claimId: string) => {
+      const { receipt } = uke.receiptOf(claimId);
+      const patientId = patientFactsOf.ingest(receipt.patient);
+      const eff = care.effectiveCare(patientId, receipt.yearMonth);
+      const others = care.effectiveOthers(patientId, receipt.yearMonth);
+      // 今までに残した 2 値の居住の場所（住まいの種別の申告がない月だけ判定に使う。画面には「古い入力です」）
+      const legacy = eff.residenceType ? null : (patientFactsOf.latestPatientFacts(patientId).find((f) => f.key === "residence")?.value ?? null);
+      return { claimId, yearMonth: receipt.yearMonth, care: eff, legacyResidence: legacy, others: others.rows, none: others.none, homes: care.careHomes() };
+    },
+    saveCare: (claimId: string, clerkId: string, input: CareInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveCare(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOther: (claimId: string, clerkId: string, input: OtherInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOther(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOtherNone: (claimId: string, clerkId: string, input: Parameters<typeof care.saveOtherNone>[3]) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOtherNone(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
     ...erase,
     ...review,
     ...revision,

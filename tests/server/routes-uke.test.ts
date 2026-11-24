@@ -267,7 +267,7 @@ describe("UKE のアップロード", () => {
     // 指摘は情報不足だけ。記録がないと決められないルール（R14・R09）は、要件不足と決めつけず、情報不足として返す
     const missing = (f: { ruleId: string; kind: string; missing?: { target: string; field: string } }) => [f.ruleId, f.kind, f.missing?.target, f.missing?.field];
     expect(j1.findings.every((f) => f.kind === "情報不足")).toBe(true);
-    expect(j1.findings.map(missing)).toEqual(expect.arrayContaining([["R02", "情報不足", "doctor", "table8_2"], ["R16", "情報不足", "clerk", "residence"], ["R14", "情報不足", "clerk", "chartRecord"]]));
+    expect(j1.findings.map(missing)).toEqual(expect.arrayContaining([["R02", "情報不足", "doctor", "table8_2"], ["R16", "情報不足", "clerk", "residenceType"], ["R14", "情報不足", "clerk", "chartRecord"]]));
     expect(j2.findings.map(missing)).toEqual([["R09", "情報不足", "clerk", "chartRecord"]]);
     // 項目名を借りていた visitsComplete は、どの指摘にも出ない（design.md §11-6）
     expect([...j1.findings, ...j2.findings].some((f) => f.missing?.field === "visitsComplete")).toBe(false);

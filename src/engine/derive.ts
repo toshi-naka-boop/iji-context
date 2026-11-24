@@ -1,6 +1,7 @@
 // deriveLines(input, rev)：出来事と確かめた事実から、算定行を決定的に導出する（design.md §2-8。spec FR-94〜103）
 // 決めるのは「どの区分を何回・どの日に立てるか」だけ。要件（背反・要件不足・週の限度など）は evaluate が判定する。
 // 判定の述語は predicates.ts のものを検証（ルール）と共有する。LLM は使わない（src/mentor と LLM の SDK を import しない）
+import { familySilence } from "./care-scope";
 import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
@@ -32,6 +33,8 @@ export type DeriveInput = {
   facts: Facts;
   events: ClaimEvent[];
   history?: ClaimContext["history"];
+  /** 介護保険との調整の申告（design.md §18-3）。管理料の族を言わない月（familySilence）を決めるのに使う。省くと申告なし */
+  care?: ClaimContext["care"];
   /** 導出しない区分の行（入力どおりに通す） */
   manual: ClaimLine[];
   /** 要選択への答え（pending の id → 選んだ選択肢の id） */
@@ -66,6 +69,8 @@ export type LineBasis = {
   tentative: boolean;
 };
 
+/** care_family：住まいの種別・短期入所などで管理料の族を決めない月（design.md §18-2・§18-3。介護保険との調整の点検が見る） */
+export type PendingReason = "note14_conflict" | "note8" | "declaration_conflict" | "care_family";
 export type PendingOption = { id: string; label: string; kubun: string[] };
 export type Pending =
   /** date は、日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
@@ -77,7 +82,7 @@ export type Pending =
       blocks: string[];
       date?: string;
       /** 事実がないのではなく決められない理由（段 17h）：note14_conflict＝申告（通常）と原請求（減の行）の食い違い（画面は R18.note14_conflict と同じ文）／note8＝注8 に当たるかを見ていないので減の行を 1 つに決められない／declaration_conflict＝申告（2 人以上の建物はない）と原請求（2 人以上の区分の行）の食い違い（画面は R19.declaration_conflict と同じ文。round-61 X-200） */
-      reason?: "note14_conflict" | "note8" | "declaration_conflict";
+      reason?: PendingReason;
     }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
@@ -179,7 +184,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const notBilled: DeriveResult["notBilled"] = [];
   const asked = new Set<string>();
   // 述語に渡す請求。行は「ここまでに立てた行」（lines は同じ配列を指す）。請求 id・審査支払機関は述語が見ないので空・仮の値
-  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, commentsKnown: false, lines, history: input.history };
+  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, commentsKnown: false, lines, history: input.history, ...(input.care ? { care: input.care } : {}) };
 
   const ref = (e: EventRef): EventRef => ({ type: e.type, date: e.date });
   /** その版の点数表にある区分か。版で有無が変わる導出（物価対応料など）は、これで決める（版の id では分けない。design.md §11-2） */
@@ -190,7 +195,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     lines.push({ kubun, count: sorted.length, dates: sorted });
     basis.push({ kubun, dates: sorted, derive: b.derive, events: b.events.map(ref), needs: b.needs ?? [], ...(b.choice ? { choice: b.choice } : {}), tentative: b.tentative ?? false });
   }
-  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: "note14_conflict" | "note8" | "declaration_conflict") => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
+  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: PendingReason) => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
   /** 要選択。答えが選択肢にあればその id を返し、なければ pending に出す（本人が選ぶまで行にしない。FR-97） */
   function ask(id: string, question: string, options: PendingOption[], blocks: string[]): string | undefined {
     asked.add(id);
@@ -303,8 +308,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       // 施設の種別が分からないと、管理料の区分（族×種別×区分）が決まらない（design.md §15-4）
       lack(`D03-grade:${input.yearMonth}`, "facility.grade", kanriBlocks);
       kanriOpen = true;
+    } else if (familySilence(ctx) !== null) {
+      // 住まいの種別が 2 値に当たらない・月の途中で住まいが変わった・短期入所生活介護などの月は、族を決めない（R16 と同じ。design.md §18-2・§18-3。C-500）
+      lack(`D03-residence:${input.yearMonth}`, "residenceType", kanriBlocks, undefined, "care_family");
+      kanriOpen = true;
     } else if (!family.known) {
-      lack(`D03-residence:${input.yearMonth}`, "residence", kanriBlocks);
+      lack(`D03-residence:${input.yearMonth}`, "residenceType", kanriBlocks);
       kanriOpen = true;
     } else if (tier.known === false) {
       lack(`D03-tier:${input.yearMonth}`, tier.need, kanriBlocks);

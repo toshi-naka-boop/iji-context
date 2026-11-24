@@ -76,8 +76,8 @@ describe("情報不足（三値の事実と施設の設定）", () => {
     expect(evaluate(K4).findings.map((f) => [f.ruleId, f.kind, f.missing])).toEqual([["R03", "情報不足", { target: "clerk", field: "careLevel" }]]);
     expect(evaluate(withFact(K4, "careLevel", { known: true, value: 2 })).findings).toEqual([]);
   });
-  it("K2 の居住の場所を不明にすると R16 の情報不足（宛先は医療事務）", () => {
-    expect(evaluate(withFact(K2, "residence", unknown)).findings).toEqual([expect.objectContaining({ ruleId: "R16", kind: "情報不足", missing: { target: "clerk", field: "residence" } })]);
+  it("K2 の居住の場所を不明にすると R16 の情報不足（宛先は医療事務）（聞くのは住まいの種別。design.md §18-2 C-494）", () => {
+    expect(evaluate(withFact(K2, "residence", unknown)).findings).toEqual([expect.objectContaining({ ruleId: "R16", kind: "情報不足", missing: { target: "clerk", field: "residenceType" } })]);
   });
 });
 

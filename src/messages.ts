@@ -1,6 +1,7 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
+import type { PendingReason } from "./engine/derive";
 import type { GenericFinding, GenericNotRun } from "./generic/types";
 import type { TriggerKind } from "./lifecycle/types";
 import type { PatientFinding } from "./patient/checks";
@@ -278,6 +279,8 @@ export const FACT_LABEL: Record<FactKey, string> = {
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
   buildingBand: "単一建物診療患者の人数の区分（みなしを当てたあとの、請求に使う区分）",
+  residenceType: "住まいの種別（自宅・有料老人ホーム・サ高住・特養・老健など）",
+  terminalCancer: "末期の悪性腫瘍か",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
@@ -474,7 +477,8 @@ export function eventText(event: string, trigger?: string): string {
  * 導出の保留（事実不足）の文（src/chart/claim.ts）。reason のある保留は、事実がないのではなく決められない理由の文（段 17h）：
  * note14_conflict は R18.note14_conflict と同じ文と、施設の申告の画面への案内（round-58 C-330＝X-181）。declaration_conflict は R19.declaration_conflict と同じ文と同じ案内（round-61 X-200）。note8 は注8 を見ていないので減の行を決められないこと（round-57 X-171）
  */
-export function pendingText(p: { need: NeedKey; date?: string; reason?: "note14_conflict" | "note8" | "declaration_conflict" }, md: (d: string) => string): string {
+export function pendingText(p: { need: NeedKey; date?: string; reason?: PendingReason }, md: (d: string) => string): string {
+  if (p.reason === "care_family") return "住まいの種別（老健・介護医療院・養護老人ホームなど）・月の途中の住まいの変化・短期入所などで、この月の管理料の族（在医総管か施設総管か）を決めていません（介護保険との調整の点検で見ます）";
   if (p.reason === "note14_conflict") return `${FINDING_TEXT["R18.note14_conflict"]}。${DECLARATION_GUIDE}`;
   if (p.reason === "declaration_conflict") return `${FINDING_TEXT["R19.declaration_conflict"]}。${DECLARATION_GUIDE}`;
   if (p.reason === "note8") return "注8 の減算に当たるかを見ていないので、減の行を 1 つに決められません";

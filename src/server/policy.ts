@@ -142,6 +142,13 @@ export const POLICY = {
   "GET /api/patient/devices": row(WORK, "none", true),
   "POST /api/patient/devices": row(WORK, "none", true),
   "POST /api/patient/device-proposals/[id]": row(WORK, "none", true),
+  // 介護保険・ほかの医療機関との調整の申告と、入所先の施設（design.md §18-2・§18-5。v37）。入れるのは医療事務・ベテラン、事務長は見るだけ
+  "GET /api/patients/[claimId]/care": row([...WORK, "manager"], "none", true),
+  "POST /api/patients/[claimId]/care": row(WORK, "none", true),
+  "POST /api/patients/[claimId]/others": row(WORK, "none", true),
+  "POST /api/patients/[claimId]/others-none": row(WORK, "none", true),
+  "GET /api/care-homes": row([...WORK, "manager"], "none", false),
+  "POST /api/care-homes": row(WORK, "none", false),
   // 一覧は、消す操作のために事務長にも見せる
   "GET /api/uke": row(["clerk", "veteran", "manager"], "none", true),
   "POST /api/uke": row(WORK, "none", true),

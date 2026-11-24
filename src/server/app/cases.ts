@@ -6,7 +6,11 @@ import type { ClaimContext, EngineResult, FacilityFactKey, Facts } from "../../e
 import { DECLARED_KEYS } from "../../facility/declaration";
 import { outsideOf } from "../../generic/lookup";
 import { withMasters } from "../../masters/db";
+import { addDays } from "../../engine/rules/util";
+import { kanriKubun } from "../../engine/predicates";
 import { applyPatientFacts, buildingBandOfRows, careLevelOf, careStateOf } from "../../patient/facts";
+import { monthRange } from "../../demo/period";
+import { residenceFactOf, type Care } from "./care";
 import { toClaimContext } from "../../uke/cases";
 import { caseFileOf } from "./case-files";
 import { facilityJsonOf, todayOf } from "./facility";
@@ -66,7 +70,13 @@ export function caseBaseOf(root: string, facility: FacilityJson, claimId: string
   return { facts: c.facts, events: c.events, recordsKnown: c.recordsKnown, facility: facilityOf(facility, c.facility), history: c.history, facilityBasis };
 }
 
-export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">) {
+/** 在宅がん医療総合診療料（C003）の区分番号の鍵（医科診療行為マスターの 章 2／部 2／区分番号 3。利用前 30 日の訪問に数える。design.md §18-3 X-360） */
+const C003_NO = "2/2/3";
+
+/**
+ * care を渡さない作り方（scripts・一部のテスト）では、介護・ほかの機関の申告を重ねない（申告なしとして判定する）
+ */
+export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: Patients, claimFacts: Pick<ClaimFacts, "withClaimFacts">, care?: Care) {
   const { paths } = ctx;
   const { now } = clock;
   const { ukeFiles } = uke;
@@ -94,15 +104,59 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     // 期限は今日ではなく診療年月で比べる（design.md §18-1。判断 A）。単一建物の人数の区分は、その診療年月で効く行（いつの診療月から。design.md §15-4）。
     // 要介護度は認定の行の全部から決める（月の途中で区分が変わった 2 行。R03 の要介護 3 以上かの境は、その月の版の値）。認定の行がなければカルテ側の値のまま
     const rows = careRows(patientId);
-    const care = rows.length > 0 ? { careLevel: careLevelOf(careStateOf(rows, r.yearMonth), resolveRevision(r.yearMonth).consts.hokatsu.careLevelMin) } : {};
-    const facts = claimFacts.withClaimFacts(r.claimId, { ...applyPatientFacts(merged, latestPatientFacts(patientId), r.yearMonth), ...care, buildingBand: buildingBandOfRows(buildingBandRows(patientId), r.yearMonth) });
-    const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis };
+    const certState = careStateOf(rows, r.yearMonth);
+    const careLevel = rows.length > 0 ? { careLevel: careLevelOf(certState, resolveRevision(r.yearMonth).consts.hokatsu.careLevelMin) } : {};
+    // 住まいの種別（design.md §18-2。判断 B）：診療年月に効く申告があれば、2 値の residence はそこから導く。なければ今までの 2 値の行（患者の事実 residence）を使う
+    const rt = care?.residenceTypeOf(patientId, r.yearMonth);
+    const residence = rt ? { residenceType: rt.fact, residence: residenceFactOf(rt.fact) } : {};
+    const facts = claimFacts.withClaimFacts(r.claimId, { ...applyPatientFacts(merged, latestPatientFacts(patientId), r.yearMonth), ...careLevel, ...residence, buildingBand: buildingBandOfRows(buildingBandRows(patientId), r.yearMonth) });
+    // 介護・ほかの機関の申告（design.md §18-3・§18-4）。申告のない請求は持たない（R20・R21 の場面は「見ていません」）
+    const careFacts = care?.careFactsOf(patientId, r.yearMonth, certState, (start) => priorVisitOf(patientId, r.yearMonth, start));
+    const others = care?.otherFactsOf(patientId, r.yearMonth);
+    const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis, ...(careFacts ? { care: careFacts } : {}), ...(others ? { others } : {}) };
     // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
     // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）
     if (!r.others?.length) return claim;
     const outside = withMasters((db) => (db ? outsideOf(db, resolveRevision(r.yearMonth), r.yearMonth, r.others!.flatMap((o) => o.codes)) : undefined));
     return outside ? { ...claim, outside } : claim;
   }
+  /**
+   * 短期入所・宿泊の開始日の前日から遡って 30 日に、当院が訪問診療料等（訪問診療料・在医総管・施医総管・在がん総診）を算定していたか（design.md §18-3。X-360・X-351）。
+   * 取り込んである当院の請求（当月と、その 30 日に掛かる前の月）の算定日を探す。1 つでもあれば true。掛かる月の請求がどれも取り込んであって 1 つもなければ false。
+   * 開始日がない・掛かる月の請求を取り込んでいない・在がん総診を引く基本マスターがない（対象外の単位がある請求で）ときは null（分からない）
+   */
+  function priorVisitOf(patientId: string, yearMonth: string, start: string | null): boolean | null {
+    if (start === null) return null;
+    const from = addDays(start, -30);
+    const to = addDays(start, -1);
+    const months = [...new Set([from.slice(0, 7), to.slice(0, 7), yearMonth])].filter((m) => m >= from.slice(0, 7) && m <= to.slice(0, 7));
+    let unknown = false;
+    for (const m of months) {
+      const mine = ukeFiles().flatMap((f) => f.receipts.filter((x) => x.yearMonth === m && ingest(x.patient) === patientId));
+      if (mine.length === 0) {
+        unknown = true;
+        continue;
+      }
+      for (const x of mine) {
+        const rev = resolveRevision(m);
+        const kubun = new Set([...rev.consts.visitKubun, ...(rev.consts.visit2Kubun ?? []), ...kanriKubun(rev.consts)]);
+        const inRange = (d: string) => d >= from && d <= to;
+        if (x.lines.some((l) => kubun.has(l.kubun) && l.dates.some(inRange))) return true;
+        const others = x.others ?? [];
+        if (others.length === 0) continue;
+        const outside = withMasters((db) => (db ? outsideOf(db, rev, m, others.flatMap((o) => o.codes)) : undefined));
+        if (!outside) {
+          unknown = true;
+          continue;
+        }
+        const c003 = new Set(outside.codes.filter((o) => o.no === C003_NO).map((o) => o.code));
+        const { start: ms } = monthRange(m);
+        if (others.some((o) => o.codes.some((code) => c003.has(code)) && o.days.some((n, i) => n > 0 && inRange(addDays(ms, i))))) return true;
+      }
+    }
+    return unknown ? null : false;
+  }
+
   /** 診療年月の版で読めたレセプトの請求（版のないレセプト・読み直しで読めなかったレセプトは入らない。src/server/app/uke.ts の ukeFiles） */
   const cases = (): ClaimContext[] => ukeFiles().flatMap((file) => file.receipts.map((r) => contextOf(file, r)));
   const caseOf = (claimId: string): ClaimContext => {
