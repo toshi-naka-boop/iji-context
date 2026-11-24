@@ -19,6 +19,14 @@ import { repo, tempApp } from "../helpers/care";
 import { at, YM } from "../helpers/period";
 
 const cfg = loadKaigo();
+/** EM §5-1 の症例の行（design.md §18-12 の 3：完了条件 3 はこの行で縛る）。正解の指摘の件数と、点検の範囲に出る「見ていません」の文 */
+const emRows = readFileSync(path.join(repo, "design", "iji-context", "sources", "evidence-master-iji-context.md"), "utf8").split("\n");
+function emAnswer(id: string): { count: number; notes: string[] } {
+  const row = emRows.find((l) => l.startsWith(`| ${id} |`));
+  if (!row) throw new Error(`EM §5-1 に行がない: ${id}`);
+  const seg = /正解の指摘：([^|（]*)/.exec(row)?.[1] ?? "";
+  return { count: [...seg.matchAll(/(\d+) 件/g)].reduce((n, m) => n + Number(m[1]), 0), notes: [...seg.matchAll(/「([^」]*見ていません)」/g)].map((m) => m[1]) };
+}
 const basis = { checkedOn: dateOf(cfg.basis.checkedOn.m, cfg.basis.checkedOn.d), source: cfg.basis.source as "ケアマネジャーからの連絡" };
 
 let app: App;
@@ -75,6 +83,9 @@ describe("完了条件 3：場面ごとの正解の表（EM §5-1）どおりの
       const id = answer(c);
       const f = careFindings(id);
       expect(f.filter((x) => x.kind !== "情報不足").map((x) => x.messageKey)).toEqual(c.expected);
+      // 件数は EM §5-1 の行の正解の指摘の件数
+      const em = emAnswer(c.id);
+      expect([c.id, f.filter((x) => x.kind !== "情報不足").length]).toEqual([c.id, em.count]);
       // 確かめた日：聞き取りの申告は答えた確かめた日、要介護・要支援の認定は患者の事実を残した日
       const certOn = app.patientFacts(id).facts.find((x) => x.key === "careCert")?.checkedAt.slice(0, 10);
       for (const x of f) {
@@ -83,9 +94,8 @@ describe("完了条件 3：場面ごとの正解の表（EM §5-1）どおりの
         expect(findingText(x)).toContain(x.messageKey === "R20.renkei" ? certOn : basis.checkedOn);
       }
       // 申告を全部答えた請求では、介護・ほかの機関の「見ていません」は出ない（先頭の「見ている場面」だけ）。
-      // K27 は前の月の請求を取り込んでいないので、利用前 30 日の当院の訪問が分からない（C-502）
-      const left = c.id === "K27" ? [CARE_SCOPE_TEXT.priorUnknown] : [];
-      expect(notDone(id).filter((t) => Object.values(CARE_SCOPE_TEXT).includes(t as never))).toEqual([CARE_SCOPE_TEXT.scenes, ...left]);
+      // 行に書いた「見ていません」（K27：前の月の請求を取り込んでいないので、利用前 30 日の当院の訪問が分からない。C-502）だけが残る
+      expect(notDone(id).filter((t) => Object.values(CARE_SCOPE_TEXT).includes(t as never))).toEqual([CARE_SCOPE_TEXT.scenes, ...em.notes]);
     });
   }
 
