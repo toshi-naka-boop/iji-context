@@ -168,3 +168,13 @@ describe("同じ月の訂正（design.md §18-12 の 1。X-380）", () => {
     }
   });
 });
+
+describe("申請中（EM §7-2 U-71。2026-11-24 利用者の判断）", () => {
+  it("答えた診療月だけに効き、R03 には分からない（careLevel を渡さない）、④・短期入所には認定なしに準じる。翌月は分からない", () => {
+    const rows = [row({ key: "careCert", value: { kind: "申請中", forMonth: YM } })];
+    const s = careStateOf(rows, YM);
+    expect([careLevelOf(s, 3), certifiedOf(s)]).toEqual([{ known: false }, { known: true, value: false }]);
+    expect(careStateOf(rows, month(1))).toEqual({ known: false });
+    expect(() => validatePatientFact({ key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null }, `${day(13)}T09:00:00+09:00`)).not.toThrow();
+  });
+});

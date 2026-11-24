@@ -23,8 +23,9 @@ export type BuildingBandValue = { band: BuildingBand; fromMonth: string };
  * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない。
  * 認定なし・分からないの forMonth は答えた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
  */
-export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
-export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "分からない"] as const;
+export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "申請中"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
+/** 申請中（EM §7-2 U-71。2026-11-24 利用者の判断）：R03 には「分からない」、④・短期入所には「認定なし」に準じて読む。答えた診療月だけに効く（6 か月は残さず、翌月の点検でまた聞く） */
+export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "申請中", "分からない"] as const;
 /** 「認定なし」を確かめ直すまでの月数（設計で置いた値。制度の数字ではない。design.md §18-1） */
 export const CARE_NONE_RECHECK_MONTHS = 6;
 export type PatientFactInput = { key: PatientFactKey; value: number | boolean | Residence | BuildingBandValue | CareCertValue; source: FactSource; validUntil: string | null };
@@ -68,7 +69,7 @@ export function validatePatientFact(f: PatientFactInput, now: string): void {
     // 有効期間の終わりが今日より前でも入れられる（過ぎた月の点検のために、切れた認定も入れる。design.md §18-1）
   } else if (f.key === "careCert") {
     const v = f.value as Partial<{ kind: string; level: number; validFrom: string }> | null;
-    if (typeof v !== "object" || v === null || !(CARE_CERT_KINDS as readonly string[]).includes(v.kind ?? "")) throw new Error("認定は、要介護・要支援・認定なし・分からないから選ぶ");
+    if (typeof v !== "object" || v === null || !(CARE_CERT_KINDS as readonly string[]).includes(v.kind ?? "")) throw new Error("認定は、要介護・要支援・認定なし・申請中・分からないから選ぶ");
     if (v.kind === "要介護" || v.kind === "要支援") {
       const max = v.kind === "要介護" ? 5 : 2;
       if (typeof v.level !== "number" || !Number.isInteger(v.level) || v.level < 1 || v.level > max) throw new Error(v.kind === "要介護" ? "要介護は 1〜5 で選ぶ" : "要支援は 1・2 で選ぶ");
@@ -77,8 +78,8 @@ export function validatePatientFact(f: PatientFactInput, now: string): void {
       if (v.validFrom > f.validUntil) throw new Error("有効期間の始まりが、終わりより後になっている");
       if (Object.keys(v).some((k) => !["kind", "level", "validFrom"].includes(k))) throw new Error("認定の値に余分な項目がある");
     } else {
-      if (Object.keys(v).some((k) => k !== "kind")) throw new Error("認定なし・分からないには、区分と日付を付けない");
-      if (f.validUntil !== null) throw new Error("認定なし・分からないに期限は付けない");
+      if (Object.keys(v).some((k) => k !== "kind")) throw new Error("認定なし・申請中・分からないには、区分と日付を付けない");
+      if (f.validUntil !== null) throw new Error("認定なし・申請中・分からないに期限は付けない");
     }
   } else if (f.key === "disabilitySupportLevel") {
     if (typeof f.value !== "number" || !Number.isInteger(f.value) || f.value < 0 || f.value > 6) throw new Error("障害支援区分は 0〜6 で選ぶ");
@@ -129,7 +130,7 @@ export function buildingBandOfRows(rows: Pick<PatientFact, "key" | "value">[], y
  * 診療年月の要介護・要支援の認定（design.md §18-1）。segments は月の中の区間（1 つか、月の途中で区分が変わった続いた 2 つ）。
  * kind の「区分不明」は、今までに careLevel 0 で残した行（認定なしか要支援かを区別していなかった。C-504）。level は判定に渡す careLevel（要介護 n→n、ほかは 0）
  */
-export type CareSegment = { kind: "要介護" | "要支援" | "認定なし" | "区分不明"; level: number };
+export type CareSegment = { kind: "要介護" | "要支援" | "認定なし" | "申請中" | "区分不明"; level: number };
 export type CareState = { known: false } | { known: true; segments: CareSegment[]; source: FactSource; checkedAt: string };
 
 /** 認定の行（careCert と今までの careLevel。古い順）から、診療年月の認定を決める。careCert の行が 1 つでもあれば、そちらだけを読む */
@@ -158,7 +159,7 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
   const sameMonth = certs.map((r, i) => ({ r, i })).filter(({ r, i }) => i > lastDated && (r.value as { forMonth?: string }).forMonth === yearMonth).at(-1);
   if (dated.length > 0 && sameMonth) {
     const k = (sameMonth.r.value as CareCertValue).kind;
-    return k === "認定なし" ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: sameMonth.r.source, checkedAt: sameMonth.r.checkedAt } : { known: false };
+    return k === "認定なし" || k === "申請中" ? { known: true, segments: [{ kind: k, level: 0 }], source: sameMonth.r.source, checkedAt: sameMonth.r.checkedAt } : { known: false };
   }
   if (dated.length === 0) {
     // 期間つきの認定が当たらない月：その月に効く「認定なし」（確かめた診療月から 6 か月。前の月には効かない。X-354）と「分からない」のうち、後に残した行
@@ -169,8 +170,11 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
       const from = v.forMonth ?? r.checkedAt.slice(0, 7);
       return from <= yearMonth && yearMonth <= addMonthsTo(`${from}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
     };
-    const hit = certs.filter((r) => none(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
-    return hit && (hit.value as CareCertValue).kind === "認定なし" ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: hit.source, checkedAt: hit.checkedAt } : { known: false };
+    // 申請中は答えた診療月だけに効く（U-71）
+    const applying = (r: PatientFact) => (r.value as CareCertValue).kind === "申請中" && (r.value as { forMonth?: string }).forMonth === yearMonth;
+    const hit = certs.filter((r) => none(r) || applying(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
+    const hk = hit ? (hit.value as CareCertValue).kind : null;
+    return hit && (hk === "認定なし" || hk === "申請中") ? { known: true, segments: [{ kind: hk, level: 0 }], source: hit.source, checkedAt: hit.checkedAt } : { known: false };
   }
   const latest = dated[dated.length - 1];
   const seg = (r: PatientFact): CareSegment => {
@@ -194,7 +198,8 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
  * 値は月の終わりの区間のもの（design.md §18-1）。違えば「分からない」
  */
 export function careLevelOf(state: CareState, careLevelMin: number): Fact<number> {
-  if (!state.known) return { known: false };
+  // 申請中は R03 に「分からない」（認定が申請日に遡って効くので、0 として渡さない。U-71）
+  if (!state.known || state.segments.some((s) => s.kind === "申請中")) return { known: false };
   const sides = new Set(state.segments.map((s) => s.level >= careLevelMin));
   return sides.size === 1 ? { known: true, value: state.segments[state.segments.length - 1].level } : { known: false };
 }

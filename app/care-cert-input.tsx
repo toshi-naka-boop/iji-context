@@ -13,20 +13,21 @@ export const CARE_CERT_CHOICES: [string, string][] = [
   ...[1, 2, 3, 4, 5].map((n): [string, string] => [`要介護:${n}`, `要介護${n}`]),
   ...[1, 2].map((n): [string, string] => [`要支援:${n}`, `要支援${n}`]),
   ["認定なし", "認定なし（確かめた）"],
+  ["申請中", "申請中（この月だけ。翌月にまた確かめる）"],
   ["分からない", "分からない"],
 ];
 
 /** 残した認定の言い方 */
 export function careCertText(v: CareCertValue | { kind: string; level?: number; validFrom?: string }, validUntil: string | null): string {
   if (v.kind === "要介護" || v.kind === "要支援") return `${v.kind}${(v as { level: number }).level}（${(v as { validFrom: string }).validFrom}〜${validUntil ?? ""}）`;
-  return v.kind === "認定なし" ? "認定なし（確かめた）" : "分からない";
+  return v.kind === "認定なし" ? "認定なし（確かめた）" : v.kind === "申請中" ? "申請中" : "分からない";
 }
 
 /** 選択肢の文字と日付を、残す値にする */
 export function careCertValueOf(choice: string, validFrom: string): CareCertValue {
   const [kind, level] = choice.split(":");
   if (kind === "要介護" || kind === "要支援") return { kind, level: Number(level), validFrom };
-  return { kind: kind as "認定なし" | "分からない" };
+  return { kind: kind as "認定なし" | "申請中" | "分からない" };
 }
 
 export function CareCertForm(props: { claimId: string; onSaved: (facts: unknown) => void }) {
