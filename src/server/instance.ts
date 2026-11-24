@@ -24,7 +24,7 @@ import type { User } from "./auth";
 import { dataDir, getAuth } from "./auth-db";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
-import { UserError, notFound } from "./errors";
+import { UserError, conflict, notFound } from "./errors";
 
 let app: App | null = null;
 
@@ -230,6 +230,33 @@ export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string
     rmSync(cwd, { recursive: true, force: true });
   }
   return { deleted: sha256, claims: r.claimIds.length };
+}
+
+/**
+ * クリニックをまるごと消す（採点 r1 事務長 #8。持ち主だけ。demo でも real でも）。消すもの：クリニックの DB（取り込んだ請求・患者・カルテ・医師確認・監査ログを含む全部の表）、
+ * 取り込んだファイル、知識・同期した Skill・医師確認の記録、メンターのやり取り（これまでに使ったセッションの記録）と作業場所、ログインの利用者・セッション・招待。
+ * 残るもの：ログインまわりの記録（auth.db の auth_events。id だけ）と、AI のサービス側に送った内容（こちらからは消せない）。
+ * ほかの呼び出しが実行中なら断る（DB を閉じられないため）。消したあとは、このクリニックの誰もログインできない
+ */
+export async function eraseTenant(user: User, confirm: string): Promise<{ erased: true }> {
+  const auth = getAuth();
+  auth.assertCanEraseTenant(user, confirm);
+  const id = user.tenantId;
+  if ((active.get(id) ?? 0) > 1) throw conflict("ほかの操作が終わっていません。少し待ってから、もう一度消してください");
+  const a = getApp();
+  // メンターのやり取り：取り込んだファイルを消すとき（deleteUkeUpload）と同じく、セッションの記録を消す
+  const root = path.join(workspaceRoot(), id);
+  for (const c of a.allSessions()) {
+    if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
+    await forgetSessions(path.join(root, c.id), c.sessionIds);
+  }
+  // DB を閉じてから、ファイルごと消す。ログインの行は最後に消す（途中で失敗しても、持ち主がもう一度消せるように）
+  tenants.delete(id);
+  a.close();
+  rmSync(path.dirname(tenantPaths(id).dbFile), { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+  for (const u of auth.forgetTenant(id).users) ensured.delete(u);
+  return { erased: true };
 }
 
 /** 続きのセッションで失敗したら（作業場所が変わって履歴が見つからないなど）、新しいセッションで一度だけやり直す */

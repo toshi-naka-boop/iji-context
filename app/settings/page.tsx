@@ -8,6 +8,7 @@ import { PageGuide } from "../page-guide";
 import { ROLES, ROLE_LABELS, type Role } from "../../src/server/roles";
 import { Invites } from "./invites";
 import { Staff } from "./staff";
+import { EraseClinic } from "./erase-clinic";
 import { Facility } from "./facility";
 import { Masters } from "./masters";
 
@@ -17,7 +18,7 @@ export default function Settings() {
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState("");
   // 役割（1 人で使っているクリニックだけ、自分で切り替えられる）
-  const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; hasManager: boolean; tenantKind: string } | null>(null);
+  const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; hasManager: boolean; isOwner: boolean; login: string; tenantKind: string } | null>(null);
   useEffect(() => {
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
   }, []);
@@ -72,6 +73,7 @@ export default function Settings() {
           />
         )}
       </div>
+      {me?.isOwner && <EraseClinic login={me.login} />}
     </main>
   );
 }

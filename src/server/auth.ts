@@ -278,6 +278,30 @@ export function openAuth(dbFile: string) {
   }
 
   /**
+   * クリニックをまるごと消す前の確かめ（採点 r1 事務長 #8）：持ち主だけ。確かめの入力は持ち主のログイン ID（クリニックの名前は持っていないので、打ち間違えにくい自分の ID で確かめる）
+   */
+  function assertCanEraseTenant(by: User, confirm: string): void {
+    if (!isOwner(by)) throw forbidden("クリニックを消せるのは、クリニックの持ち主だけです");
+    if (confirm !== by.login) throw badRequest("確かめの欄に、あなたのログイン ID をそのまま入れてください", ["login"]);
+  }
+  /**
+   * クリニックの利用者・セッション・招待・クリニックの行を消す（1 つのトランザクション）。ログインまわりの記録（auth_events）は id だけなので残す。
+   * クリニックのデータ（DB・知識・医師確認の記録・取り込んだファイル）は呼び出し側が消す（src/server/instance.ts の eraseTenant）
+   */
+  function forgetTenant(tenantId: string): { users: string[] } {
+    return db
+      .transaction(() => {
+        const users = (db.prepare("SELECT id FROM users WHERE tenant_id = ?").all(tenantId) as { id: string }[]).map((r) => r.id);
+        db.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)").run(tenantId);
+        db.prepare("DELETE FROM invites WHERE tenant_id = ?").run(tenantId);
+        db.prepare("DELETE FROM users WHERE tenant_id = ?").run(tenantId);
+        db.prepare("DELETE FROM tenants WHERE id = ?").run(tenantId);
+        return { users };
+      })
+      .immediate();
+  }
+
+  /**
    * 注意書きへの同意（design.md §11-11）。利用者ごとに、注意書きの版ごとに 1 回。同意できるのは今の版だけ
    * （古い画面が持っている版で同意しても、今の版に同意したことにしない）
    */
@@ -340,6 +364,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

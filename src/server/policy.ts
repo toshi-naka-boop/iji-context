@@ -36,6 +36,8 @@ export const POLICY = {
   "GET /api/auth/me": row(ALL, "none", false),
   // 未定のクリニックの使い方（demo／real）を一度だけ選ぶ（2026-11-22 利用者の判断）：事務長と、1 人で使っているクリニックの持ち主
   "POST /api/tenant/kind": row({ roles: ["manager"], solo: true }, "none", false),
+  // クリニックをまるごと消す（採点 r1 事務長 #8）。クリニックの持ち主だけ（持ち主かどうかは src/server/auth.ts の assertCanEraseTenant が照合する）。消す操作は同意を条件にしない
+  "POST /api/tenant/erase": row(ALL, "none", false),
   // 役割の切替（FR-144）：1 人で使っているクリニックの持ち主だけ。ロールでは許さない
   "POST /api/auth/role": row({ roles: [], solo: true }, "none", false),
   // 招待の発行・一覧・取り消し（FR-137）：事務長と、1 人で使っているクリニックの持ち主

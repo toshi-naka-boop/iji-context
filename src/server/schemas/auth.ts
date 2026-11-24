@@ -19,3 +19,5 @@ export const auditQuery = z.strictObject({ limit: z.coerce.number().int().min(1)
 export const staffParams = z.strictObject({ id: z.string().regex(/^t[0-9a-f]{12}$/) });
 /** 職員の役割を変える（POST /api/staff/[id]/role） */
 export const staffRoleBody = z.strictObject({ role: z.enum(ROLES) });
+/** クリニックをまるごと消す（POST /api/tenant/erase）。確かめに、持ち主のログイン ID を入れる */
+export const eraseTenantBody = z.strictObject({ login: z.string().max(64) });
