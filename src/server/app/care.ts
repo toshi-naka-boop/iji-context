@@ -266,9 +266,14 @@ export function createCare(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "
     checkBasis(input.checkedOn, input.source);
     if (input.instId !== undefined && !otherRows(patientId).some((r) => r.instId === input.instId)) throw badRequest("その機関の行はありません", ["instId"]);
     const instId = input.instId ?? `I${randomUUID().slice(0, 8)}`;
+    // 訂正（instId あり）で送られなかった項目は、その機関の今の値のまま残す（終わった月・求めた日・していることの項目。round-84 X-412）
+    const cur = input.instId !== undefined ? otherRows(patientId).filter((r) => r.instId === input.instId).at(-1) : undefined;
+    const endMonth = input.endMonth !== undefined ? input.endMonth : (cur?.endMonth ?? null);
+    const referredOn = input.referredOn !== undefined ? input.referredOn : (cur?.referredOn ?? null);
+    const merged = { ...(cur?.activities ?? {}), ...activities };
     sqlite
       .prepare("INSERT INTO other_institutions (patient_id, inst_id, name, kind, special_relation, kanri_side, activities, referred_on, from_month, end_month, source, checked_by, checked_on, entered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(patientId, instId, name, input.kind, input.specialRelation, input.kanriSide, JSON.stringify(activities), input.referredOn ?? null, yearMonth, input.endMonth ?? null, input.source, clerkId, input.checkedOn, clock.now());
+      .run(patientId, instId, name, input.kind, input.specialRelation, input.kanriSide, JSON.stringify(merged), referredOn, yearMonth, endMonth, input.source, clerkId, input.checkedOn, clock.now());
     return { saved: true, instId };
   }
 

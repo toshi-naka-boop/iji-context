@@ -158,3 +158,14 @@ describe("今ある機関の行を、聞き取りの画面から直す（round-8
     expect(src).toContain("...(instId ? { instId } : {})");
   });
 });
+
+describe("機関の訂正で、今ある値を落とさない（round-84 X-412）", () => {
+  it("終わった月のある機関で特別の関係だけを直しても、終わった月・求めた日・していることは今の値のまま", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    const { instId } = app.saveOther(id, "new1", { name: "架空の病院", kind: "医療機関", specialRelation: "分からない", kanriSide: "取っていない", activities: { 医療機関が行う訪問看護: "はい" }, referredOn: day(2), endMonth: month(1), ...b });
+    app.saveOther(id, "new1", { instId, name: "架空の病院", kind: "医療機関", specialRelation: "はい", kanriSide: "取っていない", activities: {}, ...b });
+    const rows = app.careView(id).others;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ specialRelation: "はい", endMonth: month(1), referredOn: day(2), activities: { 医療機関が行う訪問看護: "はい" } });
+  });
+});
