@@ -270,7 +270,7 @@ export default function UkeClaimCheck() {
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
               {(c.commentMissingCount ?? 0) > 0 && <p style={{ margin: 0 }}>記載もれを {c.commentMissingCount} 件見つけました。</p>}
-              {(c.conditionalCount ?? 0) > 0 && <p style={{ margin: 0 }}>条件つきの指摘が {c.conditionalCount} 件あります（医療事務が確かめた申告のとおりなら当たるもの。指摘の数・防いだ額には入りません）。</p>}
+              {(c.conditionalCount ?? 0) > 0 && <p style={{ margin: 0 }}>条件つきの指摘が {c.conditionalCount} 件あります（医療事務が確かめた申告のとおりなら当たるもの。指摘の数・直した件数の集計には入りません）。</p>}
               {KINDS.filter((k) => findings.some((f) => f.kind === k)).map((k) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {findings.filter((f) => f.kind === k).map((f, i) => (

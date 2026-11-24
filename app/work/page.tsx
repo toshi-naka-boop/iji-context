@@ -346,14 +346,14 @@ export default function Work() {
       {!q && mentorChoice?.chosen && !showWelcome && (
         <div className="panel">
           <p className="muted">
-            <button onClick={togglePrevented} aria-expanded={showPrevented}>{showPrevented ? "防いだ額を閉じる" : "防いだ額を見る"}</button>　既定では出しません。開いたときだけ表示します
+            <button onClick={togglePrevented} aria-expanded={showPrevented}>{showPrevented ? "直した件数を閉じる" : "直した件数を見る"}</button>　既定では出しません。開いたときだけ表示します
           </p>
           {showPrevented && prevented?.visible && (
             <div className="notice ok">
-              <div>取りこぼしを防いだ（算定漏れ）：{prevented.summary.取りこぼし.count} 件・{prevented.summary.取りこぼし.yen.toLocaleString()} 円</div>
-              <div>差し戻しを防いだ（返戻・査定のおそれ）：{prevented.summary.差し戻し.count} 件・{prevented.summary.差し戻し.yen.toLocaleString()} 円</div>
-              <div>うち医師の記載が原因で、医師確認で解決：{prevented.summary.医師記載起因.count} 件・{prevented.summary.医師記載起因.yen.toLocaleString()} 円</div>
-              <div className="muted">{prevented.summary.label}。提出前に指摘され、提出までに直した項目だけを数えています（点数×10 円）</div>
+              <div>指摘のあと直した（算定の足りない分）：{prevented.summary.取りこぼし.count} 件・{prevented.summary.取りこぼし.yen.toLocaleString()} 円</div>
+              <div>指摘のあと直した（返戻・査定のおそれ）：{prevented.summary.差し戻し.count} 件・{prevented.summary.差し戻し.yen.toLocaleString()} 円</div>
+              <div>うち医師確認の答えで直した：{prevented.summary.医師記載起因.count} 件・{prevented.summary.医師記載起因.yen.toLocaleString()} 円</div>
+              <div className="muted">{prevented.summary.label}。提出前に指摘され、提出までに直した項目だけを数えています（点数×10 円）。指摘がなくても直していた分と分けていません</div>
             </div>
           )}
           <Board
