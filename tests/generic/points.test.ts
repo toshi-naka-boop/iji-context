@@ -284,6 +284,11 @@ describe("G02 点数の検算", () => {
     // 行のコメント欄（行と同じ行番号）に撮影部位のコメントだけ
     const own = { ...unit, comments: [{ line, code: IMAGING, raw: "", unit: null }] };
     expect(recalcClaim(own, db, about)).toMatchObject([{ status: "match" }]);
+    // 違う撮影部位のコメントが 2 つ（胸部 820181220 と その他 830189000）：理由つきで対象外（§19-14 の 2。C-612）。同じコードが 2 つなら検算する
+    const two = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: "820181220", raw: "", unit: null }] };
+    expect(recalcClaim(two, db, about)).toMatchObject([{ status: "excluded", reason: "imagingSites" }]);
+    const same = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(same, db, about)).toMatchObject([{ status: "match" }]);
   });
 
   it("同じ群の包括の検査が、同じ日の 2 つの単位に分かれていれば対象外。点数のない単位（区分キーから作った単位）は数えない", () => {

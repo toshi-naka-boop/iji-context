@@ -17,7 +17,7 @@
 import { iyakuhinOf, shinryoOf, tokuteiOf, type MastersDb, type ShinryoRow } from "../masters/db";
 
 /** 検算の対象外にした理由 */
-export type ExcludeReason = "notInMaster" | "mixed" | "percent" | "amount" | "purchase" | "bundleNoTable" | "bundleMixed" | "bundleSplit" | "shikibetsu" | "quantity" | "fraction" | "noPrice" | "deviceRate" | "kizamiCombined" | "commented" | "perCount";
+export type ExcludeReason = "notInMaster" | "mixed" | "percent" | "amount" | "purchase" | "bundleNoTable" | "bundleMixed" | "bundleSplit" | "shikibetsu" | "quantity" | "fraction" | "noPrice" | "deviceRate" | "kizamiCombined" | "commented" | "perCount" | "imagingSites";
 
 /** 理由の文（点検の範囲の説明と、scripts/measure-generic.ts が出す） */
 export const EXCLUDE_TEXT: Record<ExcludeReason, string> = {
@@ -37,6 +37,7 @@ export const EXCLUDE_TEXT: Record<ExcludeReason, string> = {
   kizamiCombined: "同じ区分番号のきざみの行が 2 つ以上ある（行を合わせて数える決まりがある）",
   commented: "きざみの行のある単位・医薬品の単位に、撮影部位のほかのコメントが付いている（患者体重・残量廃棄など、コメントの値で計算する場合がある）",
   perCount: "検査の薬剤で、回数が 2 以上（使用量に回数を掛けて計算する書き方がある）",
+  imagingSites: "違う撮影部位のコメントが 2 つ以上ある（部位の違う撮影を 1 つの単位にまとめた書き方の点数の決め方を確かめていない）",
 };
 
 /** 単位の 1 行。quantity は数量データ（SI）・使用量（IY・TO）、unitPrice は単価（TO）。どれも UKE の欄のまま */

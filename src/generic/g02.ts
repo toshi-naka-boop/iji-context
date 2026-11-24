@@ -89,6 +89,12 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const from = span(units[i - 1])?.[1] ?? 0;
     const to = span(units[i + 1])?.[0] ?? Infinity;
     const commented = span(u) !== null && countedLines.some((line) => line > from && line < to);
+    // 違う撮影部位のコメントが 2 つ以上ある単位は、検算の対象外（理由つき。design.md §19-14 の 2。反証 round-94 C-612）
+    const sites = span(u) === null ? 0 : new Set(comments.filter((c) => allowed.has(c.code) && c.line > from && c.line < to).map((c) => c.code)).size;
+    if (sites >= 2) {
+      out.push({ unit: i, uke: u.points, status: "excluded", reason: "imagingSites" });
+      return;
+    }
     // 単価の欄が空の酸素の行は、届け出た単価があれば、その単価で検算する（design.md §19-5。算定日で単価が分かれる単位は使わない）
     const dates = unitDates(about.yearMonth, u.days);
     const declaredOxygen = active.length === 0 ? undefined : (code: string) => {
