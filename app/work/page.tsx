@@ -542,7 +542,7 @@ export default function Work() {
               <div>
                 <h3 className="with-avatar"><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />ユスティの判定</h3>
                 <FindingLevels />
-                {q.correct ? <div className="notice ok">確認してほしい点はありません</div> : null}
+                {q.correct ? (findings.some((f) => f.kind === "情報不足") ? <div className="notice">確定の指摘はありません。下の情報不足を確かめてください（「問題なし」ではありません）</div> : <div className="notice ok">確認してほしい点はありません</div>) : null}
                 {findings.map((f, i) => (
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>
                     {findingText(f)}<br />

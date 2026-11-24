@@ -43,7 +43,7 @@ export default function Doctor() {
         <div className="stat" style={{ ["--stat-color" as string]: "var(--warn-mark)" }}><div className="label">確かめ待ち</div><span className="value">{open}</span><span className="unit">件</span></div>
         <div className="stat"><div className="label">承認済み</div><span className="value">{qs.length - open}</span><span className="unit">件</span></div>
       </div>
-      {qs.length === 0 && <div className="panel muted">確認の依頼はありません。算定画面の「医師確認用練習」から送ると、ここに届きます。</div>}
+      {qs.length === 0 && <div className="panel muted">確認の依頼はありません。医療事務が医師確認を送ると、ここに届きます。</div>}
       <div className="card-list">
         {qs.map((q) => {
           const p = pick[q.id] ?? { option: "", freeText: "" };
