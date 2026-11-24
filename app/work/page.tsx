@@ -13,6 +13,7 @@ import { SignIn, useClerk } from "../clerk";
 import { OfficialBlock, useCheckRights, type OfficialMatch } from "../official-check";
 import { CheckedFacts, FactInput } from "../fact-input";
 import { GenericFindings } from "../generic-findings";
+import { FindingLevels } from "../finding-levels";
 import { Torikawasure, type TorikawasureView } from "../torikawasure";
 import type { GenericView } from "../../src/generic/view";
 import { PatientPanel } from "./patient-panel";
@@ -540,6 +541,7 @@ export default function Work() {
             {q.confirmed && (
               <div>
                 <h3 className="with-avatar"><img className="yusti-avatar" src="/characters/yusti-face.png" alt="" />ユスティの判定</h3>
+                <FindingLevels />
                 {q.correct ? <div className="notice ok">確認してほしい点はありません</div> : null}
                 {findings.map((f, i) => (
                   <div key={i} className={`notice ${f.kind === "情報不足" ? "ok" : "warn"}`}>

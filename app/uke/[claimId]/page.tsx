@@ -14,6 +14,7 @@ import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
 import { CheckedFacts, FactInput } from "../../fact-input";
 import { GenericFindings } from "../../generic-findings";
+import { FindingLevels } from "../../finding-levels";
 import { ConfirmedFixes } from "../../chart/confirmed-fixes";
 import { Torikawasure, type TorikawasureView } from "../../torikawasure";
 import { RecordPaste } from "../record-paste";
@@ -100,6 +101,8 @@ function groupMissing(missing: Finding[]): { finding: Finding; ruleIds: string[]
   }
   return out;
 }
+/** ユスティの指摘の段階。申告のとおりならの指摘（R20・R21）と、取り忘れの条件つきの添え書き（g11First）は条件つき、ほかは確定（src/server/app/review.ts の handCertaintyOf と同じ） */
+const certaintyOf = (f: Finding): "確定" | "条件つき" => (f.params?.g11First || f.params?.conditional === "1" ? "条件つき" : "確定");
 /** 指摘を出す順（種類ごと） */
 const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘れ", "記載もれ"];
 
@@ -201,6 +204,7 @@ export default function UkeClaimCheck() {
         取り込んだ UKE に書いてあるとおりのまま、決まった規則で点検した結果です。行もコメントも入れ替えていません。点検の結果は記録しません。「情報不足」の項目に、確かめた答えを残すと、その答えだけが残り、点検をやり直します。
       </PageGuide>
       <p style={{ margin: "0 0 12px" }}><a href="/uke">← UKE 取り込みに戻る</a></p>
+      <FindingLevels />
       {err && <div className="notice warn">{err}</div>}
       {head && (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -271,9 +275,10 @@ export default function UkeClaimCheck() {
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {findings.filter((f) => f.kind === k).map((f, i) => (
                     <div key={i} className="notice warn">
-                      <span className="badge warn">{f.kind}</span>{f.params?.conditional === "1" && <span className="badge"> 条件つき</span>} {findingText(f)}
+                      <span className={`badge ${certaintyOf(f) === "確定" ? "warn" : ""}`}>{certaintyOf(f)}</span> <span className="badge">{f.kind}</span> {findingText(f)}
                       {f.params?.g11First && <div className="muted">（条件つき）{f.params.g11First}</div>}
                       {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map((k, n) => <span key={n}>{n > 0 && "、"}{unitHref(k) ? <a href={unitHref(k)}>{nameOf(k)}</a> : nameOf(k)}</span>)}</div>}
+                      {f.reference && <div className="muted">根拠：{f.reference}</div>}
                     </div>
                   ))}
                 </div>
