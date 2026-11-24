@@ -91,3 +91,12 @@ describe("2 値の居住の場所の導き方（R16・導出 D03。design.md §1
     expect(d.pending.filter((p) => p.kind === "事実不足" && p.id.startsWith("D03-residence")).map((p) => p.kind === "事実不足" && [p.need, p.reason])).toEqual([["residenceType", "care_family"]]);
   });
 });
+
+describe("利用前 30 日の暦月（round-82 C-534）", () => {
+  it("3 つの暦月にまたがる範囲は、真ん中の月も含めて全部を見る", async () => {
+    const { monthsBetween } = await import("../../src/server/app/cases");
+    expect(monthsBetween(month(3), month(5))).toEqual([month(3), month(4), month(5)]);
+    expect(monthsBetween(month(2), month(3))).toEqual([month(2), month(3)]);
+    expect(monthsBetween(YM, YM)).toEqual([YM]);
+  });
+});

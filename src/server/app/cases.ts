@@ -70,6 +70,21 @@ export function caseBaseOf(root: string, facility: FacilityJson, claimId: string
   return { facts: c.facts, events: c.events, recordsKnown: c.recordsKnown, facility: facilityOf(facility, c.facility), history: c.history, facilityBasis };
 }
 
+/** from の月から to の月まで（両端を含む）の暦月 */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let [y, m] = from.split("-").map(Number);
+  for (let ym = from; ym <= to; ym = `${y}-${String(m).padStart(2, "0")}`) {
+    out.push(ym);
+    m += 1;
+    if (m === 13) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
 /** 在宅がん医療総合診療料（C003）の区分番号の鍵（医科診療行為マスターの 章 2／部 2／区分番号 3。利用前 30 日の訪問に数える。design.md §18-3 X-360） */
 const C003_NO = "2/2/3";
 
@@ -133,7 +148,8 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     if (start === null) return null;
     const from = addDays(start, -(resolveRevision(yearMonth).consts.care?.priorDays ?? 30));
     const to = addDays(start, -1);
-    const months = [...new Set([from.slice(0, 7), to.slice(0, 7), yearMonth])].filter((m) => m >= from.slice(0, 7) && m <= to.slice(0, 7));
+    // 日付の範囲に当たる暦月を全部見る（3 つの暦月にまたがるときの真ん中の月も。round-82 C-534）
+    const months = monthsBetween(from.slice(0, 7), to.slice(0, 7));
     let unknown = false;
     for (const m of months) {
       const mine = ukeFiles().flatMap((f) => f.receipts.filter((x) => x.yearMonth === m && ingest(x.patient) === patientId));
