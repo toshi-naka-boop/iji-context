@@ -10,6 +10,7 @@ import { SignIn, useClerk } from "../clerk";
 import { Notice } from "../consent";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
+import { ClaimsSummary } from "./claims-summary";
 
 /** 取り込むと一覧に並ぶ見本（受け入れの症例 K12・K13。合成の接続先が構造化データを返す） */
 const MORE_SAMPLE = "kozoka.UKE";
@@ -108,6 +109,7 @@ export default function UkeImport() {
           ))}
         </div>
       )}
+      <ClaimsSummary tick={list} />
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {list.map((u) => u.unreadable || u.payer === null ? (
           <article key={u.name} className="card">

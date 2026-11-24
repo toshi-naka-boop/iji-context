@@ -10,6 +10,12 @@ export const GET = route({ roles: allow("GET /api/auth/me") }, ({ user, clerkId 
   clerkId,
   canSwitchRole: getAuth().isSolo(user),
   canInvite: getAuth().canInvite(user),
+  // 職員の一覧・停止・役割の変更ができるか（事務長とクリニックの持ち主）
+  canManageStaff: getAuth().canManageStaff(user),
+  // クリニックの持ち主か（クリニックをまるごと消せるのは持ち主だけ）
+  isOwner: getAuth().isOwner(user),
+  // 停止していない事務長がいるか（いなければ、招待の欄は事務長の招待だけを作れる）
+  hasManager: getAuth().activeManagers(user.tenantId) > 0,
   // クリニックの使い方（demo／real／undecided）と、未定のときにこの人が選べるか
   tenantKind: getAuth().tenantKind(user.tenantId),
   canChooseKind: getAuth().canChooseKind(user),

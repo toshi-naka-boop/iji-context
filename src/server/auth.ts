@@ -15,6 +15,10 @@ export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
 /** 使い方が未定のクリニックで、選ぶまで待ってもらうときの文言（src/server/errors.ts の TenantUndecided と同じ） */
 const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
+/** 実在のデータで使うクリニックで、医師の役割に変えようとしたときの文言 */
+const DOCTOR_BY_INVITE = "実在のデータで使うクリニックでは、医師の役割に切り替えられません。医師には、医師の役割の招待コードで登録してもらってください";
+/** 事務長がいないクリニックで、事務長以外を招こうとしたときの文言 */
+export const NO_MANAGER_INVITE = "このクリニックには事務長がいません。このまま事務長以外の人を招くと、招待と監査ログを扱える人がいなくなります。先に役割を事務長に切り替えるか、事務長の招待コードを発行してください";
 /** 招待コードの期限（日） */
 const INVITE_DAYS = 7;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -148,6 +152,13 @@ export function openAuth(dbFile: string) {
     db.prepare("INSERT INTO invites (code_hash, tenant_id, role, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").run(sha256(code), by.tenantId, role, by.id, now.toISOString(), expiresAt);
     return { code, role, expiresAt };
   }
+  /**
+   * 招待で、クリニックに事務長がいないまま 2 人目が入る罠（採点 r1 事務長 #6）を断る。停止していない事務長がいないクリニックでは、事務長の招待だけを作れる。
+   * 1 人で使っている持ち主が事務のまま事務長以外を招くと、2 人目が入ったあと、招待も監査ログも扱える人がいなくなるため（docs/security.md）
+   */
+  function assertInviteKeepsManager(by: User, role: Role): void {
+    if (role !== "manager" && activeManagers(by.tenantId) === 0) throw conflict(NO_MANAGER_INVITE);
+  }
   /** 画面に出す招待の id。コードのハッシュそのものは外に出さない（もう一度ハッシュにして、先頭だけを使う） */
   const inviteId = (codeHash: string) => sha256(`invite-id:${codeHash}`).slice(0, 16);
   type InviteRow = { code_hash: string; role: string; created_at: string; expires_at: string; used_at: string | null };
@@ -197,12 +208,97 @@ export function openAuth(dbFile: string) {
 
   /**
    * 自分の役割を切り替える（FR-144）。1 人で始めたクリニックで、ほかの利用者がいないときだけ（1 人で全部の役を通して使うため）。
-   * 利用者が 2 人以上いるクリニックではできない
+   * 利用者が 2 人以上いるクリニックではできない。医師への切り替えは、デモで試すクリニックだけ（実在のデータで使うクリニックでは、
+   * 持ち主が医師になって医師確認の回答・承認を自分でできてしまうので、医師は招待で入った医師のアカウントに限る）
    */
   function switchRole(user: User, role: Role): User {
     if (!isSolo(user)) throw forbidden("役割を切り替えられるのは、1 人で使っているクリニックだけです");
+    if (role === "doctor" && tenantKind(user.tenantId) !== "demo") throw forbidden(DOCTOR_BY_INVITE);
     db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, user.id);
     return { ...user, role };
+  }
+
+  /** クリニックの持ち主（そのクリニックを始めた人。tenant id が自分の id） */
+  const isOwner = (user: User) => user.tenantId === user.id;
+  /** 職員の一覧・停止・再開・役割の変更ができるのは、事務長とクリニックの持ち主（採点 r1 事務長 #2） */
+  const canManageStaff = (user: User) => user.role === "manager" || isOwner(user);
+  /** 停止していない事務長の人数 */
+  const activeManagers = (tenantId: string) => (db.prepare("SELECT COUNT(*) AS n FROM users WHERE tenant_id = ? AND role = 'manager' AND disabled_at IS NULL").get(tenantId) as { n: number }).n;
+  type StaffRow = { id: string; login: string; name: string; role: string; disabled_at: string | null };
+  const staffRowsOf = (tenantId: string) => db.prepare("SELECT id, login, name, role, disabled_at FROM users WHERE tenant_id = ? ORDER BY created_at, rowid").all(tenantId) as StaffRow[];
+  /** 自分のクリニックの職員の一覧（登録の順）。パスワードのハッシュや同意の記録は返さない */
+  function listStaff(by: User): { id: string; login: string; name: string; role: Role; owner: boolean; self: boolean; disabled: boolean }[] {
+    if (!canManageStaff(by)) throw forbidden("職員の一覧を見られるのは、事務長とクリニックの持ち主だけです");
+    return staffRowsOf(by.tenantId).map((r) => ({ id: r.id, login: r.login, name: r.name, role: isRole(r.role) ? r.role : "clerk", owner: r.id === by.tenantId, self: r.id === by.id, disabled: r.disabled_at !== null }));
+  }
+  /** 操作の相手（同じクリニックの人だけ。ほかのクリニックの人は「いない」として扱う） */
+  function staffOf(by: User, id: string): StaffRow {
+    const r = staffRowsOf(by.tenantId).find((x) => x.id === id);
+    if (!r) throw notFound("その職員はいません");
+    return r;
+  }
+  /** 変えたあとに停止していない事務長がいなくなる操作は断る（事務長がいたクリニックだけ。いないクリニックでは、事務長を戻す操作を止めない） */
+  function keepManager(tenantId: string, target: StaffRow, after: { role: string; disabled: boolean }) {
+    const before = activeManagers(tenantId);
+    const was = target.role === "manager" && target.disabled_at === null ? 1 : 0;
+    const will = after.role === "manager" && !after.disabled ? 1 : 0;
+    if (before > 0 && before - was + will === 0) throw conflict("クリニックに事務長がいなくなるので、この操作はできません。先にほかの人を事務長にしてください");
+  }
+  /**
+   * 職員の役割を変える。実在のデータで使うクリニックでは、医師の役割には変えられず、医師の役割の人をほかの役割にも変えない
+   * （医師は、医師の役割の招待で入った人だけ。医師確認の回答・承認を医師でない人が記録しないように）
+   */
+  function setStaffRole(by: User, id: string, role: Role): { id: string; role: Role } {
+    if (!canManageStaff(by)) throw forbidden("職員の役割を変えられるのは、事務長とクリニックの持ち主だけです");
+    return db
+      .transaction(() => {
+        const target = staffOf(by, id);
+        if (target.role === role) return { id, role };
+        if ((role === "doctor" || target.role === "doctor") && tenantKind(by.tenantId) !== "demo") throw forbidden(DOCTOR_BY_INVITE);
+        keepManager(by.tenantId, target, { role, disabled: target.disabled_at !== null });
+        db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+        return { id, role };
+      })
+      .immediate();
+  }
+  /** 職員を停止する（ログインできなくなり、いまのセッションも消す）・再開する。自分とクリニックの持ち主は停止できない */
+  function setStaffDisabled(by: User, id: string, disabled: boolean, now = new Date()): { id: string; disabled: boolean } {
+    if (!canManageStaff(by)) throw forbidden("職員を停止・再開できるのは、事務長とクリニックの持ち主だけです");
+    return db
+      .transaction(() => {
+        const target = staffOf(by, id);
+        if (disabled && target.id === by.id) throw conflict("自分は停止できません");
+        if (disabled && target.id === by.tenantId) throw conflict("クリニックの持ち主は停止できません");
+        keepManager(by.tenantId, target, { role: target.role, disabled });
+        db.prepare("UPDATE users SET disabled_at = ? WHERE id = ?").run(disabled ? now.toISOString() : null, id);
+        if (disabled) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+        return { id, disabled };
+      })
+      .immediate();
+  }
+
+  /**
+   * クリニックをまるごと消す前の確かめ（採点 r1 事務長 #8）：持ち主だけ。確かめの入力は持ち主のログイン ID（クリニックの名前は持っていないので、打ち間違えにくい自分の ID で確かめる）
+   */
+  function assertCanEraseTenant(by: User, confirm: string): void {
+    if (!isOwner(by)) throw forbidden("クリニックを消せるのは、クリニックの持ち主だけです");
+    if (confirm !== by.login) throw badRequest("確かめの欄に、あなたのログイン ID をそのまま入れてください", ["login"]);
+  }
+  /**
+   * クリニックの利用者・セッション・招待・クリニックの行を消す（1 つのトランザクション）。ログインまわりの記録（auth_events）は id だけなので残す。
+   * クリニックのデータ（DB・知識・医師確認の記録・取り込んだファイル）は呼び出し側が消す（src/server/instance.ts の eraseTenant）
+   */
+  function forgetTenant(tenantId: string): { users: string[] } {
+    return db
+      .transaction(() => {
+        const users = (db.prepare("SELECT id FROM users WHERE tenant_id = ?").all(tenantId) as { id: string }[]).map((r) => r.id);
+        db.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)").run(tenantId);
+        db.prepare("DELETE FROM invites WHERE tenant_id = ?").run(tenantId);
+        db.prepare("DELETE FROM users WHERE tenant_id = ?").run(tenantId);
+        db.prepare("DELETE FROM tenants WHERE id = ?").run(tenantId);
+        return { users };
+      })
+      .immediate();
   }
 
   /**
@@ -230,12 +326,13 @@ export function openAuth(dbFile: string) {
 
   /** ID かパスワードが違えば null（どちらが違うかは言わない） */
   function login(loginId: string, password: string): User | null {
-    const r = db.prepare("SELECT * FROM users WHERE login = ?").get(loginId) as (Row & { password_hash: string }) | undefined;
+    const r = db.prepare("SELECT * FROM users WHERE login = ?").get(loginId) as (Row & { password_hash: string; disabled_at: string | null }) | undefined;
     if (!r) {
       verifyPassword(password, DUMMY_HASH); // 時間で ID の有無が分からないように（ある ID と同じく照合を 1 回だけ回す）
       return null;
     }
-    return verifyPassword(password, r.password_hash) ? toUser(r) : null;
+    // 停止した人は、パスワードが合ってもログインできない（照合は同じく 1 回回す。停止しているかは外に教えない）
+    return verifyPassword(password, r.password_hash) && r.disabled_at === null ? toUser(r) : null;
   }
   function createSession(userId: string, now = new Date()): { token: string; expires: Date } {
     const token = randomBytes(32).toString("base64url");
@@ -248,7 +345,7 @@ export function openAuth(dbFile: string) {
   function userOfSession(token: string | undefined, now = new Date()): User | null {
     if (!token) return null;
     const r = db
-      .prepare("SELECT u.id, u.login, u.name, u.tenant_id, u.role, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?")
+      .prepare("SELECT u.id, u.login, u.name, u.tenant_id, u.role, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.disabled_at IS NULL")
       .get(sha256(token)) as (Row & { expires_at: string }) | undefined;
     if (!r) return null;
     if (r.expires_at <= now.toISOString()) {
@@ -267,6 +364,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

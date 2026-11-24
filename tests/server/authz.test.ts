@@ -79,6 +79,24 @@ describe("医師確認の回答と承認", () => {
     expect(auth().eventsOf(owner.tenantId).map((e) => e.event)).toContain("role.switch:clerk>doctor");
   });
 
+  it("実在のデータで使うクリニックでは、1 人で使っている持ち主でも医師の役割に切り替えられない（ほかの役割には切り替えられる）", async () => {
+    const owner = auth().register("real_solo_owner", "じつざい", "password123", "real");
+    const cookie = cookieOf(owner);
+    const denied = await switchTo(cookie, "doctor");
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error).toContain("招待コード");
+    expect(auth().login("real_solo_owner", "password123")!.role).toBe("clerk");
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    // デモで試すクリニックでは、今までどおり医師にも切り替えられる
+    const demo = auth().register("demo_solo_owner", "でも", "password123", "demo");
+    expect((await switchTo(cookieOf(demo), "doctor")).status).toBe(200);
+    // 断った切り替えも監査ログに残る
+    expect(instance.runAs(owner, () => instance.getApp().audit.list()).reverse().map((r) => [r.action, r.target, r.result])).toEqual([
+      ["POST /api/auth/role", "doctor", "denied"],
+      ["POST /api/auth/role", "manager", "ok"],
+    ]);
+  });
+
   it("医師確認の id の形でないものは、記録のファイルを探す前に断る", async () => {
     const approve = (await import("../../app/api/doctor/[id]/approve/route")).POST;
     const u = auth().register("clinic_path", "ぱす", "password123");
@@ -117,6 +135,8 @@ describe("招待制の登録", () => {
   it("招待コードは 1 回だけ使え、招待のクリニックとロールで登録される。DB にはコードそのものを置かない", async () => {
     const owner = auth().register("clinic_inv", "おーなー", "password123");
     const other = auth().register("clinic_other", "べつ", "password123");
+    // 事務長のいないクリニックでは事務長以外を招けないので、持ち主は先に事務長に切り替える（採点 r1 事務長 #6）
+    expect((await switchTo(cookieOf(owner), "manager")).status).toBe(200);
     const made = await invite(cookieOf(owner), "doctor");
     expect(made.status).toBe(200);
     const { code, role } = (await made.json()) as { code: string; role: Role };
@@ -152,6 +172,30 @@ describe("招待制の登録", () => {
     const dump = JSON.stringify([db.prepare("SELECT * FROM invites").all(), db.prepare("SELECT * FROM auth_events").all()]);
     db.close();
     expect(dump).not.toContain(code);
+  });
+
+  it("事務長のいないクリニックでは、事務長の招待だけを作れる（事務長のいないまま 2 人目が入る罠を断る）", async () => {
+    const owner = auth().register("clinic_trap", "わな", "password123");
+    const cookie = cookieOf(owner);
+    for (const role of ["clerk", "veteran", "doctor"] as const) {
+      const r = await invite(cookie, role);
+      expect(r.status).toBe(409);
+      expect((await r.json()).error).toContain("事務長がいません");
+    }
+    expect(auth().listInvites(owner)).toEqual([]);
+    // 事務長の招待は作れる。事務長が入ったあとは、ほかの役割も招ける
+    const { code } = (await (await invite(cookie, "manager")).json()) as { code: string };
+    const manager = auth().registerWithInvite("trap_mgr", "じむちょう", "password123", code);
+    expect((await invite(cookieOf(manager), "clerk")).status).toBe(200);
+    // 断った招待も監査ログに残る
+    const rows = instance.runAs(owner, () => instance.getApp().audit.list()).reverse().filter((r) => r.action === "POST /api/invites");
+    expect(rows.map((r) => [r.userId, r.target, r.result])).toEqual([
+      [owner.id, "clerk", "rejected"],
+      [owner.id, "veteran", "rejected"],
+      [owner.id, "doctor", "rejected"],
+      [owner.id, "manager", "ok"],
+      [manager.id, "clerk", "ok"],
+    ]);
   });
 
   it("期限の切れた招待は使えない", () => {
@@ -195,7 +239,9 @@ describe("招待制の登録", () => {
     expect((await revoke(null, "0123456789abcdef")).status).toBe(401);
 
     // 1 人で使っている持ち主は、招待を作れて、一覧も見られる。コードもハッシュも返らない
+    // （事務長のいないクリニックでは事務長以外を招けないので、先に事務長に切り替える。採点 r1 事務長 #6）
     expect(await rowsOf(cookie)).toEqual([]);
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
     const usedCode = ((await (await invite(cookie, "veteran")).json()) as { code: string }).code;
     const keptCode = ((await (await invite(cookie, "doctor")).json()) as { code: string }).code;
     const first = await list(cookie);

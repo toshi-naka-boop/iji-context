@@ -370,6 +370,13 @@ ALTER TABLE tenants_v6 RENAME TO tenants;
       db.exec(TENANTS_KIND_TRIGGER);
     },
   },
+  {
+    // 職員の停止（採点 r1 事務長 #2）：停止した日時。停止した人はログインできず、セッションも使えない。再開すると空に戻す
+    version: 7,
+    sql: `
+ALTER TABLE users ADD COLUMN disabled_at TEXT;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

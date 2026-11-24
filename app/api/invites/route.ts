@@ -9,6 +9,8 @@ import { inviteBody } from "../../../src/server/schemas/auth";
 export const GET = route({ roles: allow("GET /api/invites") }, ({ user }) => getAuth().listInvites(user));
 
 export const POST = route({ roles: allow("POST /api/invites"), body: inviteBody, audit: { target: ({ body }) => body.role } }, ({ user, body, ip }) => {
+  // 事務長がいないクリニックでは、事務長の招待だけを作る（事務長のいないまま 2 人目が入る罠を断る）
+  getAuth().assertInviteKeepsManager(user, body.role);
   const invite = getAuth().createInvite(user, body.role);
   getAuth().recordEvent({ event: `invite.create:${body.role}`, result: "ok", userId: user.id, tenantId: user.tenantId, ip });
   return invite;

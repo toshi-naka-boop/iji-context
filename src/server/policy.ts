@@ -36,6 +36,8 @@ export const POLICY = {
   "GET /api/auth/me": row(ALL, "none", false),
   // 未定のクリニックの使い方（demo／real）を一度だけ選ぶ（2026-11-22 利用者の判断）：事務長と、1 人で使っているクリニックの持ち主
   "POST /api/tenant/kind": row({ roles: ["manager"], solo: true }, "none", false),
+  // クリニックをまるごと消す（採点 r1 事務長 #8）。クリニックの持ち主だけ（持ち主かどうかは src/server/auth.ts の assertCanEraseTenant が照合する）。消す操作は同意を条件にしない
+  "POST /api/tenant/erase": row(ALL, "none", false),
   // 役割の切替（FR-144）：1 人で使っているクリニックの持ち主だけ。ロールでは許さない
   "POST /api/auth/role": row({ roles: [], solo: true }, "none", false),
   // 招待の発行・一覧・取り消し（FR-137）：事務長と、1 人で使っているクリニックの持ち主
@@ -44,6 +46,12 @@ export const POLICY = {
   "POST /api/invites/[id]/revoke": row({ roles: ["manager"], solo: true }, "none", false),
   // 監査ログの閲覧（FR-140）
   "GET /api/audit": row(["manager"], "none", false),
+  // 職員の一覧・役割の変更・停止・再開（採点 r1 事務長 #2）。事務長とクリニックの持ち主（持ち主かどうかは src/server/auth.ts の canManageStaff が照合する）。
+  // 監査ログの対象は職員の id だけ（役割の値・名前は残さない）
+  "GET /api/staff": row(ALL, "none", false),
+  "POST /api/staff/[id]/role": row(ALL, "none", false),
+  "POST /api/staff/[id]/suspend": row(ALL, "none", false),
+  "POST /api/staff/[id]/resume": row(ALL, "none", false),
   // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
   "GET /api/masters": row(["manager"], "none", false),
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
@@ -169,6 +177,8 @@ export const POLICY = {
   "POST /api/uke/upload": row(WORK, "none", true),
   // 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11）。一覧と同じ役割
   "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
+  // 取り込んだレセプトの全件の一覧（点検の結果の件数つき。採点 r1 医療事務課長 P1-1）。点検と同じ人が見る。読むだけ
+  "GET /api/uke/summary": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだレセプトの試算（design.md §11-12）：版を選んで、その場で計算して返す。保存しない。点検と同じ役割
   "GET /api/uke/claims/[claimId]/trial": row(["clerk", "veteran", "manager"], "none", true),
   // 「この請求の点検を確かめた」（design.md §14-3・段 17g）：実在用のクリニックで F10 の処理件数に数える。点検を見られる役割と同じ（役割では分けない。C-184）

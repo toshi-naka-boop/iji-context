@@ -72,6 +72,8 @@ describe("クリニックの種類", () => {
       expect(auth().tenantKind(owner.tenantId)).toBe("real");
       expect(appOf(owner).kind).toBe("real");
 
+      // 事務長のいないクリニックでは事務長以外を招けないので、持ち主は先に事務長に切り替える（採点 r1 事務長 #6）
+      expect((await switchTo(cookieOf(owner), "manager")).status).toBe(200);
       const inviteRes = await (await import("../../app/api/invites/route")).POST(post("/api/invites", cookieOf(owner), { role: "doctor" }));
       const { code } = (await inviteRes.json()) as { code: string };
       // 招待コードと種類を両方送ると断る（招待したクリニックの種類になる）
@@ -421,9 +423,10 @@ describe("real に作り物のデータを入れない・見せない", () => {
     // 見本の名前では取り込めない。練習問題は始められない
     expect((await (await import("../../app/api/uke/route")).POST(post("/api/uke", cookie, { name: "kokuhoren.UKE" }))).status).toBe(400);
     expect(() => appOf(real).startDrill("new1", "drill-1")).toThrow(/デモのクリニックだけ/);
-    await switchTo(cookie, "doctor");
-    expect(await json(await (await import("../../app/api/doctor/facts/route")).GET(get("/api/doctor/facts", cookie)))).toEqual([]);
-    await switchTo(cookie, "clerk");
+    // real では持ち主が医師に切り替えられないので、医師は招待で入ってもらう（採点 r1 技術責任者 #1）
+    expect((await switchTo(cookie, "doctor")).status).toBe(403);
+    const doctor = auth().registerWithInvite("data_real_doc", "いし", "password123", auth().createInvite(real, "doctor").code);
+    expect(await json(await (await import("../../app/api/doctor/facts/route")).GET(get("/api/doctor/facts", cookieOf(doctor))))).toEqual([]);
     // 患者マスタにも作り物の患者が入らない
     const db = new Database(instance.tenantPaths(real.tenantId).dbFile, { readonly: true });
     expect(db.prepare("SELECT COUNT(*) AS n FROM patients").get()).toEqual({ n: 0 });

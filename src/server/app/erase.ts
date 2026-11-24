@@ -110,5 +110,16 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
       .immediate();
   }
 
-  return { deleteUpload, forgetQueries };
+  /**
+   * クリニックをまるごと消すとき（src/server/instance.ts の eraseTenant）に、DB の外にあるメンターのやり取りを消す相手を返す：
+   * 医療事務ごとの、これまでに使ったセッションの id の全部（deleteUpload の clerks と同じ形）。DB は書き換えない（DB はファイルごと消す）
+   */
+  function allSessions(): { id: string; sessionIds: string[] }[] {
+    const rows = sqlite.prepare("SELECT clerk_id AS id, session_id AS sid FROM clerk_sessions UNION SELECT id, session_id AS sid FROM clerks WHERE session_id IS NOT NULL").all() as { id: string; sid: string }[];
+    const by = new Map<string, string[]>();
+    for (const r of rows) by.set(r.id, [...(by.get(r.id) ?? []), r.sid]);
+    return [...by].map(([id, sessionIds]) => ({ id, sessionIds }));
+  }
+
+  return { deleteUpload, forgetQueries, allSessions };
 }

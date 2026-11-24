@@ -37,6 +37,7 @@ import { createRevision } from "./app/revision";
 import { createStructured } from "./app/structured";
 import { createUke } from "./app/uke";
 import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
+import { createUkeSummary } from "./app/uke-summary";
 import { claimOfLines } from "../generic/overlap";
 import { resolveRevision } from "../engine/revisions";
 import { createAudit } from "./audit";
@@ -122,6 +123,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 査定・返戻の突き合わせ（spec FR-202 の I-1）。当てた請求は、取り込んだレセプトの点検と同じ点検で点検し直す（何も記録しない側の点検。USED は出さない）
   const review = createReview(ctx, uke, ukeCheck.ukeCheck);
   const prevented = createPrevented(questions, doctor, review.reviewReport);
+  /** 取り込んだレセプトの全件の一覧（採点 r1 医療事務課長 P1-1）。USED を付けない元の点検で数える */
+  const ukeSummary = createUkeSummary(uke, ukeCheck.ukeCheck, claimReviews);
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
@@ -239,6 +242,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     ...clock,
     ...clerks,
     ...ukeCheck,
+    ...ukeSummary,
     /** カルテの構造化データ（design.md §16-1。段 19a） */
     ...structured,
     /** 画面の操作の前に、カルテの請求の構造化データを接続先から読んで残す（C-440） */
