@@ -148,6 +148,8 @@ export const POLICY = {
   "POST /api/patients/[claimId]/others": row(WORK, "none", true),
   "POST /api/patients/[claimId]/others-none": row(WORK, "none", true),
   "GET /api/care-homes": row([...WORK, "manager"], "none", false),
+  // 聞き取りの画面（design.md §18-5）：確かめる患者と問いの一覧。見るのは医療事務・ベテラン・事務長
+  "GET /api/uke/care-check": row([...WORK, "manager"], "none", true),
   "POST /api/care-homes": row(WORK, "none", false),
   // 一覧は、消す操作のために事務長にも見せる
   "GET /api/uke": row(["clerk", "veteran", "manager"], "none", true),

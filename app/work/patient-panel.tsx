@@ -22,6 +22,7 @@ type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings
 export const LABEL: Record<PatientFactKey, string> = {
   careLevel: "要介護度",
   careCert: "要介護・要支援の認定",
+  terminalCancer: "末期の悪性腫瘍か（医師に確かめる）",
   disabilitySupportLevel: "障害支援区分",
   table7: "別表第七",
   table8_2: "別表第八の二",

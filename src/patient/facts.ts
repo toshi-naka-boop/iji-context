@@ -7,7 +7,7 @@ import { monthRange } from "../demo/period";
 import { addDays } from "../engine/rules/util";
 import { BUILDING_BANDS, type BuildingBand, type Fact, type Facts, type Residence } from "../engine/types";
 
-export const PATIENT_FACT_KEYS = ["careLevel", "careCert", "disabilitySupportLevel", "table7", "table8_2", "table8_3Other", "homeOxygen", "residence", "contactDocProvided", "emergencyEligible", "comprehensiveCare", "buildingBand"] as const;
+export const PATIENT_FACT_KEYS = ["careLevel", "careCert", "terminalCancer", "disabilitySupportLevel", "table7", "table8_2", "table8_3Other", "homeOxygen", "residence", "contactDocProvided", "emergencyEligible", "comprehensiveCare", "buildingBand"] as const;
 export type PatientFactKey = (typeof PATIENT_FACT_KEYS)[number];
 export const FACT_SOURCES = ["介護保険証", "受給者証", "カルテ", "カルテ以外の記録", "医師に確認"] as const;
 export const RESIDENCES: Residence[] = ["居宅", "施設入居等"];

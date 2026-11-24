@@ -1,7 +1,12 @@
 // 画面から呼ぶ処理をまとめた層（API Route はここを薄く呼ぶだけ）。データは SQLite と、knowledge/・query-log/ のファイル
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
-import { createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
+import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
+import { careNotDone, hasCareScene, hasOthersScene } from "../engine/care-judge";
+import { careStateOf, certifiedOf } from "../patient/facts";
+import { CARE_EXPIRY_NOTICE_DAYS } from "../patient/checks";
+import { monthRange } from "../demo/period";
+import { addDays } from "../engine/rules/util";
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
 import { createClaimReviews } from "./app/claim-reviews";
@@ -244,6 +249,41 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       // 今までに残した 2 値の居住の場所（住まいの種別の申告がない月だけ判定に使う。画面には「古い入力です」）
       const legacy = eff.residenceType ? null : (patientFactsOf.latestPatientFacts(patientId).find((f) => f.key === "residence")?.value ?? null);
       return { claimId, yearMonth: receipt.yearMonth, care: eff, legacyResidence: legacy, others: others.rows, none: others.none, homes: care.careHomes() };
+    },
+    /**
+     * 聞き取りの画面（design.md §18-5）：その診療年月の取り込んだ請求のうち、R20・R21 の場面の区分の行があり、使う申告が効いていない・分からない・
+     * 認定の期限が診療年月の中か前・確かめ直す日を過ぎた患者（1 患者 1 枚。聞く問いだけ）と、点検の範囲に「見ていません」がある患者の数。
+     * month を省くと、月ごとの数だけを返す（月の一覧の入口）
+     */
+    careCheck: (month?: string) => {
+      const all = casesOf.cases().filter((c) => !month || c.yearMonth === month);
+      const rows = all.flatMap((c) => {
+        const rev = resolveRevision(c.yearMonth);
+        const careScene = hasCareScene(c, rev.consts);
+        const othersScene = hasOthersScene(c, rev.consts);
+        if (!careScene && !othersScene) return [];
+        const { receipt } = uke.receiptOf(c.claimId);
+        const patientId = patientFactsOf.ingest(receipt.patient);
+        const eff = care.effectiveCare(patientId, c.yearMonth);
+        const cert = certifiedOf(careStateOf(patientFactsOf.careRows(patientId), c.yearMonth));
+        const residence = eff.residenceType?.value as { type: string; careHomeId?: string } | undefined;
+        const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
+        const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
+        if (careScene) {
+          // 認定：診療年月に効かない（期限が月の中か前・分からない）か、期限が近い（FR-199。CARE_EXPIRY_NOTICE_DAYS）
+          const lastCert = patientFactsOf.careRows(patientId).at(-1);
+          const soon = lastCert?.validUntil != null && lastCert.validUntil <= addDays(clock.now().slice(0, 10), CARE_EXPIRY_NOTICE_DAYS);
+          if (!cert.known || soon) asks.push("careCert");
+          // 住まいの種別：申告がない・分からない・入所先の施設の確かめ直す日を過ぎた
+          if (!residence || residence.type === "分からない" || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
+          const stay = eff.shortStay?.value as { status: string } | undefined;
+          if ((!stay || stay.status === "分からない") && askShortStay(c.care ?? {})) asks.push("shortStay");
+        }
+        if (othersScene && !c.others) asks.push("others");
+        return [{ claimId: c.claimId, yearMonth: c.yearMonth, patient: receipt.patient.name, asks, notDone: careNotDone(c, rev.consts) }];
+      });
+      const months = [...new Set(rows.map((r) => r.yearMonth))].sort().map((m) => ({ month: m, targets: rows.filter((r) => r.yearMonth === m && r.asks.length > 0).length, notDone: rows.filter((r) => r.yearMonth === m && r.notDone).length }));
+      return { month: month ?? null, months, targets: month ? rows.filter((r) => r.asks.length > 0) : [], notDoneCount: rows.filter((r) => r.notDone).length, homes: care.careHomes() };
     },
     saveCare: (claimId: string, clerkId: string, input: CareInput) => {
       const { receipt } = uke.receiptOf(claimId);

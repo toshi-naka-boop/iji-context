@@ -38,10 +38,13 @@ export default function UkeImport() {
   const [canDelete, setCanDelete] = useState(false);
   /** 実在のデータで使うクリニックか */
   const [real, setReal] = useState(false);
+  /** 聞き取りの画面の入口（design.md §18-5）：月ごとの、点検の前に確かめる患者と「見ていません」がある患者の数 */
+  const [careMonths, setCareMonths] = useState<{ month: string; targets: number; notDone: number }[]>([]);
   useEffect(() => {
     if (!user) return;
     getJson<{ kind: string }>("/api/clock").then((c) => setReal(c.kind !== "demo")).catch(() => {});
     getJson<typeof list>("/api/uke").then(setList).catch((e: Error) => setErr(e.message));
+    getJson<{ months: typeof careMonths }>("/api/uke/care-check").then((d) => setCareMonths(d.months)).catch(() => setCareMonths([]));
     getJson<{ role: string }>("/api/auth/me").then((me) => setCanDelete(me.role === "veteran" || me.role === "manager")).catch(() => {});
   }, [user]);
   /** 取り込んだファイルを消す（確かめてから）。原本と、そのファイルのレセプトにぶら下がる記録が消える */
@@ -93,6 +96,16 @@ export default function UkeImport() {
       </PageGuide>
       {real && <div className="notice">このクリニックは実在のデータで使う設定です。見本の UKE（合成データ）は出しません。同梱の見本と同じ内容のファイルは取り込めません。</div>}
       {err && <div className="notice warn">{err}</div>}
+      {careMonths.length > 0 && (
+        <div className="notice" style={{ margin: "0 0 12px" }}>
+          <strong>月末の点検の前に（介護保険・ほかの医療機関との調整）</strong>
+          {careMonths.map((m) => (
+            <div key={m.month}>
+              {m.month}：<a href={`/uke/care-check?month=${encodeURIComponent(m.month)}`}>点検の前に確かめること（{m.targets} 人）</a>。介護・ほかの機関との調整を見ていない患者 {m.notDone} 人
+            </div>
+          ))}
+        </div>
+      )}
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {list.map((u) => u.unreadable || u.payer === null ? (
           <article key={u.name} className="card">

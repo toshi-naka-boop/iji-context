@@ -182,6 +182,8 @@ export function FactInput(props: { claimId: string; finding: Finding; patientHre
   const role = useRole();
   const m = props.finding.missing;
   if (!m) return null;
+  // 住まいの種別は聞き取りの画面で答える（design.md §18-2・§18-5。C-494）
+  if (m.field === "residenceType") return <div className="muted">住まいの種別は「点検の前に確かめること」の画面で残します。<a href="/uke/care-check">聞き取りの画面へ</a></div>;
   if ((PATIENT_FACT_KEYS as readonly string[]).includes(m.field)) {
     return (
       <div className="muted">
