@@ -15,7 +15,9 @@ type Ask = "careCert" | "residenceType" | "shortStay" | "others";
 type Target = { claimId: string; yearMonth: string; patient: string; asks: Ask[]; notDone: boolean; notes: string[] };
 type Home = { homeId: string; name: string; kind: string; placedPhysician: string; mitoriFacility: string; recheckOn: string };
 type Check = { month: string | null; months: { month: string; targets: number; notDone: number }[]; targets: Target[]; notDoneCount: number; homes: Home[] };
-type CareView = { care: Record<string, { value: Record<string, unknown>; checkedOn: string; source: string } | undefined>; legacyResidence: string | null; others: { name: string; kind: string; kanriSide: string }[]; none: { forMonth: string } | null };
+/** 今ある機関の行（careView の others。instId で同じ機関を直す） */
+type Inst = { instId: string; name: string; kind: string; specialRelation: string; kanriSide: string; activities: Record<string, string>; referredOn: string | null };
+type CareView = { care: Record<string, { value: Record<string, unknown>; checkedOn: string; source: string } | undefined>; legacyResidence: string | null; others: Inst[]; none: { forMonth: string } | null };
 
 const ASK_LABEL: Record<Ask, string> = { careCert: "要介護・要支援の認定", residenceType: "住まいの種別", shortStay: "今月の短期入所・宿泊", others: "ほかの医療機関・訪問看護ステーション" };
 /** 確かめた日の初期値：そのクリニックの今日（デモの時計。GET /api/clock。design.md §18-12 の 7）。読み込むまで空 */
@@ -163,8 +165,10 @@ function ShortStayForm(props: { claimId: string; homes: Home[]; onSaved: () => v
 }
 
 /** ほかの機関：ある → 行を足す／ないと確かめた／分からない */
-function OthersForm(props: { claimId: string; onSaved: () => void }) {
+function OthersForm(props: { claimId: string; current: Inst[]; onSaved: () => void }) {
   const [mode, setMode] = useState("");
+  /** 直す機関（空は新しい機関。round-83 X-402） */
+  const [instId, setInstId] = useState("");
   const [v, setV] = useState({ name: "", kind: "", specialRelation: "分からない", kanriSide: "分からない", referredOn: "" });
   const [acts, setActs] = useState<Record<string, string>>(Object.fromEntries(OTHER_ACTIVITIES.map((a) => [a, "分からない"])));
   const [b, setB] = useState({ checkedOn: today(), source: "" });
@@ -173,7 +177,7 @@ function OthersForm(props: { claimId: string; onSaved: () => void }) {
     setErr("");
     try {
       if (mode === "none") await postJson(`/api/patients/${encodeURIComponent(props.claimId)}/others-none`, b);
-      else await postJson(`/api/patients/${encodeURIComponent(props.claimId)}/others`, { name: v.name, kind: v.kind, specialRelation: v.specialRelation, kanriSide: v.kanriSide, activities: acts, referredOn: v.referredOn || null, ...b });
+      else await postJson(`/api/patients/${encodeURIComponent(props.claimId)}/others`, { ...(instId ? { instId } : {}), name: v.name, kind: v.kind, specialRelation: v.specialRelation, kanriSide: v.kanriSide, activities: acts, referredOn: v.referredOn || null, ...b });
       props.onSaved();
     } catch (e) {
       setErr((e as Error).message);
@@ -184,7 +188,7 @@ function OthersForm(props: { claimId: string; onSaved: () => void }) {
       <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
         <select aria-label="ほかの機関" value={mode} onChange={(e) => setMode(e.target.value)}>
           <option value="">選ぶ</option>
-          <option value="add">ある（行を足す）</option>
+          <option value="add">ある（行を足す・直す）</option>
           <option value="none">ないと確かめた</option>
           <option value="unknown">分からない</option>
         </select>
@@ -195,6 +199,20 @@ function OthersForm(props: { claimId: string; onSaved: () => void }) {
       </span>
       {mode === "add" && (
         <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          {props.current.length > 0 && (
+            <select aria-label="直す機関" value={instId} onChange={(e) => {
+              const id = e.target.value;
+              setInstId(id);
+              const cur = props.current.find((x) => x.instId === id);
+              if (cur) {
+                setV({ name: cur.name, kind: cur.kind, specialRelation: cur.specialRelation, kanriSide: cur.kanriSide, referredOn: cur.referredOn ?? "" });
+                setActs(Object.fromEntries(OTHER_ACTIVITIES.map((a) => [a, cur.activities[a] ?? "分からない"])));
+              }
+            }}>
+              <option value="">新しい機関を足す</option>
+              {props.current.map((x) => <option key={x.instId} value={x.instId}>{x.name}を直す</option>)}
+            </select>
+          )}
           <input aria-label="機関の名前" placeholder="機関の名前" maxLength={60} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />
           <select aria-label="機関の種別" value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value })}>
             <option value="">種別を選ぶ</option>
@@ -239,7 +257,7 @@ function Card(props: { t: Target; homes: Home[]; onHomes: (h: Home[]) => void; e
               : a === "careCert" ? <CareCertForm claimId={t.claimId} onSaved={props.onSaved} />
               : a === "residenceType" ? <ResidenceForm claimId={t.claimId} homes={props.homes} onHomes={props.onHomes} onSaved={props.onSaved} />
               : a === "shortStay" ? <><ShortStayForm claimId={t.claimId} homes={props.homes} onSaved={props.onSaved} /><label className="muted"><input type="checkbox" checked={props.picked} onChange={(e) => props.onPick(e.target.checked)} /> 下の「まとめて、使っていないと確かめた」に入れる</label></>
-              : <OthersForm claimId={t.claimId} onSaved={props.onSaved} />}
+              : <OthersForm claimId={t.claimId} current={view?.others ?? []} onSaved={props.onSaved} />}
           </div>
         ))}
       </div>

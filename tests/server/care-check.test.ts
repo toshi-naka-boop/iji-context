@@ -150,4 +150,11 @@ describe("今ある機関の行を、聞き取りの画面から直す（round-8
     expect(app.careView(id).others).toHaveLength(1);
     expect(target(id)).toBeUndefined();
   });
+  it("聞き取りの画面のほかの機関の入力は、今ある機関を選ぶと instId を送って同じ行を直す", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const src = readFileSync(path.join(__dirname, "..", "..", "app", "uke", "care-check", "page.tsx"), "utf8");
+    expect(src).toContain('aria-label="直す機関"');
+    expect(src).toContain("...(instId ? { instId } : {})");
+  });
 });
