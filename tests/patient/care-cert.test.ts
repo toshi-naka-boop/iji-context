@@ -148,3 +148,23 @@ describe("過去の月の答えが、後の月の値を上書きしない（desi
     }
   });
 });
+
+describe("同じ月の訂正（design.md §18-12 の 1。X-380）", () => {
+  it("誤って要介護 1（1〜12 月）を残したあとで、翌月分の点検で「分からない」を答えると、翌月は分からない（R03 は確定の not_eligible を出さない）。基準月は要介護 1 のまま", async () => {
+    const { tempApp, upload, fileOf, receiptOf } = await import("../helpers/care");
+    const t = tempApp();
+    try {
+      const lines = (ym: string) => [{ kubun: "C001_1I", count: 2, dates: [`${ym}-06`, `${ym}-20`] }, { kubun: "C002_2RO1", count: 1, dates: [`${ym}-20`] }, { kubun: "C002_N10_HOKATSU", count: 1, dates: [`${ym}-20`] }];
+      const [oct, nov] = upload(t.app, fileOf([receiptOf(1, YM, lines(YM)), receiptOf(1, month(1), lines(month(1)))]));
+      t.app.savePatientFact(oct, "new1", { key: "careCert", value: { kind: "要介護", level: 1, validFrom: dateIn(-9, 1) }, source: "介護保険証", validUntil: dateIn(2, 31) });
+      t.app.savePatientFact(nov, "new1", { key: "careCert", value: { kind: "分からない" }, source: "介護保険証", validUntil: null });
+      expect([t.app.caseOf(oct).facts.careLevel, t.app.caseOf(nov).facts.careLevel]).toEqual([{ known: true, value: 1 }, { known: false }]);
+      expect(evaluate(t.app.caseOf(nov)).findings.filter((f) => f.ruleId === "R03" && f.kind !== "情報不足")).toEqual([]);
+      // あとから誤った認定を同じ始まりの日で残し直せば（訂正）、またそれが効く
+      t.app.savePatientFact(nov, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: dateIn(-9, 1) }, source: "介護保険証", validUntil: dateIn(2, 31) });
+      expect(t.app.caseOf(nov).facts.careLevel).toEqual({ known: true, value: 3 });
+    } finally {
+      t.close();
+    }
+  });
+});

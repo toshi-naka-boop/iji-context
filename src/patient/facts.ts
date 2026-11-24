@@ -21,9 +21,9 @@ export type BuildingBandValue = { band: BuildingBand; fromMonth: string };
 /**
  * 要介護・要支援の認定（design.md §18-1。C-510・C-493）：要介護（1〜5）／要支援（1・2）／認定なし（確かめた）／分からない。
  * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない。
- * 認定なしの forMonth は確かめた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
+ * 認定なし・分からないの forMonth は答えた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
  */
-export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "分からない" };
+export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
 export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "分からない"] as const;
 /** 「認定なし」を確かめ直すまでの月数（設計で置いた値。制度の数字ではない。design.md §18-1） */
 export const CARE_NONE_RECHECK_MONTHS = 6;
@@ -152,6 +152,14 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
   const dated = [...byFrom.values()]
     .filter((r) => (r.value as { validFrom: string }).validFrom <= end && (r.validUntil ?? "9999-12-31") >= start)
     .sort((a, b) => (a.value as { validFrom: string }).validFrom.localeCompare((b.value as { validFrom: string }).validFrom));
+  // 同じ月の訂正（X-380）：その診療月について答えた「認定なし」「分からない」が、その月に当たる期間つきの認定より後に残したものなら、その月ではそれを優先する。
+  // ほかの月について答えた行は、期間つきの認定を上書きしない（X-370）
+  const lastDated = Math.max(-1, ...dated.map((r) => certs.indexOf(r)));
+  const sameMonth = certs.map((r, i) => ({ r, i })).filter(({ r, i }) => i > lastDated && (r.value as { forMonth?: string }).forMonth === yearMonth).at(-1);
+  if (dated.length > 0 && sameMonth) {
+    const k = (sameMonth.r.value as CareCertValue).kind;
+    return k === "認定なし" ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: sameMonth.r.source, checkedAt: sameMonth.r.checkedAt } : { known: false };
+  }
   if (dated.length === 0) {
     // 期間つきの認定が当たらない月：その月に効く「認定なし」（確かめた診療月から 6 か月。前の月には効かない。X-354）と「分からない」のうち、後に残した行
     const none = (r: PatientFact) => {
