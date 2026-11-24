@@ -182,3 +182,11 @@ describe("機関の訂正で引き継ぐ値は、訂正する月に効いてい�
     expect(app.careView(dec).others).toEqual([]);
   });
 });
+
+describe("申請中が残る月は聞き取りの対象（EM U-71 の v40・v41 の書き足し）", () => {
+  it("申請中を残した月は、認定を聞く", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null });
+    expect(target(id)?.asks).toContain("careCert");
+  });
+});

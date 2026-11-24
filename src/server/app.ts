@@ -266,14 +266,17 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
         const { receipt } = uke.receiptOf(c.claimId);
         const patientId = patientFactsOf.ingest(receipt.patient);
         const eff = care.effectiveCare(patientId, c.yearMonth);
-        const cert = certifiedOf(careStateOf(patientFactsOf.careRows(patientId), c.yearMonth));
+        const certState = careStateOf(patientFactsOf.careRows(patientId), c.yearMonth);
+        const cert = certifiedOf(certState);
+        // 申請中が残る月も聞き取りの対象（認定の結果を聞く。EM U-71 の v40・v41 の書き足し）
+        const applying = certState.known && certState.segments.some((g) => g.kind === "申請中");
         const residence = eff.residenceType?.value as { type: string; careHomeId?: string } | undefined;
         const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
         // 聞く問い（design.md §18-5）：申告がない・分からないのほか、判定に要る項目に「分からない」「欠け」が残るもの（round-82 C-541・X-391）
         const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
         if (careScene) {
           // 認定：診療年月に効かない（期限が月の中か前・分からない・申請中のあとの月）患者だけ。期限が近いだけの患者は聞かない（P07。design.md §18-12 の 5）
-          if (!cert.known) asks.push("careCert");
+          if (!cert.known || applying) asks.push("careCert");
           // 住まいの種別：申告がない・分からない・入所先の施設を付けていない（特養）・施設の値が分からない（確かめ直す日を過ぎたを含む）
           const facility = residence && residence.type !== "自宅" && residence.type !== "分からない";
           const h = c.care?.residence?.home ?? null;
