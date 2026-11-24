@@ -11,10 +11,11 @@ export type ChildKind = (typeof CHILD_KINDS)[number];
 export const MASTER_TABLES = ["shinryo", "iyakuhin", "tokutei"] as const;
 export type Tbl = (typeof MASTER_TABLES)[number];
 
-/** 当てた結果。by：name＝名称の完全一致が 1 つ／alias＝前に選んだもの／candidate＝候補から選んだ／search＝探して選んだ */
-export type ActMatch = { tbl: Tbl; code: string; name: string; by: "name" | "alias" | "candidate" | "search" };
+/** 当てた結果。by：name＝名称の完全一致が 1 つ／alias＝前に選んだもの／candidate＝候補から選んだ／search＝探して選んだ／doctor＝医師の略語の答えの語の候補から選んだ（FR-211） */
+export type ActMatch = { tbl: Tbl; code: string; name: string; by: "name" | "alias" | "candidate" | "search" | "doctor" };
 
-export type ActChild = { kind: ChildKind; written: string; lookup: string[]; quantity?: string; quote: string; match?: ActMatch | null };
+/** abbrev：書かれた名前の分からない略語の印（FR-211。保存のときにサーバーが付け直す。src/chart/abbrev.ts） */
+export type ActChild = { kind: ChildKind; written: string; lookup: string[]; quantity?: string; quote: string; match?: ActMatch | null; abbrev?: string[] };
 export type ChartAct = {
   category: ActCategory;
   /** カルテに書かれた名前（書かれたとおり） */
@@ -30,7 +31,15 @@ export type ChartAct = {
   match?: ActMatch | null;
   /** たたんだ印（design.md §16-3）。当てられない行為に本人が「同じ（ref の構造化データの行為）」「違う（same: false）」を選んだときだけ持つ */
   fold?: ActFold;
+  /** 書かれた名前の分からない略語の印（FR-211。保存のときにサーバーが付け直す。画面から来た値は使わない） */
+  abbrev?: string[];
 };
+/**
+ * 医師に略語を聞く行為か（FR-211）：書かれた名前に印があり（印は名称の完全一致がないときだけ付く）、当てておらず、たたんでもいない。
+ * 子（with）は、子に印があり当てておらず、親をたたんでいないとき
+ */
+export const askedAct = (a: Pick<ChartAct, "abbrev" | "match" | "fold">): boolean => (a.abbrev?.length ?? 0) > 0 && !a.match && !a.fold;
+export const askedChild = (a: Pick<ChartAct, "fold">, c: Pick<ActChild, "abbrev" | "match">): boolean => (c.abbrev?.length ?? 0) > 0 && !c.match && !a.fold;
 /**
  * たたむ印（design.md §16-3）。kind：order＝構造化データの行為／rule＝規則で出す算定／device＝患者の情報の機器。by：rule＝規則でたたんだ／person＝本人が選んだ。
  * same が false の印は「違う」を選んだ記録（たたまない）
@@ -157,4 +166,9 @@ export type StoredActs = {
    * rxHash はそのときの処方の文の指紋で、文が変わったら印はないものとして読む
    */
   rxConfirmed?: { by: string; at: string; rxHash: string } | null;
+  /**
+   * 略語の印（FR-211）：marks はカルテの文全体の印の語（S・O だけの語を含む。数を出すだけ）、at は保存した日時（医師への問いの営業日を数える起点）。
+   * noMaster はマスターがない・版のない診療年月で、印を付けていない（見ていません）
+   */
+  abbrev?: { marks: string[]; at: string } | { noMaster: true; at: string };
 };

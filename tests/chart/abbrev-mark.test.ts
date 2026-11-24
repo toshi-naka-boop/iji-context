@@ -4,7 +4,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { abbrevMarks, abbrevTokens, abbrevVocabOf, diseaseExact, KNOWN_WORDS, NO_MASTER_NOTE } from "../../src/chart/abbrev";
+import { abbrevMarks, abbrevTokens, abbrevVocabOf, askedItems, diseaseExact, itemKeyOf, KNOWN_WORDS, markActs, markFacts, NO_MASTER_NOTE } from "../../src/chart/abbrev";
+import type { ChartAct } from "../../src/chart/acts";
+import { lostAbbrevs } from "../../src/chart/soap";
 import { noteText } from "../../src/chart/extract";
 import { openMasters } from "../../src/masters/db";
 import { abbrevOf, chartMasters, type AbbrevEntry } from "./small-chart-masters";
@@ -52,6 +54,36 @@ describe("手で作った小さな表で", () => {
     expect(abbrevVocabOf(null, "2026-10")).toBeNull();
     expect(abbrevVocabOf(db, "2025-10")).toBeNull();
     expect(NO_MASTER_NOTE).toContain("見ていません");
+  });
+});
+
+describe("印の付け直しと聞く記載（保存のとき）", () => {
+  const vocab = { words: new Set<string>(["IgE"]), diseases: new Set<string>(["心房細動"]) };
+  const acts: ChartAct[] = [
+    { category: "検査", written: "ＥＣＧ１２", lookup: ["心電図"], quote: "ＥＣＧ１２。", abbrev: ["XX"] },
+    { category: "検査", written: "特異的ＩｇＥ", lookup: ["特異的ＩｇＥ"], quote: "特異的ＩｇＥ" },
+    { category: "注射", written: "注射", lookup: [], quote: "注射", with: [{ kind: "薬", written: "ABC液", lookup: ["推し量り"], quote: "ABC液" }] },
+  ];
+  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、名称の完全一致がある書き方には印を付けない", () => {
+    const m = markActs(acts, vocab, () => false);
+    expect(m.map((a) => [a.abbrev, a.lookup])).toEqual([[["ECG12"], []], [undefined, ["特異的ＩｇＥ"]], [undefined, []]]);
+    expect(m[2].with?.[0]).toMatchObject({ abbrev: ["ABC"], lookup: [] });
+    expect(markActs(acts, vocab, (_k, w) => w === "ＥＣＧ１２")[0].abbrev).toBeUndefined();
+  });
+  it("当てた・たたんだ行為は聞かない。病名の記載は傷病名と完全一致なら印を付けない。貼ったカルテは病名を聞かない", () => {
+    const m = markActs(acts, vocab, () => false);
+    const facts = markFacts([{ kind: "病名の記載", value: "AF", quote: "AF" }, { kind: "病名の記載", value: "心房細動", quote: "心房細動" }, { kind: "処方", value: "DOAC", quote: "DOAC継続" }], vocab);
+    expect(facts.map((f) => f.abbrev)).toEqual([["AF"], undefined, ["DOAC"]]);
+    const stored = { acts: m, rx: [], rxChoice: null, rxChoiceBy: null };
+    expect(askedItems("訪問診療", stored, facts).map((x) => [x.place, x.written, x.tokens])).toEqual([["act", "ＥＣＧ１２", ["ECG12"]], ["child", "ABC液", ["ABC"]], ["fact", "AF", ["AF"]]]);
+    expect(askedItems("記録", stored, facts).map((x) => x.place)).toEqual(["act", "child"]);
+    const matched = { ...stored, acts: [{ ...m[0], match: { tbl: "shinryo" as const, code: "160068410", name: "ＥＣＧ１２", by: "search" as const } }, { ...m[2], fold: { kind: "order" as const, by: "person" as const, same: false as const } }] };
+    expect(askedItems("記録", matched, null)).toEqual([]);
+    // 指紋は書かれた名前と引用で決まる（位置によらない）
+    expect(askedItems("記録", stored, null)[0].key).toBe(itemKeyOf("ＥＣＧ１２", "ＥＣＧ１２。"));
+  });
+  it("整形で消えた略語：原文の印の語が、整えた欄のどこにもなければ返す", () => {
+    expect(lostAbbrevs({ s: "", o: "ＥＣＧ１２", a: "心房細動", p: "", rx: "" }, ["ECG12", "AF"])).toEqual(["AF"]);
   });
 });
 

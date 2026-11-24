@@ -162,6 +162,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     confirmNote,
     confirmActs,
     actsReviewOf,
+    /** 分からない略語の印（FR-211）：取り出した直後の印と、自由記述の印の語 */
+    markExtracted: notes.markExtracted,
+    abbrevMarksOf: notes.abbrevMarksOf,
     actCandidates,
     searchMasters,
     savedActs,

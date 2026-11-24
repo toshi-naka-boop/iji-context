@@ -13,11 +13,15 @@ export type ChartNote = { s: string; o: string; a: string; p: string; rx: string
  * 不安・不眠の薬は、その日の処方に、処方箋料の区分 2 の対象になる不安・不眠の薬（EM #7-15）が含まれるか（value は「あり」か「なし」）。
  * 本人が確かめたうえで、その日の処方の出来事（psychotropic）に重ねる（src/chart/notes.ts。design.md §11-5）。長期処方に当たるかは読まない（医師が確かめる）
  */
-export type ExtractedFact =
+export type ExtractedFact = (
   | { kind: "処方"; value: string; quote: string }
   | { kind: "病名の記載"; value: string; quote: string }
   | { kind: "急性増悪"; value: string; quote: string }
-  | { kind: "不安・不眠の薬"; value: string; quote: string };
+  | { kind: "不安・不眠の薬"; value: string; quote: string }
+) & {
+  /** value の分からない略語の印（FR-211。保存のときにサーバーが付け直す。病名の記載は医師に聞き、処方は札と数だけ） */
+  abbrev?: string[];
+};
 
 export const FACT_KINDS = ["処方", "病名の記載", "急性増悪", "不安・不眠の薬"] as const;
 /** 「不安・不眠の薬」の値 */

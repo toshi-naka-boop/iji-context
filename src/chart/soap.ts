@@ -31,6 +31,12 @@ export function unmatchedPhrases(note: ChartNote, original: string): string[] {
     .filter((x) => squash(x) && !src.includes(squash(x)));
 }
 
+/** 原文の印の語（FR-211）のうち、整えた欄のどこにも残っていない語（整形で消えた略語）。決まった規則だけで行う */
+export function lostAbbrevs(note: ChartNote, marks: string[]): string[] {
+  const kept = Object.values(note).join("\n").normalize("NFKC");
+  return marks.filter((w) => !kept.includes(w));
+}
+
 /** 形の違う出力は空の欄にする */
 function toNote(raw: unknown): ChartNote {
   const o = (raw ?? {}) as Partial<Record<keyof ChartNote, unknown>>;

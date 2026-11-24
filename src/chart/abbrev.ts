@@ -2,8 +2,11 @@
 // 語の切り方：原文を NFKC にし、英字の並びに続く数字までを 1 語（ECG12・FT4・SpO2）として、2 文字以上の語だけを見る。大文字・小文字は区別する（Af と AF は別の語）。
 // 分かる語：診療年月の 1 枚の基本マスター 4 本（医科診療行為・医薬品・特定器材・傷病名）の名称を同じ切り方で切った語と、固定の一覧（config/abbrev-known.json）の語。
 // どちらでもない語に印を付ける。マスターがない・版のない診療年月は印を付けない（全部を聞かない。「見ていません」の文を出す）。原文は書き換えない
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import known from "../../config/abbrev-known.json";
+import { askedAct, askedChild, tableKeyOfAct, tableKeyOfChild, type ChartAct, type StoredActs, type TableKey } from "./acts";
+import type { ExtractedFact } from "./extract";
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import { pickSnapshot, type MastersDb } from "../masters/db";
 import { normName } from "../notice/notice";
@@ -74,3 +77,56 @@ export const abbrevMarks = (text: string, vocab: AbbrevVocab): string[] => abbre
 
 /** 病名の記載が、傷病名マスターの名称と完全に一致するか（normName を両側に掛ける） */
 export const diseaseExact = (value: string, vocab: AbbrevVocab): boolean => vocab.diseases.has(normName(value));
+
+/** 印を付け直す（保存のとき・取り出した直後）。書かれた名前に印があり、引く表に名称の完全一致がない行為・子にだけ abbrev を持たせ、聞く行為・子の lookup は空にする（推し量りを見せない・残さない） */
+export function markActs(acts: ChartAct[], vocab: AbbrevVocab, exact: (key: TableKey, written: string) => boolean): ChartAct[] {
+  const marksOf = (key: TableKey, written: string) => (exact(key, written) ? [] : abbrevMarks(written, vocab));
+  return acts.map((a) => {
+    const { abbrev: _a, ...rest } = a;
+    const m = marksOf(tableKeyOfAct(a.category), a.written);
+    const act: ChartAct = m.length > 0 ? { ...rest, abbrev: m } : rest;
+    if (askedAct(act)) act.lookup = [];
+    if (a.with)
+      act.with = a.with.map((c) => {
+        const { abbrev: _c, ...cr } = c;
+        const cm = marksOf(tableKeyOfChild(c.kind), c.written);
+        const child = cm.length > 0 ? { ...cr, abbrev: cm } : cr;
+        return askedChild(act, child) ? { ...child, lookup: [] } : child;
+      });
+    return act;
+  });
+}
+
+/** 事実の印を付け直す。病名の記載は傷病名マスターの名称と完全に一致するときは付けない */
+export function markFacts(facts: ExtractedFact[], vocab: AbbrevVocab): ExtractedFact[] {
+  return facts.map((f) => {
+    const { abbrev: _a, ...rest } = f;
+    const m = f.kind === "病名の記載" && diseaseExact(f.value, vocab) ? [] : abbrevMarks(f.value, vocab);
+    return (m.length > 0 ? { ...rest, abbrev: m } : rest) as ExtractedFact;
+  });
+}
+
+/** 記載の指紋（書かれた名前・値と引用。位置の番号は保存し直すとずれるので使わない） */
+export const itemKeyOf = (written: string, quote: string): string => createHash("sha256").update(`${written}\0${quote}`).digest("hex").slice(0, 16);
+
+/** 医師に聞く記載 1 つ。place：act＝行為／child＝行為で使った薬・器材／fact＝病名の記載。index・child は今の位置（候補を出すため。同定には key を使う） */
+export type AbbrevItem = { place: "act" | "child" | "fact"; index: number; child?: number; written: string; quote: string; tokens: string[]; key: string };
+
+/**
+ * 保存したカルテの、医師に聞く記載（決まった規則）：聞く行為・子と、訪問カルテの病名の記載で印のあるもの。
+ * 貼ったカルテ（記録）は事実を使わないので、行為だけを聞く
+ */
+export function askedItems(kind: string, stored: StoredActs | null, facts: ExtractedFact[] | null): AbbrevItem[] {
+  const out: AbbrevItem[] = [];
+  (stored?.acts ?? []).forEach((a, index) => {
+    if (askedAct(a)) out.push({ place: "act", index, written: a.written, quote: a.quote, tokens: a.abbrev!, key: itemKeyOf(a.written, a.quote) });
+    (a.with ?? []).forEach((c, child) => {
+      if (askedChild(a, c)) out.push({ place: "child", index, child, written: c.written, quote: c.quote, tokens: c.abbrev!, key: itemKeyOf(c.written, c.quote) });
+    });
+  });
+  if (kind !== "記録")
+    (facts ?? []).forEach((f, index) => {
+      if (f.kind === "病名の記載" && (f.abbrev?.length ?? 0) > 0) out.push({ place: "fact", index, written: f.value, quote: f.quote, tokens: f.abbrev!, key: itemKeyOf(f.value, f.quote) });
+    });
+  return out;
+}

@@ -4,9 +4,10 @@ import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
+import { abbrevMarks, abbrevVocabOf, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
-import { withMasters } from "../../masters/db";
+import { withMasters, type MastersDb } from "../../masters/db";
 import { normName } from "../../notice/notice";
 import { claimPreviewOf } from "../../chart/claim";
 import { chartWithNotes, eventsFromNotes, withNotes, type ConfirmedNote, type VisitKind } from "../../chart/notes";
@@ -111,8 +112,52 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (r.facts !== null) throw conflict(`もう確かめてある: ${id}`);
     const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
     if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
-    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
+    // 略語の印（FR-211）は保存のときにサーバーが付け直す（画面から来た値は使わない）
+    const vocab = withMasters((db) => abbrevVocabOf(db, caseOf(r.claim_id).yearMonth));
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(vocab ? markFacts(v.facts, vocab) : v.facts), id);
     return { claimId: r.claim_id, date: r.date };
+  }
+  // ───────────────────────────────────────────────────────────────────────
+  // 分からない略語の印（spec FR-211。src/chart/abbrev.ts）。決まった規則だけで、LLM は使わない
+
+  /** その表に、書かれた名前と名称が完全に一致する行があるか（normName を両側に掛ける） */
+  const exactIn = (db: MastersDb | null, yearMonth: string) => {
+    const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
+    return (key: TableKey, written: string) => {
+      if (!rows.has(key)) rows.set(key, rowsFor(db, key, yearMonth));
+      const w = normName(written);
+      return !!rows.get(key)?.some((x) => x.norm === w);
+    };
+  };
+  /** 書かれた名前に印があるか（印のある書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さない） */
+  const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string) =>
+    vocab !== null && !exact(key, written) && abbrevMarks(written, vocab).length > 0;
+  /** 画面に出す印のまとめ：カルテの文全体の印の語と、医師に聞く記載の数。マスターがなければ「見ていません」の文 */
+  type AbbrevSummary = { marks: string[]; asked: number } | { unseen: string };
+  /**
+   * 取り出した直後の行ったこと・事実に印を付ける（FR-211）。聞く行為の lookup は空にする（保存もしない）。
+   * 返すのは、印を付けた行ったこと・事実と、画面に出す印のまとめ
+   */
+  function markExtracted(id: number, acts: ChartAct[], facts: ExtractedFact[]): { acts: ChartAct[]; facts: ExtractedFact[]; abbrev: AbbrevSummary } {
+    const r = noteRow(id);
+    const yearMonth = caseOf(r.claim_id).yearMonth;
+    return withMasters((db) => {
+      const vocab = abbrevVocabOf(db, yearMonth);
+      if (!vocab) return { acts, facts, abbrev: { unseen: NO_MASTER_NOTE } };
+      const a = markActs(acts, vocab, exactIn(db, yearMonth));
+      const f = markFacts(facts, vocab);
+      const asked = a.flatMap((x) => [x.abbrev && !x.match ? 1 : 0, ...(x.with ?? []).map((c) => (c.abbrev && !c.match ? 1 : 0))]).reduce<number>((n, k) => n + k, 0) + (r.kind === "記録" ? 0 : f.filter((x) => x.kind === "病名の記載" && x.abbrev).length);
+      return { acts: a, facts: f, abbrev: { marks: abbrevMarks(noteText(JSON.parse(r.note) as ChartNote), vocab), asked } };
+    });
+  }
+  /** 自由記述の印の語（SOAP に整えたときに消えた略語を見るため）。請求がなければ・マスターがなければ空 */
+  function abbrevMarksOf(claimId: string | undefined, text: string): string[] {
+    if (!claimId) return [];
+    const yearMonth = caseOf(claimId).yearMonth;
+    return withMasters((db) => {
+      const vocab = abbrevVocabOf(db, yearMonth);
+      return vocab ? abbrevMarks(text, vocab) : [];
+    });
   }
   // ───────────────────────────────────────────────────────────────────────
   // 行ったこと（design.md §15-6・15-7。段 18a）：マスターに当てる・候補・確かめて保存する。請求は見ない（C-233）
@@ -153,7 +198,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (!rows.has(k)) rows.set(k, rowsFor(db, k, yearMonth));
         return rows.get(k)!;
       };
-      const one = (k: TableKey, written: string, lookup: string[]) => matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
+      // 印のある書き方（FR-211）は、前に選んだ対応を読まず、LLM の lookup で候補を出さない（書かれた名前の部分一致の候補は出す）
+      const marked = markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth));
+      const one = (k: TableKey, written: string, lookup: string[]) =>
+        marked(k, written) ? matchItem(rowsOf(k), k, written, [], null) : matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
       const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.lookup)) }));
       const aliasCount = matches.flatMap((m) => [m.act, ...m.with]).filter((m) => m.initial?.by === "alias").length;
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
@@ -233,7 +281,11 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   }
   /** 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで */
   function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[]): ItemMatch {
-    return withMasters((db) => matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)));
+    return withMasters((db) =>
+      markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written)
+        ? matchItem(rowsFor(db, key, yearMonth), key, written, [], null)
+        : matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)),
+    );
   }
   /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
   function searchMasters(key: TableKey, yearMonth: string, q: string) {
@@ -257,6 +309,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (a.dropped.length) throw badRequest(`カルテにない言葉の行ったことがある: ${[...new Set(a.dropped.map((d) => d.why))].join("、")}`);
     const yearMonth = caseOf(r.claim_id).yearMonth;
     const chosen: { written: string; key: TableKey; m: ActMatch }[] = [];
+    const at = now();
+    let vocab: AbbrevVocab | null = null;
     const acts = withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
       const check = (key: TableKey, written: string, m: ActMatch | null | undefined): ActMatch | null => {
@@ -268,7 +322,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (m.by !== "name") chosen.push({ written, key, m: out });
         return out;
       };
-      return a.acts.map((x, i) => {
+      const checked = a.acts.map((x, i) => {
         const src = input.acts[i];
         const act: ChartAct = { ...x, match: check(tableKeyOfAct(x.category), x.written, src.match) };
         const fold = checkFold(r.claim_id, yearMonth, r.date, act, src.fold);
@@ -276,16 +330,24 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
         if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, src.with?.[j]?.match) }));
         return act;
       });
+      // 略語の印（FR-211）：当てたあとに付け直す（聞く行為の lookup は残さない）。印のある書き方は、選んだ対応をクリニックごとに覚えない
+      vocab = abbrevVocabOf(db, yearMonth);
+      if (!vocab) return checked;
+      const exact = exactIn(db, yearMonth);
+      const marked = markedIn(vocab, exact);
+      for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].key, chosen[k].written)) chosen.splice(k, 1);
+      return markActs(checked, vocab, exact);
     });
+    const markedFacts: ExtractedFact[] = vocab ? markFacts(v.facts, vocab) : v.facts;
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
-    const at = now();
     // 「確かめた」の印（design.md §16-4-1）：値を選び直したか、「確かめた」を押したときだけ。初期値のまま保存しただけでは付けない
     const marked = choice !== null && (choice !== rule || input.rxConfirmed === true);
-    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person", rxConfirmed: marked ? { by: clerkId, at, rxHash: rxHashOf(a.rx) } : null };
+    const abbrev: StoredActs["abbrev"] = vocab ? { marks: abbrevMarks(noteText(note), vocab), at } : { noMaster: true, at };
+    const stored: StoredActs = { acts, rx: a.rx, rxChoice: choice, rxChoiceBy: choice === null ? null : choice === rule ? "rule" : "person", rxConfirmed: marked ? { by: clerkId, at, rxHash: rxHashOf(a.rx) } : null, abbrev };
     sqlite.transaction(() => {
-      sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(v.facts), JSON.stringify(stored), id);
+      sqlite.prepare("UPDATE chart_notes SET facts = ?, acts = ? WHERE id = ?").run(JSON.stringify(markedFacts), JSON.stringify(stored), id);
       for (const c of chosen) {
         const wn = normName(c.written);
         // 投薬は医薬品と第5部の両方を引くので、別の表に残した対応は外す（同じ書き方の対応は 1 つ）
@@ -322,8 +384,11 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
     const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : kid ? { ...a, with: a.with!.map((x, j) => (j === child ? { ...x, match: m } : x)) } : { ...a, match: m })) };
     const wn = normName((kid ?? act).written);
+    // 印のある書き方（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない
+    const remember = !(kid ?? act).abbrev?.length;
     sqlite.transaction(() => {
       sqlite.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(next), id);
+      if (!remember) return;
       for (const t of tablesOfKey(key)) if (t !== m.tbl) sqlite.prepare("DELETE FROM chart_act_aliases WHERE written_norm = ? AND tbl = ?").run(wn, t);
       sqlite
         .prepare("INSERT INTO chart_act_aliases (written_norm, tbl, code, chosen_by, chosen_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(written_norm, tbl) DO UPDATE SET code = excluded.code, chosen_by = excluded.chosen_by, chosen_at = excluded.chosen_at")
@@ -630,7 +695,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

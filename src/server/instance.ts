@@ -14,7 +14,7 @@ import { askMentor } from "../mentor/session";
 import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceSkillNames } from "../mentor/workspace";
 import { crosscheckSkills } from "../uke/crosscheck";
 import { extractFacts, type ChartNote } from "../chart/extract";
-import { formatSoap } from "../chart/soap";
+import { formatSoap, lostAbbrevs } from "../chart/soap";
 import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
@@ -372,9 +372,11 @@ export async function writeChart(input: { user: User; claimId: string; clerkId: 
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 分からない略語の印（FR-211）：取り出した直後に付け、聞く行為の lookup を空にする
+  const m = a.markExtracted(saved.id, r.acts, r.facts);
   // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
   await a.ensureStructured(input.claimId);
-  return { ...saved, ...r, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
+  return { ...saved, ...r, ...m, review: a.actsReviewOf(saved.id, m.acts, r.rx) };
 }
 
 /**
@@ -385,11 +387,20 @@ export async function pasteRecord(input: { user: User; claimId: string; clerkId:
   const a = getApp();
   const saved = a.saveRecord(input.claimId, input.clerkId, input.date, input.note);
   const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 分からない略語の印（FR-211）：取り出した直後に付け、聞く行為の lookup を空にする（貼ったカルテは事実を使わないので、行為だけ）
+  const m = a.markExtracted(saved.id, r.acts, []);
   // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
   await a.ensureStructured(input.claimId);
-  return { ...saved, acts: r.acts, rx: r.rx, actsDropped: r.actsDropped, review: a.actsReviewOf(saved.id, r.acts, r.rx) };
+  return { ...saved, acts: m.acts, rx: r.rx, actsDropped: r.actsDropped, abbrev: m.abbrev, review: a.actsReviewOf(saved.id, m.acts, r.rx) };
 }
 
-/** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
-export const formatChart = (user: User, text: string) => formatSoap(user, text, modelFor("chartSoap"));
+/**
+ * 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す。
+ * 請求を渡すと、その診療年月のマスターで原文の略語の印を見て、整えた欄から消えた印の語（lostAbbrevs。FR-211）も返す（マスターがなければ空）
+ */
+export async function formatChart(user: User, text: string, claimId?: string) {
+  const r = await formatSoap(user, text, modelFor("chartSoap"));
+  // 請求を渡さないときは見ない（応答の形も今までのまま）
+  return claimId ? { ...r, lostAbbrevs: lostAbbrevs(r.note, getApp().abbrevMarksOf(claimId, text)) } : r;
+}
 export const readChartFromImage = (user: User, image: Buffer) => readChartImage(user, image, modelFor("chartImage"));

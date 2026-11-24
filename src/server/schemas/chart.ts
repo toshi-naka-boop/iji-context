@@ -32,19 +32,21 @@ export const CHART_BODY_BYTES = 5 * MAX_CHART_TEXT * 3 + 4096;
 
 /** カルテの id（chart_notes の連番） */
 export const noteParams = z.strictObject({ id: z.string().regex(/^[1-9][0-9]{0,9}$/) });
+/** 略語の印（FR-211）。画面が受け取った形のまま返してよいが、使わない（保存のときにサーバーが付け直す） */
+const abbrev = z.array(z.string().max(100)).max(50).optional();
 export const confirmBody = z.strictObject({
-  facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT) })).max(50),
+  facts: z.array(z.strictObject({ kind: z.enum(FACT_KINDS), value: z.string().max(200), quote: z.string().max(MAX_CHART_TEXT), abbrev })).max(50),
 });
 
 /** 行ったこと（design.md §15-6・15-7）。当てたコードは処理の中で、診療年月の 1 枚に実在するかを確かめる */
 const name200 = z.string().max(200);
 const lookup = z.array(z.string().max(100)).max(MAX_LOOKUP);
 const actMatch = z.strictObject({ tbl: z.enum(MASTER_TABLES), code: z.string().regex(/^\d{9}$/), name: name200, by: z.enum(["name", "alias", "candidate", "search"]) }).nullable().optional();
-const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch });
+const actChild = z.strictObject({ kind: z.enum(CHILD_KINDS), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), match: actMatch, abbrev });
 /** 本人が選んだ「同じ（ref）／違う（same: false）」の印（design.md §16-3）。処理の中で、その日の同じ種類の電子カルテの行為かを確かめる */
 const ref = z.string().min(1).max(100);
 const actFold = z.strictObject({ kind: z.literal("order"), ref: ref.optional(), by: z.literal("person"), same: z.literal(false).optional() }).optional();
-const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch, fold: actFold });
+const act = z.strictObject({ category: z.enum(ACT_CATEGORIES), written: name200, lookup, quantity: z.string().max(100).optional(), quote: z.string().max(MAX_CHART_TEXT), with: z.array(actChild).max(20).optional(), match: actMatch, fold: actFold, abbrev });
 /** 事実と行ったことを、確かめた 1 回の操作で保存する本文（POST /api/chart/acts） */
 export const actsBody = z.strictObject({
   noteId: noteParams.shape.id,
@@ -102,7 +104,8 @@ export const noteCommentBody = z.strictObject({
   text: z.string().max(200),
 });
 
-export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT) });
+/** 自由記述を SOAP に整える本文。claimId は、整形で消えた略語（FR-211）を見るための診療年月を決める（省くと見ない） */
+export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT), claimId: claimId.optional() });
 
 /** base64 にした画像の長さの上限（5MB の画像は 4/3 倍に膨らむ） */
 export const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
