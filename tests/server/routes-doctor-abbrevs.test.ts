@@ -371,7 +371,9 @@ describe("意味を選び終えたカルテの候補（plan-fr211.md「意味を
     expect(((await (await select(w.id, "AF", "辞書の意味", { meaning: "心房細動" })).json()) as Summary).stopped).toBe(true);
     expect((await cand(w.id)).initial).toBeNull();
     // すべて選び終えたら、lookup と初期値が戻る
-    const s = (await (await select(w.id, "AMI", "判定不能")).json()) as Summary;
+    // 「判定不能」は意味を選んだことに数えない（X-510）。辞書の候補から選ぶと戻る
+    expect(((await (await select(w.id, "AMI", "判定不能")).json()) as Summary).stopped).toBe(true);
+    const s = (await (await select(w.id, "AMI", "辞書の意味", { meaning: "心筋梗塞" })).json()) as Summary;
     expect(s.stopped).toBe(false);
     const c = await cand(w.id);
     expect(c.initial).toMatchObject({ code: VISIT.code, by: "name" });
@@ -394,6 +396,43 @@ describe("意味を選び終えたカルテの候補（plan-fr211.md「意味を
     expect((await cand(w.id)).initial).toBeNull();
     expect((await cand(w.id)).candidates.map((x) => x.code)).not.toContain("160056110");
     const q = (await list()).find((x) => x.token === "AF");
+    if (q) expect((await answer(q, "判定不能")).status).toBe(200);
+  });
+});
+
+describe("止めを解く条件（反証 round-101 X-510）", () => {
+  const visitAct = (): ChartAct => ({ category: "診療行為", written: VISIT.name, lookup: ["特異的ＩｇＥ半定量・定量"], quote: VISIT.name });
+  const cand = async (noteId: number) => {
+    setRole("clerk");
+    const r = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: YM, written: VISIT.name, lookup: "特異的ＩｇＥ半定量・定量", noteId: String(noteId), index: "0" })}`));
+    return (await r.json()) as { initial: { code: string } | null };
+  };
+  it("A で NPPV を「算定に関係なし」→ B の医師の答えで辞書に足す → A は止めたまま。A で辞書の意味を選ぶと戻る", async () => {
+    setCount(0);
+    const a = await write(claimId("K4"), { o: `${VISIT.name}。ＮＩＰＰＶ装着。` }, [visitAct()]);
+    expect(tokenOf(a, "NIPPV").inDict).toBe(false);
+    await select(a.id, "NIPPV", "算定に関係なし");
+    const b = await write(claimId("K1"), { o: "ＮＩＰＰＶ装着。" });
+    await select(b.id, "NIPPV", "医師に聞く");
+    const q = (await list()).find((x) => x.token === "NIPPV")!;
+    expect((await answer(q, "指すものを記入する", "非侵襲的陽圧換気")).status).toBe(200);
+    // 辞書に足されて A の略語も辞書にあることになるが、A で意味を選んでいないので止めたまま
+    setRole("clerk");
+    expect((await cand(a.id)).initial).toBeNull();
+    const s = (await (await select(a.id, "NIPPV", "辞書の意味", { meaning: "非侵襲的陽圧換気" })).json()) as Summary;
+    expect(s.stopped).toBe(false);
+    expect((await cand(a.id)).initial).toMatchObject({ code: VISIT.code });
+    const q2 = (await list()).find((x) => x.token === "NIPPV");
+    if (q2) expect((await answer(q2, "判定不能")).status).toBe(200);
+  });
+  it("辞書の略語に「判定不能」「その他」を選んでも止めたまま", async () => {
+    const w = await write(claimId("K4"), { o: `${VISIT.name}。`, a: "Af。" }, [visitAct()]);
+    for (const [option, meaning] of [["判定不能", undefined], ["その他", "心房性期外収縮"]] as const) {
+      const s = (await (await select(w.id, "Af", option, meaning ? { meaning } : {})).json()) as Summary;
+      expect([option, s.stopped]).toEqual([option, true]);
+      expect((await cand(w.id)).initial).toBeNull();
+    }
+    const q = (await list()).find((x) => x.token === "Af");
     if (q) expect((await answer(q, "判定不能")).status).toBe(200);
   });
 });

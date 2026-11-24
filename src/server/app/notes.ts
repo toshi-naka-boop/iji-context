@@ -197,13 +197,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /**
    * 略語による当て方の止め方（そのカルテだけ。辞書方式の決め 2・4、「意味を選び終えたカルテの候補」）：
    * hold＝略語があり、辞書にない略語が残るか、辞書の略語の意味を選び終えていない（LLM の lookup・前に選んだ対応・初期値〔名称の完全一致〕を止め、名称の決まった規則の候補から事務が選ぶ）／
-   * none＝略語がない、又は略語がすべて辞書にあり、事務がすべての意味を選び終えた（lookup と初期値を戻す。選んだ意味は行為の候補に入れない。医師確認は今までどおり回る）
+   * none＝略語がない、又は略語のすべてについて、このカルテで事務が辞書の候補から意味を選んだ（lookup と初期値を戻す。選んだ意味は行為の候補に入れない。医師確認は今までどおり回る）。
+   * 「判定不能」「その他」「算定に関係なし」は意味を選んだことに数えない。別のカルテの医師の答えで辞書に足されても、このカルテで意味を選ぶまでは止めたまま（反証 round-101 X-510）
    */
   type AbbrevMode = "none" | "hold";
   function abbrevModeOf(id: number): AbbrevMode {
     const st = abbrevStateOf(id);
     if (!st || st.marks.length === 0) return "none";
-    return st.tokens.every((t) => t.inDict && abbrevs.selectionOf(id, t.token) !== null) ? "none" : "hold";
+    return st.tokens.every((t) => t.inDict && abbrevs.selectionOf(id, t.token)?.option === "辞書の意味") ? "none" : "hold";
   }
   function matchFor(mode: AbbrevMode, rows: ReturnType<typeof rowsFor>, key: TableKey, written: string, lookup: string[], yearMonth: string): ItemMatch {
     if (mode === "hold") return { initial: null, candidates: matchItem(rows, key, written, [], null).candidates };
