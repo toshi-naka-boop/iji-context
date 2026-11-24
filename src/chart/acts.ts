@@ -35,15 +35,17 @@ export type ChartAct = {
   abbrev?: string[];
 };
 /**
- * 医師に略語を聞く行為か（FR-211）：書かれた名前に印があり（印は名称の完全一致がないときだけ付く）、当てておらず、たたんでもいない。
+ * 医師に略語を聞く行為か（FR-211）：印があり、当てておらず、たたんでもいない（「違う」を選んだ行為は聞く）。
  * 子（with）は、子に印があり当てておらず、親をたたんでいないとき
  */
 /** 取り出した直後に画面に出す略語の印のまとめ（FR-211）：カルテの文全体の印の語と、医師に聞く記載の数。マスターがなければ「見ていません」の文 */
 export type AbbrevSummary = { marks: string[]; asked: number } | { unseen: string };
 /** 聞く記載の答えの状態（FR-211）：asking＝医師に確かめ中／unresolved＝医師が判定不能・その他と答えた／answered＝指すものの記入がある（候補から選ぶ） */
 export type AbbrevState = "asking" | "unresolved" | "answered";
-export const askedAct = (a: Pick<ChartAct, "abbrev" | "match" | "fold">): boolean => (a.abbrev?.length ?? 0) > 0 && !a.match && !a.fold;
-export const askedChild = (a: Pick<ChartAct, "fold">, c: Pick<ActChild, "abbrev" | "match">): boolean => (c.abbrev?.length ?? 0) > 0 && !c.match && !a.fold;
+/** たたんだ行為か（「違う」〔same: false〕はたたまない印なので、たたんだに数えない。反証 round-96 X-491） */
+const foldedAct = (a: Pick<ChartAct, "fold">): boolean => !!a.fold && a.fold.same !== false;
+export const askedAct = (a: Pick<ChartAct, "abbrev" | "match" | "fold">): boolean => (a.abbrev?.length ?? 0) > 0 && !a.match && !foldedAct(a);
+export const askedChild = (a: Pick<ChartAct, "fold">, c: Pick<ActChild, "abbrev" | "match">): boolean => (c.abbrev?.length ?? 0) > 0 && !c.match && !foldedAct(a);
 /**
  * たたむ印（design.md §16-3）。kind：order＝構造化データの行為／rule＝規則で出す算定／device＝患者の情報の機器。by：rule＝規則でたたんだ／person＝本人が選んだ。
  * same が false の印は「違う」を選んだ記録（たたまない）

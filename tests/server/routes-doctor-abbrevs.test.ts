@@ -312,3 +312,29 @@ describe("LLM が原文の略語を言い換えても医師確認を通る（反
     expect(q?.quotes.find((y) => refNote(y.ref) === w.id)).toMatchObject({ ref: expect.stringContaining(":fact:"), quote: "AF" });
   });
 });
+
+describe("「違う」を選んだ行為も確かめる対象に残る（反証 round-96 X-491）", () => {
+  it("当てられない行為に「違う」（same: false）を付けても、医師への問いと B の欄の確かめ中の数から消えない", async () => {
+    const w = await writeAndSave(claimId("K4"), "ＴＴＥ。", [{ category: "検査", written: "ＴＴＥ", lookup: [], quote: "ＴＴＥ" }]);
+    const inList = async () => (await list()).some((x) => x.token === "TTE" && x.quotes.some((y) => refNote(y.ref) === w.id));
+    const scope = async () => {
+      setRole("clerk");
+      const r = await (await import("../../app/api/chart/[id]/claim/route")).GET(get(`/api/chart/${w.id}/claim`), { params: Promise.resolve({ id: String(w.id) }) });
+      return ((await r.json()) as { torikawasure: { scope: string[] } }).torikawasure.scope.filter((x) => x.startsWith("略語を医師に確かめ中"));
+    };
+    expect(await inList()).toBe(true);
+    const before = await scope();
+    expect(before).toHaveLength(1);
+    // 「違う」の印は、電子カルテの同じ種類の行為があるときに画面から付く。ここでは保存した行ったことに直接付ける
+    const db = sql();
+    try {
+      const stored = JSON.parse((db.prepare("SELECT acts FROM chart_notes WHERE id = ?").get(w.id) as { acts: string }).acts) as { acts: ChartAct[] };
+      stored.acts[0].fold = { kind: "order", by: "person", same: false };
+      db.prepare("UPDATE chart_notes SET acts = ? WHERE id = ?").run(JSON.stringify(stored), w.id);
+    } finally {
+      db.close();
+    }
+    expect(await inList()).toBe(true);
+    expect(await scope()).toEqual(before);
+  });
+});

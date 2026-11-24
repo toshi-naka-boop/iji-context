@@ -89,8 +89,11 @@ describe("印の付け直しと聞く記載（保存のとき）", () => {
     const stored = { acts: m, rx: [], rxChoice: null, rxChoiceBy: null };
     expect(askedItems("訪問診療", stored, facts).map((x) => [x.place, x.written, x.tokens])).toEqual([["act", "ＥＣＧ１２", ["ECG12"]], ["child", "ABC液", ["ABC"]], ["fact", "AF", ["AF"]]]);
     expect(askedItems("記録", stored, facts).map((x) => x.place)).toEqual(["act", "child"]);
-    const matched = { ...stored, acts: [{ ...m[0], match: { tbl: "shinryo" as const, code: "160068410", name: "ＥＣＧ１２", by: "search" as const } }, { ...m[2], fold: { kind: "order" as const, by: "person" as const, same: false as const } }] };
+    const matched = { ...stored, acts: [{ ...m[0], match: { tbl: "shinryo" as const, code: "160068410", name: "ＥＣＧ１２", by: "search" as const } }, { ...m[2], fold: { kind: "order" as const, ref: "o1", by: "person" as const } }] };
     expect(askedItems("記録", matched, null)).toEqual([]);
+    // 「違う」（same: false）はたたまない印なので、行為も子も聞く（X-491）
+    const differ = { ...stored, acts: [{ ...m[0], fold: { kind: "order" as const, by: "person" as const, same: false as const } }, { ...m[2], fold: { kind: "order" as const, by: "person" as const, same: false as const } }] };
+    expect(askedItems("記録", differ, null).map((x) => [x.place, x.written])).toEqual([["act", "ＥＣＧ１２"], ["child", "ABC液"]]);
     // 指紋は書かれた名前と引用で決まる（位置によらない）
     expect(askedItems("記録", stored, null)[0].key).toBe(itemKeyOf("ＥＣＧ１２", "ＥＣＧ１２。"));
   });
