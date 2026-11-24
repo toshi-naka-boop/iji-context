@@ -3,617 +3,1383 @@
     {
       "id": "HP-01",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610", "114001470", "114015870", "114706510", "114746310"]
+        "codes": [
+          "114001110",
+          "114030310",
+          "114042110",
+          "114042210",
+          "114706310",
+          "114706410",
+          "114042810",
+          "114046310",
+          "114706610",
+          "114001470",
+          "114015870",
+          "114706510",
+          "114746310"
+        ]
       },
-      "tani": [1],
-      "exceptions": ["HX-01"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-01"
+      ]
     },
     {
       "id": "HP-02",
       "a": {
-        "section": { "sho": 1, "bu": 1, "kubun": 1 }
+        "section": {
+          "sho": 1,
+          "bu": 1,
+          "kubun": 1
+        }
       },
       "b": {
-        "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610", "114001470", "114015870", "114706510", "114746310"]
+        "codes": [
+          "114001110",
+          "114030310",
+          "114042110",
+          "114042210",
+          "114706310",
+          "114706410",
+          "114042810",
+          "114046310",
+          "114706610",
+          "114001470",
+          "114015870",
+          "114706510",
+          "114746310"
+        ]
       },
-      "tani": [1],
-      "exceptions": ["HX-11"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-11"
+      ]
     },
     {
       "id": "HP-03",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 8, "kubun": 12 }
+        "section": {
+          "sho": 2,
+          "bu": 8,
+          "kubun": 12
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-04"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-04"
+      ]
     },
     {
       "id": "HP-04",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 1
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 8, "kubun": 12 }
+        "section": {
+          "sho": 2,
+          "bu": 8,
+          "kubun": 12
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-12", "HX-13"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-12",
+        "HX-13"
+      ]
     },
     {
       "id": "HP-05",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 5 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 5
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-03"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-03"
+      ]
     },
     {
       "id": "HP-06",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 1
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 5 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 5
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-12", "HX-13"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-12",
+        "HX-13"
+      ]
     },
     {
       "id": "HP-07",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 5 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 5
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 8, "kubun": 12 }
+        "section": {
+          "sho": 2,
+          "bu": 8,
+          "kubun": 12
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-14"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-14"
+      ]
     },
     {
       "id": "HP-08",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 9 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 9
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-07"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-07"
+      ]
     },
     {
       "id": "HP-09",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 8 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 8
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-06"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-06"
+      ]
     },
     {
       "id": "HP-10",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 1
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 6 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 6
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-12", "HX-13"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-12",
+        "HX-13"
+      ]
     },
     {
       "id": "HP-11",
       "a": {
-        "section": { "sho": 2, "bu": 1, "kubun": 7, "eda": 2 }
+        "section": {
+          "sho": 2,
+          "bu": 1,
+          "kubun": 7,
+          "eda": 2
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-08"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-08"
+      ]
     },
     {
       "id": "HP-12",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 11 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 11
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 1
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-09"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-09"
+      ]
     },
     {
       "id": "HP-13",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 6 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 6
+        }
       },
-      "tani": [1],
-      "exceptions": ["HX-05"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-05"
+      ]
     },
     {
       "id": "HP-14",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 4 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 4
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
-      "tani": [3],
-      "exceptions": ["HX-10"]
+      "tani": [
+        3
+      ],
+      "exceptions": [
+        "HX-10"
+      ]
     },
     {
       "id": "HP-15",
       "a": {
-        "codes": ["113038110", "113038310", "113704510", "113704610", "113704710", "113704810", "113704910", "113705010", "113705110"]
+        "codes": [
+          "113038110",
+          "113038310",
+          "113704510",
+          "113704610",
+          "113704710",
+          "113704810",
+          "113704910",
+          "113705010",
+          "113705110"
+        ]
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 101 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 101
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-15"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-15"
+      ]
     },
     {
       "id": "HP-16",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 101 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 101
+        }
       },
       "b": {
-        "codes": ["130013890", "130013990", "130014090", "130014190"]
+        "codes": [
+          "130013890",
+          "130013990",
+          "130014090",
+          "130014190"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-16"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-16"
+      ]
     },
     {
       "id": "HP-17",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 13 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 13
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 1
+        }
       },
-      "tani": [3],
-      "exceptions": ["HX-17"]
+      "tani": [
+        3
+      ],
+      "exceptions": [
+        "HX-17"
+      ]
     },
     {
       "id": "HP-18",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 13 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 13
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 5 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 5
+        }
       },
-      "tani": [3],
-      "exceptions": ["HX-18"]
+      "tani": [
+        3
+      ],
+      "exceptions": [
+        "HX-18"
+      ]
     },
     {
       "id": "HP-19",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 13 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 13
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 9 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 9
+        }
       },
-      "tani": [3],
-      "exceptions": ["HX-17"]
+      "tani": [
+        3
+      ],
+      "exceptions": [
+        "HX-17"
+      ]
     },
     {
       "id": "HP-20",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 108 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 108
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 6, "kubun": 3 }
+        "section": {
+          "sho": 2,
+          "bu": 6,
+          "kubun": 3
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-19"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-19"
+      ]
     },
     {
       "id": "HP-21",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 104 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 104
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 6, "kubun": 5 }
+        "section": {
+          "sho": 2,
+          "bu": 6,
+          "kubun": 5
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-22",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 104 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 104
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 6, "kubun": 6 }
+        "section": {
+          "sho": 2,
+          "bu": 6,
+          "kubun": 6
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-23",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 158 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 158
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 2, "kubun": 157 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 157
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-23"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-23"
+      ]
     },
     {
       "id": "HP-24",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 45 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 45
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-25",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 103 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 103
+        }
       },
       "b": {
-        "codes": ["140005910", "140057310", "140057410"]
+        "codes": [
+          "140005910",
+          "140057310",
+          "140057410"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-26",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 103 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 103
+        }
       },
       "b": {
-        "codes": ["140037810", "140006050"]
+        "codes": [
+          "140037810",
+          "140006050"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-27",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 112 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 112
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 0, "eda": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 0,
+          "eda": 0
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-22"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-22"
+      ]
     },
     {
       "id": "HP-28",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "codes": ["140002210", "140029610", "140040310", "140048350", "140048450", "140048550"]
+        "codes": [
+          "140002210",
+          "140029610",
+          "140040310",
+          "140048350",
+          "140048450",
+          "140048550"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-29",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "codes": ["140002450"]
+        "codes": [
+          "140002450"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-30",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 105 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 105
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 120 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 120
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-31",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "codes": ["140005910", "140057310", "140057410"]
+        "codes": [
+          "140005910",
+          "140057310",
+          "140057410"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-32",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "codes": ["140037810", "140006050"]
+        "codes": [
+          "140037810",
+          "140006050"
+        ]
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-33",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 0, "eda": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 0,
+          "eda": 0
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-22"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-22"
+      ]
     },
     {
       "id": "HP-34",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 103 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 103
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 18 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 18
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-35",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 103 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 103
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 24 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 24
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-25"
+      ]
     },
     {
       "id": "HP-36",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 53 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 53
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-37",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 112 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 112
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 1
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-38",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 112 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 112
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 18 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 18
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-39",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 106 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 106
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 60 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 60
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-40",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 60 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 60
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-41",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 118 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 118
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-42",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 103 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 103
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 25 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 25
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-43",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 106 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 106
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 63 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 63
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-44",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 18 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 18
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-45",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 24 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 24
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-46",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 1 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 1
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-47",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 18 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 18
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-48",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 43 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 43
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-49",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 63 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 63
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-50",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 120 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 120
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-51",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 106 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 106
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 64 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 64
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-52",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 107 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 107
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 25 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 25
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20"
+      ]
     },
     {
       "id": "HP-53",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 109 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 109
+        }
       },
       "b": {
-        "section": { "sho": 2, "bu": 9, "kubun": 64 }
+        "section": {
+          "sho": 2,
+          "bu": 9,
+          "kubun": 64
+        }
       },
-      "tani": [2],
-      "exceptions": ["HX-20", "HX-21"]
+      "tani": [
+        2
+      ],
+      "exceptions": [
+        "HX-20",
+        "HX-21"
+      ]
     },
     {
       "id": "HP-54",
       "a": {
-        "section": { "sho": 2, "bu": 2, "kubun": 0 }
+        "section": {
+          "sho": 2,
+          "bu": 2,
+          "kubun": 0
+        }
       },
       "b": {
-        "codes": ["114018170", "114018270", "114018370", "114018470", "114042370", "114042470", "114042570", "114042670", "114030470", "114030570", "114030670", "114042770", "114042970", "114043070", "114043170", "114043270", "114043370", "114043470", "114043570", "114043670"]
+        "codes": [
+          "114018170",
+          "114018270",
+          "114018370",
+          "114018470",
+          "114042370",
+          "114042470",
+          "114042570",
+          "114042670",
+          "114030470",
+          "114030570",
+          "114030670",
+          "114042770",
+          "114042970",
+          "114043070",
+          "114043170",
+          "114043270",
+          "114043370",
+          "114043470",
+          "114043570",
+          "114043670"
+        ]
       },
-      "tani": [1],
-      "exceptions": ["HX-01", "HX-02"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-01",
+        "HX-02"
+      ]
     },
     {
       "id": "HP-55",
       "a": {
-        "codes": ["112007410", "112008350", "112016610", "112016850", "112011010", "112001110", "112001210", "112001310", "112001410", "112015570", "112014170", "112014270", "112014370", "112014770", "112014870", "112014970", "112015070"]
+        "codes": [
+          "112007410",
+          "112008350",
+          "112016610",
+          "112016850",
+          "112011010",
+          "112001110",
+          "112001210",
+          "112001310",
+          "112001410",
+          "112015570",
+          "112014170",
+          "112014270",
+          "112014370",
+          "112014770",
+          "112014870",
+          "112014970",
+          "112015070"
+        ]
       },
       "b": {
-        "codes": ["114018170", "114018270", "114018370", "114018470", "114042370", "114042470", "114042570", "114042670", "114030470", "114030570", "114030670", "114042770", "114042970", "114043070", "114043170", "114043270", "114043370", "114043470", "114043570", "114043670"]
+        "codes": [
+          "114018170",
+          "114018270",
+          "114018370",
+          "114018470",
+          "114042370",
+          "114042470",
+          "114042570",
+          "114042670",
+          "114030470",
+          "114030570",
+          "114030670",
+          "114042770",
+          "114042970",
+          "114043070",
+          "114043170",
+          "114043270",
+          "114043370",
+          "114043470",
+          "114043570",
+          "114043670"
+        ]
       },
-      "tani": [1],
-      "exceptions": ["HX-11", "HX-24"]
+      "tani": [
+        1
+      ],
+      "exceptions": [
+        "HX-11",
+        "HX-24"
+      ]
     },
     {
       "id": "HP-56",
       "a": {
-        "codes": ["114007270"]
+        "codes": [
+          "114007270"
+        ]
       },
       "b": {
-        "codes": ["114018670"]
+        "codes": [
+          "114018670"
+        ]
       },
-      "tani": [1],
+      "tani": [
+        1
+      ],
       "exceptions": []
     }
   ],
@@ -651,12 +1417,24 @@
       },
       "pre": {
         "hasCode": {
-          "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610"]
+          "codes": [
+            "114001110",
+            "114030310",
+            "114042110",
+            "114042210",
+            "114706310",
+            "114706410",
+            "114042810",
+            "114046310",
+            "114706610"
+          ]
         },
         "sameDay": true
       },
       "thenRequires": {
-        "comments": ["830100086"]
+        "comments": [
+          "830100086"
+        ]
       }
     },
     {
@@ -666,7 +1444,17 @@
       "allow": {
         "not": {
           "hasCode": {
-            "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610"]
+            "codes": [
+              "114001110",
+              "114030310",
+              "114042110",
+              "114042210",
+              "114706310",
+              "114706410",
+              "114042810",
+              "114046310",
+              "114706610"
+            ]
           },
           "sameDay": true
         }
@@ -677,7 +1465,9 @@
             "text": "在宅での死亡（在宅以外なら、往診又は訪問診療の後 24 時間以内の死亡）",
             "fact": {
               "key": "deathPlace",
-              "ok": ["在宅"],
+              "ok": [
+                "在宅"
+              ],
               "maybe": {
                 "在宅以外": "往診又は訪問診療の後 24 時間以内の死亡か（在宅以外での死亡）"
               }
@@ -982,14 +1772,27 @@
           {
             "not": {
               "hasCode": {
-                "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610"]
+                "codes": [
+                  "114001110",
+                  "114030310",
+                  "114042110",
+                  "114042210",
+                  "114706310",
+                  "114706410",
+                  "114042810",
+                  "114046310",
+                  "114706610"
+                ]
               },
               "sameDay": true
             }
           },
           {
             "hasCode": {
-              "codes": ["114000110", "114001610"]
+              "codes": [
+                "114000110",
+                "114001610"
+              ]
             },
             "sameDay": true
           }
@@ -1032,7 +1835,17 @@
           {
             "not": {
               "hasCode": {
-                "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610"]
+                "codes": [
+                  "114001110",
+                  "114030310",
+                  "114042110",
+                  "114042210",
+                  "114706310",
+                  "114706410",
+                  "114042810",
+                  "114046310",
+                  "114706610"
+                ]
               },
               "sameDay": true
             }
@@ -1040,7 +1853,10 @@
           {
             "not": {
               "hasCode": {
-                "codes": ["114000110", "114001610"]
+                "codes": [
+                  "114000110",
+                  "114001610"
+                ]
               },
               "sameDay": true
             }
@@ -1252,14 +2068,27 @@
         "all": [
           {
             "hasCode": {
-              "codes": ["114000110", "114001610"]
+              "codes": [
+                "114000110",
+                "114001610"
+              ]
             },
             "sameDay": true
           },
           {
             "not": {
               "hasCode": {
-                "codes": ["114001110", "114030310", "114042110", "114042210", "114706310", "114706410", "114042810", "114046310", "114706610"]
+                "codes": [
+                  "114001110",
+                  "114030310",
+                  "114042110",
+                  "114042210",
+                  "114706310",
+                  "114706410",
+                  "114042810",
+                  "114046310",
+                  "114706610"
+                ]
               },
               "sameDay": true
             }
@@ -1275,7 +2104,9 @@
             "text": "在宅での死亡（在宅以外なら、往診又は訪問診療の後 24 時間以内の死亡）",
             "fact": {
               "key": "deathPlace",
-              "ok": ["在宅"],
+              "ok": [
+                "在宅"
+              ],
               "maybe": {
                 "在宅以外": "往診又は訪問診療の後 24 時間以内の死亡か（在宅以外での死亡）"
               }
@@ -1286,6 +2117,15 @@
           }
         ]
       }
+    },
+    {
+      "id": "HX-25",
+      "text": "在宅酸素療法の導入の月（中止したあとの再導入の月を含む）の、導入より前の日の酸素吸入（J024・J024-2）",
+      "kind": "receipt",
+      "pre": {
+        "receiptKind": "入院外"
+      },
+      "g12": "homeOxygenIntro"
     }
   ]
 }

@@ -14,6 +14,7 @@ import { sameDayOf } from "../engine/predicates";
 import { FACT_LABEL } from "../messages";
 import { pickSnapshot, shinryoOf, type MastersDb, type ShinryoRow } from "../masters/db";
 import { HAIHAN, haihanKey, sharedFactOf, type Check, type CodeSel, type HaihanConfig, type HaihanException, type HaihanPattern, type Means, type ReceiptCond } from "./haihan";
+import { homeOxygenSettled } from "./g12";
 import { commonDays, daysText, noTensuhyo, occurrencesOf, TABLE, tensuhyoOf, unitsOf, type Dated, type Occurrence, type TimedClaim } from "./tensuhyo";
 import { FINDING_LIMIT, type GenericAbout, type GenericAboutMore, type GenericCheck, type GenericClaim, type GenericFinding } from "./types";
 import { LOCAL_PAIR_MIN_LEVEL, localKey, pairOf, type LocalAttach } from "./local-pair";
@@ -44,6 +45,9 @@ type Ctx = {
   answers: GenericAbout["answers"];
   facts: GenericAbout["facts"];
   selects(code: string, sel: CodeSel): boolean;
+  /** G12 の事実で決める例外（HX-25）が読む請求と、請求について分かっていること */
+  claim?: GenericClaim;
+  about?: GenericAbout;
 };
 
 const dateOf = (ym: string, day: number) => `${ym}-${String(day).padStart(2, "0")}`;
@@ -114,7 +118,13 @@ function judge(x: HaihanException, row: Row, aCode: string, day: number | undefi
   }
   let out: ExResult;
   if (x.kind === "none") return { r: "undecided" };
-  if (x.kind === "receipt") {
+  if (x.kind === "receipt" && x.g12 === "homeOxygenIntro") {
+    // G12 の事実で決める（design.md §19-13 の 3。L-71 の形は増やさない）：組の他方（酸素吸入）の算定日が、導入より前の日でないと言えれば当たらない。言えなければ決まらない
+    const other = aCode === row.code1 ? row.code2 : row.code1;
+    const o = c.occ.get(other);
+    const days = o && o.timed ? o.days.flatMap((n, i) => (n > 0 ? [i + 1] : [])) : [];
+    out = c.claim && c.about && homeOxygenSettled(c.claim, c.about, days) ? { r: "miss", answered: false } : { r: "undecided" };
+  } else if (x.kind === "receipt") {
     const a = cond(x.allow!, c, day);
     out = a === true ? { r: "hit" } : a === false ? { r: "miss", answered: false } : { r: "undecided" };
   } else {
@@ -260,6 +270,8 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
         yearMonth: about.yearMonth,
         answers: about.answers,
         facts: about.facts,
+        claim,
+        about,
         selects: selectorOf(masters, about),
       };
       const out: GenericFinding[] = [];

@@ -40,9 +40,10 @@ describe("config/haihan-exceptions.json と EM §2-12", () => {
     for (const x of HAIHAN.exceptions) expect([x.id, HAIHAN.patterns.some((p) => p.exceptions.includes(x.id))]).toEqual([x.id, true]);
   });
 
-  it("kind ごとに要るものがある：receipt は allow、fact は ask、none は ask も allow も持たない", () => {
+  // receipt で G12 の事実で決める例外（g12。design.md §19-13 の 3）は allow を持たない（v45 で足した形）
+  it("kind ごとに要るものがある：receipt は allow（か G12 の事実の g12）、fact は ask、none は ask も allow も持たない", () => {
     for (const x of HAIHAN.exceptions) {
-      expect([x.id, x.kind === "receipt" ? x.allow !== undefined : x.allow === undefined]).toEqual([x.id, true]);
+      expect([x.id, x.kind === "receipt" ? (x.allow !== undefined) !== (x.g12 !== undefined) : x.allow === undefined && x.g12 === undefined]).toEqual([x.id, true]);
       expect([x.id, x.kind === "fact" ? x.ask !== undefined : x.ask === undefined]).toEqual([x.id, true]);
     }
   });

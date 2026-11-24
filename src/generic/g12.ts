@@ -58,6 +58,17 @@ function linkOf(units: Unit[], i: number): { side: "inside" | "outside" } | { si
   return { side: "open", days: days.filter((_, k) => !(per[k].inside && !per[k].outside)) };
 }
 
+/**
+ * 在宅酸素療法の月の、導入より前の日でないと言える事実（design.md §19-5 の 1・§19-13 の 3。G12 の 1 と G05 の HX-25 が同じ事実と条件を使う）：
+ * 前の月の同じ患者の請求に管理料が「ある」うえに、days（酸素・酸素吸入の算定日）がすべてその月の管理料の算定日（いちばん早い日）以後。管理料の算定日が分からなければ偽
+ */
+export function homeOxygenSettled(claim: GenericClaim, about: GenericAbout, days: number[]): boolean {
+  const kanri = (claim.units as Unit[]).filter((u) => has(u, HOME_OXYGEN_KANRI));
+  if (about.prevHomeOxygen !== "ある" || kanri.length === 0 || days.length === 0 || kanri.some((u) => daysOf(u).length === 0)) return false;
+  const first = Math.min(...kanri.flatMap(daysOf));
+  return days.every((d) => d >= first);
+}
+
 export const g12: GenericCheck = {
   id: "G12",
   kind: "酸素",
@@ -77,8 +88,6 @@ export const g12: GenericCheck = {
     const oxygenUnits = units.flatMap((u, i) => (u.items.some((it) => it.kind === "TO" && OXYGEN_CODES.includes(it.code)) ? [i] : []));
     if (oxygenUnits.length === 0) return out;
     const kanriUnits = units.filter((u) => has(u, HOME_OXYGEN_KANRI));
-    const kanriDays = kanriUnits.flatMap(daysOf);
-    const kanriFirst = kanriDays.length > 0 && kanriUnits.every((u) => daysOf(u).length > 0) ? Math.min(...kanriDays) : null;
     const addition = units.some((u) => has(u, OXYGEN_THERAPY_ADDITIONS));
     const active = activeOxygenPrices(about.oxygenPrices ?? []);
     const dayText = (days: number[]) => days.map((d) => `${d} 日`).join("・");
@@ -89,9 +98,7 @@ export const g12: GenericCheck = {
       if (kanriUnits.length > 0) {
         const link = linkOf(units, i);
         if (link.side === "inside") {
-          const days = daysOf(u);
-          const afterKanri = kanriFirst !== null && days.every((d) => d >= kanriFirst);
-          if (about.prevHomeOxygen === "ある" && afterKanri) out.push(finding("確定", i, codes, "G12.home_oxygen"));
+          if (homeOxygenSettled(claim, about, daysOf(u))) out.push(finding("確定", i, codes, "G12.home_oxygen"));
           else out.push(finding("条件つき", i, codes, "G12.home_oxygen_intro"));
         } else if (link.side === "open") out.push(finding("条件つき", i, codes, "G12.home_oxygen_unlinked", { days: link.days.length > 0 ? `（結び付かない日・決まらない日：${dayText(link.days)}）` : "（算定日が分かりません）" }));
       }
