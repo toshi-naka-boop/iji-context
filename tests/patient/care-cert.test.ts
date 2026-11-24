@@ -141,7 +141,8 @@ describe("過去の月の答えが、後の月の値を上書きしない（desi
       const [oct, nov] = upload(t.app, fileOf([receiptOf(1, YM, lines(YM)), receiptOf(1, month(1), lines(month(1)))]));
       t.app.savePatientFact(nov, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: dateIn(1, 1) }, source: "介護保険証", validUntil: dateIn(7, 28) });
       t.app.savePatientFact(oct, "new1", { key: "careCert", value: { kind: "認定なし" }, source: "介護保険証", validUntil: null });
-      expect([t.app.caseOf(oct).facts.careLevel, t.app.caseOf(nov).facts.careLevel]).toEqual([{ known: true, value: 0 }, { known: true, value: 3 }]);
+      // v40（全会一致）：翌月は、翌月に答えた要介護 3 と、あとに残した前の月の認定なしが、どちらも負けずに食い違うので分からない（確定の 0 にしない）
+      expect([t.app.caseOf(oct).facts.careLevel, t.app.caseOf(nov).facts.careLevel]).toEqual([{ known: true, value: 0 }, { known: false }]);
       expect(evaluate(t.app.caseOf(nov)).findings.filter((f) => f.messageKey === "R03.not_eligible")).toEqual([]);
     } finally {
       t.close();
@@ -170,11 +171,12 @@ describe("同じ月の訂正（design.md §18-12 の 1。X-380）", () => {
 });
 
 describe("申請中（EM §7-2 U-71。2026-11-24 利用者の判断）", () => {
-  it("答えた診療月だけに効き、R03 には分からない（careLevel を渡さない）、④・短期入所には認定なしに準じる。翌月は分からない", () => {
+  it("答えた月から 6 か月の窓で語り（v40）、R03 には分からない（careLevel を渡さない）、④・短期入所には認定なしに準じる", () => {
     const rows = [row({ key: "careCert", value: { kind: "申請中", forMonth: YM } })];
     const s = careStateOf(rows, YM);
     expect([careLevelOf(s, 3), certifiedOf(s)]).toEqual([{ known: false }, { known: true, value: false }]);
-    expect(careStateOf(rows, month(1))).toEqual({ known: false });
+    expect(careLevelOf(careStateOf(rows, month(1)), 3)).toEqual({ known: false });
+    expect(careStateOf(rows, month(6))).toEqual({ known: false });
     expect(() => validatePatientFact({ key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null }, `${day(13)}T09:00:00+09:00`)).not.toThrow();
   });
 });
@@ -184,7 +186,7 @@ describe("申請中は、それより前に答えた「認定なし」の 6 か�
     const rows = [row({ key: "careCert", value: { kind: "認定なし", forMonth: month(-1) } }), row({ key: "careCert", value: { kind: "申請中", forMonth: YM } })];
     expect(certifiedOf(careStateOf(rows, month(-1)))).toEqual({ known: true, value: false });
     expect(careLevelOf(careStateOf(rows, YM), 3)).toEqual({ known: false });
-    for (const m of [1, 2]) expect([m, careStateOf(rows, month(m))]).toEqual([m, { known: false }]);
+    for (const m of [1, 2]) expect([m, careLevelOf(careStateOf(rows, month(m)), 3)]).toEqual([m, { known: false }]);
   });
 });
 
