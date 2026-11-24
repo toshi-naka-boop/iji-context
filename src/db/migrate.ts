@@ -279,6 +279,15 @@ CREATE TABLE abbrev_answer_items (answer_id INTEGER NOT NULL, note_id INTEGER NO
 CREATE INDEX abbrev_answer_items_note ON abbrev_answer_items (note_id);
 `,
   },
+  {
+    // どの記載にも結び付かない略語の扱い（spec FR-211。plan-fr211.md「規則の作り直し」4）。事務が「算定に関係なし」か「医師に聞く」を選ぶ。追記だけで、いちばん新しい行が効く。
+    // 診療年月と語の組で持ち、翌月には持ち越さない（覚えない）。患者・カルテ・請求の id は持たない（語は英字の略語だけ）
+    version: 25,
+    sql: `
+CREATE TABLE abbrev_choices (id INTEGER PRIMARY KEY AUTOINCREMENT, year_month TEXT NOT NULL, token TEXT NOT NULL, choice TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL);
+CREATE INDEX abbrev_choices_month ON abbrev_choices (year_month, token);
+`,
+  },
 ];
 
 /** ログインの auth.db */

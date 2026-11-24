@@ -167,6 +167,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     abbrevMarksOf: notes.abbrevMarksOf,
     /** 略語の医師への確認（FR-211）：問いの一覧と答え（医師の役割だけ） */
     doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
+    /** どの記載にも結び付かない略語の扱い（FR-211。事務が選ぶ） */
+    chooseAbbrev: notes.chooseAbbrev,
     answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
     actCandidates,
     searchMasters,

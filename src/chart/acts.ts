@@ -39,7 +39,11 @@ export type ChartAct = {
  * 子（with）は、子に印があり当てておらず、親をたたんでいないとき
  */
 /** 取り出した直後に画面に出す略語の印のまとめ（FR-211）：カルテの文全体の印の語と、医師に聞く記載の数。マスターがなければ「見ていません」の文 */
-export type AbbrevSummary = { marks: string[]; asked: number } | { unseen: string };
+/** unlinked は、どの記載にも結び付かない語と、その月に事務が選んだ扱い（選んでいなければ null。選ぶまで確かめ済みにしない） */
+export type AbbrevSummary = { marks: string[]; asked: number; yearMonth: string; unlinked: { token: string; choice: AbbrevChoice | null }[] } | { unseen: string };
+/** どの記載にも結び付かない語の扱い（事務が選ぶ。その月のその語の分として残し、翌月は選び直す。規則の作り直し 4） */
+export const ABBREV_CHOICES = ["算定に関係なし", "医師に聞く"] as const;
+export type AbbrevChoice = (typeof ABBREV_CHOICES)[number];
 /** 聞く記載の答えの状態（FR-211）：asking＝医師に確かめ中／unresolved＝医師が判定不能・その他と答えた／answered＝指すものの記入がある（候補から選ぶ） */
 export type AbbrevState = "asking" | "unresolved" | "answered";
 /** たたんだ行為か（「違う」〔same: false〕はたたまない印なので、たたんだに数えない。反証 round-96 X-491） */

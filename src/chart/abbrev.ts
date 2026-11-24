@@ -145,7 +145,8 @@ export function sentenceWith(note: { s: string; o: string; a: string; p: string;
 export const itemKeyOf = (written: string, quote: string): string => createHash("sha256").update(`${written}\0${quote}`).digest("hex").slice(0, 16);
 
 /** 医師に聞く記載 1 つ。place：act＝行為／child＝行為で使った薬・器材／fact＝病名の記載。index・child は今の位置（候補を出すため。同定には key を使う） */
-export type AbbrevItem = { place: "act" | "child" | "fact"; index: number; child?: number; written: string; quote: string; tokens: string[]; key: string };
+/** place の text は、どの記載にも結び付かない語で、事務が「医師に聞く」を選んだもの（原文のその語を含む文。index は使わない） */
+export type AbbrevItem = { place: "act" | "child" | "fact" | "text"; index: number; child?: number; written: string; quote: string; tokens: string[]; key: string };
 
 /**
  * 保存したカルテの、医師に聞く記載（決まった規則）：聞く行為・子と、訪問カルテの病名の記載で印のあるもの。
@@ -164,4 +165,10 @@ export function askedItems(kind: string, stored: StoredActs | null, facts: Extra
       if (f.kind === "病名の記載" && (f.abbrev?.length ?? 0) > 0) out.push({ place: "fact", index, written: f.value, quote: f.quote, tokens: f.abbrev!, key: itemKeyOf(f.value, f.quote) });
     });
   return out;
+}
+
+/** 保存したカルテの、どの記載にも結び付いていない語（印の語から、行為・子・病名の記載の abbrev の語を除く。当てたかは問わない。規則の作り直し 4） */
+export function unlinkedOf(marks: readonly string[], stored: StoredActs | null, facts: ExtractedFact[] | null): string[] {
+  const linked = new Set([...(stored?.acts ?? []).flatMap((a) => [...(a.abbrev ?? []), ...(a.with ?? []).flatMap((c) => c.abbrev ?? [])]), ...(facts ?? []).flatMap((f) => (f.kind === "病名の記載" ? (f.abbrev ?? []) : []))]);
+  return marks.filter((w) => !linked.has(w));
 }

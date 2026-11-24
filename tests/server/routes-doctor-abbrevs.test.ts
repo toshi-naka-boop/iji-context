@@ -115,7 +115,7 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
       const w = await writeAndSave(claimId(k), "ＥＣＧ１２。", [ecgAct()]);
       notes.push(w.id);
       expect(w.acts[0]).toMatchObject({ abbrev: ["ECG12"], lookup: [] });
-      expect(w.abbrev).toEqual({ marks: ["ECG12"], asked: 1 });
+      expect(w.abbrev).toEqual({ marks: ["ECG12"], asked: 1, yearMonth: YM, unlinked: [] });
       expect(w.review.matches[0].act.initial).toBeNull();
       expect(w.review.matches[0].act.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
       const saved = app().savedActs(w.id)!;
@@ -425,5 +425,76 @@ describe("言い換えの疑いだけでは聞かない（規則の作り直し 
     setRole("doctor");
     const r = await (await import("../../app/api/doctor/abbrevs/route")).POST(post("/api/doctor/abbrevs", { yearMonth: YM, token: "酸素ボンベ加算", refs: [`${w.id}:act:0000000000000000`], option: "判定不能" }));
     expect(r.status).toBe(400);
+  });
+});
+
+describe("どの記載にも結び付かない語は事務が先に選ぶ（規則の作り直し 4）", () => {
+  const choose = async (token: string, choice: string, yearMonth = YM) => {
+    setRole("clerk");
+    return (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth, token, choice }));
+  };
+  /** 書いて（偽の取り出し）、確かめて保存する。保存の応答を返す */
+  async function writeOnly(claim: string, note: Record<string, string>, acts: ChartAct[], facts: unknown[] = []) {
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts, acts, rx: [] }, sessionId: "", stats: {} });
+    setRole("clerk");
+    const r = await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claim, kind: "訪問診療", note: { s: "", o: "", a: "", p: "", rx: "", ...note } }));
+    expect(r.status).toBe(200);
+    const w = (await r.json()) as Written & { facts: unknown[] };
+    const save = () => import("../../app/api/chart/acts/route").then(async (m) => m.POST(post("/api/chart/acts", { noteId: String(w.id), facts: w.facts, acts: w.acts, rx: [], rxChoice: null })));
+    return { w, save };
+  }
+
+  it("引用を別の文にした組（C-642）：ECG12 は結び付かない語。選ぶまで確かめ済みにならず（409）、「医師に聞く」を選ぶと原文の文を引用にした問いになる", async () => {
+    const { w, save } = await writeOnly(claimId("K4"), { o: "ＥＣＧ１２施行。前回の心電図と著変なし" }, [{ category: "検査", written: "心電図", lookup: [], quote: "前回の心電図" }]);
+    expect(w.acts[0].abbrev).toBeUndefined();
+    expect(w.abbrev).toMatchObject({ yearMonth: YM, unlinked: [{ token: "ECG12", choice: null }] });
+    const ng = await save();
+    expect(ng.status).toBe(409);
+    expect(((await ng.json()) as { error: string }).error).toContain("略語の確かめ待ち");
+    expect(app().savedActs(w.id)).toBeNull();
+    expect((await choose("ECG12", "医師に聞く")).status).toBe(200);
+    expect((await save()).status).toBe(200);
+    const q = (await list()).find((x) => x.token === "ECG12" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
+    expect(q.quotes.find((y) => refNote(y.ref) === w.id)).toMatchObject({ ref: expect.stringContaining(":text:"), quote: "ＥＣＧ１２施行。" });
+    expect(abbrevQueryErrors(q)).toEqual([]);
+  });
+  it("ADL・NRS3（C-640）：言い換えた行為には結び付かず、「算定に関係なし」を選べば確かめ済みにでき、医師には聞かない", async () => {
+    const { w, save } = await writeOnly(claimId("K1"), { s: "ADL低下、NRS3", o: "在宅患者訪問診療。", p: "在宅酸素療法の指導。" }, [{ category: "診療行為", written: "在宅酸素療法指導管理", lookup: [], quote: "在宅酸素療法の指導" }]);
+    expect(w.acts[0].abbrev).toBeUndefined();
+    expect(w.abbrev).toMatchObject({ unlinked: [{ token: "ADL", choice: null }, { token: "NRS3", choice: null }] });
+    expect((await save()).status).toBe(409);
+    for (const t of ["ADL", "NRS3"]) expect((await choose(t, "算定に関係なし")).status).toBe(200);
+    expect((await save()).status).toBe(200);
+    expect((await list()).some((x) => x.token === "ADL" || x.token === "NRS3")).toBe(false);
+  });
+  it("処方の分類名（K4 の見本）：AF は病名の記載に結び付き、DOAC は結び付かない語として選ぶ", async () => {
+    const { w } = await writeOnly(claimId("K4"), { a: "変わりなし。AF。DOAC継続。" }, [], [{ kind: "病名の記載", value: "AF", quote: "AF" }, { kind: "処方", value: "DOAC", quote: "DOAC継続" }]);
+    expect((w as unknown as { facts: { abbrev?: string[] }[] }).facts.map((f) => f.abbrev)).toEqual([["AF"], undefined]);
+    expect(w.abbrev).toMatchObject({ unlinked: [{ token: "DOAC", choice: null }] });
+  });
+  it("選んだ扱いは、その月のその語の分だけ（覚えない）：翌月の同じ語は改めて選ぶまで確かめ済みにならない", async () => {
+    const { readUke, writeUke } = await import("../../src/uke/uke");
+    const { readFileSync } = await import("node:fs");
+    const base = readUke(readFileSync(path.join(__dirname, "..", "..", "fixtures", "uke", "shiharaikikin.UKE")));
+    const r0 = base.receipts[0];
+    const next = (d: string) => (d.startsWith(`${YM}-`) ? `${month(1)}${d.slice(7)}` : d);
+    const file = writeUke({ ...base, billingMonth: month(2), receipts: [{ ...r0, claimId: "A1", yearMonth: month(1), lines: r0.lines.map((l) => ({ ...l, dates: l.dates.map(next) })), patient: { ...r0.patient, name: "架空 翌月二", insurer: { number: "06139991", symbol: "77", no: "802" } } }] });
+    const me = instance.clerkIdOf(user);
+    setRole("clerk");
+    instance.runAs(user, () => {
+      const a = instance.getApp();
+      const claim = a.uploadUke(me, file).filter((u) => u.uploaded)[0].receipts[0].claimId;
+      const saved = a.saveRecord(claim, me, `${month(1)}-05`, { s: "ADL低下", o: "", a: "", p: "", rx: "" });
+      expect(() => a.confirmActs(saved.id, me, { facts: [], acts: [], rx: [], rxChoice: null })).toThrow(/略語の確かめ待ち/);
+      a.chooseAbbrev(me, { yearMonth: month(1), token: "ADL", choice: "算定に関係なし" });
+      expect(a.confirmActs(saved.id, me, { facts: [], acts: [], rx: [], rxChoice: null })).toMatchObject({ claimId: claim });
+    });
+  });
+  it("選べるのはカルテを確かめる役割だけ。語は英字の略語の形、扱いは 2 つのどれか（zod）", async () => {
+    setRole("doctor");
+    expect((await (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token: "AF", choice: "医師に聞く" }))).status).toBe(403);
+    expect((await choose("酸素ボンベ加算", "医師に聞く")).status).toBe(400);
+    expect((await choose("AF", "覚える")).status).toBe(400);
+    expect((await choose("AF", "医師に聞く", "2026-1")).status).toBe(400);
   });
 });

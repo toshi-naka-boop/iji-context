@@ -118,7 +118,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     // 略語の印（FR-211）は保存のときにサーバーが付け直す（画面から来た値は使わない）
     const vocab = withMasters((db) => abbrevVocabOf(db, caseOf(r.claim_id).yearMonth));
     const note = JSON.parse(r.note) as ChartNote;
-    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(vocab ? markDay([], v.facts, vocab, noteText(note)).facts : v.facts), id);
+    const day = vocab ? markDay([], v.facts, vocab, noteText(note)) : null;
+    if (day) assertChosen(caseOf(r.claim_id).yearMonth, day.unlinked);
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(day ? day.facts : v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
   // ───────────────────────────────────────────────────────────────────────
@@ -139,10 +141,17 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return withMasters((db) => {
       const vocab = abbrevVocabOf(db, yearMonth);
       if (!vocab) return { acts, facts, abbrev: { unseen: NO_MASTER_NOTE } };
-      const { acts: a, facts: f } = markDay(acts, facts, vocab, noteText(JSON.parse(r.note) as ChartNote));
+      const { acts: a, facts: f, marks, unlinked } = markDay(acts, facts, vocab, noteText(JSON.parse(r.note) as ChartNote));
       const asked = a.flatMap((x) => [x.abbrev && !x.match ? 1 : 0, ...(x.with ?? []).map((c) => (c.abbrev && !c.match ? 1 : 0))]).reduce<number>((n, k) => n + k, 0) + (r.kind === "記録" ? 0 : f.filter((x) => x.kind === "病名の記載" && x.abbrev).length);
-      return { acts: a, facts: f, abbrev: { marks: abbrevMarks(noteText(JSON.parse(r.note) as ChartNote), vocab), asked } };
+      return { acts: a, facts: f, abbrev: { marks, asked, yearMonth, unlinked: unlinked.map((token) => ({ token, choice: abbrevs.choiceOf(yearMonth, token) })) } };
     });
+  }
+  /**
+   * 略語の確かめ待ち（規則の作り直し 4）：どの記載にも結び付かない語に、その月の扱い（算定に関係なし・医師に聞く）を選んでいなければ、確かめ済みにしない（409）
+   */
+  function assertChosen(yearMonth: string, unlinked: string[]) {
+    const open = unlinked.filter((t) => abbrevs.choiceOf(yearMonth, t) === null);
+    if (open.length > 0) throw conflict(`略語の確かめ待ちです：${open.join("・")} は、どの記載にも結び付いていません。「算定に関係なし」か「医師に聞く」を選んでから確かめてください`);
   }
   /** 自由記述の印の語（SOAP に整えたときに消えた略語を見るため）。請求がなければ・マスターがなければ空 */
   function abbrevMarksOf(claimId: string | undefined, text: string): string[] {
@@ -326,6 +335,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const at = now();
     let vocab: AbbrevVocab | null = null;
     let markedFacts: ExtractedFact[] = v.facts;
+    let unlinked: string[] = [];
     const acts = withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
       const check = (key: TableKey, written: string, quote: string, m: ActMatch | null | undefined): ActMatch | null => {
@@ -352,8 +362,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].written, chosen[k].quote)) chosen.splice(k, 1);
       const day = markDay(checked, v.facts, vocab, noteText(note));
       markedFacts = day.facts;
+      unlinked = day.unlinked;
       return day.acts;
     });
+    assertChosen(yearMonth, unlinked);
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
@@ -724,7 +736,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { abbrevs, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  /** どの記載にも結び付かない語の扱いを選ぶ（事務。POST /api/chart/abbrev-choices） */
+  const chooseAbbrev = abbrevs.chooseAbbrev;
+  return { abbrevs, chooseAbbrev, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

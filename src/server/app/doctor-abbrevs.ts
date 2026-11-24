@@ -5,9 +5,10 @@
 // 答えは、答えた時点で並んでいた記載にだけ効く（あとから同じ月に増えた記載は新しい問い）。答えはクリニックごとに覚えず、翌月の同じ語は改めて聞く。
 // 患者の氏名・患者 id は持たない・返さない（請求の番号と日付だけ）。ログ・監査ログに引用と答えの文を出さない
 import type Database from "better-sqlite3";
-import { askedItems, sentenceWith, type AbbrevItem } from "../../chart/abbrev";
-import type { AbbrevState, StoredActs } from "../../chart/acts";
-import type { ChartNote, ExtractedFact } from "../../chart/extract";
+import { abbrevMarks, abbrevVocabOf, askedItems, itemKeyOf, sentenceWith, unlinkedOf, type AbbrevItem, type AbbrevVocab } from "../../chart/abbrev";
+import { withMasters } from "../../masters/db";
+import { ABBREV_CHOICES, type AbbrevChoice, type AbbrevState, type StoredActs } from "../../chart/acts";
+import { noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { businessDaysElapsed, MONEY, OTHER, UNDETERMINABLE, validateQuery } from "../../query/doctor-query";
 import { badRequest, conflict } from "../errors";
 import type { Clerks } from "./clerks";
@@ -45,7 +46,7 @@ export type AbbrevRequest = {
 };
 
 const refOf = (noteId: number, place: string, key: string) => `${noteId}:${place}:${key}`;
-const REF = /^([1-9][0-9]{0,9}):(act|child|fact):([0-9a-f]{16})$/;
+const REF = /^([1-9][0-9]{0,9}):(act|child|fact|text):([0-9a-f]{16})$/;
 
 /** 引用（原文のその語を含む文。plan-fr211.md「規則の作り直し」2）を語を含む文 1 つに切り、点数・金額の語（MONEY の正規表現そのもの）を伏せる */
 export function quoteOf(quote: string, token: string): { quote: string; masked: boolean } {
@@ -93,18 +94,57 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       }
       return months.get(claimId)!;
     };
+    // 印の語を保存していないカルテ（事実だけを確定した訪問カルテ）は、その月のマスターで原文から決める（月ごとに 1 回だけ読む）
+    const vocabs = new Map<string, AbbrevVocab | null>();
+    const vocabOf = (ym: string) => {
+      if (!vocabs.has(ym)) vocabs.set(ym, withMasters((db) => abbrevVocabOf(db, ym)));
+      return vocabs.get(ym)!;
+    };
+    const choices = choicesAll();
     return rows.flatMap((r) => {
       if (ctx.hiddenClaim(r.claim_id)) return [];
       const stored = r.acts === null ? null : (JSON.parse(r.acts) as StoredActs);
-      const found = askedItems(r.kind, stored, r.facts === null ? null : (JSON.parse(r.facts) as ExtractedFact[]));
-      if (found.length === 0) return [];
+      const facts = r.facts === null ? null : (JSON.parse(r.facts) as ExtractedFact[]);
       const yearMonth = monthOf(r.claim_id);
       if (yearMonth === null) return [];
-      const at = stored?.abbrev?.at ?? r.created_at;
       const note = JSON.parse(r.note) as ChartNote;
+      // どの記載にも結び付かない語で、事務が「医師に聞く」を選んだもの（原文のその語を含む文を引用にする）
+      const abbrev = stored?.abbrev;
+      const marks = abbrev ? ("marks" in abbrev ? abbrev.marks : []) : (() => {
+        const v = vocabOf(yearMonth);
+        return v ? abbrevMarks(noteText(note), v) : [];
+      })();
+      const text: AbbrevItem[] = unlinkedOf(marks, stored, facts)
+        .filter((t) => choices.get(`${yearMonth}|${t}`) === "医師に聞く")
+        .map((t) => {
+          const sentence = sentenceWith(note, t) ?? t;
+          return { place: "text", index: -1, written: t, quote: sentence, tokens: [t], key: itemKeyOf(t, sentence) };
+        });
+      const found = [...askedItems(r.kind, stored, facts), ...text];
+      if (found.length === 0) return [];
+      const at = abbrev?.at ?? r.created_at;
       return found.map((x) => ({ ...x, noteId: r.id, claimId: r.claim_id, date: r.date, yearMonth, at, ref: refOf(r.id, x.place, x.key), note }));
     });
   }
+  /** どの記載にも結び付かない語の扱い（鍵は「診療年月|語」。いちばん新しい行が効く） */
+  function choicesAll(): Map<string, AbbrevChoice> {
+    const out = new Map<string, AbbrevChoice>();
+    for (const r of sqlite.prepare("SELECT year_month, token, choice FROM abbrev_choices ORDER BY id").all() as { year_month: string; token: string; choice: AbbrevChoice }[]) out.set(`${r.year_month}|${r.token}`, r.choice);
+    return out;
+  }
+  /** その月の語の扱い（選んでいなければ null） */
+  const choiceOf = (yearMonth: string, token: string): AbbrevChoice | null => {
+    const r = sqlite.prepare("SELECT choice FROM abbrev_choices WHERE year_month = ? AND token = ? ORDER BY id DESC LIMIT 1").get(yearMonth, token) as { choice: AbbrevChoice } | undefined;
+    return r?.choice ?? null;
+  };
+  /** どの記載にも結び付かない語の扱いを、その月のその語の分として追記で残す（事務。覚えない：翌月は選び直す）。返すのは、その語の今の扱い */
+  function chooseAbbrev(clerkId: string, input: { yearMonth: string; token: string; choice: AbbrevChoice }): { yearMonth: string; token: string; choice: AbbrevChoice } {
+    clerks.clerk(clerkId);
+    if (!(ABBREV_CHOICES as readonly string[]).includes(input.choice)) throw badRequest("選べる扱いではありません", ["choice"]);
+    sqlite.prepare("INSERT INTO abbrev_choices (year_month, token, choice, chosen_by, chosen_at) VALUES (?, ?, ?, ?, ?)").run(input.yearMonth, input.token, input.choice, clerkId, clock.now());
+    return { yearMonth: input.yearMonth, token: input.token, choice: input.choice };
+  }
+
   /** 記載と語ごとの、いちばん新しい答え（鍵は「参照|語」） */
   function latest(): Map<string, Answer> {
     const rows = sqlite
@@ -201,7 +241,7 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
   const writtenIn = (noteId: number, place: AbbrevItem["place"], key: string, tokens: string[]): string[] =>
     answersOf(noteId, place, key, tokens).flatMap((x) => (x.answer.option === ABBREV_WRITE_IN && x.answer.freeText ? [x.answer.freeText] : []));
 
-  return { doctorAbbrevs, answerDoctorAbbrev, stateOf, writtenIn, answersOf };
+  return { doctorAbbrevs, answerDoctorAbbrev, stateOf, writtenIn, answersOf, choiceOf, chooseAbbrev };
 }
 
 export type DoctorAbbrevs = ReturnType<typeof createDoctorAbbrevs>;

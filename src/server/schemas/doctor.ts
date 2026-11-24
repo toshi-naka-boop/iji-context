@@ -21,7 +21,7 @@ export const doctorAbbrevBody = z.strictObject({
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
   // 問いの語は英字の略語だけ（名前そのものは聞かない。plan-fr211.md「規則の作り直し」2）
   token: z.string().regex(/^[A-Za-z]+[0-9]*$/).max(100),
-  refs: z.array(z.string().regex(/^[1-9][0-9]{0,9}:(act|child|fact):[0-9a-f]{16}$/)).min(1).max(MAX_ABBREV_REFS),
+  refs: z.array(z.string().regex(/^[1-9][0-9]{0,9}:(act|child|fact|text):[0-9a-f]{16}$/)).min(1).max(MAX_ABBREV_REFS),
   option: z.enum(ABBREV_OPTIONS),
   freeText: z.string().max(MAX_ABBREV_OTHER).optional(),
 });
