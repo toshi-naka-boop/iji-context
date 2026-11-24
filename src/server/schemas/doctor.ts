@@ -35,3 +35,5 @@ export const abbrevSelectionBody = z.strictObject({
   /** Lv.5 からだけ効く（Lv.4 までは辞書の略語を必ず医師確認に回す） */
   askDoctor: z.boolean().optional(),
 });
+/** そのカルテの略語のまとめを読む（GET /api/chart/abbrev-selections） */
+export const abbrevSummaryQuery = z.strictObject({ noteId: z.string().regex(/^[1-9][0-9]{0,9}$/) });

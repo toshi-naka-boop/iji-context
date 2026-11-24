@@ -2,7 +2,7 @@
 // カルテの「行ったこと」を確かめる（design.md §15-6・15-7・15-9。FR-192・FR-193）：足す・直す・消す・候補から選ぶ。
 // 候補はどれも診療年月の基本マスターに実在するコードだけ。名前の完全一致が 1 つのときだけ当てた状態で出し、ほかは本人が選ぶ（選ばなければ「当てられない」のまま残る）。
 // 前に選んだものは選んだ状態の初期値で出す（L-95）。請求は見ない（C-233）。保存は、事実と同じ 1 回の確かめ（呼び出し側の「確定する」）
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ABBREV_DICT_OPTIONS, ABBREV_NODICT_OPTIONS, ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
 import { VisitTimeInput, type VisitRef } from "../visit-time-input";
@@ -112,6 +112,13 @@ export function AbbrevSummaryNote({ abbrev, noteId }: { abbrev: AbbrevSummary | 
   const [cur, setCur] = useState<AbbrevSummary | undefined>(abbrev);
   const [draft, setDraft] = useState<Record<string, { option: string; meaning: string; ask: boolean }>>({});
   const [err, setErr] = useState("");
+  // 開いたときに読み直す（医師の答えが来ていれば出す。反証 round-101 X-511）
+  useEffect(() => {
+    if (!abbrev || "unseen" in abbrev || abbrev.marks.length === 0) return;
+    getJson<AbbrevSummary>(`/api/chart/abbrev-selections?${new URLSearchParams({ noteId: String(noteId) })}`)
+      .then(setCur)
+      .catch(() => {});
+  }, [noteId, abbrev]);
   const a = cur ?? abbrev;
   if (!a) return null;
   if ("unseen" in a) return <p className="muted" style={{ margin: 0 }}>{a.unseen}</p>;
@@ -145,6 +152,12 @@ export function AbbrevSummaryNote({ abbrev, noteId }: { abbrev: AbbrevSummary | 
               {!t.inDict && <span className="muted">辞書にない略語</span>}
               {t.selection && <span className="muted">選んだ扱い：{t.selection.option}{t.selection.meaning ? `（${t.selection.meaning}）` : ""}</span>}
               {t.doctorPending && <span className="badge">医師確認中</span>}
+              {t.doctorAnswer && (
+                <span className="badge">
+                  医師の答え：{t.doctorAnswer.text ?? t.doctorAnswer.option}
+                  {t.doctorAnswer.text && t.selection?.meaning && t.doctorAnswer.text !== t.selection.meaning ? `（事務の選択：${t.selection.meaning}）` : ""}
+                </span>
+              )}
             </div>
             {t.inDict && (
               <ul style={{ margin: 0, paddingLeft: 20 }}>

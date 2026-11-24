@@ -46,6 +46,10 @@ export type AbbrevToken = {
   candidates: { meaning: string; source: "万病辞書" | "クリニックの辞書"; reliability?: string }[];
   selection: { option: string; meaning: string | null; askDoctor: boolean } | null;
   doctorPending: boolean;
+  /** いちばん新しい医師の答え（反証 round-101 X-511。記入の答えは text に意味） */
+  doctorAnswer: { option: string; text: string | null } | null;
+  /** このカルテの意味：医師が「指すものを記入する」で答えていれば医師の答え、なければ事務の選んだ意味（辞書にすでにある意味でも、このカルテには効く） */
+  meaning: string | null;
 };
 /**
  * 略語の印のまとめ（FR-211。plan-fr211.md「辞書方式の決め」）：カルテの文全体の印の語と、略語ごとの候補・扱い。

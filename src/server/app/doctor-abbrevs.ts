@@ -130,6 +130,12 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       });
     });
   }
+  /** そのカルテのその略語への、いちばん新しい医師の答え（答えの記録は追記のまま。答えがなければ null） */
+  function doctorAnswerOf(noteId: number, token: string): { option: string; text: string | null } | null {
+    const it = items().find((x) => x.noteId === noteId && x.tokens[0] === token);
+    const a = it ? latest().get(`${it.ref}|${token}`) : undefined;
+    return a && a.option !== ABBREV_VARIES ? { option: a.option, text: a.freeText } : null;
+  }
   /** 医師確認中か：医師確認に回していて、答えがまだない（「記載によって違う」で割ったあとも、答えるまで確認中） */
   function doctorPending(noteId: number, token: string): boolean {
     const s = selectionOf(noteId, token);
@@ -235,7 +241,7 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
     return doctorAbbrevs();
   }
 
-  return { doctorAbbrevs, answerDoctorAbbrev, selectionOf, saveSelection, clinicMeanings, doctorPending };
+  return { doctorAbbrevs, answerDoctorAbbrev, selectionOf, saveSelection, clinicMeanings, doctorPending, doctorAnswerOf };
 }
 
 export type DoctorAbbrevs = ReturnType<typeof createDoctorAbbrevs>;

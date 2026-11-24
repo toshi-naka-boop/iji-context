@@ -168,6 +168,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     markExtracted: notes.markExtracted,
     abbrevMarksOf: notes.abbrevMarksOf,
     selectAbbrev: notes.selectAbbrev,
+    readAbbrevSummary: notes.readAbbrevSummary,
     doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
     answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
     actCandidates,

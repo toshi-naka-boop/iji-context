@@ -4,7 +4,10 @@
 import { route } from "../../../../src/server/http";
 import { getApp } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";
-import { abbrevSelectionBody } from "../../../../src/server/schemas/doctor";
+import { abbrevSelectionBody, abbrevSummaryQuery } from "../../../../src/server/schemas/doctor";
+
+/** そのカルテの略語のまとめ（候補・選んだ扱い・医師確認中か・医師の答え）を読む。読むだけ */
+export const GET = route({ roles: allow("GET /api/chart/abbrev-selections"), query: abbrevSummaryQuery }, ({ query, clerkId }) => getApp().readAbbrevSummary(clerkId, Number(query.noteId)));
 
 export const POST = route({ roles: allow("POST /api/chart/abbrev-selections"), body: abbrevSelectionBody, audit: { target: ({ body }) => body.noteId } }, ({ body, clerkId }) =>
   getApp().selectAbbrev(clerkId, { noteId: Number(body.noteId), token: body.token, option: body.option, ...(body.meaning !== undefined ? { meaning: body.meaning } : {}), ...(body.askDoctor !== undefined ? { askDoctor: body.askDoctor } : {}) }),

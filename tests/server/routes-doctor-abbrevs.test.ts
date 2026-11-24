@@ -436,3 +436,34 @@ describe("止めを解く条件（反証 round-101 X-510）", () => {
     if (q) expect((await answer(q, "判定不能")).status).toBe(200);
   });
 });
+
+describe("医師の答えを事務の画面に返す（反証 round-101 X-511）", () => {
+  it("AMI：事務が心筋梗塞を選び、医師が心臓破裂と答えると、このカルテの意味は医師の答えになり、事務の選択と並べて返る。辞書にある意味なので辞書には足さない", async () => {
+    setCount(100); // Lv.4
+    const w = await write(claimId("K4"), { a: "AMI。" });
+    await select(w.id, "AMI", "辞書の意味", { meaning: "心筋梗塞" });
+    const read = async () => {
+      setRole("clerk");
+      const r = await (await import("../../app/api/chart/abbrev-selections/route")).GET(get(`/api/chart/abbrev-selections?noteId=${w.id}`));
+      expect(r.status).toBe(200);
+      return (await r.json()) as Summary;
+    };
+    expect(tokenOf({ abbrev: await read() }, "AMI")).toMatchObject({ meaning: "心筋梗塞", doctorPending: true, doctorAnswer: null });
+    const before = query<unknown[]>("SELECT * FROM abbrev_dictionary").length;
+    const q = (await list()).find((x) => x.token === "AMI" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
+    expect((await answer(q, "指すものを記入する", "心臓破裂", q.quotes.filter((y) => refNote(y.ref) === w.id).map((y) => y.ref))).status).toBe(200);
+    expect(tokenOf({ abbrev: await read() }, "AMI")).toMatchObject({
+      meaning: "心臓破裂",
+      selection: { option: "辞書の意味", meaning: "心筋梗塞" },
+      doctorAnswer: { option: "指すものを記入する", text: "心臓破裂" },
+      doctorPending: false,
+    });
+    expect(query<unknown[]>("SELECT * FROM abbrev_dictionary").length).toBe(before);
+    // 答えの記録は追記のまま
+    expect(query<{ n: number }[]>("SELECT COUNT(*) AS n FROM abbrev_answers WHERE token = 'AMI' AND free_text = '心臓破裂'")[0].n).toBe(1);
+    // 事務の画面の入口なので、医師の役割は読めない
+    setRole("doctor");
+    expect((await (await import("../../app/api/chart/abbrev-selections/route")).GET(get(`/api/chart/abbrev-selections?noteId=${w.id}`))).status).toBe(403);
+    setCount(0);
+  });
+});

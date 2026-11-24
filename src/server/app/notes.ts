@@ -155,7 +155,15 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       credit: st.tokens.some((t) => t.candidates.some((c) => c.source === "万病辞書")) && MANBYO_CREDIT ? { credit: MANBYO_CREDIT.credit, name: MANBYO_CREDIT.name, url: MANBYO_CREDIT.url } : null,
       tokens: st.tokens.map((t) => {
         const sel = abbrevs.selectionOf(id, t.token);
-        return { ...t, selection: sel ? { option: sel.option, meaning: sel.meaning, askDoctor: sel.askDoctor } : null, doctorPending: abbrevs.doctorPending(id, t.token) };
+        const ans = abbrevs.doctorAnswerOf(id, t.token);
+        const doctorMeaning = ans?.option === "指すものを記入する" ? ans.text : null;
+        return {
+          ...t,
+          selection: sel ? { option: sel.option, meaning: sel.meaning, askDoctor: sel.askDoctor } : null,
+          doctorPending: abbrevs.doctorPending(id, t.token),
+          doctorAnswer: ans,
+          meaning: doctorMeaning ?? sel?.meaning ?? null,
+        };
       }),
     };
   }
@@ -757,7 +765,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { abbrevs, setLevelOf, selectAbbrev, abbrevSummaryOf, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  /** そのカルテの略語のまとめを読む（GET /api/chart/abbrev-selections。権限は選ぶのと同じ） */
+  function readAbbrevSummary(clerkId: string, noteId: number): AbbrevSummary {
+    clerk(clerkId);
+    const r = noteRow(noteId);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの略語を見られるのは、書いた本人だけです");
+    return abbrevSummaryOf(noteId, clerkId);
+  }
+  return { abbrevs, setLevelOf, selectAbbrev, abbrevSummaryOf, readAbbrevSummary, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;
