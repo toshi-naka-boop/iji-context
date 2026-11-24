@@ -58,6 +58,8 @@ export function assertCodes(rev: Revision): void {
   const take = (code: string, where: string) => {
     if (!CODE.test(code)) bad(`コードが 9 桁の数字でない（${where}）`);
     const prev = seen.get(code);
+    // sharedCodes（EM §2-8 DUP-01）だけは、codes と bundles の 1 か所ずつに置ける（design.md §19-13 の 1）
+    if (prev !== undefined && (rev.sharedCodes ?? []).includes(code) && prev.startsWith("bundles[") !== where.startsWith("bundles[")) return;
     if (prev !== undefined) bad(`同じコードが 2 か所にある: ${code}（${prev} と ${where}）`);
     seen.set(code, where);
   };

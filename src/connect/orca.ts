@@ -240,8 +240,9 @@ export function toLines(patientId: string, yearMonth: string, raw: unknown): { l
       others.push({ unit: index, codes: [m.Medication_Code], points: null, count: dates.length, days: [...m.Perform_Calendar].map((c) => (c === "1" ? 1 : 0)) });
       continue;
     }
-    if (kubun !== null) {
-      lines.push({ kubun, count: dates.length, dates });
+    // 包括の群の項目は、codes にもあるコード（BNP。EM §2-8 DUP-01）も含めて群を先に数える（design.md §19-13 の 1）。区分は全部の行を読んでから決める
+    if (bundle === null) {
+      lines.push({ kubun: kubun!, count: dates.length, dates });
       continue;
     }
     const key = `${rev.bundles.indexOf(bundle!)}/${m.Perform_Calendar}`;
@@ -257,10 +258,16 @@ export function toLines(patientId: string, yearMonth: string, raw: unknown): { l
   }
   for (const { bundle, line, unit, calendar } of bundled.values()) {
     const kubun = bundleKubun(bundle, line.items.length);
-    // 項目数が下限に届かない群（D007・D008・D013）は正しい請求なので、受け取り全体を断らず、点検の対象外の単位として残す（UKE の取り込みと同じ。design.md §19-13 の 2）
+    // 項目数が下限に届かない群（D007・D008・D013）は正しい請求なので、受け取り全体を断らず、点検の対象外の単位として残す（UKE の取り込みと同じ。design.md §19-13 の 2）。
+    // ただし codes にもあるコード（BNP）は、今までどおりコードの区分（D008_19）の行にする
     if (kubun === null) {
-      lines.splice(lines.indexOf(line), 1);
-      others.push({ unit, codes: [...line.items], points: null, count: line.count, days: [...calendar].map((c) => (c === "1" ? 1 : 0)) });
+      const coded = line.items.flatMap((c) => {
+        const k = kubunOfCode(rev, c);
+        return k === null ? [] : [{ kubun: k, count: line.count, dates: line.dates }];
+      });
+      const rest = line.items.filter((c) => kubunOfCode(rev, c) === null);
+      lines.splice(lines.indexOf(line), 1, ...coded);
+      if (rest.length > 0) others.push({ unit, codes: rest, points: null, count: line.count, days: [...calendar].map((c) => (c === "1" ? 1 : 0)) });
       continue;
     }
     line.kubun = kubun;

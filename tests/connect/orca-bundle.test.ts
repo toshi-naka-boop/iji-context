@@ -29,3 +29,25 @@ describe("ORCA の包括の検査（v44。§19-13 の 2）", () => {
     }
   });
 });
+
+describe("BNP（codes と D008 の群の両方。EM §2-8 DUP-01。§19-13 の 1）：群を先に数える", () => {
+  const BNP = "160162350";
+  const FT4 = "160033310";
+  const CORTISOL = "160034010";
+  it("ORCA：BNP だけは D008_19、BNP と D008 の項目で 3 つ以上なら D008_3、BNP と 1 項目なら BNP は D008_19 で、ほかは対象外の単位", () => {
+    expect(toLines("K1", YM, response([BNP])).lines.map((l) => l.kubun)).toEqual(["D008_19"]);
+    expect(toLines("K1", YM, response([BNP, FT4, CORTISOL])).lines.map((l) => l.kubun)).toEqual(["D008_3"]);
+    const two = toLines("K1", YM, response([BNP, FT4]));
+    expect(two.lines.map((l) => l.kubun)).toEqual(["D008_19"]);
+    expect(two.others.map((o) => o.codes)).toEqual([[FT4]]);
+  });
+
+  it("UKE の取り込み：BNP だけの単位は D008_19、BNP と D008 の項目で 3 つの単位は D008_3", async () => {
+    const { mapClaim } = await import("../../src/uke/uke");
+    const unit = (codes: string[], points: number, line: number) => ({ line, items: codes.map((code, i) => ({ kind: "SI" as const, code, line: line + i, quantity: "", shikibetsu: i === 0 ? "60" : "", unitPrice: "" })), points, count: 1, days: Array.from({ length: 31 }, (_, d) => (d === 9 ? 1 : 0)), futan: "", shikibetsu: "60" });
+    const claim = { yearMonth: YM, units: [unit([BNP], rev.points.D008_19.points!, 10), unit([BNP, FT4, CORTISOL], rev.points.D008_3.points!, 20)], comments: [] } as unknown as Parameters<typeof mapClaim>[0];
+    const m = mapClaim(claim, rev);
+    expect(m.lines.map((l) => l.kubun)).toEqual(["D008_19", "D008_3"]);
+    expect(m.others).toEqual([]);
+  });
+});

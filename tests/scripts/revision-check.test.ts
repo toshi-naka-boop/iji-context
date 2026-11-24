@@ -13,7 +13,8 @@ function master(over: Record<string, Over | null> = {}) {
     if (over[code] !== null) rows.set(code, { name: `名称${code}`, pointKind: "3", points, bundled: "0", changedOn: `${r2026.effectiveFrom.replace("-", "")}01`, abolishedOn: "99999999", ...base, ...over[code] });
   };
   for (const [kubun, def] of Object.entries(r2026.codes)) for (const code of [def.primary, ...def.accept]) add(code, r2026.points[kubun].points!);
-  for (const b of r2026.bundles) for (const code of b.members) add(code, 11, { bundled: "1" });
+  // codes にもある包括の項目（BNP。EM §2-8 DUP-01）は、codes の行（点数）のまま包括対象検査の印だけを付ける
+  for (const b of r2026.bundles) for (const code of b.members) if (rows.has(code)) rows.set(code, { ...rows.get(code)!, bundled: "1" }); else add(code, 11, { bundled: "1" });
   return rows;
 }
 const names = (m: ReturnType<typeof master>) => new Map([...m].map(([code, r]) => [code, r.name]));

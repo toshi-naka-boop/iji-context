@@ -562,9 +562,13 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
   if (unknown) return out(unknown.line, "診療年月の版の表にないコード");
   const dates = datesOf(yearMonth, unit.days, 1);
 
-  // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる
-  const bundle = bundleOfCode(rev, unit.items[0].code);
-  if (unit.items.some((it) => bundleOfCode(rev, it.code) !== bundle)) return out(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる（群を先に数える。design.md §19-13 の 1）。
+  // codes と群の両方にあるコード（BNP。EM §2-8 DUP-01）だけの単位で、項目数が下限に届かなければ、今までどおりコードの区分（D008_19）で読む
+  const first = bundleOfCode(rev, unit.items[0].code);
+  const sameBundle = first !== null && unit.items.every((it) => bundleOfCode(rev, it.code) === first) ? first : null;
+  const byCodes = unit.items.every((it) => kubunOfCode(rev, it.code) !== null);
+  if (sameBundle === null && unit.items.some((it) => bundleOfCode(rev, it.code) !== null && kubunOfCode(rev, it.code) === null)) return out(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  const bundle = sameBundle !== null && (bundleKubun(sameBundle, unit.items.length) !== null || !byCodes) ? sameBundle : null;
   if (bundle) {
     const items = unit.items.map((it) => it.code);
     if (new Set(items).size !== items.length) return no(unit.line, "包括の検査の同じ項目が、同じ単位に 2 つある");

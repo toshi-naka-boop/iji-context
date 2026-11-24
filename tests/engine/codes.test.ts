@@ -95,11 +95,21 @@ describe("evidence-master §2-8 との対応（完了条件 1）", () => {
   });
 
   // v44（design.md §19-1）で、D007 の members を 66 個全部にし（尿・髄液・胸水・腹水の版の 18 個も項目数に合わせる。C-601・X-440）、D013 の群を足した。
-  // D008 の群は、BNP（160162350）が codes の D008_19 と重なるので、まだ版に入れていない（v44 の実装で止めた点）
-  it("bundles の members は EM の包括の対象の表のコードを、群ごとに全部持つ（D007 は 66 個、D013 は 20 個）。D013 は血液だけを数える群", () => {
+  // v45（design.md §19-13 の 1）で D008 の群を足した。BNP（160162350）は codes の D008_19 と D008 の群の両方にある（EM §2-8 DUP-01 の sharedCodes だけ）
+  it("bundles の members は EM の包括の対象の表のコードを、群ごとに全部持つ（D007 は 66 個、D008 は 79 個、D013 は 20 個）。D013 は血液だけを数える群", () => {
     for (const rev of REVISIONS.filter((r) => r.bundles.length > 0)) {
-      expect(rev.bundles.map((b) => b.tiers[0].kubun.split("_")[0]), rev.id).toEqual(["D007", "D013"]);
-      const [d007, d013] = rev.bundles;
+      expect(rev.bundles.map((b) => b.tiers[0].kubun.split("_")[0]), rev.id).toEqual(["D007", "D008", "D013"]);
+      const [d007, d008, d013] = rev.bundles;
+      expect([...d008.members].sort(), rev.id).toEqual([...emGroup("D008")].sort());
+      expect(d008.tiers).toEqual([
+        { min: 3, kubun: "D008_3" },
+        { min: 6, kubun: "D008_6" },
+        { min: 8, kubun: "D008_8" },
+      ]);
+      expect(d008.bloodOnly).toBeUndefined();
+      expect(rev.sharedCodes).toEqual(["160162350"]);
+      expect(kubunOfCode(rev, "160162350")).toBe("D008_19");
+      expect(bundleOfCode(rev, "160162350")).toBe(d008);
       expect([...d007.members].sort(), rev.id).toEqual([...emMembers.keys()].sort());
       expect(d007.tiers).toEqual([
         { min: 5, kubun: "D007_5" },
@@ -129,7 +139,7 @@ describe("evidence-master §2-8 との対応（完了条件 1）", () => {
 });
 
 describe("コードの表の検査（assertRevisions）", () => {
-  const withCodes = (over: Partial<Pick<Revision, "codes" | "bundles" | "uncoded" | "shikibetsu" | "points">>): Revision => ({ ...r2026, ...over });
+  const withCodes = (over: Partial<Pick<Revision, "codes" | "bundles" | "uncoded" | "shikibetsu" | "points" | "sharedCodes">>): Revision => ({ ...r2026, ...over });
   const code = (kubun: string) => r2026.codes[kubun];
 
   it("同梱の版は通る", () => {
@@ -140,6 +150,11 @@ describe("コードの表の検査（assertRevisions）", () => {
     for (const bad of ["11400111", "1140011100", "11400111a", ""]) {
       expect(() => assertCodes(withCodes({ codes: { ...r2026.codes, C000: { primary: bad, accept: [] } } }))).toThrow(/9 桁/);
     }
+  });
+
+  it("codes と bundles の両方に置けるのは sharedCodes（EM §2-8 DUP-01）のコードだけ。ほかのコードは今までどおり拒否する", () => {
+    expect(() => assertCodes(withCodes({}))).not.toThrow();
+    expect(() => assertCodes(withCodes({ sharedCodes: [] }))).toThrow(/同じコードが 2 か所/);
   });
 
   it("同じコードが 2 つの区分に現れる版は拒否する（primary と accept を合わせて。bundles の members とも重ならない）", () => {

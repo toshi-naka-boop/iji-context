@@ -92,7 +92,7 @@ export function createKnowledgeOps(ctx: AppContext, clock: Clock, uke: Pick<Uke,
           const snap = pickSnapshot(db, table, yearMonth, rev.generation);
           if (!snap) continue;
           for (const r of db.prepare(`SELECT code, name FROM ${table} WHERE snapshot = ?`).iterate(snap.snapshot) as Iterable<{ code: string; name: string }>) {
-            if (members.has(r.code)) continue;
+            if (members.has(r.code) && !kubunOf.has(r.code)) continue;
             const key = normName(r.name);
             const e = idx.get(key) ?? { kubuns: [], outside: [] };
             const k = kubunOf.get(r.code);

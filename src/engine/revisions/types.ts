@@ -187,6 +187,11 @@ export type Revision = {
   codes: Record<string, CodeDef>;
   bundles: Bundle[];
   /**
+   * 版の中で codes と bundles の両方に置くことを許すコード（§11-1 の例外。EM §2-8 の明示の一覧〔DUP-01〕。design.md §19-13 の 1）。
+   * ここにないコードは、今までどおり 1 か所だけ
+   */
+  sharedCodes?: string[];
+  /**
    * 撮影部位のコメントの許可リスト（design.md §19-1・§19-4 の 2。R8-314）。きざみの単位・医薬品の単位に付いたコメントが全部このコードなら、G02 は「コメントが付いている」で対象外にしない。
    * コメントマスターで名称が「撮影部位（」で始まる行（作り方は EM §2-11）。check:masters がマスターと突き合わせる
    */
