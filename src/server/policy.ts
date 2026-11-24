@@ -72,6 +72,9 @@ export const POLICY = {
   // 医師に確かめてほしい項目（医師あての情報不足）の一覧と、決められなかった答え（その他・判定不能）の記録。医師の役割だけ
   "GET /api/doctor/facts": row(["doctor"], "none", true),
   "POST /api/doctor/facts": row(["doctor"], "none", true),
+  // 略語の医師への確認（FR-211）：問いの一覧と答え。医師だけ。引用（カルテの文）を返し、答えを受け取るので patientData は真
+  "GET /api/doctor/abbrevs": row(["doctor"], "none", true),
+  "POST /api/doctor/abbrevs": row(["doctor"], "none", true),
 
   // 算定・練習問題
   "POST /api/questions": row(WORK, "none", true),

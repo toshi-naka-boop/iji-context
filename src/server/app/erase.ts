@@ -1,5 +1,5 @@
 // 取り込んだファイルを消す（design.md §11-11「消す」・X-87）。単位は取り込んだファイル（アップロード 1 回）。請求ごとには消さない。
-// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ・算定プレビューで入れた摘要欄の記載・請求ごとに確かめた事実・医師が「その他」「判定不能」と答えた記録・査定・返戻の明細の当て方と判定、
+// 消すもの：原本のファイル、そのファイルの請求にぶら下がる提出・適用記録・提出結果・会議の項目・処理体験（問題）・医師確認・ベテランへの問い・訪問カルテ（とその記載への略語の医師の答え）・算定プレビューで入れた摘要欄の記載・請求ごとに確かめた事実・医師が「その他」「判定不能」と答えた記録・査定・返戻の明細の当て方と判定、
 // ほかのどの請求からも参照されなくなった患者マスタ・加入情報・確かめた患者情報。読み直しのキャッシュと、取り込みの記録も捨てる。
 // 残るもの：監査ログ（id だけ）、その請求から作った知識の候補（文は人が書いたもの。消すかは責任者が知識の画面で決める）、AI のサービス側に送った内容。
 // メンターのやり取り（セッション）と作業場所は DB の外にあるので、消す相手（医療事務と、その人がこれまでに使ったセッションの全部）を返し、呼び出し側（src/server/instance.ts）が消す
@@ -7,6 +7,7 @@ import { rmSync } from "node:fs";
 import path from "node:path";
 import { listQueries } from "../../query/doctor-query";
 import { VETERAN_CLERK } from "./clerks";
+import { forgetAbbrevAnswers } from "./doctor-abbrevs";
 import type { AppContext } from "./context";
 import type { Patients } from "./patients";
 import type { Uke } from "./uke";
@@ -71,6 +72,8 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
             sqlite.prepare("DELETE FROM app_settings WHERE key IN (?, ?)").run(`smalltalk:${q.id}`, `vent:${q.id}`);
           }
           sqlite.prepare(`DELETE FROM questions WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
+          // 略語の医師への答え（FR-211）：そのカルテの記載の分と、記載のなくなった答え
+          forgetAbbrevAnswers(sqlite, (sqlite.prepare(`SELECT id FROM chart_notes WHERE claim_id IN (${marks(claimIds)})`).all(...claimIds) as { id: number }[]).map((r) => r.id));
           sqlite.prepare(`DELETE FROM chart_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM chart_comments WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_facts WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);

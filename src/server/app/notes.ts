@@ -36,6 +36,7 @@ import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
 import { createTorikawasure, type TextDay } from "./torikawasure";
+import { createDoctorAbbrevs, forgetAbbrevAnswers } from "./doctor-abbrevs";
 import { RULE_CODES, structuredConfig } from "../../structured/rule-codes";
 import { hasTimeHint } from "../../structured/time-hint";
 import { rxConfirmedOf, rxHashOf } from "../../structured/rx-mark";
@@ -53,6 +54,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { clerk } = clerks;
   const { patientOf } = uke;
   const { cases, caseOf, isUploaded } = casesOf;
+  // 略語の医師への確認（FR-211）：問いと答え。答えは候補を作るときと B の欄の数に使う
+  const abbrevs = createDoctorAbbrevs(ctx, clock, clerks, (claimId) => caseOf(claimId).yearMonth);
   const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
@@ -480,6 +483,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     // そのカルテの算定プレビューで入れた摘要欄の記載も一緒に消す
     sqlite.transaction(() => {
       sqlite.prepare("DELETE FROM chart_comments WHERE note_id = ?").run(id);
+      // 略語の医師への答え（FR-211）のうち、このカルテの記載の分と、記載のなくなった答え
+      forgetAbbrevAnswers(sqlite, [id]);
       sqlite.prepare("DELETE FROM chart_notes WHERE id = ?").run(id);
     })();
     return { deleted: id };
@@ -695,7 +700,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  return { markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { abbrevs, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

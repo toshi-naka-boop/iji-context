@@ -285,4 +285,37 @@ describe("取り込んだファイルを消す", () => {
     expect(readdirSync(instance.tenantPaths(owner.tenantId).queryLogDir)).toEqual([]);
     instance.runAs(owner, () => expect(instance.getApp().clerk(me).session_id).toBeNull());
   });
+  it("略語の医師への答え（FR-211）：ファイルを消すと、そのカルテの記載の行と、記載のなくなった答えが残らない（全表走査）。ほかの請求の記載にも効く答えは残る", async () => {
+    const owner = auth().register("erase_abbrev", "やまだ", "password123");
+    const me = instance.clerkIdOf(owner);
+    const base = readUke(readFileSync(path.join(repo, "fixtures", "uke", "shiharaikikin.UKE")));
+    const person = (no: string): UkePatient => ({ ...base.receipts[0].patient, name: `架空 略語${no}`, insurer: { number: "06139991", symbol: "77", no } });
+    const goesFile = writeUke({ ...base, receipts: [{ ...base.receipts[0], claimId: "A1", patient: person("701") }] });
+    const staysFile = writeUke({ ...base, clinic: { ...base.clinic, name: "架空略語診療所" }, receipts: [{ ...base.receipts[0], claimId: "A1", patient: person("702") }] });
+    const dbFile = instance.tenantPaths(owner.tenantId).dbFile;
+    instance.runAs(owner, () => {
+      const a = instance.getApp();
+      a.uploadUke(me, goesFile);
+      a.uploadUke(me, staysFile);
+      expect(a.importedClaims(me)).toEqual(["U1-1", "U2-1"]);
+    });
+    // 貼ったカルテと答えを直接入れる（答え 1 は消える請求の記載だけ、答え 2 は両方の請求の記載に効く）
+    const raw = new Database(dbFile);
+    const noteOf = (claim: string) => Number(raw.prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, acts, clerk_id, created_at) VALUES (?, ?, '記録', '{}', NULL, '{\"acts\":[],\"rx\":[],\"rxChoice\":null,\"rxChoiceBy\":null}', ?, ?)").run(claim, `${base.receipts[0].yearMonth}-05`, me, new Date().toISOString()).lastInsertRowid);
+    const [gone, kept] = [noteOf("U1-1"), noteOf("U2-1")];
+    const ans = (text: string) => Number(raw.prepare("INSERT INTO abbrev_answers (year_month, token, option, free_text, answered_by, answered_at) VALUES ('2026-10', 'ECG12', '指すものを記入する', ?, ?, 'x')").run(text, me).lastInsertRowid);
+    const [only, shared] = [ans("消える答えの語"), ans("残る答えの語")];
+    const item = raw.prepare("INSERT INTO abbrev_answer_items (answer_id, note_id, place, item_key) VALUES (?, ?, 'act', ?)");
+    item.run(only, gone, "a".repeat(16));
+    item.run(shared, gone, "b".repeat(16));
+    item.run(shared, kept, "c".repeat(16));
+    raw.close();
+    auth().switchRole(owner, "manager");
+    expect((await del(cookieOf(owner), sha(goesFile))).status).toBe(200);
+    const after = dump(dbFile);
+    expect(Object.keys(after).filter((t) => after[t].includes("消える答えの語") || after[t].includes("a".repeat(16)) || after[t].includes("b".repeat(16)))).toEqual([]);
+    expect(JSON.parse(after.abbrev_answer_items)).toEqual([{ answer_id: shared, note_id: kept, place: "act", item_key: "c".repeat(16) }]);
+    expect(JSON.parse(after.abbrev_answers).map((r: { id: number }) => r.id)).toEqual([shared]);
+    expect(JSON.parse(after.chart_notes).map((r: { id: number }) => r.id)).toEqual([kept]);
+  });
 });

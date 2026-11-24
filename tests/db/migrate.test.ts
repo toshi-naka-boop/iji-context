@@ -10,12 +10,14 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "structured_inputs", "submissions"];
+const APP_TABLES = ["abbrev_answer_items", "abbrev_answers", "app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "structured_inputs", "submissions"];
 
 /** マイグレーション 21・22 の表（介護保険・ほかの医療機関との調整。design.md §18-2） */
 const V21_22 = ["care_homes", "patient_care", "other_institutions", "other_institutions_none"];
 /** マイグレーション 23 の表（届け出た酸素の単価。design.md §19-3。v44） */
 const V23 = ["oxygen_prices"];
+/** マイグレーション 24 の表（略語の医師への確認の答え。spec FR-211） */
+const V24 = ["abbrev_answer_items", "abbrev_answers"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -179,7 +181,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
     expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
     // 患者マスタの表は 4 番、請求ごとに確かめた事実の表は 6 番、算定プレビューで入れた摘要欄の記載の表は 9 番で足す
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t)));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t)));
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
   });
@@ -192,7 +194,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     ins.run("01139999-00000006", "table7", "true", "カルテ", null, "2025-03-11T09:00:00+09:00", "new1");
     ins.run("39139999-00000004", "homeOxygen", "false", "カルテ", null, "2025-03-12T09:00:00+09:00", "new1");
     expect(migrate(db, APP_MIGRATIONS.slice(0, 4))).toBe(4);
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t)));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t)));
     // 同じ鍵の記録は同じ患者に寄り、ほかの列は変わらない
     expect(db.prepare("SELECT patient_id, fact_key, value, valid_until, checked_by FROM patient_facts ORDER BY id").all()).toEqual([
       { patient_id: "P0001", fact_key: "careLevel", value: "2", valid_until: "2025-05-31", checked_by: "new1" },
@@ -219,6 +221,18 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     expect(tables(db).filter((x) => !before.includes(x))).toEqual(V23);
     expect(db.prepare("SELECT COUNT(*) AS n FROM care_homes").get()).toEqual({ n: 1 });
     expect((db.prepare("PRAGMA table_info(oxygen_prices)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "kind", "price_centi", "valid_from", "valid_until", "basis", "entered_by", "entered_at", "revokes"]);
+  });
+
+  it("バージョン 23 の app.db を 24 へ上げると、略語の医師への答えの 2 表だけが足され、中身は残る（FR-211）", () => {
+    const db = new Database(":memory:");
+    migrate(db, APP_MIGRATIONS.slice(0, 23));
+    db.prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES ('K4-2026-10', '2026-10-05', '訪問診療', '{}', NULL, 'c1', 'x')").run();
+    const before = tables(db);
+    expect(migrate(db, APP_MIGRATIONS.slice(0, 24))).toBe(24);
+    expect(tables(db).filter((x) => !before.includes(x)).sort()).toEqual(V24);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM chart_notes").get()).toEqual({ n: 1 });
+    expect((db.prepare("PRAGMA table_info(abbrev_answers)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "year_month", "token", "option", "free_text", "answered_by", "answered_at"]);
+    expect((db.prepare("PRAGMA table_info(abbrev_answer_items)").all() as { name: string }[]).map((c) => c.name)).toEqual(["answer_id", "note_id", "place", "item_key"]);
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {

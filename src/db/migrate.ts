@@ -266,6 +266,19 @@ CREATE INDEX other_institutions_none_patient ON other_institutions_none (patient
 CREATE TABLE oxygen_prices (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, price_centi INTEGER NOT NULL, valid_from TEXT NOT NULL, valid_until TEXT NOT NULL, basis TEXT NOT NULL, entered_by TEXT NOT NULL, entered_at TEXT NOT NULL, revokes INTEGER);
 `,
   },
+  {
+    // 略語の医師への確認の答え（spec FR-211。plan-fr211.md）。どちらも追記だけ。
+    // abbrev_answers：診療年月・語・選択肢（指すものを記入する・記載によって違う・その他・判定不能）・記述・答えた人・日時。
+    // abbrev_answer_items：その答えが効く記載（カルテの id・場所〔act・child・fact〕・書かれた名前と引用の指紋）。答えた時点で並んでいた記載だけ。
+    // 患者 id・氏名は持たない（カルテの id から請求に戻る）。カルテを消すと、その記載の行と、記載のなくなった答えを消す（FR-168 の全表走査）。
+    // 記述は自由記載なので、ログ・監査ログ・AI に送る文脈には出さない
+    version: 24,
+    sql: `
+CREATE TABLE abbrev_answers (id INTEGER PRIMARY KEY AUTOINCREMENT, year_month TEXT NOT NULL, token TEXT NOT NULL, option TEXT NOT NULL, free_text TEXT, answered_by TEXT NOT NULL, answered_at TEXT NOT NULL);
+CREATE TABLE abbrev_answer_items (answer_id INTEGER NOT NULL, note_id INTEGER NOT NULL, place TEXT NOT NULL, item_key TEXT NOT NULL);
+CREATE INDEX abbrev_answer_items_note ON abbrev_answer_items (note_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

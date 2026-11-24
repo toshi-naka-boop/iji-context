@@ -165,6 +165,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     /** 分からない略語の印（FR-211）：取り出した直後の印と、自由記述の印の語 */
     markExtracted: notes.markExtracted,
     abbrevMarksOf: notes.abbrevMarksOf,
+    /** 略語の医師への確認（FR-211）：問いの一覧と答え（医師の役割だけ） */
+    doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
+    answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
     actCandidates,
     searchMasters,
     savedActs,
