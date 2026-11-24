@@ -3,6 +3,7 @@
 // 使うコード・決まりは EM の行だけ（R8-317・R8-318・R8-330・R8-331。U-73・U-75・U-79）。LLM には判定させない
 import { activeOxygenPrices, OXYGEN_CODES, OXYGEN_ISLAND_CODES, oxygenKindOf, oxygenPriceForDates, yenText } from "../facility/oxygen";
 import { pickSnapshot, tokuteiOf, type MastersDb } from "../masters/db";
+import { LATER_NOTE } from "./g02";
 import type { GenericAbout, GenericCheck, GenericClaim, GenericFinding, GenericUnitDetail } from "./types";
 
 /** 在宅酸素療法指導管理料（C103 の 1・2。RY8 C103 (8) は区分を分けない。C-602） */
@@ -32,11 +33,15 @@ const centiOfPrice = (text: string | undefined): number | null => {
   return m ? Number(m[1]) * 100 + Number((m[2] ?? "").padEnd(2, "0")) : null;
 };
 
-/** マスターの上限（離島等でないコードの金額。0.01 円の整数）。診療年月の世代の 1 枚がなければ null */
-function limitOf(db: MastersDb, about: GenericAbout, code: string): number | null {
+/**
+ * マスターの上限（離島等でないコードの金額。0.01 円の整数）。診療年月の世代の 1 枚がなければ null。
+ * later＝後の 1 枚で代えていて、その行の変更年月日が診療年月の末日より後（診療月に効く値か分からない。design.md §12-1。反証 round-94 X-471）
+ */
+export function limitOf(db: MastersDb, about: GenericAbout, code: string): { centi: number; later: boolean } | null {
   const snap = pickSnapshot(db, "tokutei", about.yearMonth, about.generation);
   const row = snap ? tokuteiOf(db, snap.snapshot, code) : null;
-  return row ? Math.round(row.price * 100) : null;
+  if (!snap || !row) return null;
+  return { centi: Math.round(row.price * 100), later: snap.later && row.changed_on > `${about.yearMonth.replace("-", "")}31` };
 }
 
 /**
@@ -113,11 +118,13 @@ export const g12: GenericCheck = {
           out.push(finding("条件つき", i, [it.code], "G12.island"));
           continue;
         }
-        const limit = limitOf(masters, about, it.code);
+        const lim = limitOf(masters, about, it.code);
+        const limit = lim?.centi ?? null;
         const written = centiOfPrice((it as { unitPrice?: string }).unitPrice);
         // 3. 上限を超えた単価
         if (limit !== null && written !== null && written > limit) {
-          out.push(finding("確定", i, [it.code], "G12.over_limit", { price: yenText(written), limit: yenText(limit) }));
+          // 後の月のマスターの値しかないときは、診療月の上限か分からないので言い切らない（§12-1 と同じ）
+          out.push(finding(lim!.later ? "条件つき" : "確定", i, [it.code], "G12.over_limit", { price: yenText(written), limit: yenText(limit), later: lim!.later ? LATER_NOTE : "" }));
           continue;
         }
         // 5. 届け出た単価との違い（単価の欄が書いてある行だけ。空の行は G02 が届け出た単価で検算する。C-584）

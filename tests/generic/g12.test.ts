@@ -135,6 +135,18 @@ describe("G12 の 3・4・5：単価（完了条件 8・11）", () => {
     expect(genericText(fs[0])).toMatch(/^当院が離島等に当たらない前提で、酸素の単価 2\.50 円\/L が上限 2\.36 円\/L を超えています/);
   });
 
+  it("後の月のマスターの値しかない（診療年月より後の 1 枚で、変更年月日が後）ときは、上限を超えた単価を確定にせず条件つき（§12-1。X-471）", () => {
+    const later = `${String(Number(YM.slice(0, 4)) + 1)}0101`;
+    const db = masters();
+    // 診療年月の 1 枚を、後の 1 枚に差し替える（変更年月日も後）
+    db.prepare("UPDATE tokutei SET snapshot = ?, changed_on = ? WHERE snapshot = ?").run(later, later, SNAP);
+    db.prepare("UPDATE sources SET snapshot = ? WHERE dataset = 'tokutei'").run(later);
+    const c = claimOf({ si: [J024], to: o2("2.50"), days: [10] });
+    const fs = evaluateGeneric(c, db, about()).findings.filter((f) => f.check === "G12");
+    expect(fs.map((f) => [f.messageKey, f.certainty])).toEqual([["G12.over_limit", "条件つき"]]);
+    expect(genericText(fs[0])).toContain("この後にマスターが変更されています");
+  });
+
   it("離島等のコードは条件つき（確かめる）が 1 件で、上限の確定は出ない", () => {
     const db = masters();
     expect(brief(run(db, claimOf({ si: [J024], to: [{ code: SMALL_ISLAND, price: "9.99" }], days: [10] })))).toEqual([["G12.island", "条件つき"]]);
