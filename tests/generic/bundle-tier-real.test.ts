@@ -120,13 +120,20 @@ describe("包括の検査の三段（段 22b。完了条件 3）", () => {
     expect(r).toMatchObject({ stage: 2, read: [TBC, PROGE] });
   });
 
-  it.skipIf(!has)("素の合算で多く請求した誤り：(2)（素に合う）。素の合算から 1 点ずらすと (3)", () => {
+  // §19-14 の 1（反証 round-94 C-611）：外した k 行も表(k) で足すので、3 項目を素の合算で書いた請求は、どの読み（表(3) と同じ）とも合わず (3)。
+  // 前の版の期待（素に合う (2)）は、この式の直しで (3) に変わる
+  it.skipIf(!has)("素の合算で多く請求した誤り：3 項目を素の合算で書くと (3)（外した 3 行にも表が当たる。§19-14 の 1）。素の合算から 1 点ずらしても (3)", () => {
     const { tier, raw } = ctx();
     const codes = [GASTRIN, ADH, ANP];
     expect(raw(codes)).toBeGreaterThan(table("D008", 3));
-    // 全部外し（外の候補は号の昇順）
-    expect(tier(codes, raw(codes))).toMatchObject({ stage: 2, read: [ANP, ADH, GASTRIN] });
+    expect(tier(codes, raw(codes)).stage).toBe(3);
     expect(tier(codes, raw(codes) - 1).stage).toBe(3);
+  });
+
+  it.skipIf(!has)("2 回目の採血が 3 項目の正しい請求（D008 の 3＋3 項目＝表(3)＋表(3)、D013 の 4＋3 項目＝表(4)＋表(3)）は (2)（§19-14 の 1。C-611）", () => {
+    const { tier } = ctx();
+    expect(tier([FT3, FT4, CORTISOL, GASTRIN, ADH, ANP], table("D008", 3) * 2)).toMatchObject({ stage: 2 });
+    expect(tier(D013_FIVE.concat(["160120710", "160153850"]), table("D013", 4) + table("D013", 3)).stage).toBe(2);
   });
 
   it.skipIf(!has)("D007：表の値の 10 項目は (1)。2 回目の K・Cr を素で足した正しい請求は (2) で、確定の不一致は出ない。（尿）の行は項目数に入る", () => {
@@ -167,7 +174,8 @@ describe("包括の検査の三段（段 22b。完了条件 3）", () => {
     expect(tier(twelve, table("D008", 10) + raw(extra)).stage).toBe(2);
     const thirteen = [FT3, FT4, CORTISOL, ...D008_MORE];
     expect(tier(thirteen, table("D008", 10) + raw(thirteen.slice(-3))).stage).toBe(3);
-    expect(tier(thirteen.slice(0, 12), table("D008", 9) + raw(thirteen.slice(9, 12))).stage).toBe(2);
+    // 外した 3 行にも表が当たる（§19-14 の 1）
+    expect(tier(thirteen.slice(0, 12), table("D008", 9) + table("D008", 3)).stage).toBe(2);
   });
 
   it.skipIf(!has)("ほかの行と同じ単位なら bundleMixed、同じ日の 2 単位なら bundleSplit。三段の指摘は確定の一覧に入らない", () => {

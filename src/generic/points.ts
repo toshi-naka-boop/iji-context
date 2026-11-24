@@ -114,7 +114,7 @@ export function kizamiCenti(r: Pick<ShinryoRow, "points" | "kizami_lower" | "kiz
 
 /**
  * 包括の検査の三段（design.md §19-4 の 1）。基本＝表(n)。外の候補を区分番号・号・コードの昇順に並べ、k ＝ 1〜上限の小さい順に、各 k の中は辞書順で
- * 「表(n−k)＋外した k 行の素の合算」を試し（n が上限を超える単位と、n−k が下限に届かない k は試さない）、最後に全部外し（外の候補を全部外す）を試す。最初に合った組を返す
+ * 「表(n−k)＋表(k)」（表は下限未満なら素の合算。design.md §19-14 の 1）を試し（n が上限を超える単位と、n−k が下限に届かない k は試さない）、最後に全部外し（外の候補を全部外す）を試す。最初に合った組を返す
  */
 export function bundleTier(bundle: RecalcBundle, rows: Pick<ShinryoRow, "code" | "name" | "points" | "kubun_no" | "kou">[], uke: number): { base: number; tier: BundleTier } {
   const n = rows.length;
@@ -128,7 +128,8 @@ export function bundleTier(bundle: RecalcBundle, rows: Pick<ShinryoRow, "code" |
   const cand = all
     .filter((i) => bundle.bloodOnly === true || !NON_BLOOD.test(rows[i].name))
     .sort((a, b) => rows[a].kubun_no - rows[b].kubun_no || rows[a].kou - rows[b].kou || (rows[a].code < rows[b].code ? -1 : rows[a].code > rows[b].code ? 1 : 0));
-  const value = (out: number[]) => table(all.filter((i) => !out.includes(i))) + raw(out);
+  // 外した k 行も、2 回目以降の採血なら同じ注の包括が当たるので表(k)（下限未満なら素の合算と同じ）で足す（design.md §19-14 の 1。反証 round-94 C-611）
+  const value = (out: number[]) => table(all.filter((i) => !out.includes(i))) + table(out);
   const tries: number[][] = [];
   const combos = (from: number, k: number, pick: number[]) => {
     if (pick.length === k) tries.push(pick);
