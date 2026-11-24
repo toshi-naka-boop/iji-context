@@ -570,3 +570,36 @@ describe("結び付かない語の扱いは、一覧で選んだカルテと語�
     }
   });
 });
+
+describe("記載を外したら、選ぶボタンを出し直す（round-99 C-651）", () => {
+  it("病名の記載（心房細動・引用 AF）を外すと、確定は 409 だが、判定し直すと AF が選ぶ語として戻り、選べば確定できる（行き止まりにならない）", async () => {
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [{ kind: "病名の記載", value: "心房細動", quote: "ＡＦ" }], acts: [], rx: [] }, sessionId: "", stats: {} });
+    setRole("clerk");
+    const w = (await (await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: { s: "", o: "", a: "ＡＦ", p: "", rx: "" } }))).json()) as Written & { facts: unknown[] };
+    // 取り出した直後は、AF は病名の記載に結び付いていて、選ぶ語はない
+    expect(w.abbrev).toMatchObject({ marks: ["AF"], unlinked: [] });
+    const check = async (facts: unknown[]) => {
+      setRole("clerk");
+      const r = await (await import("../../app/api/chart/abbrev-check/route")).POST(post("/api/chart/abbrev-check", { noteId: String(w.id), facts, acts: [] }));
+      expect(r.status).toBe(200);
+      return (await r.json()) as { unlinked: { token: string; choice: string | null }[] };
+    };
+    // 残した記載のままなら選ぶ語はない。病名の記載を外すと AF が戻る（保存はしない）
+    expect((await check(w.facts)).unlinked).toEqual([]);
+    expect((await check([])).unlinked).toEqual([{ token: "AF", choice: null }]);
+    expect(app().savedActs(w.id)).toBeNull();
+    const save = async () => (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(w.id), facts: [], acts: [], rx: [], rxChoice: null }));
+    expect((await save()).status).toBe(409);
+    // 出し直したボタンで選ぶ（このカルテだけ）と、確定できる
+    setRole("clerk");
+    const rows = (await (await (await import("../../app/api/chart/abbrev-choices/route")).GET(get(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: YM, token: "AF" })}`))).json()) as { noteId: number }[];
+    expect(rows.map((x) => x.noteId)).toContain(w.id);
+    expect((await (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token: "AF", noteIds: [String(w.id)], choice: "算定に関係なし" }))).status).toBe(200);
+    expect((await check([])).unlinked).toEqual([{ token: "AF", choice: "算定に関係なし" }]);
+    expect((await save()).status).toBe(200);
+  });
+  it("判定し直すのは確定と同じ権限（医師の役割は 403）", async () => {
+    setRole("doctor");
+    expect((await (await import("../../app/api/chart/abbrev-check/route")).POST(post("/api/chart/abbrev-check", { noteId: "1", facts: [], acts: [] }))).status).toBe(403);
+  });
+});

@@ -19,7 +19,7 @@ import { colorOf } from "../work/board";
 import { ClaimPreview } from "./claim-preview";
 import { NoteList } from "./note-list";
 import { ConfirmedFixes } from "./confirmed-fixes";
-import { AbbrevSummaryNote, ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "./acts-review";
+import { ABBREV_WAITING, AbbrevSummaryNote, ActsReviewPanel, actsToSave, recheckAbbrevs, rowsOf, type ActRow, type ActsReview } from "./acts-review";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
 type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[]; acts: ChartAct[]; rx: RxNote[]; actsDropped: { fact: unknown; why: string }[]; review: ActsReview; abbrev?: AbbrevSummary };
@@ -123,10 +123,15 @@ export default function Chart() {
     if (!ex || !p) return;
     setErr("");
     try {
+      // 外した記載に結び付いていた略語があれば、選ぶボタンを出し直して止める（FR-211。round-99 C-651）
+      const kept = rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f);
+      const check = await recheckAbbrevs(ex.id, kept, actsToSave(actRows));
+      setEx({ ...ex, abbrev: check.abbrev });
+      if (check.waiting.length > 0) return setErr(ABBREV_WAITING(check.waiting));
       // 事実と行ったことを、1 回の確かめで保存する（design.md §15-6）
       const r = await postJson<{ claimId: string; date: string }>("/api/chart/acts", {
         noteId: String(ex.id),
-        facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f),
+        facts: kept,
         acts: actsToSave(actRows),
         rx: ex.rx,
         rxChoice,

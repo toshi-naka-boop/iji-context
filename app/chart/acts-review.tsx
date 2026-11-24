@@ -111,6 +111,16 @@ export function DoctorAnswerBadge({ value, answers }: { value: string; answers: 
   return <span className="badge">{value}　医師の答え：{answers.map((a) => `${a.token}＝${a.text}`).join("、")}</span>;
 }
 
+/**
+ * 確定の前に、残した記載で略語の印を判定し直す（POST /api/chart/abbrev-check。round-99 C-651。保存しない）。
+ * 返したまとめで選ぶボタンを出し直し、選んでいない語があれば waiting に並べる（呼び出し側は確定を送らない）
+ */
+export async function recheckAbbrevs(noteId: number, facts: unknown[], acts: ChartAct[]): Promise<{ abbrev: AbbrevSummary; waiting: string[] }> {
+  const abbrev = await postJson<AbbrevSummary>("/api/chart/abbrev-check", { noteId: String(noteId), facts, acts });
+  return { abbrev, waiting: "unseen" in abbrev ? [] : abbrev.unlinked.filter((u) => u.choice === null).map((u) => u.token) };
+}
+export const ABBREV_WAITING = (w: string[]) => `略語の確かめ待ちです：${w.join("・")} は、残した記載のどれにも結び付いていません。上の「どの記載にも結び付かない略語」で選んでから確定してください`;
+
 /** 選ぶ一覧の 1 行（GET /api/chart/abbrev-choices） */
 type ChoiceRow = { noteId: number; claimId: string; date: string; sentence: string; choice: AbbrevChoice | null };
 

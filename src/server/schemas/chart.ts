@@ -129,3 +129,5 @@ export const abbrevChoiceQuery = z.strictObject({ yearMonth: z.string().regex(YE
  * 選んだ人は受け取らない（セッションの本人から決める）
  */
 export const abbrevChoiceBody = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: abbrevToken, noteIds: z.array(noteParams.shape.id).min(1).max(500), choice: z.enum(ABBREV_CHOICES) });
+/** 確定の前に、残した記載で略語の印を判定し直す本文（POST /api/chart/abbrev-check。round-99 C-651）。形は確かめて保存する本文の行為・事実と同じ */
+export const abbrevCheckBody = z.strictObject({ noteId: noteParams.shape.id, facts: confirmBody.shape.facts, acts: z.array(act).max(100) });

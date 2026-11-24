@@ -147,6 +147,19 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     });
   }
   /**
+   * 確定の前に、残した記載（画面で外したものを除いた行為・事実）で印を判定し直す（round-99 C-651。保存しない）。
+   * 外した記載に結び付いていた語は、結び付かない語として戻り、画面がその語の選ぶボタンを出し直す。権限は確定と同じ（訪問カルテは書いた本人だけ）
+   */
+  function recheckAbbrev(id: number, clerkId: string, input: { facts: ExtractedFact[]; acts: ChartAct[] }): AbbrevSummary {
+    clerk(clerkId);
+    const r = noteRow(id);
+    if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの行ったことを確かめられるのは、書いた本人だけです");
+    const note = JSON.parse(r.note) as ChartNote;
+    const facts = validateFacts({ facts: input.facts }, note).facts;
+    const acts = validateActs({ acts: input.acts, rx: [] }, noteText(note), true).acts;
+    return markExtracted(id, acts, r.kind === "記録" ? [] : facts).abbrev;
+  }
+  /**
    * 略語の確かめ待ち（規則の作り直し 4）：どの記載にも結び付かない語に、その月の扱い（算定に関係なし・医師に聞く）を選んでいなければ、確かめ済みにしない（409）
    */
   function assertChosen(noteId: number, unlinked: string[]) {
@@ -738,7 +751,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
 
   /** どの記載にも結び付かない語の扱いを、一覧でまとめて選ぶ（事務。GET・POST /api/chart/abbrev-choices） */
   const { chooseAbbrev, abbrevChoiceList } = abbrevs;
-  return { abbrevs, chooseAbbrev, abbrevChoiceList, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { abbrevs, chooseAbbrev, abbrevChoiceList, recheckAbbrev, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;
