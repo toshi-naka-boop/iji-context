@@ -20,9 +20,10 @@ export type FactSource = (typeof FACT_SOURCES)[number];
 export type BuildingBandValue = { band: BuildingBand; fromMonth: string };
 /**
  * 要介護・要支援の認定（design.md §18-1。C-510・C-493）：要介護（1〜5）／要支援（1・2）／認定なし（確かめた）／分からない。
- * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない
+ * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない。
+ * 認定なしの forMonth は確かめた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
  */
-export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし" } | { kind: "分からない" };
+export type CareCertValue = { kind: "要介護"; level: number; validFrom: string } | { kind: "要支援"; level: number; validFrom: string } | { kind: "認定なし"; forMonth?: string } | { kind: "分からない" };
 export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "分からない"] as const;
 /** 「認定なし」を確かめ直すまでの月数（設計で置いた値。制度の数字ではない。design.md §18-1） */
 export const CARE_NONE_RECHECK_MONTHS = 6;
@@ -144,9 +145,11 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
   const v = latest.value as CareCertValue;
   if (v.kind === "分からない") return { known: false };
   if (v.kind === "認定なし") {
-    // 確かめた日で効き、確かめ直す日（6 か月。設計値）まで（design.md §18-1）。診療年月の全部の日が、その間に入るときだけ
-    const from = latest.checkedAt.slice(0, 10);
-    return effectiveFor({ validFrom: from, validUntil: addMonthsTo(from, CARE_NONE_RECHECK_MONTHS) }, yearMonth) ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: latest.source, checkedAt: latest.checkedAt } : { known: false };
+    // 確かめた診療月から 6 か月（設計値）の診療月に効く。前の月には効かない（design.md §18-12 の 1。「ないと確かめた」と同じ形。X-354）。
+    // 確かめた診療月を持たない行は、確かめた日の月を確かめた診療月として読む
+    const from = v.forMonth ?? latest.checkedAt.slice(0, 7);
+    const until = addMonthsTo(`${from}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
+    return from <= yearMonth && yearMonth <= until ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: latest.source, checkedAt: latest.checkedAt } : { known: false };
   }
   // 最後の「認定なし・分からない」より後に残した、日付つきの行。同じ始まりの日は後に残した行を使う
   const lastUndated = certs.findLastIndex((r) => {

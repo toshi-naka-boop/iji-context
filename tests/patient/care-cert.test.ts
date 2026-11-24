@@ -29,8 +29,8 @@ describe("careStateOf・careLevelOf・certifiedOf", () => {
     expect([careLevelOf(s, 3), certifiedOf(s)]).toEqual([{ known: true, value: 3 }, { known: true, value: true }]);
     const t = careStateOf([cert("要支援", 2, dateIn(-6, 1), dateIn(5, 30))], YM);
     expect([careLevelOf(t, 3), certifiedOf(t)]).toEqual([{ known: true, value: 0 }, { known: true, value: true }]);
-    // 認定なし：確かめた日で効く（月の初日より前に確かめた）
-    const n = careStateOf([row({ key: "careCert", value: { kind: "認定なし" } }, `${dateIn(-1, 20)}T09:00:00+09:00`)], YM);
+    // 認定なし：確かめた診療月から 6 か月効く（design.md §18-12 の 1）
+    const n = careStateOf([row({ key: "careCert", value: { kind: "認定なし", forMonth: YM } }, `${dateIn(1, 10)}T09:00:00+09:00`)], YM);
     expect([careLevelOf(n, 3), certifiedOf(n)]).toEqual([{ known: true, value: 0 }, { known: true, value: false }]);
   });
 
@@ -62,6 +62,13 @@ describe("careStateOf・careLevelOf・certifiedOf", () => {
   });
 });
 
+describe("「認定なし（確かめた）」の効く範囲（design.md §18-12 の 1）", () => {
+  it("確かめた診療月から 6 か月目まで効き、前の月と 7 か月目には効かない。翌月に確かめても、答えた請求の診療年月に効く", () => {
+    const n = [row({ key: "careCert", value: { kind: "認定なし", forMonth: YM } }, `${dateIn(1, 10)}T09:00:00+09:00`)];
+    expect([-1, 0, 5, 6].map((m) => certifiedOf(careStateOf(n, month(m))))).toEqual([{ known: false }, { known: true, value: false }, { known: true, value: false }, { known: false }]);
+  });
+});
+
 describe("入力の検査（validatePatientFact）", () => {
   const now = `${day(13)}T09:00:00+09:00`;
   const v = (f: Omit<PatientFactInput, "source"> & { source?: PatientFactInput["source"] }) => () => validatePatientFact({ source: "介護保険証", ...f }, now);
@@ -90,6 +97,13 @@ describe("請求の判定（design.md §18-9 の 2）", () => {
   afterEach(() => {
     app.close();
     rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("翌月の時計で、基準月の請求から「認定なし」を残すと、基準月の請求に効く（確かめた診療月を付ける。design.md §18-12 の 1）", () => {
+    app.advanceClock(`${month(1)}-10T09:00:00+09:00`);
+    app.savePatientFact(claimId("K4"), "new1", { key: "careCert", value: { kind: "認定なし" }, source: "介護保険証", validUntil: null });
+    expect(app.patientFacts(claimId("K4")).facts.find((f) => f.key === "careCert")?.value).toEqual({ kind: "認定なし", forMonth: YM });
+    expect(app.caseOf(claimId("K4")).facts.careLevel).toEqual({ known: true, value: 0 });
   });
 
   it("基準月の請求を翌月の時計で点検して、基準月の末日まで有効の要介護度が効く。15 日まで有効なら分からないになり、情報不足が出る", () => {
