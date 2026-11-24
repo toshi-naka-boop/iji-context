@@ -47,4 +47,11 @@ describe("酸素の単価のルート", () => {
     expect(rows.every((l) => !String(l.target).includes("1.87") && !String(l.target).includes("187"))).toBe(true);
   });
 
+  it("暦にない日付（13 月）は、例外ではなく 400 で断る（X-474）", async () => {
+    const { POST } = await routes();
+    const r = await POST(post({ kind: "small", price: "1.87", validFrom: "2026-13-01", validUntil: "2027-03-31", basis: "前年の購入実績" }));
+    expect(r.status).toBe(400);
+    const r2 = await POST(post({ kind: "small", price: "1.87", validFrom: "2026-02-30", validUntil: "2027-03-31", basis: "前年の購入実績" }));
+    expect(r2.status).toBe(400);
+  });
 });

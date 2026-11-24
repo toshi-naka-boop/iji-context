@@ -1,6 +1,7 @@
 // 施設の設定の入力（FR-148）：1 項目ずつ。値の型は項目ごと。null は「分からない」。
 // 施設の種別・注16・DX・ベースアップは施設の申告（FR-188。design.md §15-2）に移したので、ここでは受け取らない
 import { z } from "zod";
+import { isRealDate } from "../../engine/rules/util";
 import { GRADE_CHOICES } from "../../facility/codes";
 import { NOTE14_OVERRIDE_REASONS } from "../../facility/note14";
 import { centiOf, OXYGEN_BASES, OXYGEN_KINDS } from "../../facility/oxygen";
@@ -17,7 +18,8 @@ export const facilityBody = z.discriminatedUnion("key", [
 const day = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((s) => new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s)
+  // 暦にない日（13 月・2 月 30 日）は、例外を投げずに検証の失敗（400）にする（反証 round-94 X-474）
+  .refine(isRealDate)
   .nullable();
 const requirement = z.enum(["met", "not_met", "unknown"]);
 /** いつの診療月から（"YYYY-MM"。どの項目のどの行にも必須。P-2）。空・ない値は 400 */
