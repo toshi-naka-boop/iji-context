@@ -17,6 +17,8 @@ const SESSION_DAYS = 30;
 const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
 /** 実在のデータで使うクリニックで、医師の役割に変えようとしたときの文言 */
 const DOCTOR_BY_INVITE = "実在のデータで使うクリニックでは、医師の役割に切り替えられません。医師には、医師の役割の招待コードで登録してもらってください";
+/** 事務長がいないクリニックで、事務長以外を招こうとしたときの文言 */
+export const NO_MANAGER_INVITE = "このクリニックには事務長がいません。このまま事務長以外の人を招くと、招待と監査ログを扱える人がいなくなります。先に役割を事務長に切り替えるか、事務長の招待コードを発行してください";
 /** 招待コードの期限（日） */
 const INVITE_DAYS = 7;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -149,6 +151,13 @@ export function openAuth(dbFile: string) {
     const expiresAt = new Date(now.getTime() + INVITE_DAYS * 86_400_000).toISOString();
     db.prepare("INSERT INTO invites (code_hash, tenant_id, role, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").run(sha256(code), by.tenantId, role, by.id, now.toISOString(), expiresAt);
     return { code, role, expiresAt };
+  }
+  /**
+   * 招待で、クリニックに事務長がいないまま 2 人目が入る罠（採点 r1 事務長 #6）を断る。停止していない事務長がいないクリニックでは、事務長の招待だけを作れる。
+   * 1 人で使っている持ち主が事務のまま事務長以外を招くと、2 人目が入ったあと、招待も監査ログも扱える人がいなくなるため（docs/security.md）
+   */
+  function assertInviteKeepsManager(by: User, role: Role): void {
+    if (role !== "manager" && activeManagers(by.tenantId) === 0) throw conflict(NO_MANAGER_INVITE);
   }
   /** 画面に出す招待の id。コードのハッシュそのものは外に出さない（もう一度ハッシュにして、先頭だけを使う） */
   const inviteId = (codeHash: string) => sha256(`invite-id:${codeHash}`).slice(0, 16);
@@ -331,6 +340,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

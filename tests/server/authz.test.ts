@@ -135,6 +135,8 @@ describe("招待制の登録", () => {
   it("招待コードは 1 回だけ使え、招待のクリニックとロールで登録される。DB にはコードそのものを置かない", async () => {
     const owner = auth().register("clinic_inv", "おーなー", "password123");
     const other = auth().register("clinic_other", "べつ", "password123");
+    // 事務長のいないクリニックでは事務長以外を招けないので、持ち主は先に事務長に切り替える（採点 r1 事務長 #6）
+    expect((await switchTo(cookieOf(owner), "manager")).status).toBe(200);
     const made = await invite(cookieOf(owner), "doctor");
     expect(made.status).toBe(200);
     const { code, role } = (await made.json()) as { code: string; role: Role };
@@ -170,6 +172,30 @@ describe("招待制の登録", () => {
     const dump = JSON.stringify([db.prepare("SELECT * FROM invites").all(), db.prepare("SELECT * FROM auth_events").all()]);
     db.close();
     expect(dump).not.toContain(code);
+  });
+
+  it("事務長のいないクリニックでは、事務長の招待だけを作れる（事務長のいないまま 2 人目が入る罠を断る）", async () => {
+    const owner = auth().register("clinic_trap", "わな", "password123");
+    const cookie = cookieOf(owner);
+    for (const role of ["clerk", "veteran", "doctor"] as const) {
+      const r = await invite(cookie, role);
+      expect(r.status).toBe(409);
+      expect((await r.json()).error).toContain("事務長がいません");
+    }
+    expect(auth().listInvites(owner)).toEqual([]);
+    // 事務長の招待は作れる。事務長が入ったあとは、ほかの役割も招ける
+    const { code } = (await (await invite(cookie, "manager")).json()) as { code: string };
+    const manager = auth().registerWithInvite("trap_mgr", "じむちょう", "password123", code);
+    expect((await invite(cookieOf(manager), "clerk")).status).toBe(200);
+    // 断った招待も監査ログに残る
+    const rows = instance.runAs(owner, () => instance.getApp().audit.list()).reverse().filter((r) => r.action === "POST /api/invites");
+    expect(rows.map((r) => [r.userId, r.target, r.result])).toEqual([
+      [owner.id, "clerk", "rejected"],
+      [owner.id, "veteran", "rejected"],
+      [owner.id, "doctor", "rejected"],
+      [owner.id, "manager", "ok"],
+      [manager.id, "clerk", "ok"],
+    ]);
   });
 
   it("期限の切れた招待は使えない", () => {
@@ -213,7 +239,9 @@ describe("招待制の登録", () => {
     expect((await revoke(null, "0123456789abcdef")).status).toBe(401);
 
     // 1 人で使っている持ち主は、招待を作れて、一覧も見られる。コードもハッシュも返らない
+    // （事務長のいないクリニックでは事務長以外を招けないので、先に事務長に切り替える。採点 r1 事務長 #6）
     expect(await rowsOf(cookie)).toEqual([]);
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
     const usedCode = ((await (await invite(cookie, "veteran")).json()) as { code: string }).code;
     const keptCode = ((await (await invite(cookie, "doctor")).json()) as { code: string }).code;
     const first = await list(cookie);

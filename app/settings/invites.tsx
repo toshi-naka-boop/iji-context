@@ -9,8 +9,11 @@ type Issued = { code: string; role: Role; expiresAt: string };
 
 const when = (iso: string) => new Date(iso).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-export function Invites() {
-  const [role, setRole] = useState<Role>("clerk");
+/** noManager：クリニックに停止していない事務長がいない（事務長以外の招待はサーバーが断る） */
+export function Invites({ noManager }: { noManager: boolean }) {
+  const [role, setRole] = useState<Role>(noManager ? "manager" : "clerk");
+  /** 事務長のいないまま 2 人目が入る罠（事務長以外の招待）。押す前に知らせ、ボタンを止める */
+  const trap = noManager && role !== "manager";
   const [issued, setIssued] = useState<Issued | null>(null);
   const [copied, setCopied] = useState("");
   const [list, setList] = useState<Invite[]>([]);
@@ -67,7 +70,13 @@ export function Invites() {
           <button key={r} role="radio" aria-checked={role === r} className={role === r ? "primary" : ""} onClick={() => setRole(r)}>{ROLE_LABELS[r]}</button>
         ))}
       </div>
-      <p><button onClick={issue} disabled={busy}>{ROLE_LABELS[role]}の招待コードを発行する</button></p>
+      {noManager && (
+        <div className="notice warn">
+          このクリニックには事務長がいません。事務長以外の人を先に招くと、その人が入ったあと、招待と監査ログを扱える人がいなくなります。
+          先に上の「役割」で事務長に切り替えるか、事務長の招待コードを発行してください（事務長以外の招待は発行できません）。
+        </div>
+      )}
+      <p><button onClick={issue} disabled={busy || trap}>{ROLE_LABELS[role]}の招待コードを発行する</button></p>
       {issued && (
         <div className="notice ok" aria-live="polite">
           <div>招待コード（{ROLE_LABELS[issued.role]}）</div>

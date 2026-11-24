@@ -72,6 +72,8 @@ describe("クリニックの種類", () => {
       expect(auth().tenantKind(owner.tenantId)).toBe("real");
       expect(appOf(owner).kind).toBe("real");
 
+      // 事務長のいないクリニックでは事務長以外を招けないので、持ち主は先に事務長に切り替える（採点 r1 事務長 #6）
+      expect((await switchTo(cookieOf(owner), "manager")).status).toBe(200);
       const inviteRes = await (await import("../../app/api/invites/route")).POST(post("/api/invites", cookieOf(owner), { role: "doctor" }));
       const { code } = (await inviteRes.json()) as { code: string };
       // 招待コードと種類を両方送ると断る（招待したクリニックの種類になる）

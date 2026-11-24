@@ -17,7 +17,7 @@ export default function Settings() {
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState("");
   // 役割（1 人で使っているクリニックだけ、自分で切り替えられる）
-  const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; tenantKind: string } | null>(null);
+  const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; hasManager: boolean; tenantKind: string } | null>(null);
   useEffect(() => {
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
   }, []);
@@ -26,7 +26,8 @@ export default function Settings() {
     const r = await fetch("/api/auth/role", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ role }) });
     const d = await r.json();
     if (!r.ok) return setErr(d.error ?? "エラー");
-    setMe((m) => (m ? { ...m, role: d.role } : m));
+    // 切り替えられるのは 1 人で使っているあいだだけなので、事務長がいるかは自分の役割で決まる
+    setMe((m) => (m ? { ...m, role: d.role, hasManager: d.role === "manager" } : m));
   }
   useEffect(() => {
     if (!user) return;
@@ -56,7 +57,7 @@ export default function Settings() {
         </div>
       )}
       {me?.canManageStaff && !me.canSwitchRole && <Staff real={me.tenantKind !== "demo"} />}
-      {me?.canInvite && <Invites />}
+      {me?.canInvite && <Invites noManager={!me.hasManager} />}
       {me && <Facility canEdit={me.role === "manager" || me.role === "veteran"} />}
       {me?.role === "manager" && <Masters />}
       <div className="panel">
