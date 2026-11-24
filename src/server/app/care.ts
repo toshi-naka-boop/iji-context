@@ -267,7 +267,8 @@ export function createCare(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "
     if (input.instId !== undefined && !otherRows(patientId).some((r) => r.instId === input.instId)) throw badRequest("その機関の行はありません", ["instId"]);
     const instId = input.instId ?? `I${randomUUID().slice(0, 8)}`;
     // 訂正（instId あり）で送られなかった項目は、その機関の今の値のまま残す（終わった月・求めた日・していることの項目。round-84 X-412）
-    const cur = input.instId !== undefined ? otherRows(patientId).filter((r) => r.instId === input.instId).at(-1) : undefined;
+    // 引き継ぐ値は、訂正する月に効いていた行（その月以前の最新の行）から取る（後の月に残した行から取らない。X-422）
+    const cur = input.instId !== undefined ? effectiveOf(otherRows(patientId).filter((r) => r.instId === input.instId), yearMonth) : undefined;
     const endMonth = input.endMonth !== undefined ? input.endMonth : (cur?.endMonth ?? null);
     const referredOn = input.referredOn !== undefined ? input.referredOn : (cur?.referredOn ?? null);
     const merged = { ...(cur?.activities ?? {}), ...activities };

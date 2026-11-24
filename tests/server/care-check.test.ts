@@ -169,3 +169,16 @@ describe("機関の訂正で、今ある値を落とさない（round-84 X-412�
     expect(rows[0]).toMatchObject({ specialRelation: "はい", endMonth: month(1), referredOn: day(2), activities: { 医療機関が行う訪問看護: "はい" } });
   });
 });
+
+describe("機関の訂正で引き継ぐ値は、訂正する月に効いていた行から取る（X-422）", () => {
+  it("10 月に終わり 11 月で残す → 1 月に終わり 2 月で残す → 10 月分を訂正：10 月の行の終わりは 11 月のままで、12 月に効く機関はない", () => {
+    const [oct, jan] = upload(app, fileOf([receiptOf(1, YM, zaii), receiptOf(1, month(3), zaii.map((l) => ({ ...l, dates: l.dates.map((d) => d.replace(YM, month(3))) })))]));
+    const { instId } = app.saveOther(oct, "new1", { name: "架空の病院", kind: "医療機関", specialRelation: "分からない", kanriSide: "取っていない", activities: {}, endMonth: month(1), ...b });
+    app.saveOther(jan, "new1", { instId, name: "架空の病院", kind: "医療機関", specialRelation: "いいえ", kanriSide: "取っていない", activities: {}, endMonth: month(4), ...b });
+    app.saveOther(oct, "new1", { instId, name: "架空の病院", kind: "医療機関", specialRelation: "はい", kanriSide: "取っていない", activities: {}, ...b });
+    expect(app.careView(oct).others[0]).toMatchObject({ specialRelation: "はい", endMonth: month(1) });
+    const dec = upload(app, fileOf([receiptOf(1, month(2), zaii.map((l) => ({ ...l, dates: l.dates.map((d) => d.replace(YM, month(2))) })))])).at(-1)!;
+    expect(app.careView(dec).yearMonth).toBe(month(2));
+    expect(app.careView(dec).others).toEqual([]);
+  });
+});
