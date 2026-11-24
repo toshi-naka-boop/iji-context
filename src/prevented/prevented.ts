@@ -15,6 +15,7 @@ import { pointsOf, resolveRevision, REVISIONS } from "../engine/revisions";
 import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine, Finding } from "../engine/types";
 import type { Question } from "../practice/practice";
+import type { ReviewReport } from "../review/report";
 
 export const YEN_PER_POINT = 10;
 export const ESTIMATE_LABEL = "推定";
@@ -122,4 +123,22 @@ export function managerReport(items: PreventedItem[], missed: { claimId: string;
   const rev = resolveRevision(period.yearMonth);
   const missedPoints = missed.reduce((s, m) => s + m.kubun.reduce((t, k) => t + linePoints(rev, m.lines, k), 0), 0);
   return { ...summarize(items), 見逃し: { count: missed.length, yen: missedPoints * YEN_PER_POINT } };
+}
+
+/**
+ * 事務長レポートの「見逃し」：査定・返戻の突き合わせ（spec FR-202 の I-1）で人が判定した記録から数える。
+ * 今の点検のコードの回（指紋が今のもの）で、判定した明細のうち「同じ論点で指摘していた」でないもの（別の論点・指摘なし）。
+ * 判定の記録がなければ数えない（0 件と言わない）。円は出さない（返戻の明細は点数を持たない）
+ */
+export type MissedSummary = { counted: false } | { counted: true; missed: number; judged: number; notYet: number };
+
+export function missedOf(report: ReviewReport & { fingerprint: string }): MissedSummary {
+  const run = report.runs.find((r) => r.fingerprint === report.fingerprint);
+  if (!run || run.judged.items === 0) return { counted: false };
+  return {
+    counted: true,
+    missed: run.other.items + run.none.items,
+    judged: run.judged.items,
+    notYet: run.unjudged.items + report.pending.unmatched.items + report.pending.unconfirmed.items,
+  };
 }

@@ -12,14 +12,13 @@ type Report = {
   取りこぼし: { count: number; yen: number };
   差し戻し: { count: number; yen: number };
   医師記載起因: { count: number; yen: number };
-  見逃し: { count: number; yen: number };
+  見逃し: { counted: false } | { counted: true; missed: number; judged: number; notYet: number };
 };
 
-const ROWS: [keyof Omit<Report, "label">, string, string][] = [
+const ROWS: [Exclude<keyof Report, "label" | "見逃し">, string, string][] = [
   ["取りこぼし", "取りこぼしを防いだ", "var(--accent)"],
   ["差し戻し", "差し戻しを防いだ", "var(--sky)"],
   ["医師記載起因", "医師確認で算定できた", "#5a4632"],
-  ["見逃し", "見逃し（返戻・査定になった）", "var(--warn-mark)"],
 ];
 
 export default function Manager() {
@@ -47,6 +46,19 @@ export default function Manager() {
               <div className="muted" style={{ marginTop: 4 }}>{r[k].yen.toLocaleString()} 円（{r.label}）</div>
             </div>
           ))}
+          <div className="stat" style={{ ["--stat-color" as string]: "var(--warn-mark)" }}>
+            <div className="label">見逃し（返戻・査定になった）</div>
+            {r.見逃し.counted ? (
+              <>
+                <span className="value">{r.見逃し.missed}</span><span className="unit">件</span>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  査定・返戻の突き合わせで判定した明細 {r.見逃し.judged} 件のうち、レセメンが同じ論点では指摘していなかったもの（別の論点の指摘・指摘なし）。まだ判定していない明細が {r.見逃し.notYet} 件あります。円は出していません。
+                </div>
+              </>
+            ) : (
+              <div className="muted" style={{ marginTop: 4 }}>査定・返戻の突き合わせの記録がないので、見逃しは数えていません。</div>
+            )}
+          </div>
         </div>
       )}
       {r && <RecheckNotice />}

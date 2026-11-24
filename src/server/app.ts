@@ -72,7 +72,6 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 略語を必ず医師確認に回すかは、事務のレベルで決める（FR-211 辞書方式の決め 3。今のレベルの仕組み）
   notes.setLevelOf(localPairs.levelOf);
   const meeting = createMeeting(ctx, clock);
-  const prevented = createPrevented(questions, doctor);
   const erase = createErase(ctx, uke, patientFactsOf);
   const revision = createRevision(uke, casesOf, notes);
   const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
@@ -122,6 +121,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
   // 査定・返戻の突き合わせ（spec FR-202 の I-1）。当てた請求は、取り込んだレセプトの点検と同じ点検で点検し直す（何も記録しない側の点検。USED は出さない）
   const review = createReview(ctx, uke, ukeCheck.ukeCheck);
+  const prevented = createPrevented(questions, doctor, review.reviewReport);
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
