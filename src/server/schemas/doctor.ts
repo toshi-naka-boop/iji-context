@@ -19,7 +19,8 @@ export const doctorFactBody = z.strictObject({
 /** 略語の問いに答える（FR-211）。refs は答えた時点で並んでいた記載の参照（カルテの id・場所・指紋）。答えた人は受け取らない（セッションの本人から決める） */
 export const doctorAbbrevBody = z.strictObject({
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
-  token: z.string().regex(/^[A-Za-z]+[0-9]*$/).max(100),
+  // 英字の略語のほか、言い換えの疑いの記載そのもの（書かれた名前・値。round-97 C-631）も問いの語になる
+  token: z.string().min(1).max(200),
   refs: z.array(z.string().regex(/^[1-9][0-9]{0,9}:(act|child|fact):[0-9a-f]{16}$/)).min(1).max(MAX_ABBREV_REFS),
   option: z.enum(ABBREV_OPTIONS),
   freeText: z.string().max(MAX_ABBREV_OTHER).optional(),

@@ -78,38 +78,45 @@ export const abbrevMarks = (text: string, vocab: AbbrevVocab): string[] => abbre
 /** 病名の記載が、傷病名マスターの名称と完全に一致するか（normName を両側に掛ける） */
 export const diseaseExact = (value: string, vocab: AbbrevVocab): boolean => vocab.diseases.has(normName(value));
 
-/**
- * 書かれた名前・値と引用の印の語（反証 round-96 X-490）：書かれた名前・値の印（名称の完全一致があれば付けない）に、原文の引用の印を足す。
- * LLM が原文の略語を言い換えて書いても（ECG12 → 心電図）、引用に残った原文の語で印が付く
- */
-export const itemMarks = (written: string, quote: string, vocab: AbbrevVocab, exact: boolean): string[] => [...new Set([...(exact ? [] : abbrevMarks(written, vocab)), ...abbrevMarks(quote, vocab)])];
+const flat = (t: string) => t.normalize("NFKC").replace(/\s+/g, "");
+/** 言い換えの疑い：書かれた名前・値が引用の中にそのまま含まれていない（NFKC・空白を除いて比べる。反証 round-97 C-631） */
+export const paraphrased = (written: string, quote: string): boolean => !flat(quote).includes(flat(written));
+/** 言い換えのない記載の印：書かれた名前・値の語だけで決める（名称の完全一致があれば付けない。引用のほかの語は足さない。C-632） */
+export const directMarks = (written: string, vocab: AbbrevVocab, exact: boolean): string[] => (exact ? [] : abbrevMarks(written, vocab));
 
-/** 印を付け直す（保存のとき・取り出した直後）。書かれた名前（名称の完全一致がないとき）か引用に印がある行為・子にだけ abbrev を持たせ、聞く行為・子の lookup は空にする（推し量りを見せない・残さない） */
-export function markActs(acts: ChartAct[], vocab: AbbrevVocab, exact: (key: TableKey, written: string) => boolean): ChartAct[] {
-  const marksOf = (key: TableKey, x: { written: string; quote: string }) => itemMarks(x.written, x.quote, vocab, exact(key, x.written));
-  return acts.map((a) => {
+/**
+ * その日の行ったこと・事実の印を付け直す（保存のとき・取り出した直後。決まった規則 1 本。反証 round-96 X-490・round-97 C-631・C-632）。
+ * - 書かれた名前・値が引用の中にそのまま含まれる記載（言い換えなし）：その名前・値の語だけで印を決める
+ * - 含まれない記載（言い換えの疑い）：その日の原文（text）の分からない略語のうち、言い換えなしの記載の名前・値に出てこない語を印にする。
+ *   そういう語がなければ、記載そのもの（書かれた名前・値）を問いの語にする。言い換えの疑いの記載は、いつも医師に聞く（自動選択も lookup もしない）
+ * 聞く行為・子の lookup は空にする（推し量りを見せない・残さない）。病名の記載は値が傷病名の名称と完全に一致すれば値の印を見ない
+ */
+export function markDay(acts: ChartAct[], facts: ExtractedFact[], vocab: AbbrevVocab, exact: (key: TableKey, written: string) => boolean, text: string): { acts: ChartAct[]; facts: ExtractedFact[] } {
+  type X = { written: string; quote: string };
+  const items: X[] = [...acts.flatMap((a) => [a, ...(a.with ?? [])]), ...facts.map((f) => ({ written: f.value, quote: f.quote }))];
+  const explained = new Set(items.filter((x) => !paraphrased(x.written, x.quote)).flatMap((x) => abbrevTokens(x.written)));
+  const unexplained = abbrevMarks(text, vocab).filter((w) => !explained.has(w));
+  const marksOf = (x: X, isExact: boolean): string[] => (paraphrased(x.written, x.quote) ? (unexplained.length > 0 ? unexplained : [x.written.trim()]) : directMarks(x.written, vocab, isExact));
+  const outActs = acts.map((a) => {
     const { abbrev: _a, ...rest } = a;
-    const m = marksOf(tableKeyOfAct(a.category), a);
+    const m = marksOf(a, exact(tableKeyOfAct(a.category), a.written));
     const act: ChartAct = m.length > 0 ? { ...rest, abbrev: m } : rest;
     if (askedAct(act)) act.lookup = [];
     if (a.with)
       act.with = a.with.map((c) => {
         const { abbrev: _c, ...cr } = c;
-        const cm = marksOf(tableKeyOfChild(c.kind), c);
+        const cm = marksOf(c, exact(tableKeyOfChild(c.kind), c.written));
         const child = cm.length > 0 ? { ...cr, abbrev: cm } : cr;
         return askedChild(act, child) ? { ...child, lookup: [] } : child;
       });
     return act;
   });
-}
-
-/** 事実の印を付け直す。病名の記載は値が傷病名マスターの名称と完全に一致するときは値の印を見ない（引用の原文の印は見る。X-490） */
-export function markFacts(facts: ExtractedFact[], vocab: AbbrevVocab): ExtractedFact[] {
-  return facts.map((f) => {
+  const outFacts = facts.map((f) => {
     const { abbrev: _a, ...rest } = f;
-    const m = itemMarks(f.value, f.quote, vocab, f.kind === "病名の記載" && diseaseExact(f.value, vocab));
+    const m = marksOf({ written: f.value, quote: f.quote }, f.kind === "病名の記載" && diseaseExact(f.value, vocab));
     return (m.length > 0 ? { ...rest, abbrev: m } : rest) as ExtractedFact;
   });
+  return { acts: outActs, facts: outFacts };
 }
 
 /** 記載の指紋（書かれた名前・値と引用。位置の番号は保存し直すとずれるので使わない） */

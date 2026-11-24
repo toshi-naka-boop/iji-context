@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { abbrevMarks, abbrevTokens, abbrevVocabOf, askedItems, diseaseExact, itemKeyOf, KNOWN_WORDS, markActs, markFacts, NO_MASTER_NOTE } from "../../src/chart/abbrev";
+import { abbrevMarks, abbrevTokens, abbrevVocabOf, askedItems, diseaseExact, itemKeyOf, KNOWN_WORDS, markDay, NO_MASTER_NOTE } from "../../src/chart/abbrev";
 import type { ChartAct } from "../../src/chart/acts";
 import { lostAbbrevs } from "../../src/chart/soap";
 import { noteText } from "../../src/chart/extract";
@@ -65,11 +65,15 @@ describe("印の付け直しと聞く記載（保存のとき）", () => {
     { category: "検査", written: "特異的ＩｇＥ", lookup: ["特異的ＩｇＥ"], quote: "特異的ＩｇＥ" },
     { category: "注射", written: "注射", lookup: [], quote: "注射", with: [{ kind: "薬", written: "ABC液", lookup: ["推し量り"], quote: "ABC液" }] },
   ];
-  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、名称の完全一致がある書き方は、引用に原文の略語がなければ印を付けない", () => {
+  /** その日の行ったこと・事実の印（原文は省くと、引用をつないだ文） */
+  type V = typeof vocab;
+  const markActs = (a: ChartAct[], v: V, exact: (k: string, w: string) => boolean, text = a.map((x) => x.quote).join("\n")) => markDay(a, [], v, exact, text).acts;
+  const markFacts = (f: Parameters<typeof markDay>[1], v: V, text = f.map((x) => x.quote).join("\n")) => markDay([], f, v, () => false, text).facts;
+  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、言い換えのない書き方は名前の語だけで決める（名称の完全一致なら印なし）", () => {
     const m = markActs(acts, vocab, () => false);
     expect(m.map((a) => [a.abbrev, a.lookup])).toEqual([[["ECG12"], []], [undefined, ["特異的ＩｇＥ"]], [undefined, []]]);
     expect(m[2].with?.[0]).toMatchObject({ abbrev: ["ABC"], lookup: [] });
-    expect(markActs([{ ...acts[0], quote: "心電図" }], vocab, (_k, w) => w === "ＥＣＧ１２")[0].abbrev).toBeUndefined();
+    expect(markActs([{ ...acts[0], quote: "ＥＣＧ１２施行" }], vocab, (_k, w) => w === "ＥＣＧ１２")[0].abbrev).toBeUndefined();
   });
   it("LLM が原文の略語を言い換えても、引用の原文の語で印が付き、lookup が空になる（X-490。ECG12→心電図、AF→心房細動）", () => {
     // 言い換えた書き方が名称と完全に一致しても（exact が真）、引用に原文の略語が残れば印が付く
@@ -81,6 +85,34 @@ describe("印の付け直しと聞く記載（保存のとき）", () => {
       ["act", "心電図", ["ECG12"]],
       ["fact", "心房細動", ["AF"]],
     ]);
+  });
+  describe("言い換えの規則 1 本（反証 round-97 C-631・C-632。原文「AF 継続。ECG12 施行」）", () => {
+    const text = "O: AF 継続。ECG12 施行";
+    const paraAct: ChartAct = { category: "検査", written: "心電図", lookup: ["心電図"], quote: "施行" };
+    const paraFact = { kind: "病名の記載" as const, value: "心房細動", quote: "継続" };
+    it("引用を「施行」「継続」と言い換えた組：引用に略語がなくても、原文の分からない略語で印が付き、lookup は空・医師に聞く", () => {
+      const d = markDay([paraAct], [paraFact], vocab, () => true, text);
+      expect(d.acts[0]).toMatchObject({ abbrev: ["AF", "ECG12"], lookup: [] });
+      expect(d.facts[0].abbrev).toEqual(["AF", "ECG12"]);
+      expect(askedItems("訪問診療", { acts: d.acts, rx: [], rxChoice: null, rxChoiceBy: null }, d.facts).map((x) => [x.place, x.written, x.tokens])).toEqual([
+        ["act", "心電図", ["AF", "ECG12"]],
+        ["fact", "心房細動", ["AF", "ECG12"]],
+      ]);
+    });
+    it("言い換えのない記載で説明される語は、言い換えた記載の印にしない（ECG12 をそのまま書いた行為があれば、心房細動の印は AF だけ）", () => {
+      const d = markDay([{ category: "検査", written: "ECG12", lookup: [], quote: "ECG12 施行" }], [paraFact], vocab, () => false, text);
+      expect(d.acts[0].abbrev).toEqual(["ECG12"]);
+      expect(d.facts[0].abbrev).toEqual(["AF"]);
+    });
+    it("原文に分からない略語がなければ、言い換えた記載そのものを問いの語にする", () => {
+      const d = markDay([paraAct], [], { ...vocab, words: new Set(["AF", "ECG12"]) }, () => true, text);
+      expect(d.acts[0]).toMatchObject({ abbrev: ["心電図"], lookup: [] });
+    });
+    it("ECG12 の引用に AF が入った組：書かれた名前が引用に含まれれば、引用のほかの略語（AF）は足さず、名称の完全一致なら印なし（lookup も残る）", () => {
+      const d = markDay([{ category: "検査", written: "ECG12", lookup: ["ECG12"], quote: "AF継続、ECG12施行" }], [], { ...vocab, words: new Set(["ECG12"]) }, () => true, text);
+      expect(d.acts[0].abbrev).toBeUndefined();
+      expect(d.acts[0].lookup).toEqual(["ECG12"]);
+    });
   });
   it("当てた・たたんだ行為は聞かない。病名の記載は傷病名と完全一致なら印を付けない。貼ったカルテは病名を聞かない", () => {
     const m = markActs(acts, vocab, () => false);

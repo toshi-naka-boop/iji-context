@@ -408,3 +408,31 @@ describe("確かめる画面の「候補を引き直す」でも自動選択が�
     expect(r.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
   });
 });
+
+describe("言い換えの疑いは、引用に略語がなくても医師に聞く（反証 round-97 C-631）", () => {
+  it("原文「ＡＦ継続。ＥＣＧ１２施行」で、引用を「施行」「継続」と言い換えた組：初期値に当てず lookup も空で、AF・ECG12 の問いに出る。答えられる", async () => {
+    llm.runOnce.mockResolvedValueOnce({
+      structured: { facts: [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], acts: [{ category: "検査", written: "心電図", lookup: ["特異的ＩｇＥ半定量・定量"], quote: "施行" }], rx: [] },
+      sessionId: "",
+      stats: {},
+    });
+    setRole("clerk");
+    const w = (await (await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K1"), kind: "訪問診療", note: { s: "", o: "ＡＦ継続。ＥＣＧ１２施行", a: "", p: "", rx: "" } }))).json()) as Written & { facts: { abbrev?: string[] }[] };
+    expect(w.acts[0]).toMatchObject({ written: "心電図", abbrev: ["AF", "ECG12"], lookup: [] });
+    expect(w.facts[0].abbrev).toEqual(["AF", "ECG12"]);
+    expect(w.review.matches[0].act.initial).toBeNull();
+    expect(w.review.matches[0].act.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
+    const s = await (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(w.id), facts: w.facts, acts: w.acts.map((a) => ({ ...a, match: null })), rx: [], rxChoice: null }));
+    expect(s.status).toBe(200);
+    const mine = (await list()).filter((x) => x.quotes.some((y) => refNote(y.ref) === w.id));
+    expect(mine.map((x) => x.token).sort()).toEqual(["AF", "ECG12"]);
+    expect(mine.every((x) => x.quotes.filter((y) => refNote(y.ref) === w.id).length === 2)).toBe(true);
+  });
+  it("原文に分からない略語がない言い換えは、記載そのものを問いの語にして聞き、その語でも答えられる", async () => {
+    const w = await writeAndSave(claimId("K4"), "心電図の検査をした。", [{ category: "検査", written: "心電図", lookup: [], quote: "検査をした" }]);
+    const q = (await list()).find((x) => x.token === "心電図" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
+    expect(q.question).toBe("この記載の『心電図』は何を指しますか");
+    expect(abbrevQueryErrors(q)).toEqual([]);
+    expect((await answer(q, "判定不能", undefined, q.quotes.filter((y) => refNote(y.ref) === w.id).map((y) => y.ref))).status).toBe(200);
+  });
+});

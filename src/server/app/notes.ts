@@ -4,7 +4,7 @@ import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActChild, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
-import { abbrevMarks, abbrevVocabOf, askedItems, itemKeyOf, itemMarks, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { abbrevMarks, abbrevVocabOf, askedItems, directMarks, itemKeyOf, markDay, NO_MASTER_NOTE, paraphrased, type AbbrevVocab } from "../../chart/abbrev";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
 import { withMasters, type MastersDb } from "../../masters/db";
@@ -117,7 +117,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (v.dropped.length) throw badRequest(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
     // 略語の印（FR-211）は保存のときにサーバーが付け直す（画面から来た値は使わない）
     const vocab = withMasters((db) => abbrevVocabOf(db, caseOf(r.claim_id).yearMonth));
-    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(vocab ? markFacts(v.facts, vocab) : v.facts), id);
+    const note = JSON.parse(r.note) as ChartNote;
+    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(vocab ? markDay([], v.facts, vocab, () => false, noteText(note)).facts : v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
   // ───────────────────────────────────────────────────────────────────────
@@ -132,9 +133,12 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       return !!rows.get(key)?.some((x) => x.norm === w);
     };
   };
-  /** 書かれた名前か原文の引用に印があるか（X-490。印のある書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さない） */
-  const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string, quote = "") =>
-    vocab !== null && itemMarks(written, quote, vocab, exact(key, written)).length > 0;
+  /**
+   * 聞く書き方か（src/chart/abbrev.ts の markDay と同じ規則。round-97 C-631・C-632）：引用を渡したときは、書かれた名前が引用に含まれなければ言い換えの疑いで聞く。
+   * そうでなければ書かれた名前の語だけで決める。聞く書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さず、初期値に当てない
+   */
+  const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string, quote?: string) =>
+    vocab !== null && ((quote !== undefined && paraphrased(written, quote)) || directMarks(written, vocab, exact(key, written)).length > 0);
   /**
    * 取り出した直後の行ったこと・事実に印を付ける（FR-211）。聞く行為の lookup は空にする（保存もしない）。
    * 返すのは、印を付けた行ったこと・事実と、画面に出す印のまとめ
@@ -145,8 +149,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return withMasters((db) => {
       const vocab = abbrevVocabOf(db, yearMonth);
       if (!vocab) return { acts, facts, abbrev: { unseen: NO_MASTER_NOTE } };
-      const a = markActs(acts, vocab, exactIn(db, yearMonth));
-      const f = markFacts(facts, vocab);
+      const { acts: a, facts: f } = markDay(acts, facts, vocab, exactIn(db, yearMonth), noteText(JSON.parse(r.note) as ChartNote));
       const asked = a.flatMap((x) => [x.abbrev && !x.match ? 1 : 0, ...(x.with ?? []).map((c) => (c.abbrev && !c.match ? 1 : 0))]).reduce<number>((n, k) => n + k, 0) + (r.kind === "記録" ? 0 : f.filter((x) => x.kind === "病名の記載" && x.abbrev).length);
       return { acts: a, facts: f, abbrev: { marks: abbrevMarks(noteText(JSON.parse(r.note) as ChartNote), vocab), asked } };
     });
@@ -332,6 +335,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const chosen: { written: string; quote: string; key: TableKey; m: ActMatch }[] = [];
     const at = now();
     let vocab: AbbrevVocab | null = null;
+    let markedFacts: ExtractedFact[] = v.facts;
     const acts = withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
       const check = (key: TableKey, written: string, quote: string, m: ActMatch | null | undefined): ActMatch | null => {
@@ -357,9 +361,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       const exact = exactIn(db, yearMonth);
       const marked = markedIn(vocab, exact);
       for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].key, chosen[k].written, chosen[k].quote)) chosen.splice(k, 1);
-      return markActs(checked, vocab, exact);
+      const day = markDay(checked, v.facts, vocab, exact, noteText(note));
+      markedFacts = day.facts;
+      return day.acts;
     });
-    const markedFacts: ExtractedFact[] = vocab ? markFacts(v.facts, vocab) : v.facts;
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
