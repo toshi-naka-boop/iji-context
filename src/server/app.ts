@@ -169,6 +169,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
     /** どの記載にも結び付かない略語の扱い（FR-211。事務が選ぶ） */
     chooseAbbrev: notes.chooseAbbrev,
+    abbrevChoiceList: notes.abbrevChoiceList,
     answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
     actCandidates,
     searchMasters,

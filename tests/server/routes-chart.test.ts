@@ -59,12 +59,26 @@ const fieldsOf = async (r: Response) => ((await r.json()) as { fields?: string[]
 
 const NOTE = { s: "動悸なし", o: "脈不整", a: "AF", p: "DOAC 継続", rx: "DOAC" };
 /**
- * NOTE の略語（AF・DOAC）は、取り出した事実・行為のどれにも結び付かない。マスターがあるときは、その月の扱いを選ぶまで確定できない（FR-211 の規則の作り直し 4）。
- * 確定を確かめるテストは、先に「算定に関係なし」を選んでおく（マスターがなくても選べる）
+ * NOTE の略語（AF・DOAC）は、取り出した事実・行為のどれにも結び付かない。マスターがあるときは、そのカルテの扱いを選ぶまで確定できない（FR-211 の規則の作り直し 4・補い C-652）。
+ * 確定を確かめるテストは、先に一覧（GET /api/chart/abbrev-choices）に並んだカルテに「算定に関係なし」を選んでおく（マスターがなければ一覧は空で、選ばない）。
+ * via: "app" は監査ログの行を数えるテストのため、ルートを通さずに同じ処理を呼ぶ
  */
-async function chooseNoteAbbrevs(c: string = cookie) {
-  const choose = (await import("../../app/api/chart/abbrev-choices/route")).POST;
-  for (const token of ["AF", "DOAC"]) expect((await choose(post("/api/chart/abbrev-choices", { yearMonth: YM, token, choice: "算定に関係なし" }, c))).status).toBe(200);
+async function chooseNoteAbbrevs(c: string = cookie, via: { app: User } | null = null) {
+  const { GET, POST } = await import("../../app/api/chart/abbrev-choices/route");
+  for (const token of ["AF", "DOAC"]) {
+    if (via) {
+      instance.runAs(via.app, () => {
+        const a = instance.getApp();
+        const me = instance.clerkIdOf(via.app);
+        const noteIds = a.abbrevChoiceList(me, YM, token).map((x) => x.noteId);
+        if (noteIds.length > 0) a.chooseAbbrev(me, { yearMonth: YM, token, noteIds, choice: "算定に関係なし" });
+      });
+      continue;
+    }
+    const listed = (await (await GET(get(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: YM, token })}`, c))).json()) as { noteId: number }[];
+    if (listed.length === 0) continue;
+    expect((await POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token, noteIds: listed.map((x) => String(x.noteId)), choice: "算定に関係なし" }, c))).status).toBe(200);
+  }
 }
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
 
@@ -140,10 +154,11 @@ describe("訪問カルテ", () => {
   it("書く → 事実を取り出す → 確かめる、が今までどおり動き、監査ログにカルテの本文は入らない", async () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;
-    await chooseNoteAbbrevs();
     const before = auditRows().length;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }, { kind: "病名の記載", value: "心不全", quote: "カルテにない言葉" }] }, sessionId: "", stats: {} });
     const written = await chart(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: NOTE }));
+    // 書いたカルテの略語の扱いを選ぶ（監査ログの行を数えているので、ルートを通さずに同じ処理を呼ぶ）
+    await chooseNoteAbbrevs(cookie, { app: user });
     expect(written.status).toBe(200);
     const w = (await written.json()) as { id: number; date: string; facts: unknown[]; dropped: unknown[] };
     expect(w).toMatchObject({ date: day(13), facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] });
@@ -191,8 +206,8 @@ describe("訪問カルテ", () => {
     const chart = (await import("../../app/api/chart/route")).POST;
     const confirm = (await import("../../app/api/chart/[id]/route")).POST;
     llm.runOnce.mockResolvedValue({ structured: { facts: [{ kind: "処方", value: "DOAC", quote: "DOAC 継続" }] }, sessionId: "", stats: {} });
-    await chooseNoteAbbrevs();
     const w = (await (await chart(post("/api/chart", { claimId: claimId("K5"), kind: "訪問診療", note: NOTE }))).json()) as { id: number; facts: unknown[] };
+    await chooseNoteAbbrevs();
     // 招待で同じクリニックに入ったベテランが確かめる
     const { code } = instance.getAuth().createInvite(user, "veteran");
     const mate = instance.getAuth().registerWithInvite("chart_mate", "どうりょう", "password123", code);

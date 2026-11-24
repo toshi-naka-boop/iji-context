@@ -119,7 +119,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const vocab = withMasters((db) => abbrevVocabOf(db, caseOf(r.claim_id).yearMonth));
     const note = JSON.parse(r.note) as ChartNote;
     const day = vocab ? markDay([], v.facts, vocab, noteText(note)) : null;
-    if (day) assertChosen(caseOf(r.claim_id).yearMonth, day.unlinked);
+    if (day) assertChosen(id, day.unlinked);
     sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(day ? day.facts : v.facts), id);
     return { claimId: r.claim_id, date: r.date };
   }
@@ -143,14 +143,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       if (!vocab) return { acts, facts, abbrev: { unseen: NO_MASTER_NOTE } };
       const { acts: a, facts: f, marks, unlinked } = markDay(acts, facts, vocab, noteText(JSON.parse(r.note) as ChartNote));
       const asked = a.flatMap((x) => [x.abbrev && !x.match ? 1 : 0, ...(x.with ?? []).map((c) => (c.abbrev && !c.match ? 1 : 0))]).reduce<number>((n, k) => n + k, 0) + (r.kind === "記録" ? 0 : f.filter((x) => x.kind === "病名の記載" && x.abbrev).length);
-      return { acts: a, facts: f, abbrev: { marks, asked, yearMonth, unlinked: unlinked.map((token) => ({ token, choice: abbrevs.choiceOf(yearMonth, token) })) } };
+      return { acts: a, facts: f, abbrev: { marks, asked, yearMonth, unlinked: unlinked.map((token) => ({ token, choice: abbrevs.choiceFor(id, token) })) } };
     });
   }
   /**
    * 略語の確かめ待ち（規則の作り直し 4）：どの記載にも結び付かない語に、その月の扱い（算定に関係なし・医師に聞く）を選んでいなければ、確かめ済みにしない（409）
    */
-  function assertChosen(yearMonth: string, unlinked: string[]) {
-    const open = unlinked.filter((t) => abbrevs.choiceOf(yearMonth, t) === null);
+  function assertChosen(noteId: number, unlinked: string[]) {
+    const open = unlinked.filter((t) => abbrevs.choiceFor(noteId, t) === null);
     if (open.length > 0) throw conflict(`略語の確かめ待ちです：${open.join("・")} は、どの記載にも結び付いていません。「算定に関係なし」か「医師に聞く」を選んでから確かめてください`);
   }
   /** 自由記述の印の語（SOAP に整えたときに消えた略語を見るため）。請求がなければ・マスターがなければ空 */
@@ -365,7 +365,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       unlinked = day.unlinked;
       return day.acts;
     });
-    assertChosen(yearMonth, unlinked);
+    assertChosen(id, unlinked);
     const inside = dispensingFor(yearMonth) === "inside" && a.rx.length > 0;
     const rule = rxDefault(a.rx);
     const choice = inside ? (input.rxChoice ?? rule) : null;
@@ -736,9 +736,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     return chartWithNotes(c ? { ...c, prescriptions: c.prescriptions ?? [] } : null, claimId, confirmedNotes(claimId, clerkId));
   }
 
-  /** どの記載にも結び付かない語の扱いを選ぶ（事務。POST /api/chart/abbrev-choices） */
-  const chooseAbbrev = abbrevs.chooseAbbrev;
-  return { abbrevs, chooseAbbrev, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  /** どの記載にも結び付かない語の扱いを、一覧でまとめて選ぶ（事務。GET・POST /api/chart/abbrev-choices） */
+  const { chooseAbbrev, abbrevChoiceList } = abbrevs;
+  return { abbrevs, chooseAbbrev, abbrevChoiceList, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

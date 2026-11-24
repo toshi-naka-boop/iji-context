@@ -429,9 +429,19 @@ describe("言い換えの疑いだけでは聞かない（規則の作り直し 
 });
 
 describe("どの記載にも結び付かない語は事務が先に選ぶ（規則の作り直し 4）", () => {
-  const choose = async (token: string, choice: string, yearMonth = YM) => {
+  type Row = { noteId: number; claimId: string; date: string; sentence: string; choice: string | null };
+  /** 選ぶ一覧（GET /api/chart/abbrev-choices） */
+  const listOf = async (token: string, yearMonth = YM): Promise<Row[]> => {
     setRole("clerk");
-    return (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth, token, choice }));
+    const r = await (await import("../../app/api/chart/abbrev-choices/route")).GET(get(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth, token })}`));
+    expect(r.status).toBe(200);
+    return (await r.json()) as Row[];
+  };
+  /** 一覧でまとめて選ぶ（noteIds を省くと、いま一覧に並んでいるカルテ全部） */
+  const choose = async (token: string, choice: string, noteIds?: number[], yearMonth = YM) => {
+    const ids = noteIds ?? (await listOf(token, yearMonth)).map((x) => x.noteId);
+    setRole("clerk");
+    return (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth, token, noteIds: ids.map(String), choice }));
   };
   /** 書いて（偽の取り出し）、確かめて保存する。保存の応答を返す */
   async function writeOnly(claim: string, note: Record<string, string>, acts: ChartAct[], facts: unknown[] = []) {
@@ -486,15 +496,77 @@ describe("どの記載にも結び付かない語は事務が先に選ぶ（規�
       const claim = a.uploadUke(me, file).filter((u) => u.uploaded)[0].receipts[0].claimId;
       const saved = a.saveRecord(claim, me, `${month(1)}-05`, { s: "ADL低下", o: "", a: "", p: "", rx: "" });
       expect(() => a.confirmActs(saved.id, me, { facts: [], acts: [], rx: [], rxChoice: null })).toThrow(/略語の確かめ待ち/);
-      a.chooseAbbrev(me, { yearMonth: month(1), token: "ADL", choice: "算定に関係なし" });
+      a.chooseAbbrev(me, { yearMonth: month(1), token: "ADL", noteIds: a.abbrevChoiceList(me, month(1), "ADL").map((x) => x.noteId), choice: "算定に関係なし" });
       expect(a.confirmActs(saved.id, me, { facts: [], acts: [], rx: [], rxChoice: null })).toMatchObject({ claimId: claim });
     });
   });
   it("選べるのはカルテを確かめる役割だけ。語は英字の略語の形、扱いは 2 つのどれか（zod）", async () => {
     setRole("doctor");
     expect((await (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token: "AF", choice: "医師に聞く" }))).status).toBe(403);
-    expect((await choose("酸素ボンベ加算", "医師に聞く")).status).toBe(400);
-    expect((await choose("AF", "覚える")).status).toBe(400);
-    expect((await choose("AF", "医師に聞く", "2026-1")).status).toBe(400);
+    expect((await choose("酸素ボンベ加算", "医師に聞く", [1])).status).toBe(400);
+    expect((await choose("AF", "覚える", [1])).status).toBe(400);
+    expect((await choose("AF", "医師に聞く", [1], "2026-1")).status).toBe(400);
+    expect((await (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token: "AF", noteIds: [], choice: "医師に聞く" }))).status).toBe(400);
+  });
+});
+
+describe("結び付かない語の扱いは、一覧で選んだカルテと語の組にだけ効く（round-99 C-652。作り直しの補い）", () => {
+  const listOf = async (token: string): Promise<{ noteId: number; claimId: string; date: string; sentence: string; choice: string | null }[]> => {
+    setRole("clerk");
+    return (await (await (await import("../../app/api/chart/abbrev-choices/route")).GET(get(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: YM, token })}`))).json()) as never;
+  };
+  const choose = async (token: string, choice: string, noteIds: number[]) => {
+    setRole("clerk");
+    return (await import("../../app/api/chart/abbrev-choices/route")).POST(post("/api/chart/abbrev-choices", { yearMonth: YM, token, noteIds: noteIds.map(String), choice }));
+  };
+  async function writeNote(claim: string, o: string, acts: ChartAct[]) {
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts, rx: [] }, sessionId: "", stats: {} });
+    setRole("clerk");
+    const w = (await (await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claim, kind: "訪問診療", note: { s: "", o, a: "", p: "", rx: "" } }))).json()) as Written & { facts: unknown[] };
+    const save = async () => (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(w.id), facts: w.facts, acts: w.acts, rx: [], rxChoice: null }));
+    return { w, save };
+  }
+
+  it("一覧には、その月にその語が出ているカルテを、そのカルテのその語を含む文つきで並べる。患者 A で選んでも、あとから書いた患者 B の関門は通らない", async () => {
+    const a = await writeNote(claimId("K4"), "前回ＬＶＥＦで著変なし。", []);
+    const rowsA = (await listOf("LVEF")).filter((x) => x.noteId === a.w.id);
+    expect(rowsA).toEqual([{ noteId: a.w.id, claimId: claimId("K4"), date: expect.any(String), sentence: "前回ＬＶＥＦで著変なし。", choice: null }]);
+    // 患者 A のカルテだけが並んでいるときに「算定に関係なし」を選ぶ
+    expect((await choose("LVEF", "算定に関係なし", [a.w.id])).status).toBe(200);
+    expect((await a.save()).status).toBe(200);
+    // 同じ月の患者 B：LVEF を「前回の採血」と言い換えた行為で、LVEF は結び付かない語。A の選択では通らない
+    const b = await writeNote(claimId("K1"), "ＬＶＥＦ施行。前回の採血と比べる。", [{ category: "検査", written: "採血", lookup: [], quote: "前回の採血" }]);
+    expect(b.w.abbrev).toMatchObject({ unlinked: [{ token: "LVEF", choice: null }] });
+    expect((await b.save()).status).toBe(409);
+    const rows = await listOf("LVEF");
+    expect(rows.find((x) => x.noteId === a.w.id)?.choice).toBe("算定に関係なし");
+    expect(rows.find((x) => x.noteId === b.w.id)).toMatchObject({ claimId: claimId("K1"), sentence: "ＬＶＥＦ施行。", choice: null });
+    // 並んでいないカルテを入れた選択は 409（効くのは、並んでいたカルテだけ）
+    expect((await choose("LVEF", "算定に関係なし", [b.w.id, 999999])).status).toBe(409);
+    // 「医師に聞く」も同じ範囲：B だけに選ぶと、B の文だけが問いの引用になる
+    expect((await choose("LVEF", "医師に聞く", [b.w.id])).status).toBe(200);
+    expect((await b.save()).status).toBe(200);
+    const q = (await list()).find((x) => x.token === "LVEF")!;
+    expect(q.quotes.map((x) => [refNote(x.ref), x.quote])).toEqual([[b.w.id, "ＬＶＥＦ施行。"]]);
+  });
+  it("選んだあとにカルテが直ったら、そのカルテの選択は効かない（選び直し）。カルテを消すと、そのカルテの選択も残らない", async () => {
+    const c = await writeNote(claimId("K4"), "前回ＭＭＴで著変なし。", []);
+    expect((await choose("MMT", "算定に関係なし", [c.w.id])).status).toBe(200);
+    const db = sql();
+    try {
+      db.prepare("UPDATE chart_notes SET note = ? WHERE id = ?").run(JSON.stringify({ s: "", o: "前回ＭＭＴで著変なし。直した。", a: "", p: "", rx: "" }), c.w.id);
+    } finally {
+      db.close();
+    }
+    expect((await listOf("MMT")).find((x) => x.noteId === c.w.id)?.choice).toBeNull();
+    setRole("clerk");
+    const d = await (await import("../../app/api/chart/[id]/route")).DELETE(new Request(`http://localhost/api/chart/${c.w.id}`, { method: "DELETE", headers: { cookie } }), { params: Promise.resolve({ id: String(c.w.id) }) });
+    expect(d.status).toBe(200);
+    const db2 = sql();
+    try {
+      expect(db2.prepare("SELECT COUNT(*) AS n FROM abbrev_choices WHERE note_id = ?").get(c.w.id)).toEqual({ n: 0 });
+    } finally {
+      db2.close();
+    }
   });
 });

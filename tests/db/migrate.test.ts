@@ -245,7 +245,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     expect(migrate(db, APP_MIGRATIONS.slice(0, 25))).toBe(25);
     expect(tables(db).filter((x) => !before.includes(x))).toEqual(V25);
     expect(db.prepare("SELECT COUNT(*) AS n FROM abbrev_answers").get()).toEqual({ n: 1 });
-    expect((db.prepare("PRAGMA table_info(abbrev_choices)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "year_month", "token", "choice", "chosen_by", "chosen_at"]);
+    expect((db.prepare("PRAGMA table_info(abbrev_choices)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "note_id", "token", "choice", "note_hash", "chosen_by", "chosen_at"]);
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {

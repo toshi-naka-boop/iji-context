@@ -121,5 +121,11 @@ export const soapBody = z.strictObject({ text: z.string().max(MAX_CHART_TEXT), c
 /** base64 にした画像の長さの上限（5MB の画像は 4/3 倍に膨らむ） */
 export const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 export const imageBody = z.strictObject({ imageBase64: z.string().max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/]*={0,2}$/) });
-/** どの記載にも結び付かない略語の扱いを選ぶ本文（POST /api/chart/abbrev-choices。FR-211）。語は英字の略語の形だけ。選んだ人は受け取らない（セッションの本人から決める） */
-export const abbrevChoiceBody = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: z.string().regex(/^[A-Za-z]+[0-9]*$/).max(100), choice: z.enum(ABBREV_CHOICES) });
+const abbrevToken = z.string().regex(/^[A-Za-z]+[0-9]*$/).max(100);
+/** 結び付かない略語を選ぶ一覧（GET /api/chart/abbrev-choices。FR-211 の作り直しの補い C-652）。語は英字の略語の形だけ */
+export const abbrevChoiceQuery = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: abbrevToken });
+/**
+ * 結び付かない略語の扱いを、一覧でまとめて選ぶ本文（POST /api/chart/abbrev-choices）。noteIds は選んだときに並んでいたカルテ（効くのはそのカルテだけ）。
+ * 選んだ人は受け取らない（セッションの本人から決める）
+ */
+export const abbrevChoiceBody = z.strictObject({ yearMonth: z.string().regex(YEAR_MONTH), token: abbrevToken, noteIds: z.array(noteParams.shape.id).min(1).max(500), choice: z.enum(ABBREV_CHOICES) });

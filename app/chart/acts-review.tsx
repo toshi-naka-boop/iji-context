@@ -111,47 +111,88 @@ export function DoctorAnswerBadge({ value, answers }: { value: string; answers: 
   return <span className="badge">{value}　医師の答え：{answers.map((a) => `${a.token}＝${a.text}`).join("、")}</span>;
 }
 
-/** 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない */
-export function AbbrevSummaryNote({ abbrev }: { abbrev: AbbrevSummary | undefined }) {
-  const [chosen, setChosen] = useState<Record<string, AbbrevChoice>>({});
+/** 選ぶ一覧の 1 行（GET /api/chart/abbrev-choices） */
+type ChoiceRow = { noteId: number; claimId: string; date: string; sentence: string; choice: AbbrevChoice | null };
+
+/**
+ * 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない。
+ * どの記載にも結び付かない語は、語ごとに一覧（その月にその語が出ているカルテと、その語を含む文）を開いて、並んだカルテにまとめて選ぶ（作り直しの補い C-652）。
+ * 選んだ扱いは、選んだときに並んでいたカルテにだけ効く
+ */
+export function AbbrevSummaryNote({ abbrev, noteId }: { abbrev: AbbrevSummary | undefined; noteId: number }) {
+  const [chosen, setChosen] = useState<Record<string, AbbrevChoice | null>>({});
+  const [lists, setLists] = useState<Record<string, { rows: ChoiceRow[]; picked: number[] }>>({});
   const [err, setErr] = useState("");
   if (!abbrev) return null;
   if ("unseen" in abbrev) return <p className="muted" style={{ margin: 0 }}>{abbrev.unseen}</p>;
   if (abbrev.marks.length === 0) return null;
   const ym = abbrev.yearMonth;
-  /** どの記載にも結び付かない語の扱いを、その月のその語の分として残す（POST /api/chart/abbrev-choices。規則の作り直し 4） */
-  async function choose(token: string, choice: AbbrevChoice) {
+  async function open(token: string) {
     setErr("");
     try {
-      await postJson("/api/chart/abbrev-choices", { yearMonth: ym, token, choice });
-      setChosen((cur) => ({ ...cur, [token]: choice }));
+      const rows = await getJson<ChoiceRow[]>(`/api/chart/abbrev-choices?${new URLSearchParams({ yearMonth: ym, token })}`);
+      setLists((cur) => ({ ...cur, [token]: { rows, picked: rows.map((r) => r.noteId) } }));
     } catch (e) {
       setErr((e as Error).message);
     }
   }
-  const open = abbrev.unlinked.filter((u) => (chosen[u.token] ?? u.choice) === null);
+  async function choose(token: string, choice: AbbrevChoice) {
+    const l = lists[token];
+    if (!l || l.picked.length === 0) return;
+    setErr("");
+    try {
+      const rows = await postJson<ChoiceRow[]>("/api/chart/abbrev-choices", { yearMonth: ym, token, noteIds: l.picked.map(String), choice });
+      setLists((cur) => ({ ...cur, [token]: { rows, picked: rows.filter((r) => r.choice === null).map((r) => r.noteId) } }));
+      setChosen((cur) => ({ ...cur, [token]: rows.find((r) => r.noteId === noteId)?.choice ?? null }));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  const choiceOf = (u: { token: string; choice: AbbrevChoice | null }) => (u.token in chosen ? chosen[u.token] : u.choice);
+  const waiting = abbrev.unlinked.filter((u) => choiceOf(u) === null);
   return (
     <div className="notice" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div>
         略語の印：{abbrev.marks.length} 語（{abbrev.marks.join("・")}）。医師に聞く記載：{abbrev.asked} 件。答えが来るまで、その行為の候補は書かれた名前からだけ出します（名前で探して当てることはできます）
       </div>
       {abbrev.unlinked.length > 0 && (
-        <div role="group" aria-label="どの記載にも結び付かない略語">
-          <div>どの記載にも結び付かない略語があります。語ごとに選んでください（この月の分だけ残ります。選ぶまで確定できません）</div>
+        <div role="group" aria-label="どの記載にも結び付かない略語" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div>どの記載にも結び付かない略語があります。語ごとに一覧を開き、並んだカルテについて選んでください（選んだときに並んでいたカルテだけに効きます。選ぶまで確定できません）</div>
           {abbrev.unlinked.map((u) => {
-            const cur = chosen[u.token] ?? u.choice;
+            const l = lists[u.token];
+            const cur = choiceOf(u);
             return (
-              <div key={u.token} className="chips" style={{ alignItems: "center" }}>
-                <span className="badge">{u.token}</span>
-                {ABBREV_CHOICES.map((c) => (
-                  <button key={c} className={cur === c ? "primary" : ""} aria-pressed={cur === c} onClick={() => void choose(u.token, c)}>
-                    {c}
-                  </button>
-                ))}
+              <div key={u.token} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div className="chips" style={{ alignItems: "center" }}>
+                  <span className="badge">{u.token}</span>
+                  <span className="muted">このカルテ：{cur ?? "未選択"}</span>
+                  <button onClick={() => void open(u.token)}>{l ? "一覧を開き直す" : "一覧を開く"}</button>
+                </div>
+                {l && (
+                  <>
+                    <ul style={{ margin: 0, paddingLeft: 20 }}>
+                      {l.rows.map((r) => (
+                        <li key={r.noteId}>
+                          <label>
+                            <input type="checkbox" checked={l.picked.includes(r.noteId)} onChange={(e) => setLists((c) => ({ ...c, [u.token]: { ...l, picked: e.target.checked ? [...l.picked, r.noteId] : l.picked.filter((x) => x !== r.noteId) } }))} />{" "}
+                            {r.claimId}　{r.date}：「{r.sentence}」{r.noteId === noteId ? "（このカルテ）" : ""}　{r.choice ?? "未選択"}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="chips">
+                      {ABBREV_CHOICES.map((c) => (
+                        <button key={c} disabled={l.picked.length === 0} onClick={() => void choose(u.token, c)}>
+                          選んだカルテを「{c}」にする
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
-          {open.length > 0 && <div className="muted">略語の確かめ待ち：{open.map((u) => u.token).join("・")}</div>}
+          {waiting.length > 0 && <div className="muted">略語の確かめ待ち：{waiting.map((u) => u.token).join("・")}</div>}
         </div>
       )}
       {err && <div className="muted">{err}</div>}

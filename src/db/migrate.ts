@@ -280,12 +280,13 @@ CREATE INDEX abbrev_answer_items_note ON abbrev_answer_items (note_id);
 `,
   },
   {
-    // どの記載にも結び付かない略語の扱い（spec FR-211。plan-fr211.md「規則の作り直し」4）。事務が「算定に関係なし」か「医師に聞く」を選ぶ。追記だけで、いちばん新しい行が効く。
-    // 診療年月と語の組で持ち、翌月には持ち越さない（覚えない）。患者・カルテ・請求の id は持たない（語は英字の略語だけ）
+    // どの記載にも結び付かない略語の扱い（spec FR-211。plan-fr211.md「規則の作り直し」4・「作り直しの補い」C-652）。事務が「算定に関係なし」か「医師に聞く」を選ぶ。
+    // 追記だけで、カルテと語の組ごとに、いちばん新しい行が効く。note_hash は選んだときのカルテの文の指紋で、カルテが直れば効かない（選び直し）。
+    // カルテを消すと、そのカルテの行も消す（FR-168 の全表走査）。語は英字の略語だけで、患者の id は持たない
     version: 25,
     sql: `
-CREATE TABLE abbrev_choices (id INTEGER PRIMARY KEY AUTOINCREMENT, year_month TEXT NOT NULL, token TEXT NOT NULL, choice TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL);
-CREATE INDEX abbrev_choices_month ON abbrev_choices (year_month, token);
+CREATE TABLE abbrev_choices (id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL, token TEXT NOT NULL, choice TEXT NOT NULL, note_hash TEXT NOT NULL, chosen_by TEXT NOT NULL, chosen_at TEXT NOT NULL);
+CREATE INDEX abbrev_choices_note ON abbrev_choices (note_id, token);
 `,
   },
 ];
