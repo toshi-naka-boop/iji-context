@@ -1,21 +1,21 @@
 {
   "currentNode": "完了",
   "status": "done",
-  "designVersion": "v43",
-  "approvedDesignVersion": "v43",
-  "approvedDesignSha256": "bec2ab6be25c4d0a5e1e8b766b9645e5107b601bd005533194dc1d61dd7dbf72",
+  "designVersion": "v46",
+  "approvedDesignVersion": "v46",
+  "approvedDesignSha256": "0ef06ed17a7e36f7f5268dae261f587aac579c3ee9413bcf09a562afeb904d41",
   "approvedAt": "2026-11-24",
-  "approvalEvidence": "承認する（直前のメッセージで v43:bec2ab6be25c を示し「v43 を承認しますか」と聞いた答え。v42 の内容〔分からないを後の月にも〕は利用者の判断「後の月にも効かせる」による。提示のあと design.md は変えていない）",
-  "requiredApprovalFingerprint": "v43:bec2ab6be25c",
-  "baseline": "feat/integration（90e2fe4。feat/v37-cdf をマージ）",
-  "criticRound": 88,
+  "approvalEvidence": "承認する（直前のメッセージで v46:0ef06ed17a7e を示し「承認しますか」と聞いた答え。提示のあと design.md は変えていない）",
+  "requiredApprovalFingerprint": "v46:0ef06ed17a7e",
+  "baseline": "feat/integration（feat/v44-gh をマージ）",
+  "criticRound": 95,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md §18-12",
-    "sources/em-v38-draft.md",
+    "design.md §19",
+    "sources/em-gh-draft.md",
     "ledger.md"
   ],
-  "nextAction": "C＋D＋F は完了。次は G＋H（承認済みの順）。残り：選択肢の名前「申請中（この月だけ…）」の文言",
+  "nextAction": "G＋H は完了。次は I-2（運用）・FR-211。残り：コミット 852acf5 の台帳に実在の件数が残る件の判断",
   "lastUpdated": "2026-11-24",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
@@ -96,6 +96,24 @@
     "fingerprint": "v43:bec2ab6be25c",
     "sha256": "bec2ab6be25c4d0a5e1e8b766b9645e5107b601bd005533194dc1d61dd7dbf72",
     "evidence": "承認する（直前のメッセージで v43:bec2ab6be25c を示し「v43 を承認しますか」と聞いた答え。v42 の内容〔分からないを後の月にも〕は利用者の判断「後の月にも効かせる」による。提示のあと design.md は変えていない）",
+    "at": "2026-11-24"
+  },
+  "v44Approval": {
+    "fingerprint": "v44:58e3caaafadd",
+    "sha256": "58e3caaafadd8de9cb569a03bec3aa08717d7fd451df9a3ba24489c31dce86a9",
+    "evidence": "承認する（直前のメッセージで v44:58e3caaafadd と EM 追記案 em-gh-draft.md を示し「承認しますか」と聞いた答え。提示のあと design.md は変えていない）",
+    "at": "2026-11-24"
+  },
+  "v45Approval": {
+    "fingerprint": "v45:077688dabfff",
+    "sha256": "077688dabfffcb5a8b17ecfbf65e4bf8dc2b1449f4f3e777ddd48e625047290f",
+    "evidence": "承認する（直前のメッセージで v45:077688dabfff と EM の「v45 の追記」を示し「承認しますか」と聞いた答え。提示のあと design.md は変えていない）",
+    "at": "2026-11-24"
+  },
+  "v46Approval": {
+    "fingerprint": "v46:0ef06ed17a7e",
+    "sha256": "0ef06ed17a7e36f7f5268dae261f587aac579c3ee9413bcf09a562afeb904d41",
+    "evidence": "承認する（直前のメッセージで v46:0ef06ed17a7e を示し「承認しますか」と聞いた答え。提示のあと design.md は変えていない）",
     "at": "2026-11-24"
   }
 }
