@@ -209,7 +209,7 @@ describe("G02 点数の検算", () => {
     expect(g02.run(good(), db, about)).toEqual([]);
     const list = recalcClaim(good(), db, about);
     expect(Array.isArray(list) && list.map((r) => r.status)).toEqual(["match", "match", "match", "match", "excluded"]);
-    expect(recalcSummary(Array.isArray(list) ? list : [])).toEqual({ units: 5, checked: 4, matched: 4, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
+    expect(recalcSummary(Array.isArray(list) ? list : [])).toEqual({ units: 5, checked: 4, matched: 4, bundleRead: 0, bundleNone: 0, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
   });
 
   it("点数・数量を変えた単位だけが出る。指摘は、UKE の点数・再計算した点数・式の種類を持つ", () => {
@@ -227,9 +227,10 @@ describe("G02 点数の検算", () => {
     // 出荷の時点では一覧が空なので、出るのは言い切らない文。一覧に載せたときの文は別に持つ
     expect(genericText({ ...f, certainty: "条件つき" })).toBe("この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）。コード・数量・点数を確かめてください");
     expect(genericText(f)).toBe("この単位の 1 回分の点数が、マスターからの再計算と合っていません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）");
-    // G02・G03 の種類は、どれも 2 つの文を持つ
-    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k));
+    // G02・G03 の種類は、どれも 2 つの文を持つ。包括の検査の三段の (2)・(3)（G02.bundle_*）は言い切らないので、言い切りの文を持たない（design.md §19-4 の 1。v44 で足した 4 種類）
+    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k) && !k.startsWith("G02.bundle_"));
     expect(mine).toHaveLength(5);
+    expect(Object.keys(GENERIC_TEXT).filter((k) => k.startsWith("G02.bundle_")).filter((k) => GENERIC_TEXT_CERTAIN[k])).toEqual([]);
     expect(mine.filter((k) => !GENERIC_TEXT_CERTAIN[k])).toEqual([]);
   });
 
@@ -380,7 +381,7 @@ describe("点検の範囲（src/generic/scope.ts）", () => {
     const db = masters();
     const claim = claimOf({ items: [si(HOUMON)], points: pts("C001_1I") }, { items: [si(OUSHIN), si(PERCENT)], points: 1008 });
     const scope = genericScopeOf(claim, db, about, evaluateGeneric(claim, db, about));
-    expect(scope.recalc).toEqual({ units: 2, checked: 1, matched: 1, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
+    expect(scope.recalc).toEqual({ units: 2, checked: 1, matched: 1, bundleRead: 0, bundleNone: 0, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
     expect(scope.notDone).toHaveLength(1);
     const lines: GenericClaim = { units: [{ items: [{ kind: "SI", code: HOUMON }] }] };
     const bare = { yearMonth: YM, generation: GEN };

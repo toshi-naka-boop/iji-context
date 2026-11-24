@@ -144,5 +144,8 @@ export type GenericAboutMore = GenericAbout & {
   diseases?: { code: string; suspected?: boolean }[];
 };
 
-/** 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位、excluded＝検算の対象外の単位（理由ごと） */
-export type RecalcSummary = { units: number; checked: number; matched: number; excluded: { reason: string; text: string; count: number }[] };
+/**
+ * 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位（包括の検査は三段の (1) だけ）、
+ * bundleRead・bundleNone＝包括の検査の三段の (2)・(3)（design.md §19-4 の 4。再計算できたに入り、合ったに入らない）、excluded＝検算の対象外の単位（理由ごと）
+ */
+export type RecalcSummary = { units: number; checked: number; matched: number; bundleRead: number; bundleNone: number; excluded: { reason: string; text: string; count: number }[] };

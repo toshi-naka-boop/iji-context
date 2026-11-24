@@ -131,7 +131,8 @@ export type CodeDef = { primary: string; accept: string[]; facility?: string; qu
  * 包括の検査（design.md §11-1。型の定義はここ 1 か所）。項目のコード（members）を 1 行ずつ並べ、項目数で区分が決まる。
  * tiers は min の昇順で、項目数が min 以上の最後の区分を採る。最初の min に届かない項目数は、どの区分にもならない
  */
-export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[] };
+/** 包括の検査の群。bloodOnly＝注が「1 回に採取した血液」だけを数え、同じ日の検体を合わせる決まり（留意事項 D001 (10)・D004 (14)）が当たらない群（D013。design.md §19-4 の 1） */
+export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[]; bloodOnly?: true };
 
 /**
  * 摘要欄に要る記載（design.md §11-13。値は EM §2-10 表 1 の行だけ）。

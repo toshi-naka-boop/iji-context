@@ -10,9 +10,13 @@ import type { GenericAbout, GenericCheck, GenericClaim, GenericFinding, GenericU
 const MASTER = { SI: "shinryo", IY: "iyakuhin", TO: "tokutei" } as const;
 const WHAT = { SI: "診療行為", IY: "医薬品", TO: "特定器材" } as const;
 
-/** 単位 1 つの検算の結果。later＝後の 1 枚で代えていて、使った行の変更年月日が診療年月の末日より後（design.md §12-1） */
+/**
+ * 単位 1 つの検算の結果。later＝後の 1 枚で代えていて、使った行の変更年月日が診療年月の末日より後（design.md §12-1）。
+ * 包括の検査の三段（design.md §19-4 の 1）：(1) は match、(2) は bundleRead（read＝表の外と読んだ行、more＝ほかの読みもある）、(3) は bundleNone。calc は基本（表の値）
+ */
 export type UnitRecalc =
   | { unit: number; uke: number; status: "match" | "mismatch"; calc: number; formula: string; table: string; codes: string[]; later: boolean }
+  | { unit: number; uke: number; status: "bundleRead" | "bundleNone"; calc: number; formula: string; table: string; codes: string[]; later: boolean; read: string[]; more: boolean; lower: boolean; bloodOnly: boolean }
   | { unit: number; uke: number; status: "excluded"; reason: ExcludeReason };
 
 /**
@@ -25,7 +29,7 @@ function bundlesOf(about: GenericAbout): RecalcBundle[] {
   if (rev.generation !== about.generation) return [];
   return rev.bundles.flatMap((b) => {
     const tiers = b.tiers.map((t) => ({ min: t.min, points: rev.points[t.kubun].points }));
-    return tiers.every((t): t is { min: number; points: number } => t.points !== null) ? [{ members: b.members, tiers }] : [];
+    return tiers.every((t): t is { min: number; points: number } => t.points !== null) ? [{ name: b.tiers[0].kubun.split("_")[0], members: b.members, tiers, bloodOnly: b.bloodOnly === true }] : [];
   });
 }
 
@@ -79,15 +83,41 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const from = span(units[i - 1])?.[1] ?? 0;
     const to = span(units[i + 1])?.[0] ?? Infinity;
     const commented = span(u) !== null && commentLines.some((line) => line > from && line < to);
-    const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1 });
+    const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1, uke: u.points });
     if ("reason" in r) {
       out.push({ unit: i, uke: u.points, status: "excluded", reason: r.reason });
       return;
     }
     const later = pick[u.items[0].kind]!.later && r.rows.some((row) => row.changedOn > end);
-    out.push({ unit: i, uke: u.points, status: r.points === u.points ? "match" : "mismatch", calc: r.points, formula: r.formula, table: r.table, codes: [...new Set(r.rows.map((row) => row.code))], later });
+    const codes = [...new Set(r.rows.map((row) => row.code))];
+    if (r.tier && r.tier.stage !== 1) {
+      const t = r.tier;
+      out.push({ unit: i, uke: u.points, status: t.stage === 2 ? "bundleRead" : "bundleNone", calc: r.points, formula: r.formula, table: r.table, codes, later, read: t.stage === 2 ? t.read : [], more: t.stage === 2 && t.more, lower: t.lower, bloodOnly: r.bundle?.bloodOnly === true });
+      return;
+    }
+    out.push({ unit: i, uke: u.points, status: r.tier?.stage === 1 || r.points === u.points ? "match" : "mismatch", calc: r.points, formula: r.formula, table: r.table, codes, later });
   });
   return out;
+}
+
+/** 検算に使う包括の検査の表の群の名前（版の表から。診療年月の版がなければ空） */
+export const bundleNamesOf = (about: GenericAbout): string[] => bundlesOf(about).map((b) => b.name ?? "");
+
+/**
+ * 検算の範囲の見出しの下に出す文（design.md §19-6）。包括の検査の表を持っている群と、三段で見ること
+ */
+export function recalcNotesOf(about: GenericAbout): string[] {
+  const names = bundleNamesOf(about);
+  if (names.length === 0) return [];
+  const without = ["D008", "D009", "特異的IgE"].filter((n) => !names.includes(n));
+  const merge = names.filter((n) => n === "D007" || n === "D008");
+  const blood = names.filter((n) => n === "D013");
+  return [
+    `包括の検査は、${names.join("・")} の表で検算しています（${without.join("・")} は表を持っていません）。` +
+      (merge.length > 0 ? `${merge.join("・")} は、同じ日の尿などの検体も項目数に合わせて表の値で見ます。` : "") +
+      `同じ日の 2 回目以降の採血の項目かは UKE から分からないので、表の値に合わないときは条件つきで出します` +
+      (blood.length > 0 ? `（${blood.join("・")} は血液だけを数えるので、血液でない検体の項目も同じく条件つき）` : ""),
+  ];
 }
 
 /** 検算の数（点検の範囲の説明と、scripts/measure-generic.ts が出す） */
@@ -98,6 +128,8 @@ export function recalcSummary(list: UnitRecalc[]): RecalcSummary {
     units: list.length,
     checked: list.filter((r) => r.status !== "excluded").length,
     matched: list.filter((r) => r.status === "match").length,
+    bundleRead: list.filter((r) => r.status === "bundleRead").length,
+    bundleNone: list.filter((r) => r.status === "bundleNone").length,
     excluded: [...excluded].map(([reason, count]) => ({ reason, text: EXCLUDE_TEXT[reason], count })),
   };
 }
@@ -113,6 +145,20 @@ export const g02: GenericCheck = {
     if (!Array.isArray(list)) return list;
     const out: GenericFinding[] = [];
     for (const r of list) {
+      if (r.status === "bundleRead" || r.status === "bundleNone") {
+        // 包括の検査の三段の (2)・(3)：採血の回数と検体が UKE にないので、言い切らない（design.md §19-4 の 1。certain の一覧に入れない）
+        out.push({
+          check: "G02",
+          kind: "点数",
+          certainty: "条件つき",
+          units: [r.unit],
+          codes: r.codes,
+          messageKey: `G02.${r.status === "bundleRead" ? "bundle_read" : "bundle_none"}${r.bloodOnly ? "_blood" : ""}`,
+          params: { uke: String(r.uke), base: String(r.calc), read: r.read.join("・"), more: r.more ? "。ほかの読みもあります" : "", lower: r.lower ? "。請求を増やす前に、採血の回数と検体を確かめてください" : "", later: r.later ? LATER_NOTE : "" },
+          source: { data: r.table, ref: r.codes.map((code) => `code=${code}`).join(", ") },
+        });
+        continue;
+      }
       if (r.status !== "mismatch") continue;
       out.push({
         check: "G02",

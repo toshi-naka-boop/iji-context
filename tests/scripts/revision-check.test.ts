@@ -13,7 +13,7 @@ function master(over: Record<string, Over | null> = {}) {
     if (over[code] !== null) rows.set(code, { name: `名称${code}`, pointKind: "3", points, bundled: "0", changedOn: `${r2026.effectiveFrom.replace("-", "")}01`, abolishedOn: "99999999", ...base, ...over[code] });
   };
   for (const [kubun, def] of Object.entries(r2026.codes)) for (const code of [def.primary, ...def.accept]) add(code, r2026.points[kubun].points!);
-  for (const code of r2026.bundles[0].members) add(code, 11, { bundled: "1" });
+  for (const b of r2026.bundles) for (const code of b.members) add(code, 11, { bundled: "1" });
   return rows;
 }
 const names = (m: ReturnType<typeof master>) => new Map([...m].map(([code, r]) => [code, r.name]));
