@@ -577,7 +577,8 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
     // 包括にならない項目数（項目ごとに算定する）は、対応していない
     if (kubun === null) return out(unit.line, "包括の検査の項目数が、包括になる数に足りない");
     const listed = rev.points[kubun].points;
-    if (unit.points !== listed) return lenient && listed !== null ? { ok: true, lines: [{ kubun, count: unit.count, dates, items }], revPoints: listed } : no(unit.line, "点数が診療年月の版の点数表と合わない");
+    // 包括の検査は、表の値と違う点数（素の合算・2 回目以降の採血を外した書き方）も正しい請求であり得るので、取り込みでは断らない。点数の判定は G02 の三段に任せる（design.md §19-4 の 1。反証 round-94 X-470）
+    if (unit.points !== listed && lenient && listed !== null) return { ok: true, lines: [{ kubun, count: unit.count, dates, items }], revPoints: listed };
     return { ok: true, lines: [{ kubun, count: unit.count, dates, items }] };
   }
 
