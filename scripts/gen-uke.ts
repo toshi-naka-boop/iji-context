@@ -138,6 +138,8 @@ type Jitsurei = {
   file: string;
   payer: Payer;
   receipts: {
+    /** 診療年月（省けば基準月。前の月の請求を同じファイルに入れる症例だけが書く。K32） */
+    yearMonth?: string;
     patientNo: string;
     receiptType: string;
     patient: Pick<UkePatient, "name" | "sex" | "birth" | "insurer">;
@@ -152,6 +154,8 @@ export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke
 export const TORIKAWASURE = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb.json"), "utf8")) as Jitsurei;
 /** 受け入れの症例 K12・K13 の合成の UKE の設定（design.md §16-10 の E-13。形は jitsurei.json と同じ） */
 export const KOZOKA = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb-structured.json"), "utf8")) as Jitsurei;
+/** 酸素の症例 K32〜K34 の合成の UKE の設定（design.md §19-13 の 4。EM 5-1。形は jitsurei.json と同じ） */
+export const SANSO = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "sanso.json"), "utf8")) as Jitsurei;
 
 /**
  * 実在の請求と同じ形の、検証用の合成の UKE（設定は fixtures/uke/jitsurei.json。EM 5-1 の表）。外来 3 件と在宅 1 件を 1 つのファイルにする。
@@ -177,7 +181,7 @@ export function generateJitsurei(cfg: Jitsurei = JITSUREI): Buffer {
     const p = r.patient;
     const total = r.rows.reduce((s, x) => s + (x.points === undefined ? 0 : (x.minus ? -1 : 1) * x.points * count(x)), 0);
     grand += total;
-    rows.push(rec(38, { 1: "RE", 2: i + 1, 3: r.receiptType, 4: ym(period.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 14: r.patientNo }));
+    rows.push(rec(38, { 1: "RE", 2: i + 1, 3: r.receiptType, 4: ym(r.yearMonth ?? period.yearMonth), 5: p.name, 6: p.sex, 7: p.birth, 14: r.patientNo }));
     rows.push(rec(15, { 1: "HO", 2: p.insurer.number.padStart(8, " "), 3: p.insurer.symbol, 4: p.insurer.no, 5: Object.values(r.visits).filter((v) => v === 1).length, 6: total }));
     // 資格確認・受診日等・窓口負担額は、見本と同じ合成の設定（枝番は後期高齢者医療では書かない）
     rows.push(rec(9, { 1: "SN", 2: 1, 3: "01", 7: p.insurer.number.startsWith("39") ? "" : "01" }));
@@ -232,4 +236,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   console.log(`書き出し: ${TORIKAWASURE.file}`);
   writeFileSync(path.join(root, KOZOKA.file), generateJitsurei(KOZOKA));
   console.log(`書き出し: ${KOZOKA.file}`);
+  writeFileSync(path.join(root, SANSO.file), generateJitsurei(SANSO));
+  console.log(`書き出し: ${SANSO.file}`);
 }

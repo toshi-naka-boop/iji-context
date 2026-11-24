@@ -333,6 +333,8 @@ describe("段 12：実データの masters.db で", () => {
     const cond: string[][] = [];
     let claims = 0;
     for (const name of readdirSync(path.join(root, "fixtures", "uke")).filter((f) => f.endsWith(".UKE")).sort()) {
+      // sanso.UKE（K32〜K34。design.md §19-13 の 4）は、G05 の指摘が出るように作った症例（EM 5-1 の行の件数）で、件数は tests/server/sanso-cases.test.ts が縛る
+      if (name === "sanso.UKE") continue;
       parseUke(readFileSync(path.join(root, "fixtures", "uke", name))).claims.forEach((claim, i) => {
         if (claim.unsupported !== undefined || !hasRevision(claim.yearMonth)) return;
         claims++;

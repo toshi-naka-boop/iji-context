@@ -1,0 +1,291 @@
+{
+ "_note": "酸素の症例 K32〜K34 の合成の UKE の設定（scripts/gen-uke.ts の generateJitsurei が fixtures/uke/sanso.UKE にする。design.md §19-13 の 4・EM 5-1）。患者は合成で、氏名・生年月日・番号はすべて架空。行は EM 5-1 の K32〜K34 の行の文のまま（コードは EM §2-8・§2-15、点数はマスター 20261102 の値と版の点数表）。酸素は小型ボンベ 100 L に補正率 1.3（単価 1.80 円 → 234 円 → 23 点、2.50 円 → 325 円 → 33 点。単価の値は合成の設定）。K32 は前の月（2026-09）の請求も入れる（前の月にも在宅酸素療法指導管理料がある患者）。管理料の行には、K10 と同じく動脈血酸素分圧のコメント（842100072・記録例の 50）を付けた",
+ "file": "fixtures/uke/sanso.UKE",
+ "payer": "国保連",
+ "receipts": [
+  {
+   "yearMonth": "2026-09",
+   "patientNo": "K32",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　三二郎",
+    "sex": 1,
+    "birth": "19400203",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000132"
+    }
+   },
+   "diseases": [
+    {
+     "name": "慢性心不全",
+     "code": "4289018",
+     "start": "20250401",
+     "main": true
+    }
+   ],
+   "visits": {
+    "1": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114003710",
+     "points": 2400,
+     "days": {
+      "1": 1
+     },
+     "comments": [
+      [
+       "842100072",
+       "５０"
+      ]
+     ]
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K32",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　三二郎",
+    "sex": 1,
+    "birth": "19400203",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000132"
+    }
+   },
+   "diseases": [
+    {
+     "name": "慢性心不全",
+     "code": "4289018",
+     "start": "20250401",
+     "main": true
+    }
+   ],
+   "visits": {
+    "1": 1,
+    "10": 1,
+    "20": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114003710",
+     "points": 2400,
+     "days": {
+      "1": 1
+     },
+     "comments": [
+      [
+       "842100072",
+       "５０"
+      ]
+     ]
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114000110",
+     "points": 720,
+     "days": {
+      "10": 1,
+      "20": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "40",
+     "code": "140005610",
+     "days": {
+      "10": 1
+     },
+     "points": 65
+    },
+    {
+     "rec": "TO",
+     "code": "739230000",
+     "quantity": "100",
+     "price": "1.80",
+     "days": {
+      "10": 1
+     }
+    },
+    {
+     "rec": "TO",
+     "code": "770020070",
+     "points": 23,
+     "days": {
+      "10": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "40",
+     "code": "140009310",
+     "days": {
+      "20": 1
+     },
+     "points": 302
+    },
+    {
+     "rec": "TO",
+     "code": "739230000",
+     "quantity": "100",
+     "price": "1.80",
+     "days": {
+      "20": 1
+     }
+    },
+    {
+     "rec": "TO",
+     "code": "770020070",
+     "points": 23,
+     "days": {
+      "20": 1
+     }
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K33",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　三三子",
+    "sex": 2,
+    "birth": "19380508",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000133"
+    }
+   },
+   "diseases": [
+    {
+     "name": "末期悪性腫瘍",
+     "code": "0000999",
+     "start": "20260801",
+     "main": true
+    }
+   ],
+   "visits": {
+    "20": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114000110",
+     "days": {
+      "20": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "code": "114705910",
+     "points": 2720,
+     "days": {
+      "20": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "40",
+     "code": "140005610",
+     "days": {
+      "20": 1
+     },
+     "points": 65
+    },
+    {
+     "rec": "TO",
+     "code": "739230000",
+     "quantity": "100",
+     "price": "1.80",
+     "days": {
+      "20": 1
+     }
+    },
+    {
+     "rec": "TO",
+     "code": "770020070",
+     "points": 23,
+     "days": {
+      "20": 1
+     }
+    }
+   ],
+   "notes": []
+  },
+  {
+   "patientNo": "K34",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　三四郎",
+    "sex": 1,
+    "birth": "19420910",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000134"
+    }
+   },
+   "diseases": [
+    {
+     "name": "慢性心不全",
+     "code": "4289018",
+     "start": "20250401",
+     "main": true
+    }
+   ],
+   "visits": {
+    "10": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114000110",
+     "points": 720,
+     "days": {
+      "10": 1
+     }
+    },
+    {
+     "rec": "SI",
+     "shikibetsu": "40",
+     "code": "140005610",
+     "days": {
+      "10": 1
+     },
+     "points": 65
+    },
+    {
+     "rec": "TO",
+     "code": "739230000",
+     "quantity": "100",
+     "price": "2.50",
+     "days": {
+      "10": 1
+     }
+    },
+    {
+     "rec": "TO",
+     "code": "770020070",
+     "points": 33,
+     "days": {
+      "10": 1
+     }
+    }
+   ],
+   "notes": []
+  }
+ ]
+}
