@@ -502,7 +502,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const claimIdOfNote = (id: number): string => noteRow(id).claim_id;
   /**
    * 確かめたあとで付け直す一覧（GET /api/chart/acts/fixes。design.md §16-4-1・16-3・16-7。C-441）：その請求の確かめて残したカルテのうち、
-   * 処方の日の印の効く日で印がない日（rxMark）と、当てられない行為に同じ日の電子カルテの同じ種類の行為があるもの（pairs）。見える範囲は確かめる画面と同じ
+   * 処方の日の印の効く日で印がない日（rxMark）と、医師の略語の答え（abbrevAnswers。FR-211）と、当てられない行為に同じ日の電子カルテの同じ種類の行為があるもの（pairs）。見える範囲は確かめる画面と同じ
    * （取り込んだ請求は貼ったカルテ〔チーム〕、合成の症例は本人が書いたカルテ）。返すのはカルテの id・日・処方の文・行為の書かれた名前と電子カルテの表示名だけ。
    * 病名の記載に医師が「指すものを記入する」で答えていれば、その記載と答えの語（doctorAnswers。X-492）も返す（その記載を開き直したときの札）
    */
@@ -527,8 +527,13 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
           ? [{ index, written: stored.acts[index].written, pairs: o.pairs.map((x) => ({ ref: x.ref, name: x.name })), fold: stored.acts[index].fold ?? null }]
           : [],
       );
-      if (mark === null && pairs.length === 0) return [];
-      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs }];
+      // 医師の略語の答え（FR-211。反証 round-102 X-520）：確定したあとに医師が答え・訂正しても、開き直したここで読める。表示するだけ
+      const abbrevAnswers = abbrevs.answeredTokens(r.id).flatMap((token) => {
+        const ans = abbrevs.doctorAnswerOf(r.id, token);
+        return ans ? [{ token, answer: ans.text ?? ans.option, selected: abbrevs.selectionOf(r.id, token)?.meaning ?? null }] : [];
+      });
+      if (mark === null && pairs.length === 0 && abbrevAnswers.length === 0) return [];
+      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs, ...(abbrevAnswers.length > 0 ? { abbrevAnswers } : {}) }];
     });
   }
   /** 保存した行ったこと（確かめていなければ null） */

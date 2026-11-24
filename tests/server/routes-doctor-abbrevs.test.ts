@@ -485,3 +485,24 @@ describe("受け取った医師の答えは、確認依頼を外しても残る�
     setCount(0);
   });
 });
+
+describe("確定したあとの医師の訂正を、開き直したときに読める（反証 round-102 X-520）", () => {
+  it("医師確認に回す → 確定 → あとで医師が訂正 → 確かめたカルテの付け直しの欄（GET /api/chart/acts/fixes）に「医師の答え」と事務の選択が出る", async () => {
+    setCount(100); // Lv.4
+    const w = await write(claimId("K4"), { a: "AMI。" });
+    await select(w.id, "AMI", "辞書の意味", { meaning: "心筋梗塞" });
+    expect((await confirm(w)).status).toBe(200);
+    const fixes = async () => {
+      setRole("clerk");
+      const r = await (await import("../../app/api/chart/acts/fixes/route")).GET(get(`/api/chart/acts/fixes?claimId=${encodeURIComponent(claimId("K4"))}`));
+      expect(r.status).toBe(200);
+      return ((await r.json()) as { noteId: number; abbrevAnswers?: unknown[] }[]).find((x) => x.noteId === w.id);
+    };
+    // 医師の答えが来る前は出ない
+    expect((await fixes())?.abbrevAnswers).toBeUndefined();
+    const q = (await list()).find((x) => x.token === "AMI" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
+    expect((await answer(q, "指すものを記入する", "心臓破裂", q.quotes.filter((y) => refNote(y.ref) === w.id).map((y) => y.ref))).status).toBe(200);
+    expect((await fixes())?.abbrevAnswers).toEqual([{ token: "AMI", answer: "心臓破裂", selected: "心筋梗塞" }]);
+    setCount(0);
+  });
+});

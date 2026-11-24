@@ -140,6 +140,9 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       .get(noteId, token) as { option: string; free_text: string | null } | undefined;
     return a && a.option !== ABBREV_VARIES ? { option: a.option, text: a.free_text } : null;
   }
+  /** そのカルテで医師の答えのある略語（答えた順） */
+  const answeredTokens = (noteId: number): string[] =>
+    (sqlite.prepare("SELECT a.token FROM abbrev_answer_items i JOIN abbrev_answers a ON a.id = i.answer_id WHERE i.note_id = ? AND i.place = 'text' GROUP BY a.token ORDER BY MIN(a.id)").all(noteId) as { token: string }[]).map((r) => r.token);
   /** 医師確認中か：医師確認に回していて、答えがまだない（「記載によって違う」で割ったあとも、答えるまで確認中） */
   function doctorPending(noteId: number, token: string): boolean {
     const s = selectionOf(noteId, token);
@@ -245,7 +248,7 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
     return doctorAbbrevs();
   }
 
-  return { doctorAbbrevs, answerDoctorAbbrev, selectionOf, saveSelection, clinicMeanings, doctorPending, doctorAnswerOf };
+  return { doctorAbbrevs, answerDoctorAbbrev, selectionOf, saveSelection, clinicMeanings, doctorPending, doctorAnswerOf, answeredTokens };
 }
 
 export type DoctorAbbrevs = ReturnType<typeof createDoctorAbbrevs>;
