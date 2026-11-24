@@ -13,7 +13,7 @@ import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
 import { autoConsent } from "../helpers/consent";
-import { claimId } from "../helpers/period";
+import { claimId, day, month, YM } from "../helpers/period";
 import { abbrevCodes, AF_DISEASE } from "../chart/small-chart-masters";
 import { put } from "../generic/small-masters";
 import { tensuhyoMasters } from "../generic/small-tensuhyo";
@@ -106,7 +106,7 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
   const notes: number[] = [];
   it("前に覚えた書き方があっても、印のある書き方では読まない。偽の LLM が lookup を挙げても、返す行為・保存した行為の lookup は空で、候補に lookup 由来の行がない", async () => {
     const db = sql();
-    db.prepare("INSERT INTO chart_act_aliases (written_norm, tbl, code, chosen_by, chosen_at) VALUES (?, 'shinryo', ?, 'old', '2026-10-01T00:00:00.000Z')").run("ＥＣＧ１２", LOOKUP_ROW);
+    db.prepare("INSERT INTO chart_act_aliases (written_norm, tbl, code, chosen_by, chosen_at) VALUES (?, 'shinryo', ?, 'old', ?)").run("ＥＣＧ１２", LOOKUP_ROW, `${day(1)}T00:00:00.000Z`);
     db.close();
     const aliases = aliasCount();
     for (const k of ["K4", "K1"]) {
@@ -121,7 +121,7 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
       expect(saved.abbrev).toMatchObject({ marks: ["ECG12"] });
     }
     // 候補の入口（GET /api/chart/acts/candidates）も、印のある書き方には lookup と前に選んだものを使わない
-    const c = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: "2026-10", written: "ＥＣＧ１２", lookup: "特異的ＩｇＥ半定量・定量" })}`));
+    const c = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: YM, written: "ＥＣＧ１２", lookup: "特異的ＩｇＥ半定量・定量" })}`));
     expect(((await c.json()) as { candidates: { code: string }[] }).candidates.map((x) => x.code)).not.toContain(LOOKUP_ROW);
     expect(aliasCount()).toBe(aliases);
   });
@@ -138,7 +138,7 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
     const qs = await list();
     expect(qs).toHaveLength(1);
     const q = qs[0];
-    expect(q).toMatchObject({ yearMonth: "2026-10", token: "ECG12", question: "この記載の『ECG12』は何を指しますか", split: false });
+    expect(q).toMatchObject({ yearMonth: YM, token: "ECG12", question: "この記載の『ECG12』は何を指しますか", split: false });
     expect(q.quotes.map((x) => x.claimId).sort()).toEqual([claimId("K1"), claimId("K4")].sort());
     expect(q.quotes.every((x) => x.quote === "ＥＣＧ１２" && x.date.length === 10)).toBe(true);
     expect(q.options).toEqual([...ABBREV_OPTIONS]);
@@ -190,7 +190,7 @@ describe("答えを候補と B の欄に戻す（受け入れ条件 3 の後半�
   const refNote = (ref: string) => Number(ref.split(":")[0]);
   const candidates = async (q: Record<string, string>) => {
     setRole("clerk");
-    const r = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: "2026-10", written: "ＥＣＧ１２", ...q })}`));
+    const r = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: YM, written: "ＥＣＧ１２", ...q })}`));
     expect(r.status).toBe(200);
     return (await r.json()) as { initial: unknown; candidates: { code: string }[] };
   };
@@ -245,33 +245,33 @@ describe("答えを候補と B の欄に戻す（受け入れ条件 3 の後半�
     const w = await writeAndSave(claimId("K4"), "ＥＣＧ１２を再検。", [ecgAct("ＥＣＧ１２を再検")]);
     const qs = (await list()).filter((x) => x.token === "ECG12");
     expect(qs).toHaveLength(1);
-    expect(qs[0]).toMatchObject({ yearMonth: "2026-10", split: false });
+    expect(qs[0]).toMatchObject({ yearMonth: YM, split: false });
     expect(qs[0].quotes.map((x) => refNote(x.ref))).toEqual([w.id]);
     // 答えた時点で並んでいなかった記載を参照に入れた答えは 409（開き直してもらう）
     expect((await answer(qs[0], "判定不能", undefined, [`${k1Note}:act:0000000000000000`])).status).toBe(409);
   });
-  it("翌月（2026-11）の同じ語は、別に聞かれる（クリニックごとに覚えない）", async () => {
+  it("翌月の同じ語は、別に聞かれる（クリニックごとに覚えない）", async () => {
     const { readUke, writeUke } = await import("../../src/uke/uke");
     const { readFileSync } = await import("node:fs");
     const base = readUke(readFileSync(path.join(__dirname, "..", "..", "fixtures", "uke", "shiharaikikin.UKE")));
     // 診療年月と行の日付を翌月にずらす（請求年月も 1 か月後へ）
-    const next = (d: string) => d.replace(/^2026-10/, "2026-11");
+    const next = (d: string) => (d.startsWith(`${YM}-`) ? `${month(1)}${d.slice(7)}` : d);
     const r0 = base.receipts[0];
-    const file = writeUke({ ...base, billingMonth: "2026-12", receipts: [{ ...r0, claimId: "A1", yearMonth: "2026-11", lines: r0.lines.map((l) => ({ ...l, dates: l.dates.map(next) })), patient: { ...base.receipts[0].patient, name: "架空 翌月", insurer: { number: "06139991", symbol: "77", no: "801" } } }] });
+    const file = writeUke({ ...base, billingMonth: month(2), receipts: [{ ...r0, claimId: "A1", yearMonth: month(1), lines: r0.lines.map((l) => ({ ...l, dates: l.dates.map(next) })), patient: { ...base.receipts[0].patient, name: "架空 翌月", insurer: { number: "06139991", symbol: "77", no: "801" } } }] });
     const me = instance.clerkIdOf(user);
     setRole("clerk");
     const id = instance.runAs(user, () => {
       const a = instance.getApp();
       const up = a.uploadUke(me, file).filter((u) => u.uploaded);
       const claim = up[0].receipts[0].claimId;
-      const saved = a.saveRecord(claim, me, "2026-11-05", { s: "", o: "ＥＣＧ１２。", a: "", p: "", rx: "" });
+      const saved = a.saveRecord(claim, me, `${month(1)}-05`, { s: "", o: "ＥＣＧ１２。", a: "", p: "", rx: "" });
       a.confirmActs(saved.id, me, { facts: [], acts: [ecgAct()], rx: [], rxChoice: null });
       return saved.id;
     });
     const qs = (await list()).filter((x) => x.token === "ECG12");
     expect(qs.map((x) => [x.yearMonth, x.quotes.length])).toEqual([
-      ["2026-10", 1],
-      ["2026-11", 1],
+      [YM, 1],
+      [month(1), 1],
     ]);
     expect(refNote(qs[1].quotes[0].ref)).toBe(id);
   });
@@ -280,7 +280,7 @@ describe("答えを候補と B の欄に戻す（受け入れ条件 3 の後半�
 describe("B の欄の数の行（withAbbrev）", () => {
   it("聞く行為が 0 件のときは範囲の行を出さず、1 件以上で出す。合成カルテの確かめたあとの行為（保存していない日）は聞かない", async () => {
     const { withAbbrev } = await import("../../src/server/app/torikawasure");
-    const r = { findings: [], hidden: [], unmatchedActs: [], kubunDoubts: [], handNotes: [], guide: null, ruleGuides: [], visitTimeDays: [], visitTimeRefs: {}, unmappedCodes: 0, yearMonth: "2026-10", materialNotes: [], scope: ["もとの行"], counts: { acts: 0, unmatched: 0, notSeen: 0, hidden: {}, caution: {}, byKind: {} } };
+    const r = { findings: [], hidden: [], unmatchedActs: [], kubunDoubts: [], handNotes: [], guide: null, ruleGuides: [], visitTimeDays: [], visitTimeRefs: {}, unmappedCodes: 0, yearMonth: YM, materialNotes: [], scope: ["もとの行"], counts: { acts: 0, unmatched: 0, notSeen: 0, hidden: {}, caution: {}, byKind: {} } };
     const marked: ChartAct = { ...ecgAct(), abbrev: ["ECG12"], match: null };
     expect(withAbbrev(r, [{ noteId: 1, acts: [{ ...ecgAct(), match: null }], stored: true }], () => "asking")).toBe(r);
     expect(withAbbrev(r, [{ noteId: 1, acts: [marked] }], () => "asking")).toBe(r);

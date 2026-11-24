@@ -1,7 +1,7 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
 import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
-import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
+import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
 import { abbrevMarks, abbrevVocabOf, itemKeyOf, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
@@ -135,8 +135,6 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /** 書かれた名前に印があるか（印のある書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さない） */
   const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string) =>
     vocab !== null && !exact(key, written) && abbrevMarks(written, vocab).length > 0;
-  /** 画面に出す印のまとめ：カルテの文全体の印の語と、医師に聞く記載の数。マスターがなければ「見ていません」の文 */
-  type AbbrevSummary = { marks: string[]; asked: number } | { unseen: string };
   /**
    * 取り出した直後の行ったこと・事実に印を付ける（FR-211）。聞く行為の lookup は空にする（保存もしない）。
    * 返すのは、印を付けた行ったこと・事実と、画面に出す印のまとめ

@@ -3,7 +3,7 @@
 // 候補はどれも診療年月の基本マスターに実在するコードだけ。名前の完全一致が 1 つのときだけ当てた状態で出し、ほかは本人が選ぶ（選ばなければ「当てられない」のまま残る）。
 // 前に選んだものは選んだ状態の初期値で出す（L-95）。請求は見ない（C-233）。保存は、事実と同じ 1 回の確かめ（呼び出し側の「確定する」）
 import { useState } from "react";
-import { ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
+import { ACT_CATEGORIES, foldOfAct, tableKeyOfAct, tableKeyOfChild, type AbbrevSummary, type ActCategory, type ActChild, type ActMatch, type ChartAct, type RxChoice, type RxNote, type TableKey } from "../../src/chart/acts";
 import type { Candidate, ItemMatch } from "../../src/chart/match";
 import { VisitTimeInput, type VisitRef } from "../visit-time-input";
 import type { StructuredReview } from "../../src/structured/overlap";
@@ -40,7 +40,7 @@ export const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", 
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
 /** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
-export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void }) {
+export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void; at?: { noteId: number; index: number; child?: number } }) {
   const { item, onChange } = props;
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Candidate[]>([]);
@@ -50,7 +50,9 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
   async function reload() {
     setErr("");
     try {
-      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|") })}`);
+      // at（保存したカルテの行為の位置）を渡すと、略語を医師に聞いた行為には医師の答えの語で候補を出す（FR-211）
+      const at = props.at ? { noteId: String(props.at.noteId), index: String(props.at.index), ...(props.at.child !== undefined ? { child: String(props.at.child) } : {}) } : {};
+      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|"), ...at })}`);
       onChange({ m, sel: m.initial });
     } catch (e) {
       setErr((e as Error).message);
@@ -100,6 +102,22 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
   );
 }
 
+/** 印のある行為・子の札（FR-211）。当てていない間だけ出す。候補は医師の答えが来てから（自分で探して当てることはできる） */
+const abbrevBadge = (abbrev: string[] | undefined, sel: ActMatch | null) =>
+  abbrev && abbrev.length > 0 && !sel ? <span className="badge">略語：{abbrev.join("・")}（医師に確かめ中）</span> : null;
+
+/** 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない */
+export function AbbrevSummaryNote({ abbrev }: { abbrev: AbbrevSummary | undefined }) {
+  if (!abbrev) return null;
+  if ("unseen" in abbrev) return <p className="muted" style={{ margin: 0 }}>{abbrev.unseen}</p>;
+  if (abbrev.marks.length === 0) return null;
+  return (
+    <div className="notice">
+      略語の印：{abbrev.marks.length} 語（{abbrev.marks.join("・")}）。医師に聞く記載：{abbrev.asked} 件。答えが来るまで、その行為の候補は書かれた名前からだけ出します（名前で探して当てることはできます）
+    </div>
+  );
+}
+
 /** 「行ったこと」の一覧（確かめる画面の一部）。rows・rxChoice は呼び出し側が持ち、確定のときに一緒に送る */
 export function ActsReviewPanel(props: {
   ym: string;
@@ -136,6 +154,7 @@ export function ActsReviewPanel(props: {
           </select>
           <input value={r.written} aria-label="書かれた名前" onChange={(e) => set(i, { ...r, written: e.target.value })} style={{ width: 200 }} />
           <input value={r.quantity ?? ""} aria-label="回数・量" placeholder="回数・量" onChange={(e) => set(i, { ...r, quantity: e.target.value })} style={{ width: 90 }} />
+          {abbrevBadge(r.abbrev, r.sel)}
         </div>
         <label className="muted">カルテの「<input value={r.quote} aria-label="カルテの文字" onChange={(e) => set(i, { ...r, quote: e.target.value })} style={{ width: 260 }} />」から</label>
         {picker && r.keep && <MatchPicker item={r} table={tableKeyOfAct(r.category)} ym={ym} written={r.written} lookup={r.lookup} onChange={(s) => set(i, { ...r, ...s })} />}
@@ -148,6 +167,7 @@ export function ActsReviewPanel(props: {
                 <input value={c.written} aria-label="使った薬・器材の名前" onChange={(e) => setC({ ...c, written: e.target.value })} style={{ width: 200 }} />
                 <input value={c.quantity ?? ""} aria-label="使った量" placeholder="量" onChange={(e) => setC({ ...c, quantity: e.target.value })} style={{ width: 90 }} />
                 <span className="muted">カルテの「{c.quote}」から</span>
+                {abbrevBadge(c.abbrev, c.sel)}
               </div>
               {c.keep && r.keep && <MatchPicker item={c} table={tableKeyOfChild(c.kind)} ym={ym} written={c.written} lookup={c.lookup} onChange={(s) => setC({ ...c, ...s })} />}
             </div>

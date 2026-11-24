@@ -2,11 +2,13 @@
 // 医師確認の画面の「確かめてほしい項目」：点検で、医師に確かめる事実として出ている情報不足の一覧（GET /api/doctor/facts）。医師の役割の利用者が、選択肢から答える。
 // 決まった答えは事実として残り（請求ごと：POST /api/claims/[claimId]/facts、患者ごと：POST /api/patients/[claimId]/facts）、点検の判定が変わる。
 // 「その他」（自由記述つき）と「判定不能」は、事実を不明のまま残す（POST /api/doctor/facts）。
+// 略語の問い（FR-211）は、同じ欄の上にカードで並べる（app/doctor/abbrev-requests.tsx）。
 // 医師確認の決まり：点数・金額は出さない。選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない。患者の氏名は出さない（下の確認の依頼と同じく、番号だけ）
 import { useEffect, useState } from "react";
 import type { DoctorFactItem } from "../../src/server/app/doctor-facts";
 import type { Role } from "../../src/server/roles";
 import { getJson } from "../get-json";
+import { AbbrevRequests } from "./abbrev-requests";
 
 const OTHER = "その他";
 const UNDETERMINABLE = "判定不能";
@@ -18,6 +20,8 @@ export function FactRequests() {
   const [items, setItems] = useState<DoctorFactItem[]>([]);
   const [pick, setPick] = useState<Record<string, { option: string; text: string }>>({});
   const [err, setErr] = useState("");
+  /** 略語の問い（FR-211。app/doctor/abbrev-requests.tsx）の数 */
+  const [abbrevCount, setAbbrevCount] = useState(0);
   const load = () => getJson<DoctorFactItem[]>("/api/doctor/facts").then(setItems).catch((e: Error) => setErr(e.message));
   useEffect(() => {
     getJson<{ role: Role }>("/api/auth/me")
@@ -49,7 +53,8 @@ export function FactRequests() {
       <h2 style={{ margin: 0, fontSize: 18 }}>確かめてほしい項目</h2>
       {err && <div className="notice warn">{err}</div>}
       {role !== null && role !== "doctor" && <p className="muted" style={{ margin: 0 }}>レセプトの点検で、医師に確かめることになった項目は、医師の役割の利用者の画面に出ます。</p>}
-      {role === "doctor" && items.length === 0 && <div className="panel muted">いま、確かめてほしい項目はありません。</div>}
+      {role === "doctor" && items.length === 0 && abbrevCount === 0 && <div className="panel muted">いま、確かめてほしい項目はありません。</div>}
+      {role === "doctor" && <AbbrevRequests onCount={setAbbrevCount} />}
       {role === "doctor" && (
         <div className="card-list">
           {items.map((i) => {

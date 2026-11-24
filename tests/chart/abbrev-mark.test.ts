@@ -10,6 +10,7 @@ import { lostAbbrevs } from "../../src/chart/soap";
 import { noteText } from "../../src/chart/extract";
 import { openMasters } from "../../src/masters/db";
 import { abbrevOf, chartMasters, type AbbrevEntry } from "./small-chart-masters";
+import { claimId, month, YM } from "../helpers/period";
 
 const samples = JSON.parse(readFileSync(path.join(__dirname, "..", "..", "fixtures", "charts", "samples.json"), "utf8")) as Record<string, { lacking: string; complete: string }>;
 
@@ -27,7 +28,7 @@ describe("語の切り方", () => {
 
 describe("手で作った小さな表で", () => {
   const db = chartMasters();
-  const vocab = abbrevVocabOf(db, "2026-10")!;
+  const vocab = abbrevVocabOf(db, YM)!;
   const k10 = abbrevOf("K10").entries;
   // 計画の受け入れ条件 1 は「ECG12 に印が付く」だが、ECG12 は基本マスターの名称（160068410「ＥＣＧ１２」。小さな表も本物も同じ）にあるので、規則 (a) では分かる語になる。
   // 規則どおり、名称にある表では印が付かず、名称にない表（その行を除いた表）では印が付くことを縛る（食い違いは呼び出し側に報告した）
@@ -39,10 +40,10 @@ describe("手で作った小さな表で", () => {
     expect(abbrevMarks(k10[1].o, vocab)).toEqual([]);
     const without = chartMasters();
     without.prepare("DELETE FROM shinryo WHERE code = '160068410'").run();
-    expect(abbrevMarks(k10[0].o, abbrevVocabOf(without, "2026-10")!)).toEqual(["ECG12"]);
+    expect(abbrevMarks(k10[0].o, abbrevVocabOf(without, YM)!)).toEqual(["ECG12"]);
   });
   it("samples.json の K4 の「AF」に印が付く。Af と AF は別の語になる", () => {
-    expect(abbrevMarks(samples["K4-2026-10"].lacking, vocab)).toContain("AF");
+    expect(abbrevMarks(samples[claimId("K4")].lacking, vocab)).toContain("AF");
     expect(abbrevMarks("Af。AF。", { words: new Set(["AF"]), diseases: new Set() })).toEqual(["Af"]);
     expect(abbrevMarks("Af。AF。", { words: new Set(["Af"]), diseases: new Set() })).toEqual(["AF"]);
   });
@@ -51,8 +52,8 @@ describe("手で作った小さな表で", () => {
     expect(diseaseExact("AF", vocab)).toBe(false);
   });
   it("マスターがない・版のない診療年月は印を付けない（null）。そのときの文は「見ていません」", () => {
-    expect(abbrevVocabOf(null, "2026-10")).toBeNull();
-    expect(abbrevVocabOf(db, "2025-10")).toBeNull();
+    expect(abbrevVocabOf(null, YM)).toBeNull();
+    expect(abbrevVocabOf(db, month(-12))).toBeNull();
     expect(NO_MASTER_NOTE).toContain("見ていません");
   });
 });

@@ -2,12 +2,12 @@
 // 取り込んだレセプトにカルテの文を貼る（design.md §15-8・§15-9。段 18c）：日付ごとに貼る → AI が行ったことを取り出す → 本人が確かめて保存する（POST /api/chart/acts）。
 // 訪問・往診の出来事は作らない。確かめたあとは、点検をやり直すと B の欄（取り忘れ）がこのカルテで動く。同意・外部送信の注意書きは、今のカルテの保存と同じ
 import { useState } from "react";
-import type { ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
-import { ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "../chart/acts-review";
+import type { AbbrevSummary, ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
+import { AbbrevSummaryNote, ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "../chart/acts-review";
 import { Notice } from "../consent";
 import { postJson } from "../get-json";
 
-type Pasted = { id: number; date: string; acts: ChartAct[]; rx: RxNote[]; actsDropped: unknown[]; review: ActsReview };
+type Pasted = { id: number; date: string; acts: ChartAct[]; rx: RxNote[]; actsDropped: unknown[]; review: ActsReview; abbrev?: AbbrevSummary };
 
 export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; yearMonth: string; onSaved: () => void }) {
   const [date, setDate] = useState(`${yearMonth}-01`);
@@ -75,6 +75,7 @@ export function RecordPaste({ claimId, yearMonth, onSaved }: { claimId: string; 
         </div>
       ) : (
         <div>
+          <AbbrevSummaryNote abbrev={ex.abbrev} />
           <ActsReviewPanel ym={yearMonth} review={ex.review} rows={rows} setRows={setRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={claimId} date={ex.date} />
           {ex.actsDropped.length > 0 && <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました。</div>}
           <button className="primary" onClick={save}>これで確かめる（{ex.date}）</button>
