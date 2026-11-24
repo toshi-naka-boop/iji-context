@@ -77,6 +77,20 @@ describe("② 短期入所の月と老健・介護医療院（R8-248・R8-250・
     const h = withCare(base("施設総管"), care("自宅", { shortStay: stay(use({ kind: "短期入所生活介護", start: day(5), end: day(24), priorVisit: true, home: home("はい") })) }));
     expect(keys(h, "R20")).toEqual(["R20.seikatsu_haichi_visit", "R20.seikatsu_haichi_kanri"]);
   });
+  it("末期の悪性腫瘍か分からないとき（design.md §18-12 の 2）：短期入所生活介護の指摘は条件つきで出し、前提に「末期の悪性腫瘍でなければ」を足して医師に聞く。宿泊は 30 日の指摘だけ", () => {
+    const c = withCare(base("在医総管", null), care("自宅", { shortStay: stay(use({ kind: "短期入所生活介護", start: day(5), end: day(24) })) }));
+    expect(keys(c, "R20")).toEqual(["R20.seikatsu_family", "R20.seikatsu_prior_visit", "R20:terminalCancer"]);
+    for (const f of of(c, "R20").filter((x) => x.kind !== "情報不足")) expect(findingText(f)).toContain("のとおりなら、末期の悪性腫瘍でなければ");
+    const late = withCare(base("在医総管", null), care("自宅", { shortStay: stay(use({ kind: "小多機・看多機の宿泊", start: `${month(-1)}-20`, end: day(30), priorVisit: true })) }));
+    expect(keys(late, "R20")).toEqual(["R20.shoutaki_30", "R20:terminalCancer"]);
+    // 末期の悪性腫瘍で答えが変わらない指摘（宿泊の族）だけなら、医師に聞かない
+    const fam = withCare(base("施設総管", null), care("サ高住（特定施設の指定なし）", { shortStay: stay(use({ kind: "小多機・看多機の宿泊", start: day(5), end: day(24), priorVisit: null })) }));
+    expect(keys(fam, "R20")).toEqual(["R20.shoutaki_family"]);
+  });
+  it("① で末期の悪性腫瘍か分からないときも、前提に「末期の悪性腫瘍でなければ」を足す", () => {
+    const f = of(withCare(base("施設総管", null), { residence: res("特養（地域密着型を含む）", { home: home() }) }), "R20")[0];
+    expect(findingText(f)).toContain("のとおりなら、末期の悪性腫瘍でなければ");
+  });
   it("末期の悪性腫瘍・退院日から始めた短期入所生活介護は判定せず「読みが割れます」と出どころ 2 つ（U-57）", () => {
     const t = withCare(base("施設総管", true), care("自宅", { shortStay: stay(use({ kind: "短期入所生活介護", start: day(5), end: day(24) })) }));
     expect(keys(t, "R20")).toEqual([]);

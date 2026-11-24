@@ -58,6 +58,9 @@ export function hasOthersScene(ctx: ClaimContext, c: RevisionConsts): boolean {
 }
 
 const terminalOf = (ctx: ClaimContext) => ctx.facts.terminalCancer ?? { known: false as const };
+/** 末期の悪性腫瘍か分からないときに、前提に足す句（design.md §18-12 の 2。「末期ではない」と黙って読まない） */
+const NOT_TERMINAL = "、末期の悪性腫瘍でなければ";
+const withNotTerminal = (f: Finding): Finding => ({ ...f, params: { ...f.params, premise: `${f.params!.premise}${NOT_TERMINAL}` } });
 const askDoctor = (ruleId: "R20", lineRefs: string[]): Finding => ({ ruleId, kind: "情報不足", lineRefs, missing: { target: "doctor", field: "terminalCancer" }, messageKey: `${ruleId}.missing_fact`, reference: R20_REFERENCE });
 
 /** R20（介護）。design.md §18-3 の ①②④ */
@@ -100,7 +103,8 @@ export function judgeCare(ctx: ClaimContext, c: RevisionConsts): Out {
       if (mitori === "はい") out.notes.add(CARE_SCOPE_TEXT.mitori);
       else if (mitori === "分からない") out.notes.add(CARE_SCOPE_TEXT.careUnknown);
       else {
-        out.findings.push(conditional("R20", "要件不足", refs, "tokuyou", { premise: premiseOf("特養に入所・入所先は看取り介護加算の施設基準に合わない", res) }));
+        const f = conditional("R20", "要件不足", refs, "tokuyou", { premise: premiseOf("特養に入所・入所先は看取り介護加算の施設基準に合わない", res) });
+        out.findings.push(terminal.known ? f : withNotTerminal(f));
         if (!terminal.known) out.findings.push(askDoctor("R20", refs));
       }
     }
@@ -126,7 +130,16 @@ export function judgeCare(ctx: ClaimContext, c: RevisionConsts): Out {
     return out;
   }
   const stayBasis: Basis = { checkedOn: stay.checkedOn ?? "", source: stay.source ?? "その他", ...(stay.staleMonths ? { staleMonths: stay.staleMonths } : {}) };
-  for (const u of stay.uses) judgeStay(ctx, c, u, stayBasis, visits, kanri, out);
+  for (const u of stay.uses) {
+    const before = out.findings.length;
+    judgeStay(ctx, c, u, stayBasis, visits, kanri, out);
+    // 末期の悪性腫瘍か分からないとき（design.md §18-12 の 2）：答えが末期で変わる指摘（短期入所生活介護は全部、宿泊は利用開始後 30 日）に前提を足し、医師に聞く。① と同じ
+    if (terminalOf(ctx).known) continue;
+    const touched = out.findings.slice(before).filter((f) => u.kind === "短期入所生活介護" || f.messageKey.endsWith("_30"));
+    if (touched.length === 0) continue;
+    out.findings = out.findings.map((f, i) => (i >= before && touched.includes(f) ? withNotTerminal(f) : f));
+    if (!out.findings.some((f) => f.missing?.field === "terminalCancer")) out.findings.push(askDoctor("R20", [...new Set(touched.flatMap((f) => f.lineRefs))]));
+  }
   return out;
 }
 
