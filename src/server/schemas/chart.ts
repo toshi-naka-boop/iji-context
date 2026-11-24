@@ -89,6 +89,8 @@ export const candidatesQuery = z.strictObject({
   noteId: noteParams.shape.id.optional(),
   index: z.string().regex(/^[0-9]{1,2}$/).optional(),
   child: z.string().regex(/^[0-9]{1,2}$/).optional(),
+  /** その行為の引用（確かめる画面の引き直し。引用で略語の印を決めるので、渡すと自動では当てない。反証 round-97 C-630） */
+  quote: z.string().max(MAX_CHART_TEXT).optional(),
 });
 /** マスターを名前で探す（GET /api/masters/search） */
 /** カルテの構造化データ（GET /api/chart/structured）。患者は患者マスタの id */

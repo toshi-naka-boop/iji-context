@@ -285,10 +285,11 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    * 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで。
    * 印のある書き方（FR-211）は、前に選んだ対応と画面の lookup を使わない。at（保存したカルテの行為の位置）を渡すと、その記載に効く医師の「指すものを記入する」の答えの語だけを lookup にする（自動では当てない）
    */
-  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], at?: { noteId: number; index: number; child?: number }): ItemMatch {
+  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], at?: { noteId: number; index: number; child?: number }, quote?: string): ItemMatch {
     return withMasters((db) =>
       // 保存したカルテの位置を渡したときは、保存のときの印（引用の原文の語を含む。X-490）も見る
-      markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written) || (at !== undefined && storedItemAt(at, written)?.abbrev?.length)
+      // 確かめる画面の引き直しは引用も渡す（C-630。引用で決めた印を、引き直しで外さない）
+      markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written, quote) || (at !== undefined && storedItemAt(at, written)?.abbrev?.length)
         ? { initial: null, candidates: matchItem(rowsFor(db, key, yearMonth), key, written, at ? doctorWordsAt(at, written) : [], null).candidates }
         : matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)),
     );

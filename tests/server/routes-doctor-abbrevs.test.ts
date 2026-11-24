@@ -393,3 +393,18 @@ describe("まとめの問いの引用の上限（反証 round-96 X-493）", () =
     expect((await list()).filter((x) => x.token === "UCG" && x.split)).toHaveLength(500);
   });
 });
+
+describe("確かめる画面の「候補を引き直す」でも自動選択が戻らない（反証 round-97 C-630）", () => {
+  it("言い換えた行為（心電図・引用 ＥＣＧ１２）は、引用を渡した引き直しで初期値に当てず、lookup も前に選んだものも使わない", async () => {
+    const q = (extra: Record<string, string>) => new URLSearchParams({ table: "shinryo", ym: YM, written: "心電図", lookup: "特異的ＩｇＥ半定量・定量", ...extra });
+    const get1 = async (extra: Record<string, string>) => {
+      setRole("clerk");
+      return (await (await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${q(extra)}`))).json()) as { initial: { code: string } | null; candidates: { code: string }[] };
+    };
+    // 比べる組：引用を渡さないと、名称の完全一致で初期値に当たる（引き直しが引用を渡さなかったときの抜け道）
+    expect((await get1({})).initial).toMatchObject({ code: "160068410" });
+    const r = await get1({ quote: "ＥＣＧ１２" });
+    expect(r.initial).toBeNull();
+    expect(r.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
+  });
+});

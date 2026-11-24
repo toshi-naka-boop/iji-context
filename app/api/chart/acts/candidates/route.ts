@@ -12,6 +12,7 @@ export const GET = route({ roles: allow("GET /api/chart/acts/candidates"), query
     query.written,
     (query.lookup ?? "").split("|").filter(Boolean),
     query.noteId && query.index ? { noteId: Number(query.noteId), index: Number(query.index), ...(query.child ? { child: Number(query.child) } : {}) } : undefined,
+    query.quote,
   ),
 );
 

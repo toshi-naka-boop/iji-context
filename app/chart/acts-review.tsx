@@ -40,7 +40,7 @@ export const RX_LABEL: Record<RxChoice, string> = { outside: "院外処方箋", 
 const key = (c: Pick<Candidate, "tbl" | "code">) => `${c.tbl}|${c.code}`;
 
 /** 1 行の当て方（当てた・選ぶ・当てられない）と、名前で探す入口（B の欄の当てられない行為も使う。app/torikawasure.tsx） */
-export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void; at?: { noteId: number; index: number; child?: number } }) {
+export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; written: string; lookup: string[]; onChange: (s: Sel) => void; at?: { noteId: number; index: number; child?: number }; quote?: string }) {
   const { item, onChange } = props;
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Candidate[]>([]);
@@ -52,7 +52,7 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
     try {
       // at（保存したカルテの行為の位置）を渡すと、略語を医師に聞いた行為には医師の答えの語で候補を出す（FR-211）
       const at = props.at ? { noteId: String(props.at.noteId), index: String(props.at.index), ...(props.at.child !== undefined ? { child: String(props.at.child) } : {}) } : {};
-      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|"), ...at })}`);
+      const m = await getJson<ItemMatch>(`/api/chart/acts/candidates?${new URLSearchParams({ table: props.table, ym: props.ym, written: props.written, lookup: props.lookup.join("|"), ...at, ...(props.quote ? { quote: props.quote } : {}) })}`);
       onChange({ m, sel: m.initial });
     } catch (e) {
       setErr((e as Error).message);
@@ -162,7 +162,7 @@ export function ActsReviewPanel(props: {
           {abbrevBadge(r.abbrev, r.sel)}
         </div>
         <label className="muted">カルテの「<input value={r.quote} aria-label="カルテの文字" onChange={(e) => set(i, { ...r, quote: e.target.value })} style={{ width: 260 }} />」から</label>
-        {picker && r.keep && <MatchPicker item={r} table={tableKeyOfAct(r.category)} ym={ym} written={r.written} lookup={r.lookup} onChange={(s) => set(i, { ...r, ...s })} />}
+        {picker && r.keep && <MatchPicker item={r} table={tableKeyOfAct(r.category)} ym={ym} written={r.written} lookup={r.lookup} quote={r.quote} onChange={(s) => set(i, { ...r, ...s })} />}
         {r.with.map((c, j) => {
           const setC = (n: ChildRow) => set(i, { ...r, with: r.with.map((x, k) => (k === j ? n : x)) });
           return (
@@ -174,7 +174,7 @@ export function ActsReviewPanel(props: {
                 <span className="muted">カルテの「{c.quote}」から</span>
                 {abbrevBadge(c.abbrev, c.sel)}
               </div>
-              {c.keep && r.keep && <MatchPicker item={c} table={tableKeyOfChild(c.kind)} ym={ym} written={c.written} lookup={c.lookup} onChange={(s) => setC({ ...c, ...s })} />}
+              {c.keep && r.keep && <MatchPicker item={c} table={tableKeyOfChild(c.kind)} ym={ym} written={c.written} lookup={c.lookup} quote={c.quote} onChange={(s) => setC({ ...c, ...s })} />}
             </div>
           );
         })}
