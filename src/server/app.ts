@@ -18,7 +18,9 @@ import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility, declarationViewOf } from "./app/facility";
 import { createNote14 } from "./app/note14";
-import { createOxygenPrices, type OxygenPriceInput } from "./app/oxygen";
+import { createOxygenPrices, readOxygenPrices, type OxygenPriceInput } from "./app/oxygen";
+import { HOME_OXYGEN_KANRI } from "../generic/g12";
+import type { GenericAboutMore } from "../generic/types";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
 import { samePair } from "../generic/local-pair";
@@ -100,7 +102,20 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const base = { ...casesOf.caseOf(claimId), events: [], recordsKnown: false };
     return torikawasureOf(claimId, clerkId, { claim: uke.receiptOf(claimId).claim(), base, rev: resolveRevision(base.yearMonth), hand: casesOf.judge(base).findings });
   };
-  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock), torikawasureOf);
+  /**
+   * 酸素（G12・G02。design.md §19-3・§19-5）：届け出た単価と、前の診療年月の同じ患者（患者マスタの id）の取り込んだ請求に在宅酸素療法指導管理料があるか（三値）。
+   * 前の月の請求がなければ「取り込んでいない」（請求のない月と区別できない。U-79 のとおり条件つきのまま）
+   */
+  const oxygenOf = (claimId: string): Pick<GenericAboutMore, "oxygenPrices" | "prevHomeOxygen"> => {
+    const r = uke.receiptOf(claimId).receipt;
+    const [y, m] = r.yearMonth.split("-").map(Number);
+    const prevYm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+    const me = patientFactsOf.existingIdOf(r.patient);
+    const prev = me === null ? [] : uke.ukeReceipts().filter((x) => x.yearMonth === prevYm && x.claimId !== claimId && patientFactsOf.existingIdOf(x.patient) === me);
+    const hasKanri = (id: string) => uke.receiptOf(id).claim().units.some((u) => (u.days ?? []).some((n) => n > 0) && u.items.some((it) => it.kind === "SI" && HOME_OXYGEN_KANRI.includes(it.code)));
+    return { oxygenPrices: readOxygenPrices(ctx), prevHomeOxygen: prev.length === 0 ? "取り込んでいない" : prev.some((x) => hasKanri(x.claimId)) ? "ある" : "ない" };
+  };
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock), torikawasureOf, oxygenOf);
   const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
   // 査定・返戻の突き合わせ（spec FR-202 の I-1）。当てた請求は、取り込んだレセプトの点検と同じ点検で点検し直す（何も記録しない側の点検。USED は出さない）
   const review = createReview(ctx, uke, ukeCheck.ukeCheck);

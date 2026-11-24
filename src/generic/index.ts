@@ -1,6 +1,6 @@
 // evaluateGeneric(claim, masters, about)：データで動く点検（design.md §12-2）。公開データ（masters.db）の行で、UKE の単位とコードのまま点検する。
 // 手書きのルール（src/engine/ の evaluate）は変えない。指摘は定型文と値だけで作り、LLM は使わない。
-// 入っているのは G01〜G10
+// 入っているのは G01〜G10 と G12（G11 は別の道）
 import raw from "../../config/generic-checks.json";
 import { checkReady, type MastersDb } from "../masters/db";
 import { g01 } from "./g01";
@@ -13,6 +13,7 @@ import { g07, g07FormOnly } from "./g07";
 import { g08 } from "./g08";
 import { g09 } from "./g09";
 import { g10 } from "./g10";
+import { g12 } from "./g12";
 import { FINDING_LIMIT, GENERIC_CHECKS, type GenericAbout, type GenericCheck, type GenericClaim, type GenericResult } from "./types";
 
 const CHECKS: GenericCheck[] = [g01];
@@ -25,6 +26,7 @@ CHECKS.push(g07);
 CHECKS.push(g08);
 CHECKS.push(g09);
 CHECKS.push(g10);
+CHECKS.push(g12);
 
 /**
  * 言い切り（確定）に上げた種類（指摘の messageKey）。config/generic-checks.json の certain に、1 行ずつ { messageKey, verifiedIn }（どの段の報告で確かめたか）を足す。
@@ -44,7 +46,8 @@ export function evaluateGeneric(claim: GenericClaim, masters: MastersDb | null, 
     if (!check) skip("notBuilt");
     else if (masters === null) skip("noMasters");
     else {
-      const ready = checkReady(masters, id);
+      // G12（酸素）が読むのは特定器材の金額と酸素のコードだけで、G02 の酸素の検算と同じ表・列なので、G02 の準備で動かす（design.md §19-5）
+      const ready = checkReady(masters, id === "G12" ? "G02" : id);
       // G07 の記載の形は、コメント関連テーブルを読まないので、G07 の準備ができていなくても見る（design.md §17-3。X-320）。点検の範囲には、記載があるか・ないかを見ていないことを出す
       const formOnly = !ready?.ready && id === "G07" && checks.includes(g07) ? g07FormOnly(claim, masters, about) : null;
       if (!ready?.ready && formOnly === null) {

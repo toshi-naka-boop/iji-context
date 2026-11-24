@@ -4,6 +4,7 @@
 import { hasRevision, resolveRevision } from "../engine/revisions";
 import { pickSnapshot, type MastersDb } from "../masters/db";
 import type { UkeComment } from "../uke/types";
+import { activeOxygenPrices, oxygenKindOf, oxygenPriceForDates } from "../facility/oxygen";
 import { EXCLUDE_TEXT, recalcUnit, type ExcludeReason, type RecalcBundle } from "./points";
 import type { GenericAbout, GenericCheck, GenericClaim, GenericFinding, GenericUnitDetail, RecalcSummary } from "./types";
 
@@ -15,7 +16,7 @@ const WHAT = { SI: "診療行為", IY: "医薬品", TO: "特定器材" } as cons
  * 包括の検査の三段（design.md §19-4 の 1）：(1) は match、(2) は bundleRead（read＝表の外と読んだ行、more＝ほかの読みもある）、(3) は bundleNone。calc は基本（表の値）
  */
 export type UnitRecalc =
-  | { unit: number; uke: number; status: "match" | "mismatch"; calc: number; formula: string; table: string; codes: string[]; later: boolean }
+  | { unit: number; uke: number; status: "match" | "mismatch"; calc: number; formula: string; table: string; codes: string[]; later: boolean; declared?: boolean }
   | { unit: number; uke: number; status: "bundleRead" | "bundleNone"; calc: number; formula: string; table: string; codes: string[]; later: boolean; read: string[]; more: boolean; lower: boolean; bloodOnly: boolean }
   | { unit: number; uke: number; status: "excluded"; reason: ExcludeReason };
 
@@ -69,6 +70,7 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const at = (u?.items ?? []).flatMap((it) => (it.line !== undefined ? [it.line] : []));
     return at.length > 0 ? [Math.min(...at), Math.max(...at)] : null;
   };
+  const active = activeOxygenPrices(about.oxygenPrices ?? []);
   let current = { shikibetsu: "", line: 0 };
   const out: UnitRecalc[] = [];
   units.forEach((u, i) => {
@@ -87,7 +89,14 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const from = span(units[i - 1])?.[1] ?? 0;
     const to = span(units[i + 1])?.[0] ?? Infinity;
     const commented = span(u) !== null && countedLines.some((line) => line > from && line < to);
-    const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1, uke: u.points });
+    // 単価の欄が空の酸素の行は、届け出た単価があれば、その単価で検算する（design.md §19-5。算定日で単価が分かれる単位は使わない）
+    const dates = ((u.days ?? []).some((n) => n > 0) ? (u.days ?? []).flatMap((n, d) => (n > 0 ? [d + 1] : [])) : Array.from({ length: 31 }, (_, d) => d + 1)).map((d) => `${about.yearMonth}-${String(d).padStart(2, "0")}`);
+    const declaredOxygen = active.length === 0 ? undefined : (code: string) => {
+      const kind = oxygenKindOf(code);
+      const eff = kind ? oxygenPriceForDates(active, kind, dates) : null;
+      return eff && !eff.split && eff.priceCenti !== null ? BigInt(eff.priceCenti) : null;
+    };
+    const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1, uke: u.points, declaredOxygen });
     if ("reason" in r) {
       out.push({ unit: i, uke: u.points, status: "excluded", reason: r.reason });
       return;
@@ -99,7 +108,7 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
       out.push({ unit: i, uke: u.points, status: t.stage === 2 ? "bundleRead" : "bundleNone", calc: r.points, formula: r.formula, table: r.table, codes, later, read: t.stage === 2 ? t.read : [], more: t.stage === 2 && t.more, lower: t.lower, bloodOnly: r.bundle?.bloodOnly === true });
       return;
     }
-    out.push({ unit: i, uke: u.points, status: r.tier?.stage === 1 || r.points === u.points ? "match" : "mismatch", calc: r.points, formula: r.formula, table: r.table, codes, later });
+    out.push({ unit: i, uke: u.points, status: r.tier?.stage === 1 || r.points === u.points ? "match" : "mismatch", calc: r.points, formula: r.formula, table: r.table, codes, later, ...(r.declared ? { declared: true } : {}) });
   });
   return out;
 }
@@ -167,10 +176,11 @@ export const g02: GenericCheck = {
       out.push({
         check: "G02",
         kind: "点数",
-        certainty: r.later ? "条件つき" : "確定",
+        // 届け出た単価で検算した不一致は、施設の入れた値に頼るので言い切らない（design.md §19-5。U-75）
+        certainty: r.later || r.declared ? "条件つき" : "確定",
         units: [r.unit],
         codes: r.codes,
-        messageKey: "G02.points",
+        messageKey: r.declared ? "G02.points_declared" : "G02.points",
         params: { uke: String(r.uke), calc: String(r.calc), formula: r.formula, later: r.later ? LATER_NOTE : "" },
         source: { data: r.table, ref: r.codes.map((code) => `code=${code}`).join(", ") },
       });

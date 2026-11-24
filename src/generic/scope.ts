@@ -11,6 +11,7 @@ import { conditionalOf, formOnlyNote, g07NotDone, type Conditional } from "./g07
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
 import { g10NotDone } from "./g10";
+import { g12NotDone } from "./g12";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
 /**
@@ -46,6 +47,7 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));
+  if (ran("G12")) out.notDone.push(...g12NotDone(claim, about));
   return out;
 }
 

@@ -4,6 +4,8 @@
     { "messageKey": "G03.clinic_only", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
     { "messageKey": "G05.same_unit", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
     { "messageKey": "G06.day", "verifiedIn": "design/iji-context/sources/research/certain-sample.md（2026-11-21、30 行中 30 行合致）。利用者の判断 2026-11-21" },
-    { "messageKey": "G07.form", "verifiedIn": "design/iji-context/design.md §17-3（判断 E。R17 と同じ commentFormatOk で見る。EM §2-10 表 3）。利用者の判断 2026-11-24" }
+    { "messageKey": "G07.form", "verifiedIn": "design/iji-context/design.md §17-3（判断 E。R17 と同じ commentFormatOk で見る。EM §2-10 表 3）。利用者の判断 2026-11-24" },
+    { "messageKey": "G12.home_oxygen", "verifiedIn": "design/iji-context/design.md §19-5 の 1（R8-330。前の月にも管理料があり、酸素の算定日がすべてその月の管理料の算定日以後の、列挙の 8 区分に結び付く酸素だけ）。v44:58e3caaafadd 承認 2026-11-24" },
+    { "messageKey": "G12.over_limit", "verifiedIn": "design/iji-context/design.md §19-5 の 3（R8-317。U-73 の離島等に当たらない前提を文の頭に出す）。v44:58e3caaafadd 承認 2026-11-24" }
   ]
 }

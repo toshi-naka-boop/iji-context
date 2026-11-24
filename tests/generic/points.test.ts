@@ -228,9 +228,9 @@ describe("G02 点数の検算", () => {
     expect(genericText({ ...f, certainty: "条件つき" })).toBe("この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）。コード・数量・点数を確かめてください");
     expect(genericText(f)).toBe("この単位の 1 回分の点数が、マスターからの再計算と合っていません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）");
     // G02・G03 の種類は、どれも 2 つの文を持つ。包括の検査の三段の (2)・(3)（G02.bundle_*）は言い切らないので、言い切りの文を持たない（design.md §19-4 の 1。v44 で足した 4 種類）
-    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k) && !k.startsWith("G02.bundle_"));
+    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k) && !k.startsWith("G02.bundle_") && k !== "G02.points_declared");
     expect(mine).toHaveLength(5);
-    expect(Object.keys(GENERIC_TEXT).filter((k) => k.startsWith("G02.bundle_")).filter((k) => GENERIC_TEXT_CERTAIN[k])).toEqual([]);
+    expect(Object.keys(GENERIC_TEXT).filter((k) => k.startsWith("G02.bundle_") || k === "G02.points_declared").filter((k) => GENERIC_TEXT_CERTAIN[k])).toEqual([]);
     expect(mine.filter((k) => !GENERIC_TEXT_CERTAIN[k])).toEqual([]);
   });
 

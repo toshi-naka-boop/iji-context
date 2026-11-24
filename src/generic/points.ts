@@ -62,7 +62,7 @@ export const BUNDLE_MAX_ITEMS = 12;
 const NON_BLOOD = /（(尿|髄液|胸水|腹水)）/;
 
 export type Recalc =
-  | { ok: true; points: number; formula: string; table: "shinryo" | "iyakuhin" | "tokutei"; rows: { code: string; changedOn: string }[]; tier?: BundleTier; bundle?: RecalcBundle }
+  | { ok: true; points: number; formula: string; table: "shinryo" | "iyakuhin" | "tokutei"; rows: { code: string; changedOn: string }[]; tier?: BundleTier; bundle?: RecalcBundle; declared?: boolean }
   | { ok: false; reason: ExcludeReason };
 
 const no = (reason: ExcludeReason): Recalc => ({ ok: false, reason });
@@ -217,7 +217,12 @@ function recalcIyakuhin(db: MastersDb, snapshot: string, items: RecalcItem[], sh
   return { ok: true, points: drugPoints(yen, rule), formula: rule === "one" ? "薬剤料（15 円以下は 1 点）" : "薬剤料（15 円以下は算定しない）", table: "iyakuhin", rows: used };
 }
 
-function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Recalc {
+/**
+ * declaredOxygen：単価の欄が空の酸素の行に使う、届け出た単価（0.01 円の整数。design.md §19-5 の G02 と届け出た単価）。なければ null（今のまま購入価格で対象外）。
+ * 効く単価は、届け出た単価と上限（マスターの金額）の小さい方
+ */
+function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[], declaredOxygen?: (code: string) => bigint | null): Recalc {
+  let declared = false;
   /** 器材 1 つと、それに掛ける％加算・乗算割合。金額は yen ÷ 10^scale 円（途中で丸めない） */
   const groups: { yen: bigint; scale: number; oxygen: boolean; rated: boolean }[] = [];
   const used: { code: string; changedOn: string }[] = [];
@@ -253,8 +258,10 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
     let price = master;
     if (oxygen) {
       // 酸素のマスターの金額は上限。書いてある購入単価で計算する
-      if (written === null || written > master) return no("purchase");
-      price = written;
+      const own = given ? written : (declaredOxygen?.(it.code) ?? null);
+      if (own === null || (given && own > master)) return no("purchase");
+      if (!given) declared = true;
+      price = own > master ? master : own;
     } else if (given && written !== master) return no("purchase");
     // 100 分の 1 円 × 10 万分の 1 ＝ 1,000 万分の 1 円
     groups.push({ yen: price * q, scale: 7, oxygen, rated: false });
@@ -271,7 +278,7 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
   const points = total(asIs);
   // 点数の四捨五入は、単位の価格を合算してから（作成手引き 第15章 (10) キの例：器材ごとに丸めると 36 点、合算してからだと原文どおり 37 点。EM §2-11 F28）
   if (points !== total(rounded)) return no("fraction");
-  return { ok: true, points, formula: "特定器材料（価格 × 使用量 ÷ 10 円を四捨五入）", table: "tokutei", rows: used };
+  return { ok: true, points, formula: declared ? "特定器材料（届け出た単価で。価格 × 使用量 ÷ 10 円を四捨五入）" : "特定器材料（価格 × 使用量 ÷ 10 円を四捨五入）", table: "tokutei", rows: used, ...(declared ? { declared: true } : {}) };
 }
 
 /**
@@ -280,7 +287,7 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
  * commented＝その単位にコメントが付いている（行のコメント欄、単位の中・直前・直後のコメントレコード）。count＝回数
  * uke＝UKE に書いてある 1 回分の点数（包括の検査の三段に使う。省けば表の値だけ）
  */
-export function recalcUnit(db: MastersDb, snapshots: RecalcSnapshots, items: RecalcItem[], opt: { shikibetsu: string; shikibetsuSure: boolean; bundles: RecalcBundle[]; commented?: boolean; count?: number; uke?: number }): Recalc {
+export function recalcUnit(db: MastersDb, snapshots: RecalcSnapshots, items: RecalcItem[], opt: { shikibetsu: string; shikibetsuSure: boolean; bundles: RecalcBundle[]; commented?: boolean; count?: number; uke?: number; declaredOxygen?: (code: string) => bigint | null }): Recalc {
   const kinds = new Set(items.map((it) => it.kind));
   if (kinds.size !== 1) return no("mixed");
   const kind = items[0].kind;
@@ -288,5 +295,5 @@ export function recalcUnit(db: MastersDb, snapshots: RecalcSnapshots, items: Rec
   if (snapshot === null) return no("notInMaster");
   if (kind === "SI") return recalcShinryo(db, snapshot, items, opt.bundles, opt.commented === true, opt.uke);
   if (kind === "IY") return recalcIyakuhin(db, snapshot, items, opt.shikibetsu, opt.shikibetsuSure, opt.commented === true, opt.count ?? 1);
-  return recalcTokutei(db, snapshot, items);
+  return recalcTokutei(db, snapshot, items, opt.declaredOxygen);
 }
