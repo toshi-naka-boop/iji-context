@@ -131,6 +131,9 @@ function ensureClerk(a: App, user: User) {
   ensured.add(user.id);
 }
 
+/** 役割が変わった利用者の医療事務の行を、次の呼び出しで用意し直す（行の役割を今の役割にそろえる） */
+export const refreshClerk = (userId: string) => ensured.delete(userId);
+
 /**
  * 実在のクリニックで、日付が変わっていれば医師確認のリマインド・保留と会議の整理を回す（src/server/app/clock.ts の catchUp。同じ日のうちは何もしない）。
  * 失敗しても、呼び出し（画面の操作）は止めない。サーバーログに残し、次のリクエストで回し直す（続けて失敗するときは間隔を空ける。clock.ts）

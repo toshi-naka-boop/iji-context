@@ -15,3 +15,7 @@ export const inviteParams = z.strictObject({ id: z.string().regex(/^[0-9a-f]{16}
 /** 注意書きへの同意。画面が見せた注意書きの版（config/notice.json の version） */
 export const consentBody = z.strictObject({ version: z.string().min(1).max(32) });
 export const auditQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(500).optional() });
+/** 職員（同じクリニックの利用者）の id（src/server/auth.ts の insertUser が作る形） */
+export const staffParams = z.strictObject({ id: z.string().regex(/^t[0-9a-f]{12}$/) });
+/** 職員の役割を変える（POST /api/staff/[id]/role） */
+export const staffRoleBody = z.strictObject({ role: z.enum(ROLES) });

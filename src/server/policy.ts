@@ -44,6 +44,12 @@ export const POLICY = {
   "POST /api/invites/[id]/revoke": row({ roles: ["manager"], solo: true }, "none", false),
   // 監査ログの閲覧（FR-140）
   "GET /api/audit": row(["manager"], "none", false),
+  // 職員の一覧・役割の変更・停止・再開（採点 r1 事務長 #2）。事務長とクリニックの持ち主（持ち主かどうかは src/server/auth.ts の canManageStaff が照合する）。
+  // 監査ログの対象は職員の id だけ（役割の値・名前は残さない）
+  "GET /api/staff": row(ALL, "none", false),
+  "POST /api/staff/[id]/role": row(ALL, "none", false),
+  "POST /api/staff/[id]/suspend": row(ALL, "none", false),
+  "POST /api/staff/[id]/resume": row(ALL, "none", false),
   // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
   "GET /api/masters": row(["manager"], "none", false),
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
