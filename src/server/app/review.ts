@@ -198,7 +198,7 @@ export function createReview(ctx: AppContext, uke: Uke, check: UkeCheck["ukeChec
     if (!("rows" in r) || !r.rows) return { revisionId: null, findings: [] };
     const claimWide = lineBy === "claim" || lineCode === null || (LINE_OTHERS as readonly string[]).includes(lineCode);
     const kubun = new Set(r.rows.filter((row) => row.items.some((i) => i.code === lineCode)).flatMap((row) => row.kubun));
-    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, messageKey: f.messageKey, codes: f.lineRefs, certainty: f.params?.g11First ? "条件つき" : "確定", text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
+    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, messageKey: f.messageKey, codes: f.lineRefs, certainty: f.params?.g11First || f.params?.conditional === "1" ? "条件つき" : "確定", text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
     const generic = (r.generic?.findings ?? []).map((f, i): ReviewFinding => ({ key: `G:${i}`, system: "データで動く点検", id: f.check, messageKey: f.messageKey, codes: f.codes.map((c) => c.code), certainty: f.certainty, text: f.text, related: claimWide || f.codes.some((c) => c.code === lineCode) }));
     const patient = r.patientFindings.filter((f) => f.kind !== "情報不足").map((f, i): ReviewFinding => ({ key: `P:${i}`, system: "患者情報チェック", id: f.checkId, messageKey: f.messageKey, codes: [], certainty: "患者情報", text: patientFindingText(f), related: true }));
     return { revisionId: r.revisionId, findings: [...hand, ...generic, ...patient] };

@@ -127,7 +127,7 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
    */
   function priorVisitOf(patientId: string, yearMonth: string, start: string | null): boolean | null {
     if (start === null) return null;
-    const from = addDays(start, -30);
+    const from = addDays(start, -(resolveRevision(yearMonth).consts.care?.priorDays ?? 30));
     const to = addDays(start, -1);
     const months = [...new Set([from.slice(0, 7), to.slice(0, 7), yearMonth])].filter((m) => m >= from.slice(0, 7) && m <= to.slice(0, 7));
     let unknown = false;

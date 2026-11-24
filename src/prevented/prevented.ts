@@ -64,6 +64,8 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
   for (const d of q.drafts) {
     for (const f of d.findings) {
       if (finalKeys.has(key(f)) || seen.has(key(f))) continue;
+      // 条件つきの指摘（申告のとおりなら。R20・R21。design.md §18-3 判断 F）は防いだ額に数えない
+      if (f.params?.conditional === "1") continue;
       seen.add(key(f));
       const base = { questionId: q.id, claimId: q.claimId, ruleId: f.ruleId };
       if (f.kind === "情報不足") {

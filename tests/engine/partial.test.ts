@@ -13,7 +13,7 @@ import { DOCTOR_DRILLS } from "../../src/practice/doctor-drills";
 import { DRILLS } from "../../src/practice/drills";
 import { commentsOfCase } from "../../src/uke/cases";
 import { commentOf } from "../../src/uke/uke";
-import { day, YM } from "../helpers/period";
+import { day, month, YM } from "../helpers/period";
 import { line, loadCase, withFact, withLines, without } from "./helpers";
 
 const NAMES = ["K1", "K2", "K3", "K4", "K5", "K6", "K7"];
@@ -62,6 +62,30 @@ function violations(inputs: { name: string; ctx: ClaimContext }[], revs?: Revisi
 
 const K1 = loadCase("K1");
 const K5 = loadCase("K5");
+
+/** 介護・ほかの機関の申告つきの入力（R20・R21 の申告のある種類を 1 回ずつ出す） */
+function CARE_INPUTS(): { name: string; ctx: ClaimContext }[] {
+  const b = { checkedOn: day(3), source: "ケアマネジャーからの連絡" as const };
+  const home = (placedPhysician: "はい" | "いいえ", mitoriFacility: "はい" | "いいえ" = "いいえ") => ({ kind: "特養（地域密着型を含む）" as const, placedPhysician, mitoriFacility });
+  const care = (c: Partial<NonNullable<ClaimContext["care"]>>): NonNullable<ClaimContext["care"]> => ({ certified: { known: true, value: true, checkedOn: day(3), source: "介護保険被保険者証" }, residence: { type: "自宅", changedMidMonth: false, home: null, ...b }, ...c });
+  const stay = (kind: "短期入所生活介護" | "短期入所療養介護（老健）" | "小多機・看多機の宿泊", start: string, placed: "はい" | "いいえ", priorVisit: boolean | null) => ({ status: "使った" as const, uses: [{ kind, start, end: day(30), home: home(placed), fromDischarge: "いいえ" as const, priorVisit }], ...b });
+  const withCare = (name: string, c: ClaimContext, cf: NonNullable<ClaimContext["care"]>) => ({ name, ctx: { ...c, care: cf, facts: { ...c.facts, terminalCancer: { known: true as const, value: false } } } });
+  const row = (r: Partial<NonNullable<ClaimContext["others"]>["rows"][number]>) => ({ kind: "医療機関" as const, specialRelation: "いいえ" as const, kanriSide: "当院" as const, activities: {}, referredOn: null, ...b, ...r });
+  return [
+    withCare("K1＋特養に入所", K1, care({ residence: { type: "特養（地域密着型を含む）", changedMidMonth: false, home: home("いいえ"), ...b } })),
+    withCare("K1＋老健に入所", K1, care({ residence: { type: "老健", changedMidMonth: false, home: null, ...b } })),
+    withCare("K1＋在宅患者連携指導料", withLines(K1, line("C010", 1, [day(14)])), care({})),
+    withCare("K1＋短期入所療養介護", K1, care({ shortStay: stay("短期入所療養介護（老健）", day(10), "いいえ", true) })),
+    withCare("K1＋短期入所生活介護（配置医師）", K1, care({ shortStay: stay("短期入所生活介護", day(10), "はい", true) })),
+    withCare("K1＋小多機の宿泊（施設の医師）", K1, care({ shortStay: stay("小多機・看多機の宿泊", day(10), "はい", true) })),
+    withCare("K1＋短期入所生活介護（30 日を過ぎた日）", K1, care({ shortStay: stay("短期入所生活介護", `${month(-1)}-20`, "いいえ", true) })),
+    withCare("K1＋小多機の宿泊（30 日を過ぎた日）", K1, care({ shortStay: stay("小多機・看多機の宿泊", `${month(-1)}-20`, "いいえ", true) })),
+    { name: "K1＋ほかの機関が在医総管", ctx: { ...K1, others: { rows: [row({ kanriSide: "その機関" })], none: null } } },
+    { name: "K1＋訪問診療料(Ⅰ)2 を 2 回", ctx: withLines(K1, line("C001_2I", 2, [day(7), day(21)])) },
+    { name: "K1＋訪問診療料(Ⅰ)2（求めから 7 か月目）", ctx: { ...withLines(K1, line("C001_2I", 1, [day(7)])), others: { rows: [row({ activities: { 求めによる訪問診療の求めた側: "はい" }, referredOn: `${month(-6)}-15` })], none: null } } },
+    { name: "K1＋特別の関係の医療機関の訪問看護の月の指示料", ctx: { ...withLines(K1, line("C007", 1, [day(14)])), others: { rows: [row({ specialRelation: "はい", activities: { 医療機関が行う訪問看護: "はい" } })], none: null } } },
+  ];
+}
 /**
  * 入力：同梱の症例（症例の JSON の形・UKE から作った形・記録のない形）と、練習問題（明細の 12 問・医師確認の 3 問）。
  * 申告のある種類がどれも 1 回は出るように、同梱の症例に間違いを 1 つ入れた入力を足す（空振りの確認。足すのは、tests/engine/rules/rules.test.ts の「違反あり」と同じ形）
@@ -93,6 +117,8 @@ const INPUTS: { name: string; ctx: ClaimContext }[] = [
   { name: "K1（UKE）記載をすべて消す", ctx: { ...ukeCase("K1"), comments: [] } },
   { name: "K1（UKE）壊れた年月日", ctx: { ...ukeCase("K1"), comments: ukeCase("K1").comments!.map((c) => (c.code.startsWith("850") ? commentOf(c.code, "5081332", c.on) : c)) } },
   { name: "K1（UKE）訪問していない日の記載", ctx: { ...ukeCase("K1"), comments: [...ukeCase("K1").comments!, commentOf("850100106", warekiOf(day(30))!, [])] } },
+  // R20・R21：介護・ほかの機関の申告（design.md §18-3・§18-4。v37 21c）。申告のある種類がどれも 1 回は出るように、場面ごとに 1 つ
+  ...CARE_INPUTS(),
 ];
 
 describe("申告を縛る：partial で出た指摘は、行を移す前の入力でも同じ行に出ている（design.md §11-11 完了条件 (e)）", () => {
@@ -124,6 +150,19 @@ describe("申告を縛る：partial で出た指摘は、行を移す前の入�
       "R18.use_note14_reduced",
       // 段 17f（design.md §15-4）
       "R19.use_band",
+      // v37 21c（design.md §18-3・§18-4）：行ごとに決まる種類
+      "R20.renkei",
+      "R20.rouken",
+      "R20.ryouyou_visit",
+      "R20.seikatsu_30",
+      "R20.seikatsu_haichi_visit",
+      "R20.shoutaki_30",
+      "R20.shoutaki_haichi_visit",
+      "R20.tokuyou",
+      "R21.kanri_one",
+      "R21.shiji",
+      "R21.visit2_6m",
+      "R21.visit2_count",
     ]);
   });
 

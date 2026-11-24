@@ -39,10 +39,11 @@ export type RevisionConsts = {
   /**
    * 介護保険・ほかの医療機関との調整（R20・R21。design.md §18-3・§18-4）。持たない版では R20・R21 を組まない。
    * visit2Kubun は訪問診療料(Ⅰ)2（他の保険医療機関の求めによる。[同一建物居住者以外, 同一建物居住者]）、renkei は在宅患者連携指導料（C010）、shiji は訪問看護指示料（C007）、
-   * referralMonths は (Ⅰ)2 を求めた日の月を 1 か月目として数える算定の月数（R8-274 の「6 月まで」）。R20 が見る管理料の族は kanri から引く
+   * referralMonths は (Ⅰ)2 を求めた日の月を 1 か月目として数える算定の月数（R8-274 の「6 月まで」）、stayDays は短期入所・宿泊の利用開始後に算定できる日数、
+   * priorDays は利用前に当院の算定を探す日数（R8-248・R8-250 の「30 日」）。R20 が見る管理料の族は kanri から引く
    */
   visit2Kubun?: string[];
-  care?: { renkei: string; shiji: string; referralMonths: number };
+  care?: { renkei: string; shiji: string; referralMonths: number; stayDays: number; priorDays: number };
   /**
    * 管理料（R01・R02・R03・R16・R18）。族×種別×区分の行の表（KanriRow）、居住の場所 → 族、注16 で替わる区分（from → to。どの族・種別も）。
    * note16.enabled が偽の版（注16 のない版）では、施設の設定 note16Met を読まず、月 2 回以上は ロ のまま（design.md §11-2）

@@ -102,7 +102,8 @@ export function createQuestions(ctx: AppContext, clock: Clock, clerks: Clerks, c
     if (q.drill && isDoctorDrill(q.drill)) {
       const d = doctorDrillOf(q.drill);
       const open = d.crosscheck ? crosscheckOf(q.claimId).mismatches.some((m) => m.ruleId === d.crosscheck) : false;
-      next = { ...next, correct: next.confirmed!.result.findings.length === 0 && !open };
+      // 条件つきの指摘（申告のとおりなら。design.md §18-3 判断 F）は確定の数に入れない
+      next = { ...next, correct: next.confirmed!.result.findings.filter((f) => f.params?.conditional !== "1").length === 0 && !open };
     }
     // 訪問の時点の確定と練習問題は提出ではない。適用記録は月末の UKE の問題でだけ書く
     if (q.asOf || q.drill) {

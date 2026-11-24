@@ -17,6 +17,7 @@ import { mappedLinesOf, type MappedLine } from "../../generic/overlap";
 import { commentKanrenNotesOf, kisaiOf } from "../../generic/g07";
 import { checkmasterNotesOf } from "../../generic/g09";
 import { buildingScopeNotes, deferredNote, genericScopeOf } from "../../generic/scope";
+import { careScopeNotes } from "../../engine/care-judge";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
 import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
@@ -57,6 +58,8 @@ function bodyOf(yearMonth: string, rev: Revision, lines: ClaimLine[], others: Uk
     findings,
     /** 記載もれ（摘要欄の記載。R17）の件数 */
     commentMissingCount: findings.filter((f) => f.kind === "記載もれ").length,
+    /** 条件つきの指摘（申告のとおりなら。R20・R21。design.md §18-3）の件数。指摘の数（確定）・防いだ額には入れない（判断 F） */
+    conditionalCount: findings.filter((f) => f.params?.conditional === "1").length,
     /** 情報不足（確かめる事実と、決められないこと） */
     missing: all.filter((f) => f.kind === "情報不足"),
   };
@@ -104,7 +107,8 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: ClaimContext, hand: 
     const deferred = deferredNote(ctx.lines, rev);
     // 単一建物の人数の次元で見ていないもの・みなしで読んだもの（design.md §15-4。段 17f）
     const building = buildingScopeNotes(ctx, rev, claim, db, about);
-    const notes = [...(deferred ? [deferred] : []), ...building];
+    // 介護保険・ほかの医療機関との調整で見ていないこと（design.md §18-6。v37）。場面の区分の行がある請求だけ。先頭は「最初の版で見ている場面」
+    const notes = [...(deferred ? [deferred] : []), ...building, ...careScopeNotes(ctx, rev.consts)];
     return {
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about), checkmasterNotesOf(db, about)) } : {}),

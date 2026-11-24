@@ -61,7 +61,7 @@ export type OtherActivity = (typeof OTHER_ACTIVITIES)[number];
 export type CareHomeFacts = { kind: CareHomeKind; placedPhysician: Tri; mitoriFacility: Tri };
 
 /** 確かめた日と出どころ（前提の文に出す） */
-export type Basis = { checkedOn: string; source: CareSource };
+export type Basis = { checkedOn: string; source: CareSource; staleMonths?: number };
 
 /** 短期入所・宿泊の利用 1 つ。priorVisit は、開始日の前日から遡って 30 日に当院の訪問診療料等の算定があったか（当院の請求から導く。X-360。分からないは null） */
 export type ShortStayUse = { kind: ShortStayKind; start: string | null; end: string | null; home: CareHomeFacts | null; fromDischarge: Tri; priorVisit: boolean | null };
