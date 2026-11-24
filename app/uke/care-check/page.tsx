@@ -17,7 +17,9 @@ type Check = { month: string | null; months: { month: string; targets: number; n
 type CareView = { care: Record<string, { value: Record<string, unknown>; checkedOn: string; source: string } | undefined>; legacyResidence: string | null; others: { name: string; kind: string; kanriSide: string }[]; none: { forMonth: string } | null };
 
 const ASK_LABEL: Record<Ask, string> = { careCert: "要介護・要支援の認定", residenceType: "住まいの種別", shortStay: "今月の短期入所・宿泊", others: "ほかの医療機関・訪問看護ステーション" };
-const today = () => new Date().toISOString().slice(0, 10);
+/** 確かめた日の初期値：そのクリニックの今日（デモの時計。GET /api/clock。design.md §18-12 の 7）。読み込むまで空 */
+let clinicToday = "";
+const today = () => clinicToday;
 
 /** 確かめた日と出どころ（どの問いにも要る） */
 function Basis(props: { value: { checkedOn: string; source: string }; onChange: (v: { checkedOn: string; source: string }) => void }) {
@@ -253,8 +255,16 @@ export default function CareCheck() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState({ checkedOn: today(), source: "" });
   const [tick, setTick] = useState(0);
+  const [clockReady, setClockReady] = useState(false);
   useEffect(() => {
     if (!user) return;
+    getJson<{ now: string }>("/api/clock")
+      .then((c) => {
+        clinicToday = c.now.slice(0, 10);
+        setBulk((b) => ({ ...b, checkedOn: clinicToday }));
+      })
+      .catch(() => {})
+      .finally(() => setClockReady(true));
     getJson<{ role: string }>("/api/auth/me").then((me) => setEditable(me.role === "clerk" || me.role === "veteran")).catch(() => {});
   }, [user]);
   useEffect(() => {
@@ -292,7 +302,7 @@ export default function CareCheck() {
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <p><a href="/uke">UKE 取り込みへ戻る</a></p>
-      {data && (
+      {data && clockReady && (
         <>
           <div className="chips" style={{ margin: "0 0 12px" }}>
             {data.months.map((m) => (

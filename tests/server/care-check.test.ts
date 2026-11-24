@@ -63,3 +63,13 @@ describe("期限が近いだけの患者（design.md §18-12 の 5）", () => {
     expect(app.patientProfile(id).findings.map((f) => f.messageKey)).toContain("P07.expiring_soon");
   });
 });
+
+describe("確かめた日の初期値（design.md §18-12 の 7）", () => {
+  it("聞き取りの画面は、確かめた日の初期値にクリニックの今日（GET /api/clock）を使い、端末の日付を使わない", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const src = readFileSync(path.join(__dirname, "..", "..", "app", "uke", "care-check", "page.tsx"), "utf8");
+    expect(src).toContain('"/api/clock"');
+    expect(src).not.toMatch(/new Date\(/);
+  });
+});
