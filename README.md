@@ -157,7 +157,8 @@ flowchart LR
   - `npm run check:banned-words`（文書と画面の文言の決まり）
   - `npm run check:codes`（作り物の診療行為コードを残さない）
   - `npm run check:dates`（診療年月をコードに直書きしない）
-  - `scripts/check-bundles.ts`（包括の検査の群と告示の号の対応）
+  - `scripts/check-bundles.ts`（包括の検査の群と告示の号の対応。マスターありの `npm test` の中で `tests/scripts/check-bundles.test.ts` が回す）
+  - CI はマスターなしで回します。G01〜G12 は手作りの小さな表で回り、実データのテストと `check:masters` は手元だけです（理由は [docs/masters.md](docs/masters.md)「CI で守っているもの・守っていないもの」）
 - **進め方と記録**：ルールエンジンと知識の扱いは、仕様 → 設計 → 2 社のモデル（Claude と OpenAI の Codex）の批評 → 利用者の承認 → 実装 → 反証 の順で進めます。指摘と直し方は反論台帳（`design/iji-context/ledger.md`）に、批評と反証の記録は `design/iji-context/reviews/` に残しています。
 
 ## 手元で動かす（開発者向け）
