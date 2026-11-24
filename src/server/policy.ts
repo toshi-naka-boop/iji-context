@@ -177,6 +177,8 @@ export const POLICY = {
   "POST /api/uke/upload": row(WORK, "none", true),
   // 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11）。一覧と同じ役割
   "GET /api/uke/claims/[claimId]/check": row(["clerk", "veteran", "manager"], "none", true),
+  // 取り込んだレセプトの全件の一覧（点検の結果の件数つき。採点 r1 医療事務課長 P1-1）。点検と同じ人が見る。読むだけ
+  "GET /api/uke/summary": row(["clerk", "veteran", "manager"], "none", true),
   // 取り込んだレセプトの試算（design.md §11-12）：版を選んで、その場で計算して返す。保存しない。点検と同じ役割
   "GET /api/uke/claims/[claimId]/trial": row(["clerk", "veteran", "manager"], "none", true),
   // 「この請求の点検を確かめた」（design.md §14-3・段 17g）：実在用のクリニックで F10 の処理件数に数える。点検を見られる役割と同じ（役割では分けない。C-184）
