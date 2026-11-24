@@ -40,10 +40,14 @@ export function oxygenPriceOn(active: OxygenPriceRow[], kind: OxygenKind, date: 
 
 /**
  * 単位の算定日（YYYY-MM-DD の並び）に効く単価。全部の日で同じ単価なら split は偽で priceCenti にその値、
- * 日によって違う・期間に入らない日がある単位は split が真（届出との比べをしない。design.md §19-3）。どの日にも効く行がなければ priceCenti は null
+ * 日によって違う・期間に入らない日がある単位は split が真（届出との比べをしない。design.md §19-3）。どの日にも効く行がなければ priceCenti は null。
+ * capCenti（上限）を渡すと、届け出た単価と上限の小さい方（効く単価）で比べる（届出が違っても上限を当てた値が同じなら分かれていない。反証 round-94 X-472）
  */
-export function oxygenPriceForDates(active: OxygenPriceRow[], kind: OxygenKind, dates: string[]): { priceCenti: number | null; split: boolean } {
-  const prices = dates.map((d) => oxygenPriceOn(active, kind, d));
+export function oxygenPriceForDates(active: OxygenPriceRow[], kind: OxygenKind, dates: string[], capCenti: number | null = null): { priceCenti: number | null; split: boolean } {
+  const prices = dates.map((d) => {
+    const p = oxygenPriceOn(active, kind, d);
+    return p !== null && capCenti !== null ? Math.min(p, capCenti) : p;
+  });
   if (prices.every((p) => p === null)) return { priceCenti: null, split: false };
   const first = prices[0];
   return prices.every((p) => p === first) ? { priceCenti: first, split: false } : { priceCenti: null, split: true };

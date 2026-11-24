@@ -2,7 +2,7 @@
 // 再計算できる形だけを比べ、できない単位は理由つきで「検算の対象外」に数える（合っているとは数えない）。式と対象外の理由は src/generic/points.ts。
 // 点数の書いていない単位（区分キーから作った単位）は、検算しない（数にも入れない）
 import { hasRevision, resolveRevision } from "../engine/revisions";
-import { pickSnapshot, type MastersDb } from "../masters/db";
+import { pickSnapshot, tokuteiOf, type MastersDb } from "../masters/db";
 import type { UkeComment } from "../uke/types";
 import { activeOxygenPrices, oxygenKindOf, oxygenPriceForDates } from "../facility/oxygen";
 import { EXCLUDE_TEXT, recalcUnit, type ExcludeReason, type RecalcBundle } from "./points";
@@ -93,7 +93,9 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const dates = ((u.days ?? []).some((n) => n > 0) ? (u.days ?? []).flatMap((n, d) => (n > 0 ? [d + 1] : [])) : Array.from({ length: 31 }, (_, d) => d + 1)).map((d) => `${about.yearMonth}-${String(d).padStart(2, "0")}`);
     const declaredOxygen = active.length === 0 ? undefined : (code: string) => {
       const kind = oxygenKindOf(code);
-      const eff = kind ? oxygenPriceForDates(active, kind, dates) : null;
+      // 上限（マスターの金額）を当てた効く単価で、算定日による分かれを見る（X-472）
+      const row = kind && snapshots.TO ? tokuteiOf(masters, snapshots.TO, code) : null;
+      const eff = kind ? oxygenPriceForDates(active, kind, dates, row ? Math.round(row.price * 100) : null) : null;
       return eff && !eff.split && eff.priceCenti !== null ? BigInt(eff.priceCenti) : null;
     };
     const r = recalcUnit(masters, snapshots, u.items, { shikibetsu, shikibetsuSure: sure, bundles, commented, count: u.count ?? 1, uke: u.points, declaredOxygen });

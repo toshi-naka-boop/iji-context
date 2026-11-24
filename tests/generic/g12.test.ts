@@ -180,6 +180,16 @@ describe("G12 の 3・4・5：単価（完了条件 8・11）", () => {
   });
 });
 
+describe("期間の分かれは上限を当てたあとの効く単価で見る（X-472）", () => {
+  it("届出が 3.00→4.00 円と分かれても、上限 2.36 円を当てた値は同じなので分かれていない：違う単価（2.00 円）は 5 で出て、範囲の文は出ない", () => {
+    const db = masters();
+    const a = about({ oxygenPrices: [priceRow(1, "small", 300, "2026-04-01", "2026-10-15"), priceRow(2, "small", 400, "2026-10-16", "2027-03-31")] });
+    const c = claimOf({ si: [J024], days: [3, 20] }, { to: o2("2.00"), days: [3, 20] });
+    expect(brief(run(db, c, a))).toEqual([["G12.declared_diff", "条件つき"]]);
+    expect(genericScopeOf(c, db, a, evaluateGeneric(c, db, a)).notDone).not.toContain("届け出た単価の期間が、酸素の行の算定日で分かれています。届出との違いは見ていません");
+  });
+});
+
 describe("G02 と届け出た単価（完了条件 9・11）", () => {
   // 大型ボンベ 100 L × 1.3：単価 0.40 円 → 52 円 → 5 点、0.30 円 → 39 円 → 4 点（式は R8-315・R8-319・R8-326。錨 F25・F26）
   const unit = (points: number): U => ({ si: [], to: [{ code: LARGE, quantity: "100", price: "" }, { code: RATE, quantity: "" }], days: [10], points });

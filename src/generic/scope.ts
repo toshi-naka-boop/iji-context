@@ -47,7 +47,7 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));
-  if (ran("G12")) out.notDone.push(...g12NotDone(claim, about));
+  if (masters !== null && ran("G12")) out.notDone.push(...g12NotDone(claim, masters, about));
   return out;
 }
 

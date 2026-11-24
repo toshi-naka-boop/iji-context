@@ -129,7 +129,7 @@ export const g12: GenericCheck = {
         }
         // 5. 届け出た単価との違い（単価の欄が書いてある行だけ。空の行は G02 が届け出た単価で検算する。C-584）
         const kind = oxygenKindOf(it.code)!;
-        const eff = oxygenPriceForDates(active, kind, dates);
+        const eff = oxygenPriceForDates(active, kind, dates, limit);
         if (written !== null && eff.priceCenti !== null) {
           const declared = limit !== null ? Math.min(eff.priceCenti, limit) : eff.priceCenti;
           if (written !== declared) out.push(finding("条件つき", i, [it.code], "G12.declared_diff", { declared: yenText(declared), price: yenText(written) }));
@@ -143,7 +143,7 @@ export const g12: GenericCheck = {
 /**
  * 点検の範囲の文（design.md §19-6 の H）。酸素の行があるレセプトだけ。先頭は「見ている場面」
  */
-export function g12NotDone(claim: GenericClaim, about: GenericAbout): string[] {
+export function g12NotDone(claim: GenericClaim, masters: MastersDb, about: GenericAbout): string[] {
   const units = claim.units as Unit[];
   const oxygen = units.flatMap((u) => u.items.filter((it) => it.kind === "TO" && OXYGEN_CODES.includes(it.code) && !OXYGEN_ISLAND_CODES.includes(it.code)).map((it) => ({ u, it })));
   if (!units.some((u) => u.items.some((it) => it.kind === "TO" && OXYGEN_CODES.includes(it.code)))) return [];
@@ -153,7 +153,7 @@ export function g12NotDone(claim: GenericClaim, about: GenericAbout): string[] {
   let split = false;
   for (const { u, it } of oxygen) {
     const dates = (daysOf(u).length > 0 ? daysOf(u) : Array.from({ length: 31 }, (_, k) => k + 1)).map((d) => `${about.yearMonth}-${pad(d)}`);
-    const eff = oxygenPriceForDates(active, oxygenKindOf(it.code)!, dates);
+    const eff = oxygenPriceForDates(active, oxygenKindOf(it.code)!, dates, limitOf(masters, about, it.code)?.centi ?? null);
     if (eff.split) split = true;
     else if (eff.priceCenti === null) none = true;
   }
