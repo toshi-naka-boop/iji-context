@@ -8,6 +8,7 @@ import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
 import { getJson } from "../get-json";
 import { FactRequests } from "./fact-requests";
+import { DoctorAbbrevNotice } from "./abbrev-requests";
 
 const STATUS_BADGE: Record<string, string> = { 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
 
@@ -34,6 +35,8 @@ export default function Doctor() {
         カルテに書かれていないことを、ここで医師に確かめます。医師の役割で選択肢から答え、内容を確かめて承認してください（1 人で使っているときは、設定で役割を医師に切り替えます）。上の「確かめてほしい項目」は、レセプトの点検で医師に確かめることになった事実です。答えると点検に使われ、「その他」「判定不能」は不明のまま残ります。点数や金額はここには出しません。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
+      {/* カルテの書き方のお願い（FR-211。問いとは別の欄。config/doctor-abbrev.json） */}
+      <DoctorAbbrevNotice />
       <FactRequests />
       <h2 style={{ margin: "0 0 12px", fontSize: 18 }}>確認の依頼</h2>
       <div className="stats">

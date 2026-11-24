@@ -5,6 +5,29 @@
 import { useEffect, useState } from "react";
 import type { AbbrevRequest } from "../../src/server/app/doctor-abbrevs";
 import { getJson } from "../get-json";
+import DOCTOR_ABBREV from "../../config/doctor-abbrev.json";
+
+/**
+ * 医師確認の一覧の上に、問いとは別の欄で出す文（plan-fr211.md「医師確認の画面の文言」。config/doctor-abbrev.json の 1 か所）。
+ * 個々の問いの文には入れない（7 要件の「点数・金額に触れない」「答えを誘導しない」を問いの側で守るため）
+ */
+export function DoctorAbbrevNotice() {
+  return (
+    <section aria-label="カルテの書き方のお願い" className="notice" style={{ marginBottom: 16 }}>
+      <p style={{ margin: 0 }}>{DOCTOR_ABBREV.notice}</p>
+    </section>
+  );
+}
+
+/** 問いの本文と、辞書で意味が複数ある略語に添える事実（どの意味かは示さない。問いの文には入れない） */
+export function AbbrevQuestionBody({ q }: { q: Pick<AbbrevRequest, "question" | "multiMeaning"> }) {
+  return (
+    <>
+      <p style={{ fontSize: 17, fontWeight: 700, margin: "12px 0" }}>{q.question}</p>
+      {q.multiMeaning && <p className="muted" style={{ marginTop: -6 }}>{DOCTOR_ABBREV.multiMeaning}</p>}
+    </>
+  );
+}
 
 const OTHER = "その他";
 const WRITE_IN = "指すものを記入する";
@@ -63,7 +86,7 @@ export function AbbrevRequests({ onCount }: { onCount: (n: number) => void }) {
                   {q.split && <span className="badge sky">記載ごと</span>}
                   {q.held ? <span className="badge">保留（3 営業日たちました）</span> : q.reminded ? <span className="badge">1 営業日たちました</span> : null}
                 </div>
-                <p style={{ fontSize: 17, fontWeight: 700, margin: "12px 0" }}>{q.question}</p>
+                <AbbrevQuestionBody q={q} />
                 <ul style={{ margin: "0 0 12px", paddingLeft: 20 }}>
                   {q.quotes.map((x) => (
                     <li key={x.ref}>

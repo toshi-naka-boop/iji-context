@@ -8,7 +8,7 @@
 // 患者の氏名・患者 id は持たない・返さない（請求の番号と日付だけ）。ログ・監査ログに引用と答えの文を出さない
 import type Database from "better-sqlite3";
 import { itemKeyOf, sentenceWith, type AbbrevItem } from "../../chart/abbrev";
-import { manbyoOf } from "../../chart/abbrev-dict";
+import { candidatesOf, manbyoOf } from "../../chart/abbrev-dict";
 import { withMasters } from "../../masters/db";
 import type { ChartNote } from "../../chart/extract";
 import { businessDaysElapsed, MONEY, OTHER, UNDETERMINABLE, validateQuery } from "../../query/doctor-query";
@@ -42,6 +42,8 @@ export type AbbrevRequest = {
   options: string[];
   quotes: AbbrevQuote[];
   split: boolean;
+  /** 辞書（万病辞書・クリニックの辞書）で意味が複数ある略語、または大文字小文字で別の意味になる略語か（問いの下に事実だけを添える。どの意味かは示さない） */
+  multiMeaning: boolean;
   since: string;
   reminded: boolean;
   held: boolean;
@@ -92,6 +94,8 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
   /** クリニックの辞書の、その略語の意味（書き足した順。同じ意味は 1 回） */
   const clinicMeanings = (token: string): string[] => (sqlite.prepare("SELECT meaning FROM abbrev_dictionary WHERE token = ? GROUP BY meaning ORDER BY MIN(id)").all(token) as { meaning: string }[]).map((r) => r.meaning);
 
+  /** クリニックの辞書にある略語 */
+  const clinicTokens = (): string[] => (sqlite.prepare("SELECT DISTINCT token FROM abbrev_dictionary").all() as { token: string }[]).map((r) => r.token);
   /** 事務が医師確認に回した略語（カルテと語の組。見本の請求は demo 以外のクリニックでは出さない）。引用は原文のその語を含む文 */
   function items(): Item[] {
     const rows = sqlite.prepare("SELECT id, claim_id, date, note FROM chart_notes ORDER BY id").all() as { id: number; claim_id: string; date: string; note: string }[];
@@ -159,6 +163,17 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       }
     }
     const now = clock.now();
+    // 辞書で意味が複数ある略語・大文字小文字で別の意味になる略語（AF／Af）
+    const manbyo = withMasters((db) => manbyoOf(db));
+    const multi = new Map<string, boolean>();
+    const multiOf = (token: string): boolean => {
+      if (!multi.has(token)) {
+        const many = candidatesOf(token, manbyo, clinicMeanings(token)).candidates.length > 1;
+        const variant = [...(manbyo?.entries() ?? [])].some(([k, e]) => k !== token && k.toUpperCase() === token.toUpperCase() && e.meanings.length > 0) || clinicTokens().some((k) => k !== token && k.toUpperCase() === token.toUpperCase());
+        multi.set(token, many || variant);
+      }
+      return multi.get(token)!;
+    };
     /** 請求の番号・日付・記載の参照の順（問いを割る位置を GET と POST で同じにする） */
     const order = (a: { claimId: string; date: string; ref: string }, b: { claimId: string; date: string; ref: string }) =>
       a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : a.date < b.date ? -1 : a.date > b.date ? 1 : a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0;
@@ -166,7 +181,7 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       const quotes = list.map((it) => ({ ref: it.ref, claimId: it.claimId, date: it.date, ...quoteOf(sentenceWith(it.note, token) ?? it.quote, token) })).sort(order);
       const since = list.map((x) => x.at).sort()[0];
       const n = businessDaysElapsed(since, now, ctx.businessDays);
-      return { yearMonth, token, question: abbrevQuestion(token), options: [...ABBREV_OPTIONS], quotes, split, since, reminded: n >= 1, held: n >= 3 };
+      return { yearMonth, token, question: abbrevQuestion(token), options: [...ABBREV_OPTIONS], quotes, split, multiMeaning: multiOf(token), since, reminded: n >= 1, held: n >= 3 };
     };
     // 上限を超える組は、並べた順に上限ずつの問いに割る
     const out = [...groups.entries()].flatMap(([k, list]) => {

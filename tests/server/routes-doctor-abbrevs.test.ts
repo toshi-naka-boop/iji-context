@@ -334,3 +334,19 @@ describe("まとめの問いの引用の上限（反証 round-96 X-493）", () =
     expect((await list()).filter((x) => x.token === "UCG" && x.split)).toHaveLength(500);
   });
 });
+
+describe("辞書で意味が複数ある略語の印（医師確認の画面の文言）", () => {
+  it("大文字小文字で別の意味になる AF と、意味が 2 つある AMI の問いは multiMeaning。辞書にない略語は付かない。一覧の文は問いの応答に入らない", async () => {
+    setCount(0);
+    const w = await write(claimId("K4"), { a: "AF。AMI。ＴＴＥ。" });
+    await select(w.id, "AF", "判定不能");
+    await select(w.id, "AMI", "判定不能");
+    await select(w.id, "TTE", "医師に聞く");
+    const qs = await list();
+    const flag = (t: string) => qs.find((x) => x.token === t)?.multiMeaning;
+    expect([flag("AF"), flag("AMI"), flag("TTE")]).toEqual([true, true, false]);
+    const DOCTOR_ABBREV = (await import("../../config/doctor-abbrev.json")).default;
+    expect(JSON.stringify(qs)).not.toContain(DOCTOR_ABBREV.notice);
+    for (const t of ["AF", "AMI", "TTE"]) expect(abbrevQueryErrors(qs.find((x) => x.token === t)!)).toEqual([]);
+  });
+});
