@@ -1,45 +1,58 @@
-// 訪問診療料(Ⅰ)2 の当面の扱い（design.md §18-12 の 8。正しい扱いは EM の追記〔sources/em-v38-draft.md。未承認〕の承認のあとに入れる）。
-// 一次資料の調べで、今の読みが (Ⅰ)2 の日を誤って扱うと分かったルールだけを、(Ⅰ)2 の行がある請求では、版に足す前と同じ「決められない」に置く：
-// (Ⅰ)2 の行をそのルールに渡さず、partial として判定する（申告のある種類の指摘だけを出し、ほかは情報不足 unsupportedLines）。
-// 在医総管の区分の回数（R01・R02・R03・D03）・週の上限（R13・R17 T167）は (Ⅰ)1 だけで数えるので、今のまま（留意 C002 (4)。em-v38-draft.md §2）。
-// R17 は、在医総管の月の訪問日の記載（T176）だけを決められないに置く（rules/r17.ts）
-import type { Revision } from "./revisions/types";
+// 訪問診療料(Ⅰ)2 の扱い（design.md §18-12 の 8。EM §2-14 R8-288〜R8-304。2026-11-24 承認）。ルールと導出が共有する小道具。
+// 在医総管の区分の回数（R01・R02・R03・D03）・週の上限（R13・R17 T167）は (Ⅰ)1 だけで数える（W-112・W-118・W-119）。
+// 訪問診療の日として数えるのは R08・R15・R10・R11・D02・D06〜D08（W-115〜W-117・W-122〜W-125）。R17 の T176 は決められないのまま（記載要領は未確認）
+import type { Revision, RevisionConsts } from "./revisions/types";
 import type { ClaimContext, Rule } from "./types";
 
-/**
- * (Ⅰ)2 の行で決められないに置くルール（em-v38-draft.md §2「ルールごとの扱い」）：
- * R08・R15（(Ⅰ)2 の日は訪問診療時の区分。留意 O001 (4)(5)）、R10（同じ日の往診料・再診料）、R09（看取り・ターミナルケアの回数と加算）、
- * R11（外来迅速検体検査加算の訪問診療の日。(Ⅰ)1 の日だけを読む）
- */
-export const VISIT2_HELD_RULES = ["R08", "R09", "R10", "R11", "R15"];
-/** 決められないに置く R17 の記載（在医総管の月の往診・訪問診療の年月日。記載要領は未確認） */
-export const VISIT2_HELD_COMMENTS = ["T176-date"];
-/**
- * 導出のうち、(Ⅰ)2 の行がある入力で決められないに置くもの：D01 訪問診療料・D02 往診料と再診料・D06 DX 加算・D07 ベースアップ評価料・D08 物価対応料・D12 在宅ターミナルケア加算と、
- * D01 が保留にした訪問から立てるもの（D03 管理料・D04 包括的支援加算・D05 在宅移行早期加算・D10 処方箋料・D11 看取り加算・死亡診断加算）
- */
-export const VISIT2_HELD_DERIVES = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D10", "D11", "D12"];
-/** 取り忘れ（G11）を見ない理由の文（G11 は (Ⅰ)1 の行だけを訪問診療料として読む） */
-export const VISIT2_G11_SKIP = "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行がある請求なので、取り忘れは見ていません（(Ⅰ)2 の日の扱いを確かめています）";
-
 /** 請求に (Ⅰ)2 の行があるか */
-export const hasVisit2 = (lines: ClaimContext["lines"], c: Revision["consts"]): boolean => lines.some((l) => l.count > 0 && (c.visit2Kubun ?? []).includes(l.kubun));
+export const hasVisit2 = (lines: ClaimContext["lines"], c: Pick<RevisionConsts, "visit2Kubun">): boolean => lines.some((l) => l.count > 0 && (c.visit2Kubun ?? []).includes(l.kubun));
 
-export const heldByVisit2 = (rule: Rule, rev: Pick<Revision, "consts">): boolean => (rev.consts.visit2Kubun ?? []).length > 0 && VISIT2_HELD_RULES.includes(rule.id);
+/** (Ⅰ)2 も訪問診療料として数える定数の見方（visitKubun に (Ⅰ)2 を足す。[(Ⅰ)1 イ, (Ⅰ)1 ロ, (Ⅰ)2 イ, (Ⅰ)2 ロ]） */
+export const withVisit2Kubun = (c: RevisionConsts): RevisionConsts => ({ ...c, visitKubun: [...c.visitKubun, ...(c.visit2Kubun ?? [])] });
 
-/** (Ⅰ)2 の行がある請求で、そのルールに渡す請求（(Ⅰ)2 の行を除き、partial にする）。当たらなければそのまま */
-export function forVisit2(ctx: ClaimContext, rule: Rule, rev: Revision): ClaimContext {
-  if (!heldByVisit2(rule, rev) || !hasVisit2(ctx.lines, rev.consts)) return ctx;
-  const v2 = rev.consts.visit2Kubun ?? [];
-  return { ...ctx, lines: ctx.lines.filter((l) => !v2.includes(l.kubun)), partial: true };
+/** (Ⅰ)1・(Ⅰ)2 の回数 */
+export function visitCounts(ctx: Pick<ClaimContext, "lines">, c: RevisionConsts): { v1: number; v2: number } {
+  const sum = (ks: string[]) => ctx.lines.filter((l) => ks.includes(l.kubun)).reduce((n, l) => n + l.count, 0);
+  return { v1: sum(c.visitKubun), v2: sum(c.visit2Kubun ?? []) };
 }
 
-/** 決められないに置くルール（と R17）の reads に (Ⅰ)2 を足す（(Ⅰ)2 の行の有無で指摘が変わるので、読む区分として申告する。design.md §12-4） */
+/** 同じ月に (Ⅰ)1 と (Ⅰ)2 の両方がある月（U-67：R01〜R03・T176 は判定不能。事情は R01 が患者・月ごとに 1 回だけ聞く） */
+export const mixedVisitMonth = (ctx: Pick<ClaimContext, "lines">, c: RevisionConsts): boolean => {
+  const { v1, v2 } = visitCounts(ctx, c);
+  return v1 > 0 && v2 > 0;
+};
+
+/** (Ⅰ)2 の行の有無で指摘が変わるルール（reads に (Ⅰ)2 を足す。design.md §12-4） */
+export const VISIT2_READERS = ["R01", "R02", "R03", "R08", "R09", "R10", "R11", "R15", "R17"];
+
 export function withVisit2Reads(rules: Rule[], rev: Pick<Revision, "consts">): Rule[] {
   const v2 = rev.consts.visit2Kubun ?? [];
   return rules.map((r) => {
-    if (!heldByVisit2(r, rev) && r.id !== "R17") return r;
+    if (!VISIT2_READERS.includes(r.id) || v2.length === 0) return r;
     const orig = r.reads!;
     return { ...r, reads: (x: Revision) => [...new Set([...orig.call(r, x), ...v2])] };
   });
+}
+
+/** 確定の指摘にしない R09 の加算の月の文（U-72。医療事務には聞かず、厚生局への照会の候補） */
+export const VISIT2_TERMINAL_NOTE = "訪問診療料(Ⅰ)2 だけの月の在宅ターミナルケア加算・看取り加算・死亡診断加算は見ていません（前月の (Ⅰ)1・死亡日の往診で読みが割れます。厚生局への照会の候補です）";
+
+/**
+ * (Ⅰ)2 だけの月に C001 の看取り加算・死亡診断加算・在宅ターミナルケア加算の行がある月の読み（EM §2-14 W-120・W-128・U-72）。
+ * "wrong"：前の月に (Ⅰ)1 がなく、加算の日（死亡日）に往診料もない → 付く先の誤り（確定）。"unseen"：それ以外（前の月を取り込んでいない・前の月に (Ⅰ)1 がある・死亡日に往診）→ 見ていません。null：当たらない
+ */
+export function visit2Terminal(ctx: Pick<ClaimContext, "lines" | "prevMonthVisit1">, c: RevisionConsts): { verdict: "wrong" | "unseen"; refs: string[] } | null {
+  const { v1, v2 } = visitCounts(ctx, c);
+  if (v1 > 0 || v2 === 0) return null;
+  const adds = [c.terminal.mitori, c.terminal.shibou, ...Object.values(c.terminal.terminal)];
+  const mine = ctx.lines.filter((l) => l.count > 0 && adds.includes(l.kubun));
+  if (mine.length === 0) return null;
+  const days = new Set(mine.flatMap((l) => l.dates));
+  const oushinOnDeath = ctx.lines.some((l) => l.kubun === c.oushin.kubun && l.count > 0 && l.dates.some((d) => days.has(d)));
+  return { verdict: ctx.prevMonthVisit1 === false && !oushinOnDeath ? "wrong" : "unseen", refs: mine.map((l) => l.kubun) };
+}
+
+/** (Ⅰ)2 で見ていないことの点検の範囲の文 */
+export function visit2ScopeNotes(ctx: Pick<ClaimContext, "lines" | "prevMonthVisit1">, c: RevisionConsts): string[] {
+  return visit2Terminal(ctx, c)?.verdict === "unseen" ? [VISIT2_TERMINAL_NOTE] : [];
 }

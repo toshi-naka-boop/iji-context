@@ -4,6 +4,7 @@ import { billedOushinDays, billedVisitDays } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { ClaimContext, FacilityFactKey, Finding, Rule } from "../types";
 import { finding, lineOf } from "./util";
+import { withVisit2Kubun } from "../visit2";
 
 export type DayTypeSpec = {
   id: string;
@@ -16,7 +17,9 @@ export type DayTypeSpec = {
   reference: string;
 };
 
-export function makeDayTypeRule(spec: DayTypeSpec, c: RevisionConsts): Rule {
+export function makeDayTypeRule(spec: DayTypeSpec, c0: RevisionConsts): Rule {
+  // 訪問診療料(Ⅰ)2 の日も「訪問診療の日」（訪問診療時の区分。EM §2-14 W-115〜W-117）。(Ⅰ)2 だけの日の再診時等は区分誤り（W-116）
+  const c = withVisit2Kubun(c0);
   const { visitKubun: VISIT, otherKubun: OTHER, overlapKey } = spec;
   const ALL = [...VISIT, ...OTHER];
   /** 再診時等の行の日（通常・注5 を合わせて） */

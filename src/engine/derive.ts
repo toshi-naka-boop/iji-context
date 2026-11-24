@@ -2,7 +2,7 @@
 // 決めるのは「どの区分を何回・どの日に立てるか」だけ。要件（背反・要件不足・週の限度など）は evaluate が判定する。
 // 判定の述語は predicates.ts のものを検証（ルール）と共有する。LLM は使わない（src/mentor と LLM の SDK を import しない）
 import { familySilence } from "./care-scope";
-import { hasVisit2, VISIT2_HELD_DERIVES } from "./visit2";
+import { hasVisit2, withVisit2Kubun } from "./visit2";
 import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
@@ -207,8 +207,20 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   }
 
   const byDate = <T extends { date: string }>(xs: T[]) => [...xs].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const visits = byDate(eventsOf(ctx, "visit"));
+  // 訪問診療料(Ⅰ)2 の行が入力にある月（design.md §18-12 の 8。EM §2-14 の 2-2）：訪問の出来事だけでは (Ⅰ)1 か (Ⅰ)2 か決められない（D01 は決められない）。
+  // 出来事の訪問は立てず（保留）、確定した (Ⅰ)1 だけ（ここでは 0）で数え直す。保留の訪問から管理料・加算・処方箋料（D03〜D05・D10）と、付く先の (Ⅰ)1 のない加算（D11・D12）は立てない。
+  // (Ⅰ)2 の日は、往診料・再診料（D02）・DX 加算（D06）・ベースアップ評価料(Ⅰ)（D07）・物価対応料（D08）で訪問診療の日として数える（W-115〜W-117・W-122・W-124）
+  const v2Lines = hasVisit2(input.manual, c) ? input.manual.filter((l) => (c.visit2Kubun ?? []).includes(l.kubun) && l.count > 0) : [];
+  const v2Dates = new Set(v2Lines.flatMap((l) => l.dates));
+  const allVisits = byDate(eventsOf(ctx, "visit"));
+  const v2Held = v2Lines.length > 0 && allVisits.length > 0;
+  if (v2Held) unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行がある月なので、訪問の出来事が (Ⅰ)1 か (Ⅰ)2 か決められず、訪問診療料と、そこから立てる管理料・加算・処方箋料・看取り加算・死亡診断加算・在宅ターミナルケア加算は立てていません" });
+  const visits = v2Lines.length > 0 ? [] : allVisits;
   const oushins = byDate(eventsOf(ctx, "oushin"));
+  /** (Ⅰ)2 の行も訪問診療料として数える述語の見方（D02・D06〜D08） */
+  const cv = withVisit2Kubun(c);
+  const ctxV: ClaimContext = { ...ctx, lines: [] };
+  Object.defineProperty(ctxV, "lines", { get: () => [...lines, ...v2Lines] });
   const rxs = byDate(eventsOf(ctx, "prescription"));
   const visitKubunOf = (e: { sameBuildingCount: number }) => (e.sameBuildingCount >= 2 ? c.visitKubun[1] : c.visitKubun[0]);
   /** 訪問診療料の回数に依存する区分（管理料と、それに付く加算。管理料が決まらない間は処方箋料も） */
@@ -271,10 +283,13 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const mine = billedVisits.filter((v) => visitKubunOf(v) === k);
     add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate", "sameDayOushinAfterVisit"] : [] });
   }
-  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill");
+  // (Ⅰ)2 の日の往診料は、訪問診療のあとの急変の往診（sameDayOushinAfterVisit）のときだけ立てる（W-122）
+  const afterV2 = (d: string) => facts.sameDayOushinAfterVisit.known && facts.sameDayOushinAfterVisit.value[d] === true;
+  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill" && (!v2Dates.has(o.date) || afterV2(o.date)));
+  if (v2Dates.size > 0) for (const o of oushins.filter((x) => v2Dates.has(x.date) && !afterV2(x.date))) notBilled.push({ event: ref(o), reason: "oushin_not_after_visit" });
   add(c.oushin.kubun, billedOushins.map((o) => o.date), { derive: "D02", events: billedOushins });
   // 往診料と併せて再診料（留意 C001 (11)。L-40 の推奨案）。訪問診療料も立てた日には重ねない（算定を増やさない側）
-  const visitDaySet = new Set(billedVisits.map((v) => v.date));
+  const visitDaySet = new Set([...billedVisits.map((v) => v.date), ...v2Dates]);
   const revisitOushins = billedOushins.filter((o) => !visitDaySet.has(o.date));
   add(c.oushin.revisit, revisitOushins.map((o) => o.date), { derive: "D02", events: revisitOushins });
   const emergencies = billedOushins.filter((o) => o.kind === "emergency");
@@ -297,7 +312,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   /** 管理料を立てるかが決まっていない（保留か未対応）。決まるまで、処方箋料（D10）も立てない */
   let kanriOpen = false;
   const care = facts.comprehensiveCare;
-  if (visitHeld) kanriOpen = true;
+  if (visitHeld || v2Held) kanriOpen = true;
   else if (!care.known) {
     lack(`D03-care:${input.yearMonth}`, "comprehensiveCare", kanriBlocks);
     kanriOpen = true;
@@ -369,17 +384,19 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   }
 
   // --- D06：在宅医療DX情報活用加算。月 1 回、最初の訪問診療料の日
-  if (visitDays.length && Object.values(c.dx.tiers).some(has)) {
+  // D06〜D08 は (Ⅰ)2 の日も訪問診療の日として数える（W-115〜W-117・W-124）
+  const visitDaysV = billedVisitDays(ctxV, cv);
+  if (visitDaysV.length && Object.values(c.dx.tiers).some(has)) {
     const dx = facility.dxTier;
     if (!dx.known) lack(`D06-dx:${input.yearMonth}`, "facility.dxTier", Object.values(c.dx.tiers));
-    else if (dx.value !== "なし") add(c.dx.tiers[dx.value], [visitDays[0]], { derive: "D06", events: billedVisits.slice(0, 1), needs: ["facility.dxTier"] });
+    else if (dx.value !== "なし") add(c.dx.tiers[dx.value], [visitDaysV[0]], { derive: "D06", events: billedVisits.slice(0, 1), needs: ["facility.dxTier"] });
   }
 
   // --- D07・D08：ベースアップ評価料(Ⅰ)と物価対応料。訪問診療料を立てた日は訪問診療時の区分、往診料だけを立てた日は再診時等の区分。
   // 両方を立てた日は訪問診療時の区分だけ（再診時等を重ねない。L-32）。行を立てなかった日は数えない
-  const oushinOnly = oushinOnlyBilledDays(ctx, c);
+  const oushinOnly = oushinOnlyBilledDays(ctxV, cv);
   const oushinOnlyEvents = billedOushins.filter((o) => oushinOnly.includes(o.date));
-  if (visitDays.length || oushinOnly.length) {
+  if (visitDaysV.length || oushinOnly.length) {
     const bu = facility.baseUp;
     const note5 = c.baseUp.note5;
     if (![...c.baseUp.visit, c.baseUp.revisit].some(has)) {
@@ -389,9 +406,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     else if (bu.value !== "なし") {
       // 注5 の届出のある施設は、同じ区分の注5 の区分で立てる（design.md §15-4。X-133）
       const kubunOf = (k: string) => (bu.value === "注5" ? note5![k] : k);
-      c.visitKubun.forEach((vk, i) => {
-        const days = visitDays.filter((d) => visitKubunOn(ctx, c, d).includes(vk));
-        add(kubunOf(c.baseUp.visit[i]), days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
+      // (Ⅰ)2 イの日は 3 イ、(Ⅰ)2 ロの日は 3 ロ（W-115）。cv.visitKubun は [(Ⅰ)1 イ, (Ⅰ)1 ロ, (Ⅰ)2 イ, (Ⅰ)2 ロ]
+      cv.visitKubun.forEach((vk, i) => {
+        const days = visitDaysV.filter((d) => visitKubunOn(ctxV, cv, d).includes(vk));
+        add(kubunOf(c.baseUp.visit[i % 2]), days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
       });
       add(kubunOf(c.baseUp.revisit), oushinOnly, { derive: "D07", events: oushinOnlyEvents, needs: ["facility.baseUp"] });
     }
@@ -400,7 +418,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       // この版に物価対応料の区分がない：施設の設定を聞かない
     } else if (!pr.known) lack(`D08-price:${input.yearMonth}`, "facility.priceResponse", [...c.price.visit, c.price.revisit]);
     else if (pr.value) {
-      add(c.price.visit[0], visitDays, { derive: "D08", events: billedVisits, needs: ["facility.priceResponse"] });
+      add(c.price.visit[0], visitDaysV, { derive: "D08", events: billedVisits, needs: ["facility.priceResponse"] });
       add(c.price.revisit, oushinOnly, { derive: "D08", events: oushinOnlyEvents, needs: ["facility.priceResponse"] });
     }
   }
@@ -449,7 +467,8 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];
-  if (death) {
+  // (Ⅰ)2 の行がある月で、確定した (Ⅰ)1 がなければ、C001 の看取り加算・死亡診断加算・在宅ターミナルケア加算は立てない（付く先は (Ⅰ)1。W-120）
+  if (death && !(v2Lines.length > 0 && billedVisits.length === 0)) {
     const { mitori, shibou } = c.terminal;
     // 在宅ターミナルケア加算は施設の種別で区分が分かれる（design.md §15-4）。保留が待たせるのは種別の区分で、種別が分からない間は全部の種別の区分
     const terminalKubun = byGradeOf(c.terminal.terminal);
@@ -487,14 +506,6 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     }
   }
 
-  // 訪問診療料(Ⅰ)2 の行（入力の行）がある月：(Ⅰ)2 の日の扱いを決めていない導出と、D01 が保留にした訪問から立てる導出（VISIT2_HELD_DERIVES）は、行にせず「決められない」（design.md §18-12 の 8。当面の形。src/engine/visit2.ts）
-  if (hasVisit2(input.manual, c)) {
-    for (let i = lines.length - 1; i >= 0; i--) if (VISIT2_HELD_DERIVES.includes(basis[i].derive)) {
-      lines.splice(i, 1);
-      basis.splice(i, 1);
-    }
-    unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行があるので、訪問診療料・往診料・再診料と、訪問から立てる管理料・加算・処方箋料・看取り加算・死亡診断加算・在宅ターミナルケア加算は行にしていません（(Ⅰ)2 の日の扱いを確かめています）" });
-  }
   const all = [...lines, ...input.manual];
   return {
     revisionId: rev.id,

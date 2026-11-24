@@ -207,6 +207,10 @@ export type ClaimContext = {
    * 「申告だけを根拠に点数の高い区分へ直さない」決まりは、出どころが declaration の値にだけ掛ける
    */
   facilityBasis?: Partial<Record<FacilityFactKey, FacilityBasis>>;
+  /**
+   * 前の月の当院の請求に訪問診療料(Ⅰ)1 の行があったか（R09 の (Ⅰ)2 だけの月の加算。EM §2-14 W-120・U-72）。前の月の請求を取り込んでいなければ null。持たない請求も null として扱う
+   */
+  prevMonthVisit1?: boolean | null;
   /** 介護保険との調整の申告（診療年月に効く申告から作る。design.md §18-3）。ない請求は申告なし（R20 の場面は「見ていません」） */
   care?: CareFacts;
   /** ほかの機関の申告（design.md §18-4）。ない請求は申告なし（R21 の場面は「見ていません」） */

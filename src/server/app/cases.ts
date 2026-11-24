@@ -115,7 +115,9 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     // 介護・ほかの機関の申告（design.md §18-3・§18-4）。申告のない請求は持たない（R20・R21 の場面は「見ていません」）
     const careFacts = care?.careFactsOf(patientId, r.yearMonth, certState, (start) => priorVisitOf(patientId, r.yearMonth, start));
     const others = care?.otherFactsOf(patientId, r.yearMonth);
-    const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis, ...(careFacts ? { care: careFacts } : {}), ...(others ? { others } : {}) };
+    // 前の月の当院の請求に (Ⅰ)1 があったか（R09 の (Ⅰ)2 だけの月の加算。EM §2-14 U-72）。取り込んでいなければ null
+    const prevMonthVisit1 = prevVisit1Of(patientId, r.yearMonth);
+    const claim = { ...toClaimContext(file, r.claimId, { facility: c.facility, facts, events: c.events, recordsKnown: c.recordsKnown, history: c.history }), facilityBasis: c.facilityBasis, ...(careFacts ? { care: careFacts } : {}), ...(others ? { others } : {}), prevMonthVisit1 };
     // 対象外の単位があり、基本マスターが入っていれば、そのコードを引いて渡す：エンジンは、止めるかどうかをルールごとに決める（design.md §12-4）。
     // マスターがなければ渡さない（対象外の単位が 1 つでもあれば、どのルールも止まる。今までどおり）
     if (!r.others?.length) return claim;
@@ -157,6 +159,15 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
       }
     }
     return unknown ? null : false;
+  }
+
+  function prevVisit1Of(patientId: string, yearMonth: string): boolean | null {
+    const [y, m] = yearMonth.split("-").map(Number);
+    const prev = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, "0")}`;
+    const mine = ukeFiles().flatMap((f) => f.receipts.filter((x) => x.yearMonth === prev && !x.unreadable && !x.noRevision && ingest(x.patient) === patientId));
+    if (mine.length === 0) return null;
+    const v1 = resolveRevision(prev).consts.visitKubun;
+    return mine.some((x) => x.lines.some((l) => l.count > 0 && v1.includes(l.kubun)));
   }
 
   /** 診療年月の版で読めたレセプトの請求（版のないレセプト・読み直しで読めなかったレセプトは入らない。src/server/app/uke.ts の ukeFiles） */

@@ -3,7 +3,6 @@
 import { pointsOf, resolveRevision, REVISIONS } from "./revisions";
 import type { Revision } from "./revisions/types";
 import type { ClaimContext, ClaimLine, EngineResult, FacilityFactKey, FactKey, Finding, NeedKey, OutsideCode, Rule } from "./types";
-import { forVisit2 } from "./visit2";
 
 /** その診療年月の版のルール一式。版のない年月は例外 */
 export function rulesOf(yearMonth: string, revs: Revision[] = REVISIONS): Rule[] {
@@ -98,9 +97,7 @@ export function evaluateWith(input: ClaimContext, rev: Revision): EngineResult {
   const applied: string[] = [];
   for (const rule of rev.rules) {
     // 対象外の単位がある請求でも、このルールの読む区分と関係がなければ、このルールは全部の行がある請求として判定する（design.md §12-4）
-    const base: ClaimContext = merged.partial && partialBy(rule, rev, merged) === null ? { ...merged, partial: false } : merged;
-    // 訪問診療料(Ⅰ)2 の行がある請求：(Ⅰ)2 と同じ区分番号を読む既存のルールは、版に足す前と同じ「決められない」（design.md §18-12 の 8。当面の形）
-    const ctx = forVisit2(base, rule, rev);
+    const ctx: ClaimContext = merged.partial && partialBy(rule, rev, merged) === null ? { ...merged, partial: false } : merged;
     if (!rule.appliesTo(ctx)) continue;
     applied.push(rule.id);
     // 記録がないので決められない指摘があることを、情報不足として 1 件返す。入力では消えない（この請求に記録を足す手段がない）

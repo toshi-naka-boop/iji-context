@@ -18,6 +18,7 @@ import { commentKanrenNotesOf, kisaiOf } from "../../generic/g07";
 import { checkmasterNotesOf } from "../../generic/g09";
 import { buildingScopeNotes, deferredNote, genericScopeOf } from "../../generic/scope";
 import { careScopeNotes } from "../../engine/care-judge";
+import { visit2ScopeNotes } from "../../engine/visit2";
 import { tensuhyoNotesOf } from "../../generic/tensuhyo";
 import type { GenericAboutMore } from "../../generic/types";
 import { withMasters } from "../../masters/db";
@@ -108,7 +109,7 @@ function mastersPartOf(claim: UkeClaim, rev: Revision, ctx: ClaimContext, hand: 
     // 単一建物の人数の次元で見ていないもの・みなしで読んだもの（design.md §15-4。段 17f）
     const building = buildingScopeNotes(ctx, rev, claim, db, about);
     // 介護保険・ほかの医療機関との調整で見ていないこと（design.md §18-6。v37）。場面の区分の行がある請求だけ。先頭は「最初の版で見ている場面」
-    const notes = [...(deferred ? [deferred] : []), ...building, ...careScopeNotes(ctx, rev.consts)];
+    const notes = [...(deferred ? [deferred] : []), ...building, ...careScopeNotes(ctx, rev.consts), ...visit2ScopeNotes(ctx, rev.consts)];
     return {
       ...(names ? { names } : {}),
       ...(db ? { sheetNotes: sheetNotesWith(sheetNotesOf(db, about), tensuhyoNotesOf(db, about), commentKanrenNotesOf(db, about), checkmasterNotesOf(db, about)) } : {}),

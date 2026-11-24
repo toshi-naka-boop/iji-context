@@ -7,8 +7,8 @@ import { evaluateWith } from "../../src/engine";
 import { resolveRevision } from "../../src/engine/revisions";
 import type { Revision } from "../../src/engine/revisions/types";
 import type { ClaimContext, Outside } from "../../src/engine/types";
-import { heldByVisit2 } from "../../src/engine/visit2";
 import { UNKNOWN_FACTS } from "../../src/server/app/cases";
+import { findingText } from "../../src/messages";
 import { mapClaim, parseUke, writeUke } from "../../src/uke/uke";
 import { fileOf, receiptOf } from "../helpers/care";
 import { line, loadCase, withLines } from "./helpers";
@@ -77,89 +77,75 @@ describe("版の区分を足す前と後（design.md §18-11）", () => {
     expect(a.subtotal).toBeUndefined();
   });
 
-  it("申告のない請求では R20・R21 は何も言わない。ほかのルールの指摘は、(Ⅰ)2 の行で決められないに置いた R17 の T176（在医総管の月の訪問日の記載）が消えるほかは同じ", () => {
+  it("申告のない請求では R20・R21 は何も言わない。ほかのルールの指摘は、(Ⅰ)1 と (Ⅰ)2 が同じ月なので R17 の T176（在医総管の月の訪問日の記載）が判定不能になって消えるほかは同じ（U-67）", () => {
     expect(a.findings.filter((k) => k.startsWith("R20") || k.startsWith("R21"))).toEqual([]);
     expect({ added: a.findings.filter((k) => !b.findings.includes(k)), removed: b.findings.filter((k) => !a.findings.includes(k)) }).toEqual({ added: [], removed: ["R17.comment_missing"] });
-    expect(a.unsupported).toContain("R17");
   });
 });
 
-describe("訪問診療料(Ⅰ)2 の行がある請求（design.md §18-12 の 8。当面の形。em-v38-draft.md §2）", () => {
-  const K1 = loadCase("K1");
-  const HELD = ["R08", "R09", "R10", "R11", "R15"];
-  /** 確定の指摘のうち、決められないに置いたルール（と R17 の T176）のもの */
-  const heldOf = (xs: string[]) => xs.filter((k) => HELD.some((id) => k.startsWith(`${id}.`)));
+/** 判定だけを見る請求（K1 の施設の設定と事実。出来事なし・コメントなし） */
+const ev = (lines: ClaimContext["lines"], more: Partial<ClaimContext> = {}) => evaluateWith({ ...base(loadCase("K1").facts), lines, commentsKnown: false, ...more }, after).findings;
+const keysOf = (fs: ReturnType<typeof ev>, ...ids: string[]) => fs.filter((f) => ids.includes(f.ruleId) && f.missing?.field !== "chartRecord").map((f) => (f.kind === "情報不足" ? `${f.ruleId}:${f.missing?.field}` : `${f.messageKey}${f.params?.conditional === "1" ? "(条件つき)" : ""}`));
 
-  it("決められないに置くのは R08・R09・R10・R11・R15（と R17 の T176）だけ。R01・R02・R03・R13 などは今のまま", () => {
-    expect(after.rules.filter((r) => heldByVisit2(r, after)).map((r) => r.id)).toEqual(HELD);
-  });
-
-  it("R01・R03 は足した後の判定が出る（区分の回数は (Ⅰ)1 だけで数える。留意 C002 (4)）。足す前は決められなかった", () => {
+describe("訪問診療料(Ⅰ)2 の扱い（EM §2-14 の「ルールごとの扱い」。v38）", () => {
+  const v2 = (n: number, dates = [day(20)]) => line("C001_2I", n, dates);
+  it("R01・R02・R03（W-112・W-113・W-114・U-67〜U-69）：(Ⅰ)2 だけの月は条件つき 1 件（前提「当院が主治医の機関でなければ」）。(Ⅰ)1 と (Ⅰ)2 が同じ月は判定不能で 1 回だけ聞き、R02・R03 は黙る", () => {
+    expect(keysOf(ev([v2(2, [day(6), day(20)]), line("C002_2RO1", 1, [day(20)])]), "R01", "R02", "R03")).toEqual(["R01.visit2_only(条件つき)"]);
+    const f = ev([v2(2, [day(6), day(20)]), line("C002_2RO1", 1, [day(20)])]).find((x) => x.messageKey === "R01.visit2_only")!;
+    expect(findingText(f)).toMatch(/^当院が主治医の機関でなければ、/);
+    expect(keysOf(ev([line("C001_1I", 1, [day(6)]), v2(1), line("C002_2RO1", 1, [day(20)]), line("C002_N10_HOKATSU", 1, [day(20)])]), "R01", "R02", "R03")).toEqual(["R01:visit2Mixed"]);
+    // 足す前は R01 が決められなかった請求（(Ⅰ)2 は対象外の単位）
     const only2 = [{ kubun: "C001_2I", count: 2, dates: [day(6), day(20)] }, { kubun: "C002_2RO1", count: 1, dates: [day(20)] }];
-    const mixed = [{ kubun: "C001_1I", count: 1, dates: [day(6)] }, { kubun: "C001_2I", count: 1, dates: [day(20)] }, { kubun: "C002_2RO1", count: 1, dates: [day(20)] }];
-    for (const masters of [false, true]) {
-      const [b2, a2] = [judge(before, only2, K1.facts, masters), judge(after, only2, K1.facts, masters)];
-      expect(b2.unsupported).toContain("R01");
-      expect(a2.unsupported).not.toContain("R01");
-      expect(a2.findings).toContain("R01.no_visit");
-      const [b3, a3] = [judge(before, mixed, K1.facts, masters), judge(after, mixed, K1.facts, masters)];
-      expect(b3.unsupported).toEqual(expect.arrayContaining(["R01", "R03"]));
-      expect(a3.findings).toEqual(expect.arrayContaining(["R01.use_once", "R03.missing"]));
-    }
+    expect(judge(before, only2, loadCase("K1").facts).unsupported).toContain("R01");
   });
-
-  it("決められないに置いたルールは、足す前と同じ：確定の指摘は増えず、(Ⅰ)2 の行がある請求では決められない（情報不足）", () => {
-    // (Ⅰ)2 の日に訪問診療時のベースアップ評価料・物価対応料（資料では正しい。今の読みは (Ⅰ)2 の日を訪問診療の日に入れないので誤りと言い得る）と、同じ日の往診料
-    const lines = [line("C001_1I", 1, [day(6)]), line("C001_2I", 1, [day(20)]), line("O001_3I", 2, [day(6), day(20)]), line("O100_1HA", 2, [day(6), day(20)]), line("C000", 1, [day(20)]), line("C002_2NI1", 1, [day(6)])];
-    for (const masters of [false, true]) {
-      const [b, a] = [judgeCtx(before, { ...base(K1.facts), lines }, masters), judgeCtx(after, { ...base(K1.facts), lines }, masters)];
-      expect(heldOf(a.certain).filter((k) => !b.certain.includes(k)), `masters=${masters}`).toEqual([]);
-      expect(heldOf(a.certain)).toEqual([]);
-      for (const id of ["R08", "R15"]) expect([masters, id, b.unsupported.includes(id), a.unsupported.includes(id)]).toEqual([masters, id, true, true]);
-    }
+  it("R13・R17 の週の上限（W-118・W-119）：(Ⅰ)2 は週の回数に入らない", () => {
+    expect(keysOf(ev([line("C001_1I", 3, [day(4), day(5), day(6)]), v2(1, [day(7)])]), "R13")).toEqual([]);
   });
-
-  it("同梱の症例 K1〜K7 に (Ⅰ)2 の行を足しても、決められないに置いたルールの確定の指摘は足す前より増えない。R17 の T176 は決められない", () => {
-    for (const n of ["K1", "K2", "K3", "K4", "K5", "K6", "K7"]) {
-      const c = loadCase(n);
-      const first = c.lines.find((l) => l.kubun === "C001_1I" || l.kubun === "C001_1RO")?.dates[0] ?? day(6);
-      for (const masters of [false, true]) {
-        // 足す前：(Ⅰ)2 の行は対象外の単位（行に入らない）。足した後：行に入る
-        const ctx = { ...c, claimId: "X", events: [], recordsKnown: false };
-        const pre: ClaimContext = { ...ctx, partial: true, ...(masters ? { outside: outsideOf(["114042110"]) } : {}) };
-        const certain = (rev: Revision, x: ClaimContext) => evaluateWith(x, rev).findings.filter((f) => f.kind !== "情報不足" && f.params?.conditional !== "1").map((f) => `${f.messageKey}:${f.params?.rule ?? ""}:${f.lineRefs.join(",")}`);
-        const post = withLines(ctx, line("C001_2I", 1, [first]));
-        const [bb, aa] = [certain(before, pre), certain(after, post)];
-        const t176 = (xs: string[]) => xs.filter((k) => k.startsWith("R17.") && k.includes(":T176-date:"));
-        expect([n, masters, heldOf(aa).filter((k) => !bb.includes(k)), t176(aa)]).toEqual([n, masters, [], []]);
-      }
+  it("R08・R15（W-115〜W-117）：(Ⅰ)2 の日は訪問診療時の区分（oushin_only_day を言わない）。(Ⅰ)2 だけの日の再診時等は区分誤り", () => {
+    expect(keysOf(ev([line("C001_1I", 1, [day(6)]), v2(1), line("O001_3I", 2, [day(6), day(20)]), line("O100_1HA", 2, [day(6), day(20)])]), "R08", "R15")).toEqual([]);
+    expect(keysOf(ev([line("C001_1I", 1, [day(6)]), v2(1), line("O001_3I", 1, [day(6)]), line("O001_2", 1, [day(20)]), line("O100_1HA", 1, [day(6)]), line("O100_1RO", 1, [day(20)])]), "R08", "R15")).toEqual(["R08.use_visit", "R15.use_visit"]);
+  });
+  it("R10（W-122）：(Ⅰ)2 の日の往診料は、(Ⅰ)1 と同じく同じ日の関係を確かめる", () => {
+    expect(keysOf(ev([v2(1), line("C000", 1, [day(20)])]), "R10")).toEqual(["R10:sameDayOushinAfterVisit"]);
+  });
+  it("R11（W-125。U-70）：(Ⅰ)2 の日の外来迅速検体検査加算は、記録がなければ条件つき", () => {
+    const facts = { ...loadCase("K1").facts, rapidSameDayDocumented: { known: true as const, value: false } };
+    expect(keysOf(evaluateWith({ ...base(facts), lines: [v2(1), line("D_GAIRAI_JINSOKU", 1, [day(20)])], commentsKnown: false }, after).findings, "R11")).toEqual(["R11.rapid_needs_same_day_doc_visit2(条件つき)"]);
+  });
+  it("R09（W-120・U-72）：(Ⅰ)2 だけの月の C001 の加算は、前の月に (Ⅰ)1 がなく死亡日に往診料もなければ確定。前の月を取り込んでいない・死亡日に往診料があれば「見ていません」", async () => {
+    const { visit2ScopeNotes, VISIT2_TERMINAL_NOTE } = await import("../../src/engine/visit2");
+    const lines = [v2(1), line("C001_N8_SHIBOU", 1, [day(20)])];
+    expect(keysOf(ev(lines, { prevMonthVisit1: false }), "R09")).toEqual(["R09.addition_needs_visit1"]);
+    for (const more of [{ prevMonthVisit1: null }, { prevMonthVisit1: true }]) {
+      expect(keysOf(ev(lines, more), "R09")).toEqual([]);
+      expect(visit2ScopeNotes({ lines, ...more }, after.consts)).toEqual([VISIT2_TERMINAL_NOTE]);
     }
+    expect(keysOf(ev([...lines, line("C000", 1, [day(20)])], { prevMonthVisit1: false }), "R09")).toEqual([]);
+  });
+  it("R17 T176：(Ⅰ)2 だけの月は決めていない（情報不足。文は対象外の行と言わない）、(Ⅰ)1 と (Ⅰ)2 が同じ月は黙る（R01 が聞く）", () => {
+    const k2 = loadCase("K2");
+    const withV2 = (c: ClaimContext) => ({ ...c, commentsKnown: true, comments: [] });
+    const only = evaluateWith(withV2({ ...k2, lines: [v2(2, [day(6), day(20)]), line("C002_2RO1", 1, [day(20)])] }), after).findings.filter((f) => f.ruleId === "R17" && f.params?.rule === "T176-date");
+    expect(only.map((f) => f.missing?.field)).toEqual(["visit2Undecided"]);
+    expect(findingText(only[0])).not.toContain("対象外");
+    const mixed = evaluateWith(withV2({ ...k2, lines: [line("C001_1I", 1, [day(6)]), v2(1), line("C002_2RO1", 1, [day(20)])] }), after).findings.filter((f) => f.ruleId === "R17" && f.params?.rule === "T176-date");
+    expect(mixed).toEqual([]);
   });
 });
 
-describe("導出（算定プレビュー）で (Ⅰ)2 の行が入力にある月（design.md §18-12 の 8。当面の形）", () => {
-  it("D01・D02・D06・D07・D08・D12 と、D01 が保留にした訪問から立てる D03・D04・D05・D10・D11 は行にせず「決められない」（visit2_pending）。検査（D09）は立つ", async () => {
+describe("導出で (Ⅰ)2 の行が入力にある月（EM §2-14 の 2-2）", () => {
+  it("訪問の出来事は (Ⅰ)1 と決められず立てない（visit2_pending）。保留の訪問から D03〜D05・D10・D11・D12 を立てない。(Ⅰ)2 の日は D06・D07（3 イ）・D08 で訪問診療の日", async () => {
     const { deriveLines } = await import("../../src/engine/derive");
     const K1 = loadCase("K1");
-    const input = { yearMonth: K1.yearMonth, facility: K1.facility, facts: K1.facts, events: K1.events, history: K1.history, choices: {} };
-    const plain = deriveLines({ ...input, manual: [] });
-    const held = deriveLines({ ...input, manual: [line("C001_2I", 1, [day(9)])] });
-    expect(plain.basis.some((b) => b.derive === "D01")).toBe(true);
-    expect(plain.basis.some((b) => b.derive === "D03")).toBe(true);
-    expect(held.basis.filter((b) => ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D10", "D11", "D12"].includes(b.derive))).toEqual([]);
+    const input = { yearMonth: K1.yearMonth, facility: K1.facility, facts: K1.facts, history: K1.history, choices: {} };
+    const held = deriveLines({ ...input, events: K1.events, manual: [line("C001_2I", 1, [day(9)])] });
     expect(held.unsupported.map((u) => u.code)).toContain("visit2_pending");
-    expect(held.basis.filter((b) => b.derive === "D09").map((b) => b.kubun)).toEqual(plain.basis.filter((b) => b.derive === "D09").map((b) => b.kubun));
-  });
-});
-
-describe("取り忘れ（G11）で (Ⅰ)2 の行がある請求（design.md §18-12 の 8。当面の形）", () => {
-  it("G11 は (Ⅰ)1 の行だけを訪問診療料として読むので、(Ⅰ)2 の行がある請求は見ず、理由を出す", async () => {
-    const { VISIT2_G11_SKIP } = await import("../../src/engine/visit2");
-    const { createTorikawasure } = await import("../../src/server/app/torikawasure");
-    // (Ⅰ)2 の行で先に返すので、DB と時計は使わない
-    const tori = createTorikawasure({ sqlite: null as never, paths: null as never }, { now: () => "" });
-    const K1 = loadCase("K1");
-    const r = tori.run({ claim: null as never, base: withLines(K1, line("C001_2I", 1, [day(9)])), rev: after, path: "uke", days: [], hand: [] });
-    expect(r).toEqual({ skip: VISIT2_G11_SKIP });
+    expect(held.basis.filter((b) => ["D01", "D03", "D04", "D05", "D10", "D11", "D12"].includes(b.derive))).toEqual([]);
+    // 出来事に訪問がない月：(Ⅰ)2 の日に D07 の 3 イ・D08 の訪問診療時が立つ。管理料は立たない（確定した (Ⅰ)1 が 0。W-113）
+    const noVisits = deriveLines({ ...input, events: K1.events.filter((e) => e.type !== "visit"), manual: [line("C001_2I", 1, [day(9)])] });
+    expect(noVisits.unsupported.map((u) => u.code)).not.toContain("visit2_pending");
+    const at9 = noVisits.basis.filter((b) => b.dates.includes(day(9))).map((b) => [b.derive, b.kubun]);
+    expect(at9).toEqual(expect.arrayContaining([["D07", "O001_3I"], ["D08", "O100_1HA"]]));
+    expect(noVisits.basis.filter((b) => b.derive === "D03")).toEqual([]);
   });
 });
