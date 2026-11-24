@@ -1,0 +1,323 @@
+{
+  "_note": "介護保険・ほかの医療機関との調整の合成の症例 K25〜K31（EM §5-1 の行。design.md §18-7。v37 21e）。どれも架空。月は基準月（config/demo.json）からのずれ（m）と日（d）で書く。申告（declare）は聞き取りの画面で答える内容で、症例の UKE には入らない。施設・機関の名前と、申告の確かめた日・出どころ・認定の期間・施設の確かめ直す日は合成の設定。expected は EM §5-1 の行の正解の指摘（条件つき）",
+  "patientNo": "K",
+  "homes": [
+    {
+      "key": "tokuyou",
+      "name": "架空の特養さくら",
+      "kind": "特養（地域密着型を含む）",
+      "placedPhysician": "いいえ",
+      "mitoriFacility": "いいえ",
+      "recheck": {
+        "m": 5,
+        "d": 31
+      }
+    }
+  ],
+  "basis": {
+    "checkedOn": {
+      "m": 0,
+      "d": 3
+    },
+    "source": "ケアマネジャーからの連絡"
+  },
+  "cases": [
+    {
+      "id": "K25",
+      "name": "架空 二十五",
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            6,
+            20
+          ]
+        },
+        {
+          "kubun": "C002-2_2RO1",
+          "days": [
+            20
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 4
+        },
+        "residence": {
+          "type": "特養（地域密着型を含む）",
+          "home": "tokuyou"
+        },
+        "others": "none",
+        "terminalCancer": false
+      },
+      "expected": [
+        "R20.tokuyou"
+      ]
+    },
+    {
+      "id": "K26",
+      "name": "架空 二十六",
+      "prev": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            5,
+            12
+          ]
+        },
+        {
+          "kubun": "C002_2RO1",
+          "days": [
+            12
+          ]
+        }
+      ],
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            21,
+            23
+          ]
+        },
+        {
+          "kubun": "C002_2RO1",
+          "days": [
+            23
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 3
+        },
+        "residence": {
+          "type": "自宅"
+        },
+        "shortStay": {
+          "kind": "短期入所生活介護",
+          "start": 20,
+          "end": 24,
+          "fromDischarge": "いいえ"
+        },
+        "others": "none",
+        "terminalCancer": false
+      },
+      "expected": [
+        "R20.seikatsu_family",
+        "R20.seikatsu_prior_visit"
+      ]
+    },
+    {
+      "id": "K27",
+      "name": "架空 二十七",
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            11,
+            13
+          ]
+        },
+        {
+          "kubun": "C002-2_2RO1",
+          "days": [
+            13
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 2
+        },
+        "residence": {
+          "type": "サ高住（特定施設の指定なし）"
+        },
+        "shortStay": {
+          "kind": "小多機・看多機の宿泊",
+          "start": 10,
+          "end": 14,
+          "fromDischarge": "いいえ"
+        },
+        "others": "none",
+        "terminalCancer": false
+      },
+      "expected": [
+        "R20.shoutaki_family"
+      ]
+    },
+    {
+      "id": "K28",
+      "name": "架空 二十八",
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            6
+          ]
+        },
+        {
+          "kubun": "C002_2NI1",
+          "days": [
+            6
+          ]
+        },
+        {
+          "kubun": "C010",
+          "days": [
+            6
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要支援",
+          "level": 2
+        },
+        "residence": {
+          "type": "自宅"
+        },
+        "shortStay": "none",
+        "others": "none"
+      },
+      "expected": [
+        "R20.renkei"
+      ]
+    },
+    {
+      "id": "K29",
+      "name": "架空 二十九",
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            6,
+            20
+          ]
+        },
+        {
+          "kubun": "C002_2RO1",
+          "days": [
+            20
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 1
+        },
+        "residence": {
+          "type": "自宅"
+        },
+        "shortStay": "none",
+        "others": [
+          {
+            "name": "架空のあおば診療所",
+            "kind": "医療機関",
+            "specialRelation": "いいえ",
+            "kanriSide": "その機関",
+            "activities": {
+              "訪問診療": "はい"
+            }
+          }
+        ]
+      },
+      "expected": [
+        "R21.kanri_one"
+      ]
+    },
+    {
+      "id": "K30",
+      "name": "架空 三十",
+      "lines": [
+        {
+          "kubun": "C001_2I",
+          "days": [
+            9
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 2
+        },
+        "residence": {
+          "type": "有料老人ホーム（特定施設の指定なし）"
+        },
+        "shortStay": "none",
+        "others": [
+          {
+            "name": "架空のみどり内科",
+            "kind": "医療機関",
+            "specialRelation": "いいえ",
+            "kanriSide": "その機関",
+            "activities": {
+              "求めによる訪問診療の求めた側": "はい"
+            },
+            "referredOn": {
+              "m": -7,
+              "d": 16
+            }
+          }
+        ]
+      },
+      "expected": [
+        "R21.visit2_6m"
+      ]
+    },
+    {
+      "id": "K31",
+      "name": "架空 三十一",
+      "lines": [
+        {
+          "kubun": "C001_1I",
+          "days": [
+            6
+          ]
+        },
+        {
+          "kubun": "C002_2NI1",
+          "days": [
+            6
+          ]
+        },
+        {
+          "kubun": "C007",
+          "days": [
+            6
+          ]
+        }
+      ],
+      "declare": {
+        "careCert": {
+          "kind": "要介護",
+          "level": 2
+        },
+        "residence": {
+          "type": "自宅"
+        },
+        "shortStay": "none",
+        "others": [
+          {
+            "name": "架空のひかり病院",
+            "kind": "医療機関",
+            "specialRelation": "はい",
+            "kanriSide": "取っていない",
+            "activities": {
+              "医療機関が行う訪問看護": "はい"
+            }
+          }
+        ]
+      },
+      "expected": [
+        "R21.shiji"
+      ]
+    }
+  ]
+}
