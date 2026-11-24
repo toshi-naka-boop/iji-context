@@ -24,4 +24,15 @@ describe("撮影部位のコメントの許可リスト（段 22c）", () => {
     const more = { ...r2026, imagingSiteComments: [...r2026.imagingSiteComments, "842100072"] };
     expect(diffLines(verifyMasters(db, em, { write: false, revisions: [more] }).lines).length).toBeGreaterThan(0);
   });
+
+  it.skipIf(!has)("check:masters は包括の群とマスターを突き合わせ、members を 1 つ消すと失敗にする（§19-12。C-621）", () => {
+    const db = openMasters(file)!;
+    const em = readEm(root);
+    const groupLines = (l: string[]) => l.filter((x) => x.startsWith("包括の群がマスターと合わない"));
+    expect(groupLines(verifyMasters(db, em, { write: false, revisions: [r2026] }).lines)).toEqual([]);
+    const fewer = { ...r2026, bundles: r2026.bundles.map((b) => (b.tiers[0].kubun === "D008_3" ? { ...b, members: b.members.slice(1) } : b)) };
+    const r = verifyMasters(db, em, { write: false, revisions: [fewer] });
+    expect(groupLines(r.lines).length).toBeGreaterThan(0);
+    expect(r.failures).toBeGreaterThan(0);
+  });
 });

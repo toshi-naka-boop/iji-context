@@ -11,6 +11,7 @@ import { REVISIONS } from "../engine/revisions";
 import { recalcUnit, type RecalcItem } from "../generic/points";
 import type { Revision } from "../engine/revisions/types";
 import { MASTERS_CONFIG, type MastersConfig } from "./config";
+import { checkBundles, GROUPS, membersOf } from "./bundle-check";
 import { pickSnapshot } from "./db";
 import { LAYOUTS, TABLE_COLUMNS } from "./layout";
 import { checkCodes, emNames, type MasterRow } from "./revision-check";
@@ -331,6 +332,24 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
     }
     failures += hits;
     lines.push(`版の表との食い違い：${hits} 件`);
+  }
+
+  // 3-1. 包括の群と告示の号の対応（design.md §19-12。反証 round-94 C-621）：版の bundles の群（D008・D013）の members が、マスターの群の行と 1 対 1 で、区分番号・号の範囲が合うこと。
+  // マスターの次の世代で群が変わったら（号の新設・列の移り）、ここで止める
+  if (snapshotsOf("shinryo").length === 0) lines.push("包括の群と号の対応：医科診療行為マスターがないので飛ばした");
+  else {
+    let diff = 0;
+    for (const rev of (opt.revisions ?? REVISIONS).filter((r) => r.generation === generation && r.bundles.length > 0)) {
+      for (const s of snapshotsOf("shinryo")) {
+        const r = checkBundles(db, s, GROUPS.map((group) => ({ group, members: membersOf(rev.bundles, group.tierPrefix) })));
+        if (!r.ok) {
+          diff++;
+          for (const l of r.lines.filter((x) => x.includes("NG"))) lines.push(`包括の群がマスターと合わない（${rev.id} shinryo ${s}）：${l.trim()}`);
+        }
+      }
+    }
+    failures += diff;
+    lines.push(`包括の群と号の対応：食い違い ${diff} 件`);
   }
 
   // 3-2. 撮影部位のコメントの許可リスト（design.md §19-1・§19-10 完了条件 4）：コメントマスターの「撮影部位（」の行と、版の imagingSiteComments が同じこと
