@@ -2,6 +2,7 @@
 // 決めるのは「どの区分を何回・どの日に立てるか」だけ。要件（背反・要件不足・週の限度など）は evaluate が判定する。
 // 判定の述語は predicates.ts のものを検証（ルール）と共有する。LLM は使わない（src/mentor と LLM の SDK を import しない）
 import { familySilence } from "./care-scope";
+import { hasVisit2, VISIT2_HELD_DERIVES } from "./visit2";
 import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
@@ -90,7 +91,7 @@ export type Pending =
  * 導出の未対応。grade_not_in_revision は、その版に施設の種別の区分がない（比較用の版）。baseup_note5 は、注5 の区分の表を持たない版（比較用の版）。
  * 単一建物の人数別の管理料は段 17f で導出する（D03 が人数の区分を buildingBandOf で引く。design.md §15-4）
  */
-export type Unsupported = { code: "grade_not_in_revision" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
+export type Unsupported = { code: "grade_not_in_revision" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement" | "visit2_pending"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -486,6 +487,14 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     }
   }
 
+  // 訪問診療料(Ⅰ)2 の行（入力の行）がある月：(Ⅰ)2 の日の扱いを決めていない導出（D01・D02・D06・D07・D08・D12）は、行にせず「決められない」（design.md §18-12 の 8。当面の形。src/engine/visit2.ts）
+  if (hasVisit2(input.manual, c)) {
+    for (let i = lines.length - 1; i >= 0; i--) if (VISIT2_HELD_DERIVES.includes(basis[i].derive)) {
+      lines.splice(i, 1);
+      basis.splice(i, 1);
+    }
+    unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行があるので、訪問診療料・往診料・再診料・在宅医療DX情報活用加算・ベースアップ評価料(Ⅰ)・物価対応料・在宅ターミナルケア加算は行にしていません（(Ⅰ)2 の日の扱いを確かめています）" });
+  }
   const all = [...lines, ...input.manual];
   return {
     revisionId: rev.id,

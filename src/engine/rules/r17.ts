@@ -6,6 +6,7 @@ import { kanriKubun, overLimitVisitDays } from "../predicates";
 import type { CommentRule } from "../revisions/types";
 import type { ClaimContext, Comment, Finding, Rule } from "../types";
 import { eventsOf, present } from "./util";
+import { hasVisit2, VISIT2_HELD_COMMENTS } from "../visit2";
 
 export function makeR17(spec: CommentSpec): Rule {
   const kubun = [...new Set(spec.comments.flatMap((r) => r.kubun))];
@@ -33,6 +34,11 @@ export function makeR17(spec: CommentSpec): Rule {
       for (const rule of spec.comments) {
         const refs = present(ctx, rule.kubun);
         if (refs.length === 0) continue;
+        // 訪問診療料(Ⅰ)2 の行がある請求：在医総管の月の訪問日の記載（T176）は決められない（design.md §18-12 の 8。当面の形。src/engine/visit2.ts）
+        if (VISIT2_HELD_COMMENTS.includes(rule.id) && hasVisit2(ctx.lines, spec.consts)) {
+          out.push({ ruleId: this.id, kind: "情報不足", lineRefs: refs, missing: { target: "clerk", field: "unsupportedLines" }, messageKey: `${this.id}.missing_fact`, params: { rule: rule.id }, reference: this.reference });
+          continue;
+        }
         const found = (key: string, params: Record<string, string> = {}): Finding => ({
           ruleId: this.id,
           kind: "記載もれ",

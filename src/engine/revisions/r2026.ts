@@ -23,6 +23,7 @@ import { makeR19 } from "../rules/r19";
 import { makeR20 } from "../rules/r20";
 import { makeR21 } from "../rules/r21";
 import { careCodes, carePoints, careShikibetsu } from "./r2026-care";
+import { withVisit2Reads } from "../visit2";
 import { changes } from "./r2026-changes";
 import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
 import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
@@ -278,7 +279,8 @@ export const r2026: Revision = {
   comments,
   commentCodes,
   kisaiYoshi,
-  rules: [
+  // 訪問診療料(Ⅰ)2 の行で「決められない」に置くルールは、(Ⅰ)2 を読む区分として申告する（design.md §18-12 の 8。src/engine/visit2.ts）
+  rules: withVisit2Reads([
     makeR01(consts, points),
     ...[makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
     makeR17({ consts, comments, commentCodes }),
@@ -286,6 +288,6 @@ export const r2026: Revision = {
     makeR19(consts, points),
     makeR20(consts),
     makeR21(consts),
-  ],
+  ], { consts }),
   changes,
 };
