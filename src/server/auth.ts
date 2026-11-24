@@ -15,6 +15,8 @@ export { SESSION_COOKIE } from "./auth-cookie";
 const SESSION_DAYS = 30;
 /** 使い方が未定のクリニックで、選ぶまで待ってもらうときの文言（src/server/errors.ts の TenantUndecided と同じ） */
 const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
+/** 実在のデータで使うクリニックで、医師の役割に変えようとしたときの文言 */
+const DOCTOR_BY_INVITE = "実在のデータで使うクリニックでは、医師の役割に切り替えられません。医師には、医師の役割の招待コードで登録してもらってください";
 /** 招待コードの期限（日） */
 const INVITE_DAYS = 7;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -197,10 +199,12 @@ export function openAuth(dbFile: string) {
 
   /**
    * 自分の役割を切り替える（FR-144）。1 人で始めたクリニックで、ほかの利用者がいないときだけ（1 人で全部の役を通して使うため）。
-   * 利用者が 2 人以上いるクリニックではできない
+   * 利用者が 2 人以上いるクリニックではできない。医師への切り替えは、デモで試すクリニックだけ（実在のデータで使うクリニックでは、
+   * 持ち主が医師になって医師確認の回答・承認を自分でできてしまうので、医師は招待で入った医師のアカウントに限る）
    */
   function switchRole(user: User, role: Role): User {
     if (!isSolo(user)) throw forbidden("役割を切り替えられるのは、1 人で使っているクリニックだけです");
+    if (role === "doctor" && tenantKind(user.tenantId) !== "demo") throw forbidden(DOCTOR_BY_INVITE);
     db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, user.id);
     return { ...user, role };
   }

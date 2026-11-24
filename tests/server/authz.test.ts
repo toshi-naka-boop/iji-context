@@ -79,6 +79,24 @@ describe("医師確認の回答と承認", () => {
     expect(auth().eventsOf(owner.tenantId).map((e) => e.event)).toContain("role.switch:clerk>doctor");
   });
 
+  it("実在のデータで使うクリニックでは、1 人で使っている持ち主でも医師の役割に切り替えられない（ほかの役割には切り替えられる）", async () => {
+    const owner = auth().register("real_solo_owner", "じつざい", "password123", "real");
+    const cookie = cookieOf(owner);
+    const denied = await switchTo(cookie, "doctor");
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error).toContain("招待コード");
+    expect(auth().login("real_solo_owner", "password123")!.role).toBe("clerk");
+    expect((await switchTo(cookie, "manager")).status).toBe(200);
+    // デモで試すクリニックでは、今までどおり医師にも切り替えられる
+    const demo = auth().register("demo_solo_owner", "でも", "password123", "demo");
+    expect((await switchTo(cookieOf(demo), "doctor")).status).toBe(200);
+    // 断った切り替えも監査ログに残る
+    expect(instance.runAs(owner, () => instance.getApp().audit.list()).reverse().map((r) => [r.action, r.target, r.result])).toEqual([
+      ["POST /api/auth/role", "doctor", "denied"],
+      ["POST /api/auth/role", "manager", "ok"],
+    ]);
+  });
+
   it("医師確認の id の形でないものは、記録のファイルを探す前に断る", async () => {
     const approve = (await import("../../app/api/doctor/[id]/approve/route")).POST;
     const u = auth().register("clinic_path", "ぱす", "password123");
