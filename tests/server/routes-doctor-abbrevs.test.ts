@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChartAct } from "../../src/chart/acts";
-import { ABBREV_OPTIONS, abbrevQueryErrors, type AbbrevRequest } from "../../src/server/app/doctor-abbrevs";
+import { ABBREV_OPTIONS, abbrevQueryErrors, MAX_ABBREV_REFS, type AbbrevRequest } from "../../src/server/app/doctor-abbrevs";
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
@@ -360,5 +360,36 @@ describe("病名の記載への医師の記入の答えを、その記載を開�
       db.close();
     }
     expect(aliasCount()).toBe(aliases);
+  });
+});
+
+describe("まとめの問いの引用の上限（反証 round-96 X-493）", () => {
+  it("同じ月・同じ語の記載が 501 件でも、上限（GET と POST で同じ）ずつの問いに割れ、どれも画面と同じ参照で答えられる", async () => {
+    expect(MAX_ABBREV_REFS).toBe(500);
+    // 501 件の保存したカルテ（貼ったカルテの形）を直接入れる
+    const me = instance.clerkIdOf(user);
+    const db = sql();
+    try {
+      const act = { category: "検査", written: "ＵＣＧ", lookup: [], quote: "ＵＣＧ", match: null, abbrev: ["UCG"] };
+      const acts = JSON.stringify({ acts: [act], rx: [], rxChoice: null, rxChoiceBy: null, abbrev: { marks: ["UCG"], at: `${day(1)}T00:00:00.000Z` } });
+      const ins = db.prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, acts, clerk_id, created_at) VALUES (?, ?, '記録', ?, '[]', ?, ?, ?)");
+      db.transaction(() => {
+        for (let i = 0; i < 501; i++) ins.run(claimId("K4"), day(1), JSON.stringify({ s: "", o: "ＵＣＧ。", a: "", p: "", rx: "" }), acts, me, `${day(1)}T00:00:00.000Z`);
+      })();
+    } finally {
+      db.close();
+    }
+    const qs = (await list()).filter((x) => x.token === "UCG");
+    expect(qs.map((x) => [x.split, x.quotes.length])).toEqual([
+      [false, 500],
+      [false, 1],
+    ]);
+    // 画面と同じく、並んでいる参照を全部送って答える（「記載によって違う」も通る）
+    expect((await answer(qs[0], "記載によって違う")).status).toBe(200);
+    const rest = (await list()).filter((x) => x.token === "UCG" && !x.split);
+    expect(rest.map((x) => x.quotes.length)).toEqual([1]);
+    expect((await answer(rest[0], "判定不能")).status).toBe(200);
+    expect((await list()).filter((x) => x.token === "UCG" && !x.split)).toEqual([]);
+    expect((await list()).filter((x) => x.token === "UCG" && x.split)).toHaveLength(500);
   });
 });

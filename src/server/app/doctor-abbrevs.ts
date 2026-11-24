@@ -1,7 +1,7 @@
 // 略語の医師への確認（spec FR-211。design/iji-context/plan-fr211.md の「何を作るか」4・5）。医師確認の「確かめてほしい項目」（FR-174）に足す問い。
 // 問いは定型文 1 つ、選択肢は固定の 4 つ（LLM に作らせない。この機能に LLM の呼び出しはない）。医師確認の 7 要件（FR-30）：
 // ①引用（カルテの日付と文）②定型文で誘導しない ③「その他」「判定不能」④点数・金額の語を出さない（引用の該当の語は伏せる）⑤validateQuery と同じ検査 ⑥答えを追記で残す ⑦営業日でリマインド・保留の印。
-// まとめ：答えの付いていない記載を（診療年月・語）で束ねて 1 問。「記載によって違う」の答えが付いた記載は、記載 1 つずつの問いに割る。
+// まとめ：答えの付いていない記載を（診療年月・語）で束ねて 1 問（MAX_ABBREV_REFS を超えたら割る）。「記載によって違う」の答えが付いた記載は、記載 1 つずつの問いに割る。
 // 答えは、答えた時点で並んでいた記載にだけ効く（あとから同じ月に増えた記載は新しい問い）。答えはクリニックごとに覚えず、翌月の同じ語は改めて聞く。
 // 患者の氏名・患者 id は持たない・返さない（請求の番号と日付だけ）。ログ・監査ログに引用と答えの文を出さない
 import type Database from "better-sqlite3";
@@ -23,6 +23,8 @@ export const abbrevQuestion = (token: string): string => `この記載の『${to
 /** 記述の上限（記入は候補を引く語なので短く） */
 export const MAX_ABBREV_WRITE_IN = 100;
 export const MAX_ABBREV_OTHER = 200;
+/** 1 問に並べる記載の上限（GET の問いと POST の答えで同じ値。超えたら問いを割る。反証 round-96 X-493） */
+export const MAX_ABBREV_REFS = 500;
 /** 伏せた語の印と、添える文 */
 export const MASK = "＊＊";
 export const MASKED_NOTE = "伏せた語があります";
@@ -78,17 +80,25 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       acts: string | null;
       created_at: string;
     }[];
+    // 診療年月は請求ごとに 1 回だけ引く（同じ請求の記載が多くても重くしない）
+    const months = new Map<string, string | null>();
+    const monthOf = (claimId: string): string | null => {
+      if (!months.has(claimId)) {
+        try {
+          months.set(claimId, yearMonthOf(claimId));
+        } catch {
+          months.set(claimId, null);
+        }
+      }
+      return months.get(claimId)!;
+    };
     return rows.flatMap((r) => {
       if (ctx.hiddenClaim(r.claim_id)) return [];
       const stored = r.acts === null ? null : (JSON.parse(r.acts) as StoredActs);
       const found = askedItems(r.kind, stored, r.facts === null ? null : (JSON.parse(r.facts) as ExtractedFact[]));
       if (found.length === 0) return [];
-      let yearMonth: string;
-      try {
-        yearMonth = yearMonthOf(r.claim_id);
-      } catch {
-        return [];
-      }
+      const yearMonth = monthOf(r.claim_id);
+      if (yearMonth === null) return [];
       const at = stored?.abbrev?.at ?? r.created_at;
       return found.map((x) => ({ ...x, noteId: r.id, claimId: r.claim_id, date: r.date, yearMonth, at, ref: refOf(r.id, x.place, x.key) }));
     });
@@ -116,18 +126,24 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       }
     }
     const now = clock.now();
+    /** 請求の番号・日付・記載の参照の順（問いを割る位置を GET と POST で同じにする） */
+    const order = (a: { claimId: string; date: string; ref: string }, b: { claimId: string; date: string; ref: string }) =>
+      a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : a.date < b.date ? -1 : a.date > b.date ? 1 : a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0;
     const make = (yearMonth: string, token: string, list: Item[], split: boolean): AbbrevRequest => {
-      const quotes = list
-        .map((it) => ({ ref: it.ref, claimId: it.claimId, date: it.date, ...quoteOf(it.quote, token) }))
-        .sort((a, b) => (a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      const quotes = list.map((it) => ({ ref: it.ref, claimId: it.claimId, date: it.date, ...quoteOf(it.quote, token) })).sort(order);
       const since = list.map((x) => x.at).sort()[0];
       const n = businessDaysElapsed(since, now, ctx.businessDays);
       return { yearMonth, token, question: abbrevQuestion(token), options: [...ABBREV_OPTIONS], quotes, split, since, reminded: n >= 1, held: n >= 3 };
     };
-    const out = [...groups.entries()].map(([k, list]) => {
+    // 上限を超える組は、並べた順に上限ずつの問いに割る
+    const out = [...groups.entries()].flatMap(([k, list]) => {
       const [yearMonth, token] = [k.slice(0, 7), k.slice(8)];
-      return make(yearMonth, token, list, false);
+      const sorted = [...list].sort(order);
+      const chunks: Item[][] = [];
+      for (let i = 0; i < sorted.length; i += MAX_ABBREV_REFS) chunks.push(sorted.slice(i, i + MAX_ABBREV_REFS));
+      return chunks.map((c) => make(yearMonth, token, c, false));
     });
+    // 同じ月・同じ語の割った問いは、並べた順のまま（sort は安定）
     out.sort((a, b) => (a.yearMonth < b.yearMonth ? -1 : a.yearMonth > b.yearMonth ? 1 : a.token < b.token ? -1 : a.token > b.token ? 1 : 0));
     return [...out, ...splits.map((s) => make(s.item.yearMonth, s.token, [s.item], true))];
   }
