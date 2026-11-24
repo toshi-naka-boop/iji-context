@@ -168,28 +168,41 @@ export function applicationPending(rows: PatientFact[], yearMonth: string): bool
 
 /** 1・2 段：M について語り、負けていない行 */
 function remainingOf(certs: PatientFact[], yearMonth: string): PatientFact[] {
-  const { start, end } = monthRange(yearMonth);
   const monthOf = (r: PatientFact) => (r.value as { forMonth?: string }).forMonth ?? r.checkedAt.slice(0, 7);
   const kindOf = (r: PatientFact) => (r.value as CareCertValue).kind;
   const isDated = (r: PatientFact) => kindOf(r) === "要介護" || kindOf(r) === "要支援";
   const from = (r: PatientFact) => (r.value as { validFrom: string }).validFrom;
   const valid = (r: PatientFact) => isRealDate(from(r)) && (r.validUntil === null || isRealDate(r.validUntil));
-  const inWindow = (r: PatientFact) => monthOf(r) <= yearMonth && yearMonth <= addMonthsTo(`${monthOf(r)}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
-  // 1. 語る行
-  const talks = (r: PatientFact): boolean => {
-    const k = kindOf(r);
-    if (isDated(r)) return valid(r) ? from(r) <= end && (r.validUntil ?? "9999-12-31") >= start : monthOf(r) <= yearMonth;
-    if (k === "認定なし" || k === "申請中") return inWindow(r);
-    return monthOf(r) === yearMonth;
+  /** 1. 行 r が月 k について語るか */
+  const talksAt = (r: PatientFact, k: string): boolean => {
+    const kind = kindOf(r);
+    if (isDated(r)) {
+      if (!valid(r)) return monthOf(r) <= k;
+      const { start, end } = monthRange(k);
+      return from(r) <= end && (r.validUntil ?? "9999-12-31") >= start;
+    }
+    if (kind === "認定なし" || kind === "申請中") return monthOf(r) <= k && k <= addMonthsTo(`${monthOf(r)}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
+    return monthOf(r) === k;
   };
-  const talking = certs.map((r, i) => ({ r, i })).filter(({ r }) => talks(r));
-  // 2. 捨てる
+  const rows = certs.map((r, i) => ({ r, i }));
+  const talking = rows.filter(({ r }) => talksAt(r, yearMonth));
+  // 2. 捨てる：X は、X の答えた月から M までのどれかの月について語る別の行 Y が、答えた月が X と同じか後で、かつ X より後に残したとき、M では捨てる（v41 (1)）
   const notFromApplication = (r: PatientFact) => isDated(r) && ["いいえ", "分からない"].includes((r.value as { fromApplication?: string }).fromApplication ?? "");
-  // 期間つきの認定どうしは、期間の重なる（同じ日について語る）ときだけ負かす（月の途中で区分が変わった続いた 2 行は両方残る。§18-1）
+  // 期間つきの認定どうしは、期間の重なる（同じ日について語る）ときだけ負かす（月の途中で区分が変わった続いた 2 行は両方残る。§18-1。v41 (2)）
   const overlap = (a: PatientFact, b: PatientFact) => !valid(a) || !valid(b) || (from(a) <= (b.validUntil ?? "9999-12-31") && from(b) <= (a.validUntil ?? "9999-12-31"));
+  const monthsFor = (x: PatientFact) => {
+    const out: string[] = [];
+    for (let k = monthOf(x) < yearMonth ? monthOf(x) : yearMonth; k <= yearMonth; k = addMonthsTo(`${k}-01`, 1).slice(0, 7)) out.push(k);
+    return out;
+  };
   const beats = (y: { r: PatientFact; i: number }, x: { r: PatientFact; i: number }) =>
-    y.i > x.i && monthOf(y.r) >= monthOf(x.r) && !(kindOf(x.r) === "申請中" && notFromApplication(y.r)) && !(isDated(x.r) && isDated(y.r) && !overlap(x.r, y.r));
-  return talking.filter((x) => !talking.some((y) => beats(y, x))).map((x) => x.r);
+    y.i > x.i &&
+    monthOf(y.r) >= monthOf(x.r) &&
+    !(kindOf(x.r) === "申請中" && notFromApplication(y.r)) &&
+    !(isDated(x.r) && isDated(y.r) && !overlap(x.r, y.r)) &&
+    // 「分からない」は答えた月だけに効く（ほかの月の値を消さない。C-533）ので、M について語るときだけ負かす
+    (kindOf(y.r) === "分からない" ? talksAt(y.r, yearMonth) : monthsFor(x.r).some((k) => talksAt(y.r, k)));
+  return talking.filter((x) => !rows.some((y) => beats(y, x))).map((x) => x.r);
 }
 
 /** 3 段：残った行がすべて同じ確定の値ならその値、ほかは分からない */

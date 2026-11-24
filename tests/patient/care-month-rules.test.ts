@@ -57,9 +57,10 @@ const TABLE: [string, Spec[], Record<number, number | "?">][] = [
   ["X-401：同じ始まりの日で残し直せば（訂正）、効く", [["認定なし", -1], ["要介護", 3, 0, "bad"], ["要介護", 3, 0, 6]], { 0: 3, 1: 3 }],
   ["X-411：開始日が実在しない行を、正しい開始日で残し直せば、不正な行は負けて消える", [["要介護", 3, "bad", 4], ["要介護", 3, -7, 4, 0]], { [-1]: 3, 0: 3, 1: 3 }],
   ["(d)：不正な行は、あとに残した前の月の認定なしでは負けない（答えた前の月は、不正な行がまだ語らないので 0）", [["要介護", 3, "bad", 4], ["認定なし", -1]], { [-1]: 0, 0: "?", 1: "?" }],
-  ["X-420：10/10 に認定なし、11/10 に要介護 3（10/1〜1/31）を残すと 10〜1 月は 3。終わったあとの 2・3 月は窓の中の認定なしだけが語るので 0（v40 で ? から変わる）", [["認定なし", 0], ["要介護", 3, 0, 3, 1]], { 0: 3, 1: 3, 3: 3, 4: 0 }],
+  ["X-420：10/10 に認定なし、11/10 に要介護 3（10/1〜1/31）を残すと 10〜1 月は 3。終わったあとの 2 月も、認定なしは間の月について語る後の行に負けるので分からない（v41 (1)）", [["認定なし", 0], ["要介護", 3, 0, 3, 1]], { 0: 3, 1: 3, 3: 3, 4: "?" }],
   ["X-421：要介護 3（10 月分）・認定なし（11 月分）・申請中（10 月分、最後）の順で、11 月は認定なしと申請中が負けずに残るので分からない（v40 で 3 から変わる）", [["要介護", 3, 0, 3, 0], ["認定なし", 1], ["申請中", 0]], { 0: "?", 1: "?", 2: "?" }],
-  ["認定なし 10 月 → 要介護 3（11/1〜1/31）で、11〜1 月は 3。2・3 月は窓の中の認定なしだけが語るので 0（v40 で ? から変わる）", [["認定なし", 0], ["要介護", 3, 1, 3]], { 0: 0, 1: 3, 3: 3, 4: 0, 5: 0 }],
+  ["認定なし 10 月 → 要介護 3（11/1〜1/31）で、11〜1 月は 3。2・3 月は、認定なしが間の月について語る後の要介護 3 に負けるので分からない（v41 (1)）", [["認定なし", 0], ["要介護", 3, 1, 3]], { 0: 0, 1: 3, 3: 3, 4: "?", 5: "?" }],
+  ["v41 (2)：期間の重ならない認定どうしは捨て合わない（前の認定の月は前の値、後の月は後の値。月の途中で区分が変わった続いた 2 行は tests/patient/care-cert.test.ts の名前つきのテスト）", [["要介護", 1, -6, 0, -6], ["要介護", 3, 1, 6, 1]], { 0: 1, 1: 3, 2: 3 }],
   ["C-550：要介護 1（10 月分で答えた）→ 申請中（10 月分）→ 要介護 3（翌々月から。10 月分）：10 月は申請中が残るので分からない", [["要介護", 1, -6, 5, 0], ["申請中", 0], ["要介護", 3, 6, 9, 0]], { 0: "?", 6: 3 }],
   ["C-550：要介護 1 → 分からない（10 月分）→ 要介護 2（翌々月から。10 月分）：10 月は分からない", [["要介護", 1, -6, 5, 0], ["分からない", 0], ["要介護", 2, 6, 9, 0]], { 0: "?" }],
   ["C-551：11 月分の申請中のあとで、10 月分として要介護 1（4 月〜3 月）を入れても、11 月は分からない（残す順で答えが割れない）", [["申請中", 1], ["要介護", 1, -6, 5, 0]], { 0: 1, 1: "?" }],
@@ -115,8 +116,19 @@ describe("careCertFor の総当たり（C-553）", () => {
     if (s[0] === "分からない") return { talks: a === m, value: null };
     return { talks: a <= m && m <= a + 5, value: s[0] === "認定なし" ? "認定なし" : null };
   };
-  /** 設計の文：y が x を負かすか（答えた月が同じか後で、かつ後に残した。いいえ・分からないの期間つきの認定は申請中を負かさない） */
-  const defeats = (y: Spec, j: number, x: Spec, i: number) => j > i && answerOf(y) >= answerOf(x) && !(x[0] === "申請中" && y[0] === "要介護" && (y[5] === "いいえ" || y[5] === "分からない"));
+  /** 設計の文（v41）：y が月 m で x を負かすか：y は x の答えた月から m までのどれかの月について語り（分からないは m について語るときだけ）、答えた月が x と同じか後で、
+   * かつ後に残した。いいえ・分からないの期間つきの認定は申請中を負かさない。期間の重ならない期間つきの認定どうしは負かさない */
+  const periodOf = (s: Spec): [number, number] | null => (s[0] === "要介護" && s[2] !== "bad" && s[3] !== "bad" ? [s[2], s[3]] : null);
+  const defeats = (y: Spec, j: number, x: Spec, i: number, m: number) => {
+    if (!(j > i && answerOf(y) >= answerOf(x))) return false;
+    if (x[0] === "申請中" && y[0] === "要介護" && (y[5] === "いいえ" || y[5] === "分からない")) return false;
+    const px = periodOf(x);
+    const py = periodOf(y);
+    if (px && py && (px[1] < py[0] || py[1] < px[0])) return false;
+    if (y[0] === "分からない") return talkValue(y, m).talks;
+    for (let k = Math.min(answerOf(x), m); k <= m; k++) if (talkValue(y, k).talks) return true;
+    return false;
+  };
   const valueOf = (st: CareState): string | null => {
     if (!st.known) return null;
     if (st.segments.length !== 1) return "区間";
@@ -124,14 +136,15 @@ describe("careCertFor の総当たり（C-553）", () => {
     return g.kind === "認定なし" ? "認定なし" : g.kind === "要介護" ? `要介護${g.level}` : null;
   };
 
-  it(`性質 1：値が出た月では、その値と違う M について語る行は、どれも後の行に答えた月と残した順の両方で負けている（${seqs.length} 通り × 3 か月）`, () => {
+  it(`性質 1：値が出た月では、その値と違う M について語る行は、どれも後の行（その行の答えた月から M までのどれかの月について語る行）に答えた月と残した順の両方で負けている（${seqs.length} 通り × 3 か月）`, () => {
     const bad: string[] = [];
     for (const seq of seqs)
       for (const m of [0, 1, 2]) {
         const v = valueOf(careCertFor(rows(seq), month(m)));
         if (v === null) continue;
         const talking = seq.map((s, i) => ({ s, i, ...talkValue(s, m) })).filter((x) => x.talks);
-        const lost = (x: { s: Spec; i: number }) => talking.some((y) => defeats(y.s, y.i, x.s, x.i));
+        const all = seq.map((s, i) => ({ s, i }));
+        const lost = (x: { s: Spec; i: number }) => all.some((y) => defeats(y.s, y.i, x.s, x.i, m));
         if (talking.some((x) => x.value !== v && !lost(x))) bad.push(`${JSON.stringify(seq)} @${m} → ${v}`);
         if (!talking.some((x) => x.value === v && !lost(x))) bad.push(`${JSON.stringify(seq)} @${m} → ${v}（その値の行が残っていない）`);
       }
@@ -143,7 +156,8 @@ describe("careCertFor の総当たり（C-553）", () => {
     for (const seq of seqs)
       for (const m of [0, 1, 2]) {
         const talking = seq.map((s, i) => ({ s, i, ...talkValue(s, m) })).filter((x) => x.talks);
-        const rest = talking.filter((x) => !talking.some((y) => defeats(y.s, y.i, x.s, x.i)));
+        const all = seq.map((s, i) => ({ s, i }));
+        const rest = talking.filter((x) => !all.some((y) => defeats(y.s, y.i, x.s, x.i, m)));
         const values = new Set(rest.map((x) => x.value));
         const conflict = rest.length === 0 || values.has(null) || values.size > 1;
         if (!conflict) continue;
