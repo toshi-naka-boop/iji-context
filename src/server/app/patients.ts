@@ -1,7 +1,7 @@
 // 患者マスタ（患者と、保険・公費の加入情報）と、患者ごとに確かめた情報（履歴を残し、項目ごとに最新の 1 件を使う）。
 // 患者情報チェック（P01〜P08）もここから呼ぶ。氏名・番号・生年月日は、例外の文言とログに出さない
 import { checkPatient, type PatientFinding } from "../../patient/checks";
-import { applicationPending, isExpired, validatePatientFact, type PatientFact, type PatientFactInput } from "../../patient/facts";
+import { applicationPendingFor, isExpired, validatePatientFact, type PatientFact, type PatientFactInput } from "../../patient/facts";
 import { BURDEN_RATIOS, COVERAGE_SOURCES, factsFromPatient, recordOfUke, toHalfWidth, type Coverage, type CoverageInfo, type CoverageSource, type PatientProfile, type PatientRecord } from "../../patient/profile";
 import { patientFindingText } from "../../messages";
 import type { UkePatient, UkeReceipt } from "../../uke/types";
@@ -191,10 +191,12 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     const rows = sqlite.prepare("SELECT * FROM patient_facts WHERE patient_id = ? AND fact_key IN ('careCert', 'careLevel') ORDER BY id").all(patientId) as { patient_id: string; fact_key: string; value: string; source: string; valid_until: string | null; checked_at: string; checked_by: string }[];
     return rows.map((r) => ({ patientId: r.patient_id, key: r.fact_key as PatientFact["key"], value: JSON.parse(r.value) as PatientFact["value"], source: r.source as PatientFact["source"], validUntil: r.valid_until, checkedAt: r.checked_at, checkedBy: r.checked_by }));
   }
-  function patientFacts(claimId: string) {
+  /** period を渡すと、その期間の認定を入れるときに「申請の結果ですか」を聞くか（applicationPending）を返す（round-87 C-560）。渡さなければ請求の診療年月の 1 か月で見る */
+  function patientFacts(claimId: string, period?: { validFrom: string; validUntil: string | null }) {
     const patientId = patientIdOf(claimId);
-    // applicationPending：その請求の診療年月に申請中が残っているか（期間つきの認定を入れるときに「申請の結果ですか」を聞く。design.md §18-12 の 1 v40）
-    return { patientId, facts: latestPatientFacts(patientId).map((f) => ({ ...f, expired: isExpired(f, now()) })), applicationPending: applicationPending(careRows(patientId), receiptOf(claimId).yearMonth) };
+    const ym = receiptOf(claimId).yearMonth;
+    const p = period ?? { validFrom: `${ym}-01`, validUntil: `${ym}-01` };
+    return { patientId, facts: latestPatientFacts(patientId).map((f) => ({ ...f, expired: isExpired(f, now()) })), applicationPending: applicationPendingFor(careRows(patientId), p.validFrom, p.validUntil) };
   }
   /** role を渡すと宛先を守る：医師の役割が残せるのは、医師あての項目（別表第七など。エンジンの宛先の表）だけ。医療事務は、今までどおりどの項目も残せる（医師あての項目は「医師に確認」を根拠に） */
   function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput, role?: Role) {
@@ -209,7 +211,8 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     const patientId = patientIdOf(claimId);
     // 申請中が残っている患者に期間つきの認定を入れるときは、申請の結果かを聞く（1 回。design.md §18-12 の 1 v40）
     const certKind = f.key === "careCert" ? (f.value as { kind: string }).kind : null;
-    if ((certKind === "要介護" || certKind === "要支援") && (f.value as { fromApplication?: string }).fromApplication === undefined && applicationPending(careRows(patientId), receiptOf(claimId).yearMonth))
+    // 入れる認定の期間のどこかの月に、負けずに残っている申請中があれば聞く（入れる請求の月だけで決めない。round-87 C-560）
+    if ((certKind === "要介護" || certKind === "要支援") && (f.value as { fromApplication?: string }).fromApplication === undefined && applicationPendingFor(careRows(patientId), (f.value as { validFrom: string }).validFrom, f.validUntil))
       throw badRequest("申請中の患者です。この認定は申請の結果か（はい・いいえ〔前からの認定〕・分からない）を選んでください");
     // 「認定なし（確かめた）」と「分からない」には、答えた診療月（答えた請求の診療年月）を付ける（design.md §18-12 の 1。X-380：同じ月の訂正）
     const kind = f.key === "careCert" ? (f.value as { kind: string }).kind : null;

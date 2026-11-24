@@ -227,3 +227,37 @@ describe("「この認定は申請の結果ですか」（design.md §18-12 の 
     expect([v("はい"), v("いいえ"), v("分からない"), v("たぶん")]).toEqual([true, true, true, false]);
   });
 });
+
+describe("「申請の結果ですか」を聞く条件は、入れる認定の期間で決める（round-87 C-560）", () => {
+  const setup = async () => {
+    const { tempApp, upload, fileOf, receiptOf } = await import("../helpers/care");
+    const t = tempApp();
+    const lines = (ym: string) => [{ kubun: "C001_1I", count: 2, dates: [`${ym}-06`, `${ym}-20`] }, { kubun: "C002_2RO1", count: 1, dates: [`${ym}-20`] }];
+    const ids = upload(t.app, fileOf([receiptOf(1, YM, lines(YM)), receiptOf(1, month(1), lines(month(1))), receiptOf(1, month(6), lines(month(6)))]));
+    return { t, oct: ids[0], nov: ids[1], apr: ids[2] };
+  };
+  const old1 = { key: "careCert" as const, value: { kind: "要介護" as const, level: 1, validFrom: dateIn(-6, 1) }, source: "介護保険証" as const, validUntil: dateIn(5, 28) };
+  it("10 月分の申請中 → 11 月分の分からない → 11 月の請求から前からの要介護 1 を入れるときも聞く（答えがなければ断る）。いいえと答えれば 10 月は分からない", async () => {
+    const { t, oct, nov } = await setup();
+    try {
+      t.app.savePatientFact(oct, "new1", { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null });
+      t.app.savePatientFact(nov, "new1", { key: "careCert", value: { kind: "分からない" }, source: "介護保険証", validUntil: null });
+      expect(t.app.patientFacts(nov, { validFrom: old1.value.validFrom, validUntil: old1.validUntil }).applicationPending).toBe(true);
+      expect(() => t.app.savePatientFact(nov, "new1", old1)).toThrow(/申請の結果/);
+      t.app.savePatientFact(nov, "new1", { ...old1, value: { ...old1.value, fromApplication: "いいえ" } });
+      expect(t.app.caseOf(oct).facts.careLevel).toEqual({ known: false });
+    } finally {
+      t.close();
+    }
+  });
+  it("申請中の窓を過ぎた月の請求から、申請中の月を覆う前からの認定を入れるときも聞く", async () => {
+    const { t, oct, apr } = await setup();
+    try {
+      t.app.savePatientFact(oct, "new1", { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null });
+      expect(t.app.patientFacts(apr).applicationPending).toBe(false);
+      expect(() => t.app.savePatientFact(apr, "new1", old1)).toThrow(/申請の結果/);
+    } finally {
+      t.close();
+    }
+  });
+});
