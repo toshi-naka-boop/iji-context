@@ -141,27 +141,30 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
     const level = legacy.value as number;
     return { known: true, segments: [{ kind: level === 0 ? "区分不明" : "要介護", level }], source: legacy.source, checkedAt: legacy.checkedAt };
   }
-  const latest = certs[certs.length - 1];
-  const v = latest.value as CareCertValue;
-  if (v.kind === "分からない") return { known: false };
-  if (v.kind === "認定なし") {
-    // 確かめた診療月から 6 か月（設計値）の診療月に効く。前の月には効かない（design.md §18-12 の 1。「ないと確かめた」と同じ形。X-354）。
-    // 確かめた診療月を持たない行は、確かめた日の月を確かめた診療月として読む
-    const from = v.forMonth ?? latest.checkedAt.slice(0, 7);
-    const until = addMonthsTo(`${from}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
-    return from <= yearMonth && yearMonth <= until ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: latest.source, checkedAt: latest.checkedAt } : { known: false };
-  }
-  // 最後の「認定なし・分からない」より後に残した、日付つきの行。同じ始まりの日は後に残した行を使う
-  const lastUndated = certs.findLastIndex((r) => {
-    const k = (r.value as CareCertValue).kind;
-    return k === "認定なし" || k === "分からない";
-  });
+  // 先に診療月に当たる行を選ぶ（design.md §18-12 の 1。X-370）：期間つきの認定（要介護・要支援）がその月に当たれば、それを採り、
+  // 「認定なし」の 6 か月・「分からない」より優先する（過去の月の答えが、後の月の値を上書きしない）。同じ始まりの日は後に残した行を使う
   const byFrom = new Map<string, PatientFact>();
-  for (const r of certs.slice(lastUndated + 1)) byFrom.set((r.value as { validFrom: string }).validFrom, r);
+  for (const r of certs) {
+    const k = (r.value as CareCertValue).kind;
+    if (k === "要介護" || k === "要支援") byFrom.set((r.value as { validFrom: string }).validFrom, r);
+  }
   const { start, end } = monthRange(yearMonth);
   const dated = [...byFrom.values()]
     .filter((r) => (r.value as { validFrom: string }).validFrom <= end && (r.validUntil ?? "9999-12-31") >= start)
     .sort((a, b) => (a.value as { validFrom: string }).validFrom.localeCompare((b.value as { validFrom: string }).validFrom));
+  if (dated.length === 0) {
+    // 期間つきの認定が当たらない月：その月に効く「認定なし」（確かめた診療月から 6 か月。前の月には効かない。X-354）と「分からない」のうち、後に残した行
+    const none = (r: PatientFact) => {
+      const v = r.value as CareCertValue;
+      if (v.kind !== "認定なし") return false;
+      // 確かめた診療月を持たない行は、確かめた日の月を確かめた診療月として読む
+      const from = v.forMonth ?? r.checkedAt.slice(0, 7);
+      return from <= yearMonth && yearMonth <= addMonthsTo(`${from}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
+    };
+    const hit = certs.filter((r) => none(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
+    return hit && (hit.value as CareCertValue).kind === "認定なし" ? { known: true, segments: [{ kind: "認定なし", level: 0 }], source: hit.source, checkedAt: hit.checkedAt } : { known: false };
+  }
+  const latest = dated[dated.length - 1];
   const seg = (r: PatientFact): CareSegment => {
     const c = r.value as Extract<CareCertValue, { validFrom: string }>;
     return { kind: c.kind, level: c.kind === "要介護" ? c.level : 0 };

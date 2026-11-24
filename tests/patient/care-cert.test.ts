@@ -131,3 +131,20 @@ describe("月の途中で要介護度が変わった月の R17（design.md §18-
     }
   });
 });
+
+describe("過去の月の答えが、後の月の値を上書きしない（design.md §18-12 の 1。X-370）", () => {
+  it("翌月から有効の要介護 3 を残したあとで、基準月の「認定なし」を答えても、翌月は要介護 3（包括的支援加算は対象のまま）、基準月は認定なし", async () => {
+    const { tempApp, upload, fileOf, receiptOf } = await import("../helpers/care");
+    const t = tempApp();
+    try {
+      const lines = (ym: string) => [{ kubun: "C001_1I", count: 2, dates: [`${ym}-06`, `${ym}-20`] }, { kubun: "C002_2RO1", count: 1, dates: [`${ym}-20`] }, { kubun: "C002_N10_HOKATSU", count: 1, dates: [`${ym}-20`] }];
+      const [oct, nov] = upload(t.app, fileOf([receiptOf(1, YM, lines(YM)), receiptOf(1, month(1), lines(month(1)))]));
+      t.app.savePatientFact(nov, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: dateIn(1, 1) }, source: "介護保険証", validUntil: dateIn(7, 28) });
+      t.app.savePatientFact(oct, "new1", { key: "careCert", value: { kind: "認定なし" }, source: "介護保険証", validUntil: null });
+      expect([t.app.caseOf(oct).facts.careLevel, t.app.caseOf(nov).facts.careLevel]).toEqual([{ known: true, value: 0 }, { known: true, value: 3 }]);
+      expect(evaluate(t.app.caseOf(nov)).findings.filter((f) => f.messageKey === "R03.not_eligible")).toEqual([]);
+    } finally {
+      t.close();
+    }
+  });
+});
