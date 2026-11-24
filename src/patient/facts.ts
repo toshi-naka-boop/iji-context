@@ -217,8 +217,8 @@ function remainingOf(certs: PatientFact[], yearMonth: string): PatientFact[] {
     monthOf(y.r) >= monthOf(x.r) &&
     !(kindOf(x.r) === "申請中" && notFromApplication(y.r)) &&
     !(isDated(x.r) && isDated(y.r) && !overlap(x.r, y.r)) &&
-    // 「分からない」は答えた月だけに効く（ほかの月の値を消さない。C-533）ので、M について語るときだけ負かす
-    (kindOf(y.r) === "分からない" ? talksAt(y.r, yearMonth) : monthsFor(x.r).some((k) => talksAt(y.r, k)));
+    // 「分からない」も、答えた月 k が X の答えた月から M までにあれば負かす（k 以降の月に効く。v42。C-561）
+    monthsFor(x.r).some((k) => talksAt(y.r, k));
   return talking.filter((x) => !rows.some((y) => beats(y, x))).map((x) => x.r);
 }
 
