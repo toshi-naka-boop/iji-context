@@ -4,7 +4,7 @@
 // 要介護・要支援の認定は careCert で持つ（design.md §18-1。C-510）。今までに残した careLevel の行は、今の読み方のまま読む。
 // 障害支援区分には有効期間を持たせない（EM に採用値がない。design.md §11-4・L-48）
 import { monthRange } from "../demo/period";
-import { addDays } from "../engine/rules/util";
+import { addDays, isRealDate } from "../engine/rules/util";
 import { BUILDING_BANDS, type BuildingBand, type Fact, type Facts, type Residence } from "../engine/types";
 
 export const PATIENT_FACT_KEYS = ["careLevel", "careCert", "terminalCancer", "disabilitySupportLevel", "table7", "table8_2", "table8_3Other", "homeOxygen", "residence", "contactDocProvided", "emergencyEligible", "comprehensiveCare", "buildingBand"] as const;
@@ -48,7 +48,7 @@ export function effectiveFor(f: { validUntil: string | null; validFrom?: string 
   return true;
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = { test: (s: string) => isRealDate(s) };
 
 /** "YYYY-MM-DD" に月数を足す（月末をはみ出す日はその月の末日にする） */
 export function addMonthsTo(date: string, months: number): string {
@@ -147,7 +147,8 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
   const byFrom = new Map<string, PatientFact>();
   for (const r of certs) {
     const k = (r.value as CareCertValue).kind;
-    if (k === "要介護" || k === "要支援") byFrom.set((r.value as { validFrom: string }).validFrom, r);
+    // 実在しない日付の行（前の版で残ったものなど）は読まない（読み込みを落とさない。round-82 X-390）
+    if ((k === "要介護" || k === "要支援") && isRealDate((r.value as { validFrom: string }).validFrom) && (r.validUntil === null || isRealDate(r.validUntil))) byFrom.set((r.value as { validFrom: string }).validFrom, r);
   }
   const { start, end } = monthRange(yearMonth);
   const dated = [...byFrom.values()]

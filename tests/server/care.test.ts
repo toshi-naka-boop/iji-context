@@ -100,3 +100,23 @@ describe("利用前 30 日の暦月（round-82 C-534）", () => {
     expect(monthsBetween(YM, YM)).toEqual([YM]);
   });
 });
+
+describe("実在する日だけを通す（round-82 X-390）", () => {
+  it("2026-10-00 のような日付は、入力の形（zod）でも保存時にも断る。前に残った不正な値があっても読み込みは落ちない", async () => {
+    const { careBody } = await import("../../src/server/schemas/care");
+    const bad = `${YM}-00`;
+    expect(careBody.safeParse({ item: "shortStay", value: { status: "使った", uses: [{ kind: "短期入所生活介護", start: bad, end: day(5) }] }, ...basis }).success).toBe(false);
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii())]));
+    expect(() => app.saveCare(id, "new1", { item: "shortStay", value: { status: "使った", uses: [{ kind: "短期入所生活介護", start: bad, end: day(5) }] }, ...basis })).toThrow(/実在する日付/);
+    expect(() => app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: `${YM}-32` }, source: "介護保険証", validUntil: day(30) })).toThrow(/始まり/);
+    // 前の版で残った不正な値（DB に直接）
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(app.paths.dbFile);
+    const pid = (db.prepare("SELECT patient_id FROM patient_care LIMIT 1").get() as { patient_id: string } | undefined)?.patient_id ?? (db.prepare("SELECT id FROM patients ORDER BY id DESC LIMIT 1").get() as { id: string }).id;
+    db.prepare("INSERT INTO patient_care (patient_id, item, from_month, value, source, checked_by, checked_on, entered_at) VALUES (?, 'shortStay', ?, ?, 'その他', 'new1', ?, ?)").run(pid, YM, JSON.stringify({ status: "使った", uses: [{ kind: "短期入所生活介護", start: bad, end: day(5), careHomeId: null, fromDischarge: "いいえ" }] }), day(3), day(3));
+    db.close();
+    expect(() => app.caseOf(id)).not.toThrow();
+    expect(() => app.careCheck(YM)).not.toThrow();
+    expect(() => app.ukeCheck(id)).not.toThrow();
+  });
+});

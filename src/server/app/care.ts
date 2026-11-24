@@ -31,6 +31,7 @@ import {
 import type { Fact } from "../../engine/types";
 import { addMonthsTo, certifiedOf, type CareState } from "../../patient/facts";
 import { badRequest } from "../errors";
+import { isRealDate } from "../../engine/rules/util";
 import type { Clerks } from "./clerks";
 import type { Clock } from "./clock";
 import type { AppContext } from "./context";
@@ -78,8 +79,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_NAME = 60;
 
 const checkDate = (d: unknown, field: string, label: string) => {
-  if (typeof d !== "string" || !DATE.test(d)) throw badRequest(`${label}を YYYY-MM-DD で入れてください`, [field]);
+  // 実在する日だけを通す（2026-10-00 などは、保存したあとの日付の計算で落ちる。round-82 X-390）
+  if (typeof d !== "string" || !DATE.test(d) || !isRealDate(d)) throw badRequest(`${label}を実在する日付（YYYY-MM-DD）で入れてください`, [field]);
 };
+/** 読み込んだ日付：実在しない値（前の版で残ったものなど）は「ない」として扱い、読み込みを落とさない */
+const readDate = (d: string | null | undefined): string | null => (d != null && isRealDate(d) ? d : null);
 const checkBasis = (checkedOn: unknown, source: unknown) => {
   checkDate(checkedOn, "checkedOn", "確かめた日");
   if (!(CARE_SOURCES as readonly unknown[]).includes(source)) throw badRequest("出どころを選んでください", ["source"]);
@@ -303,7 +307,7 @@ export function createCare(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "
       const v = eff.shortStay.value as ShortStayValue;
       out.shortStay = {
         status: v.status,
-        uses: (v.uses ?? []).map((u) => ({ kind: u.kind, start: u.start ?? null, end: u.end ?? null, home: homeFactsOf(u.careHomeId, yearMonth), fromDischarge: u.fromDischarge ?? "分からない", priorVisit: priorVisitOf(u.start ?? null) })),
+        uses: (v.uses ?? []).map((u) => ({ kind: u.kind, start: readDate(u.start), end: readDate(u.end), home: homeFactsOf(u.careHomeId, yearMonth), fromDischarge: u.fromDischarge ?? "分からない", priorVisit: priorVisitOf(readDate(u.start)) })),
         ...basisOf(eff.shortStay.checkedOn, eff.shortStay.source, yearMonth),
       };
     } else if (!askShortStay(out)) {
@@ -317,7 +321,7 @@ export function createCare(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "
     const { rows, none } = effectiveOthers(patientId, yearMonth);
     if (rows.length === 0 && none === null) return undefined;
     return {
-      rows: rows.map((r): OtherRow => ({ kind: r.kind, specialRelation: r.specialRelation, kanriSide: r.kanriSide, activities: r.activities, referredOn: r.referredOn, ...basisOf(r.checkedOn, r.source, yearMonth) })),
+      rows: rows.map((r): OtherRow => ({ kind: r.kind, specialRelation: r.specialRelation, kanriSide: r.kanriSide, activities: r.activities, referredOn: readDate(r.referredOn), ...basisOf(r.checkedOn, r.source, yearMonth) })),
       none: none ? basisOf(none.checkedOn, none.source, yearMonth) : null,
     };
   }

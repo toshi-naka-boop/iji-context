@@ -1,7 +1,11 @@
 // 介護保険・ほかの医療機関との調整の申告の入力（design.md §18-2。v37 21b）。形だけをここで確かめ、項目ごとの決まり（施設の有無・日付の範囲など）は src/server/app/care.ts が確かめて文言を返す
 import { z } from "zod";
 import { CARE_HOME_KINDS, CARE_SOURCES, KANRI_SIDES, NURSE_INSURANCES, OTHER_ACTIVITIES, OTHER_KINDS, RESIDENCE_TYPES, SHORT_STAY_KINDS, TRI } from "../../engine/care";
-import { date } from "./cases";
+import { isRealDate } from "../../engine/rules/util";
+import { date as dateShape } from "./cases";
+
+/** 実在する日だけを通す（round-82 X-390） */
+const date = dateShape.refine(isRealDate, { message: "実在する日付を入れてください" });
 
 const tri = z.enum(TRI as ["はい", "いいえ", "分からない"]);
 const homeId = z.string().regex(/^H[0-9a-f]{8}$/);
