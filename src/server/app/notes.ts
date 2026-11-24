@@ -4,7 +4,7 @@ import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { tableKeyOfAct, tableKeyOfChild, validateActs, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
-import { abbrevMarks, abbrevVocabOf, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { abbrevMarks, abbrevVocabOf, itemKeyOf, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
 import { withMasters, type MastersDb } from "../../masters/db";
@@ -56,7 +56,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   const { cases, caseOf, isUploaded } = casesOf;
   // 略語の医師への確認（FR-211）：問いと答え。答えは候補を作るときと B の欄の数に使う
   const abbrevs = createDoctorAbbrevs(ctx, clock, clerks, (claimId) => caseOf(claimId).yearMonth);
-  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined);
+  const tori = createTorikawasure(ctx, clock, structured ? (claimId, ym, db) => structured.structuredRulesOf(claimId, ym, db) : undefined, structured ? (claimId, ym) => structured.devicesOnlyOf(claimId, ym) : undefined, abbrevs.stateOf);
 
   function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
     clerk(clerkId);
@@ -282,13 +282,25 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (!fold.ref || pairs?.status !== "unmatched" || !pairs.pairs.some((x) => x.ref === fold.ref)) throw badRequest("その日の同じ種類の電子カルテの行為ではありません", ["acts"]);
     return { kind: "order", ref: fold.ref, by: "person" };
   }
-  /** 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで */
-  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[]): ItemMatch {
+  /**
+   * 1 つの行為の候補（書かれた名前・lookup を直したとき）。15-7 の並べ方で、実在するコードだけを 20 件まで。
+   * 印のある書き方（FR-211）は、前に選んだ対応と画面の lookup を使わない。at（保存したカルテの行為の位置）を渡すと、その記載に効く医師の「指すものを記入する」の答えの語だけを lookup にする（自動では当てない）
+   */
+  function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], at?: { noteId: number; index: number; child?: number }): ItemMatch {
     return withMasters((db) =>
       markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written)
-        ? matchItem(rowsFor(db, key, yearMonth), key, written, [], null)
+        ? matchItem(rowsFor(db, key, yearMonth), key, written, at ? doctorWordsAt(at, written) : [], null)
         : matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)),
     );
+  }
+  /** 保存したカルテの行為・子に効く、医師の「指すものを記入する」の答えの語（書かれた名前が合わない・印がなければ空） */
+  function doctorWordsAt(at: { noteId: number; index: number; child?: number }, written?: string): string[] {
+    const r = sqlite.prepare("SELECT acts FROM chart_notes WHERE id = ?").get(at.noteId) as { acts: string | null } | undefined;
+    if (!r?.acts) return [];
+    const act = (JSON.parse(r.acts) as StoredActs).acts[at.index];
+    const item = at.child === undefined ? act : act?.with?.[at.child];
+    if (!item?.abbrev?.length || (written !== undefined && normName(item.written) !== normName(written))) return [];
+    return abbrevs.writtenIn(at.noteId, at.child === undefined ? "act" : "child", itemKeyOf(item.written, item.quote), item.abbrev);
   }
   /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
   function searchMasters(key: TableKey, yearMonth: string, q: string) {
@@ -382,9 +394,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if ((kid ?? act).match) throw conflict("この行為はもう当たっています");
     if (match.by === "name") throw badRequest("選んだ当て方ではありません", ["match"]);
     const key = kid ? tableKeyOfChild(kid.kind) : tableKeyOfAct(act.category);
-    const row = withMasters((db) => rowIn(rowsFor(db, key, caseOf(r.claim_id).yearMonth), match.tbl, match.code));
+    // 医師の答えの語の候補から選んだもの（FR-211）は by を doctor にする（その記載に効く「指すものを記入する」の答えの語で、同じ並べ方の候補に入るとき）
+    const words = (kid ?? act).abbrev?.length ? doctorWordsAt({ noteId: id, index, ...(child !== undefined ? { child } : {}) }) : [];
+    const { row, fromDoctor } = withMasters((db) => {
+      const rows = rowsFor(db, key, caseOf(r.claim_id).yearMonth);
+      return { row: rowIn(rows, match.tbl, match.code), fromDoctor: words.length > 0 && matchItem(rows, key, "", words, null).candidates.some((c) => c.tbl === match.tbl && c.code === match.code) };
+    });
     if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${match.code}`, ["match"]);
-    const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: match.by };
+    const m: ActMatch = { tbl: row.tbl, code: row.code, name: row.name, by: fromDoctor ? "doctor" : match.by };
     const next: StoredActs = { ...stored, acts: stored.acts.map((a, i) => (i !== index ? a : kid ? { ...a, with: a.with!.map((x, j) => (j === child ? { ...x, match: m } : x)) } : { ...a, match: m })) };
     const wn = normName((kid ?? act).written);
     // 印のある書き方（FR-211。保存のときの印）は、選んだ対応をクリニックごとに覚えない

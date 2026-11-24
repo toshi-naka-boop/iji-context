@@ -6,7 +6,13 @@ import { candidatesQuery } from "../../../../../src/server/schemas/chart";
 
 // 書かれた名前（カルテの語）を受け取るので、監査ログ・ログには値を出さない
 export const GET = route({ roles: allow("GET /api/chart/acts/candidates"), query: candidatesQuery }, ({ query }) =>
-  getApp().actCandidates(query.table, query.ym, query.written, (query.lookup ?? "").split("|").filter(Boolean)),
+  getApp().actCandidates(
+    query.table,
+    query.ym,
+    query.written,
+    (query.lookup ?? "").split("|").filter(Boolean),
+    query.noteId && query.index ? { noteId: Number(query.noteId), index: Number(query.index), ...(query.child ? { child: Number(query.child) } : {}) } : undefined,
+  ),
 );
 
 export const runtime = "nodejs";

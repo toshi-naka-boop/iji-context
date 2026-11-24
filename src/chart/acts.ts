@@ -38,6 +38,8 @@ export type ChartAct = {
  * 医師に略語を聞く行為か（FR-211）：書かれた名前に印があり（印は名称の完全一致がないときだけ付く）、当てておらず、たたんでもいない。
  * 子（with）は、子に印があり当てておらず、親をたたんでいないとき
  */
+/** 聞く記載の答えの状態（FR-211）：asking＝医師に確かめ中／unresolved＝医師が判定不能・その他と答えた／answered＝指すものの記入がある（候補から選ぶ） */
+export type AbbrevState = "asking" | "unresolved" | "answered";
 export const askedAct = (a: Pick<ChartAct, "abbrev" | "match" | "fold">): boolean => (a.abbrev?.length ?? 0) > 0 && !a.match && !a.fold;
 export const askedChild = (a: Pick<ChartAct, "fold">, c: Pick<ActChild, "abbrev" | "match">): boolean => (c.abbrev?.length ?? 0) > 0 && !c.match && !a.fold;
 /**

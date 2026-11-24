@@ -6,7 +6,7 @@
 // 患者の氏名・患者 id は持たない・返さない（請求の番号と日付だけ）。ログ・監査ログに引用と答えの文を出さない
 import type Database from "better-sqlite3";
 import { askedItems, type AbbrevItem } from "../../chart/abbrev";
-import type { StoredActs } from "../../chart/acts";
+import type { AbbrevState, StoredActs } from "../../chart/acts";
 import type { ExtractedFact } from "../../chart/extract";
 import { businessDaysElapsed, MONEY, OTHER, UNDETERMINABLE, validateQuery } from "../../query/doctor-query";
 import { badRequest, conflict } from "../errors";
@@ -41,8 +41,6 @@ export type AbbrevRequest = {
   reminded: boolean;
   held: boolean;
 };
-/** 記載 1 つの、語ごとの答えの状態（B の欄・候補で使う）：asking＝確かめ中／unresolved＝判定不能・その他／answered＝記入の答えがある */
-export type AbbrevState = "asking" | "unresolved" | "answered";
 
 const refOf = (noteId: number, place: string, key: string) => `${noteId}:${place}:${key}`;
 const REF = /^([1-9][0-9]{0,9}):(act|child|fact):([0-9a-f]{16})$/;

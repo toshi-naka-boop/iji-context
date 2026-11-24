@@ -80,7 +80,16 @@ export const visitTimeBody = z.strictObject({ claimId, date: recordBody.shape.da
 export const actsOrPickBody = z.union([actsBody, pickBody]);
 const ym = z.string().regex(YEAR_MONTH);
 /** 候補（GET /api/chart/acts/candidates）。lookup は「|」で区切った語（5 個まで） */
-export const candidatesQuery = z.strictObject({ table: z.enum(TABLE_KEYS), ym, written: z.string().min(1).max(200), lookup: z.string().max(600).optional() });
+/** noteId・index・child は、保存したカルテの行為の位置（略語を医師に聞いた行為の候補に、医師の答えの語を使う。FR-211） */
+export const candidatesQuery = z.strictObject({
+  table: z.enum(TABLE_KEYS),
+  ym,
+  written: z.string().min(1).max(200),
+  lookup: z.string().max(600).optional(),
+  noteId: noteParams.shape.id.optional(),
+  index: z.string().regex(/^[0-9]{1,2}$/).optional(),
+  child: z.string().regex(/^[0-9]{1,2}$/).optional(),
+});
 /** マスターを名前で探す（GET /api/masters/search） */
 /** カルテの構造化データ（GET /api/chart/structured）。患者は患者マスタの id */
 export const structuredQuery = z.strictObject({ patientId: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/), yearMonth: ym });

@@ -2,7 +2,8 @@
 // （区分誤りの出る前に選んだ対応は、消さずに読むときに外す。src/server/app/notes.ts の aliasOf。反証 round-55 C-293）。判定は src/generic/g11.ts の決まった規則だけで、LLM は使わない。
 // 行ったことは、取り込んだ請求では貼って確かめたカルテ（kind「記録」）、合成の症例では合成カルテの確かめたあとの acts と、本人が確かめたカルテの acts
 import { readFileSync } from "node:fs";
-import type { ChartAct, RxChoice, RxNote, StoredActs } from "../../chart/acts";
+import { askedAct, askedChild, type AbbrevState, type ChartAct, type RxChoice, type RxNote, type StoredActs } from "../../chart/acts";
+import { itemKeyOf } from "../../chart/abbrev";
 import { rxDefault } from "../../chart/rx-default";
 import type { Revision } from "../../engine/revisions/types";
 import type { ClaimContext, Finding } from "../../engine/types";
@@ -45,8 +46,37 @@ export type TextDay = { date: string; text: string; soap: string; stored: Stored
 
 /** 構造化データのない請求の、患者の機器（機器を確かめた患者だけ。ないときは null。C-440） */
 export type DevicesOfClaim = (claimId: string, yearMonth: string) => G11Devices | null;
+/** 略語を聞く記載 1 つの答えの状態（FR-211。src/server/app/doctor-abbrevs.ts の stateOf） */
+export type AbbrevStateOf = (noteId: number, place: "act" | "child", key: string, tokens: string[]) => AbbrevState;
 
-export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim, devicesOf?: DevicesOfClaim) {
+/**
+ * 当てられない行為の一覧に、略語を聞く行為の答えの状態の札を付け、範囲に数の 2 行を足す（FR-211。G11 の判定は変えない）。
+ * 数えるのは保存したカルテの、聞く行為・子だけ（合成カルテの確かめたあとの行為は聞かない）。0 件の行は出さない
+ */
+export function withAbbrev(r: G11Result, days: { noteId: number; acts: ChartAct[]; stored?: boolean }[], stateOf: AbbrevStateOf): G11Result {
+  if ("skip" in r) return r;
+  const states = new Map<string, AbbrevState>();
+  for (const d of days) {
+    if (!d.stored) continue;
+    d.acts.forEach((a, index) => {
+      if (askedAct(a)) states.set(`${d.noteId}|${index}|`, stateOf(d.noteId, "act", itemKeyOf(a.written, a.quote), a.abbrev!));
+      (a.with ?? []).forEach((c, child) => {
+        if (askedChild(a, c)) states.set(`${d.noteId}|${index}|${child}`, stateOf(d.noteId, "child", itemKeyOf(c.written, c.quote), c.abbrev!));
+      });
+    });
+  }
+  if (states.size === 0) return r;
+  const asking = [...states.values()].filter((s) => s === "asking").length;
+  const unresolved = [...states.values()].filter((s) => s === "unresolved").length;
+  const unmatchedActs = r.unmatchedActs.map((u) => {
+    const s = u.noteId !== undefined && u.index !== undefined ? states.get(`${u.noteId}|${u.index}|${u.child?.index ?? ""}`) : undefined;
+    return s ? { ...u, abbrev: s } : u;
+  });
+  const lines = [...(asking > 0 ? [`略語を医師に確かめ中 ${asking} 件（その行為は見ていません）`] : []), ...(unresolved > 0 ? [`医師が判定不能・その他と答えた略語 ${unresolved} 件（見ていません）`] : [])];
+  return { ...r, unmatchedActs, scope: [...r.scope, ...lines] };
+}
+
+export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, clock: Pick<Clock, "now">, structuredOf?: StructuredOfClaim, devicesOf?: DevicesOfClaim, abbrevStateOf?: AbbrevStateOf) {
   /** 合成の症例の、合成カルテの確かめたあとの行ったこと（合成カルテのない症例・acts を持たない合成カルテは空） */
   function chartDays(claimId: string): { date: string; noteId: number; acts: ChartAct[]; rx: RxNote[]; rxChoice: RxChoice | null; stored?: boolean }[] {
     const f = chartFileOf(ctx.paths.root, claimId);
@@ -111,7 +141,8 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
         input.rev,
         { step3: rulesStep3(input.base, input.rev, db, input.path === "uke"), sameFamily: r18SameFamily(input.base, input.rev, db), hand: input.hand },
       );
-      return "skip" in r || joined.scope.length === 0 ? r : { ...r, scope: [...r.scope, ...joined.scope] };
+      const out: G11Result = "skip" in r || joined.scope.length === 0 ? r : { ...r, scope: [...r.scope, ...joined.scope] };
+      return abbrevStateOf ? withAbbrev(out, input.days, abbrevStateOf) : out;
     });
   }
   return { chartDays, storedDays, chartTextDays, run };
