@@ -175,7 +175,9 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
     const applying = (r: PatientFact) => (r.value as CareCertValue).kind === "申請中" && monthOf(r) === yearMonth;
     // 「申請中」より前に答えた「認定なし」は、申請中の答えた診療月以降の月に効かせない（申請は認定なしの 6 か月を断ち切る。認定は申請日に遡り得る。C-530）
     const cut = (r: PatientFact, i: number) => certs.some((a, j) => j > i && (a.value as CareCertValue).kind === "申請中" && monthOf(a) <= yearMonth);
-    const hit = certs.filter((r, i) => (none(r) && !cut(r, i)) || applying(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
+    // 「分からない」も答えた診療月だけに効く（ほかの月の「認定なし」を上書きしない。C-533）
+    const unknownHere = (r: PatientFact) => (r.value as CareCertValue).kind === "分からない" && monthOf(r) === yearMonth;
+    const hit = certs.filter((r, i) => (none(r) && !cut(r, i)) || applying(r) || unknownHere(r)).at(-1);
     const hk = hit ? (hit.value as CareCertValue).kind : null;
     return hit && (hk === "認定なし" || hk === "申請中") ? { known: true, segments: [{ kind: hk, level: 0 }], source: hit.source, checkedAt: hit.checkedAt } : { known: false };
   }

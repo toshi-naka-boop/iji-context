@@ -187,3 +187,11 @@ describe("申請中は、それより前に答えた「認定なし」の 6 か�
     for (const m of [1, 2]) expect([m, careStateOf(rows, month(m))]).toEqual([m, { known: false }]);
   });
 });
+
+describe("「分からない」は答えた診療月だけに効く（C-533）", () => {
+  it("10 月「認定なし」のあとで 9 月分に「分からない」を答えても、10 月〜は認定なしのまま。9 月は分からない", () => {
+    const rows = [row({ key: "careCert", value: { kind: "認定なし", forMonth: YM } }), row({ key: "careCert", value: { kind: "分からない", forMonth: month(-1) } })];
+    expect(careStateOf(rows, month(-1))).toEqual({ known: false });
+    for (const m of [0, 3]) expect(certifiedOf(careStateOf(rows, month(m)))).toEqual({ known: true, value: false });
+  });
+});
