@@ -3,11 +3,12 @@ import { route } from "../../../../../src/server/http";
 import { getApp } from "../../../../../src/server/instance";
 import { allow } from "../../../../../src/server/policy";
 import { claimParams, factBody } from "../../../../../src/server/schemas/patients";
+import type { PatientFactInput } from "../../../../../src/patient/facts";
 
 export const GET = route({ roles: allow("GET /api/patients/[claimId]/facts"), params: claimParams }, ({ params }) => getApp().patientFacts(params.claimId));
 
 export const POST = route({ roles: allow("POST /api/patients/[claimId]/facts"), params: claimParams, body: factBody }, ({ params, body: { fact }, clerkId, user }) =>
-  getApp().savePatientFact(params.claimId, clerkId, { key: fact.key, value: fact.value, source: fact.source, validUntil: fact.validUntil }, user.role),
+  getApp().savePatientFact(params.claimId, clerkId, { key: fact.key, value: fact.value as PatientFactInput["value"], source: fact.source, validUntil: fact.validUntil }, user.role),
 );
 
 export const runtime = "nodejs";

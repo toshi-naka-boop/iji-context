@@ -16,6 +16,7 @@ import { ROLE_LABELS } from "../src/server/roles";
 import { FACT_SOURCES, PATIENT_FACT_KEYS, type PatientFactKey } from "../src/patient/facts";
 import { BUILDING_BAND_GUIDE } from "../src/messages";
 import { LABEL as PATIENT_LABEL, choicesOf, factValueOf, show as showPatientFact } from "./work/patient-panel";
+import { CareCertForm } from "./care-cert-input";
 import type { Role } from "../src/server/roles";
 
 /** checkedByRole は、院内の知識で押した事実（local:*）だけが持つ（押した人の役割。名前は返らない） */
@@ -137,14 +138,19 @@ export function AskInput(props: { claimId: string; ask: GenericAsk; onSaved: () 
 
 /** 患者ごとに残す項目の入力（患者パネルと同じ項目・同じ API）。残した値は、同じ患者のほかの月の請求にも使う */
 function PatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSaved: () => void }) {
+  // 要介護度は認定（careCert）で入れる（design.md §18-1）
+  if (props.factKey === "careLevel" || props.factKey === "careCert") return <CareCertForm claimId={props.claimId} onSaved={() => props.onSaved()} />;
+  return <PlainPatientFactForm {...props} />;
+}
+
+function PlainPatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSaved: () => void }) {
   const [value, setValue] = useState("");
   const [source, setSource] = useState<string>(FACT_SOURCES[0]);
-  const [validUntil, setValidUntil] = useState("");
   const [fromMonth, setFromMonth] = useState("");
   const [err, setErr] = useState("");
   async function save() {
     setErr("");
-    const fact = { key: props.factKey, value: factValueOf(props.factKey, value, fromMonth), source, validUntil: props.factKey === "careLevel" ? validUntil || null : null };
+    const fact = { key: props.factKey, value: factValueOf(props.factKey, value, fromMonth), source, validUntil: null };
     const r = await fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json().catch(() => null);
     if (!r.ok) return setErr(d?.error ?? "エラー");
@@ -160,7 +166,6 @@ function PatientFactForm(props: { claimId: string; factKey: PatientFactKey; onSa
       <select aria-label="確かめ方" value={source} onChange={(e) => setSource(e.target.value)}>
         {FACT_SOURCES.map((s) => <option key={s} value={s}>{how(s)}</option>)}
       </select>
-      {props.factKey === "careLevel" && <label>有効期間の終わり <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>}
       {props.factKey === "buildingBand" && <label>いつの診療月から <input type="month" value={fromMonth} onChange={(e) => setFromMonth(e.target.value)} /></label>}
       <button disabled={value === "" || (props.factKey === "buildingBand" && fromMonth === "")} onClick={() => void save()}>残す</button>
       {props.factKey === "buildingBand" && <span className="muted">{BUILDING_BAND_GUIDE}</span>}

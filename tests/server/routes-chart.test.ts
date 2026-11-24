@@ -509,9 +509,9 @@ describe("患者ごとに確かめた情報", () => {
     const noDate = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: null });
     expect(noDate.status).toBe(400);
     expect((await noDate.json()).error).toBe("要介護度には有効期間の終わりの日が要る");
+    // 有効期間の終わりが今日より前でも残せる（過ぎた月の点検のため。design.md §18-1）
     const past = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(-1, 28) });
-    expect(past.status).toBe(400);
-    expect((await past.json()).error).toBe("有効期間の終わりが今日より前になっている");
+    expect(past.status).toBe(200);
 
     const ok = await save({ key: "careLevel", value: 3, source: "介護保険証", validUntil: dateIn(6, 30) });
     expect(ok.status).toBe(200);
@@ -519,7 +519,7 @@ describe("患者ごとに確かめた情報", () => {
     expect(listed.facts).toHaveLength(1);
     expect(listed.facts[0]).toMatchObject({ key: "careLevel", value: 3, expired: false, checkedBy: instance.clerkIdOf(user) });
     expect(auditRows(before).map((r) => [r.action, r.target, r.result])).toEqual([
-      ...["invalid", "invalid", "invalid", "rejected", "rejected", "ok"].map((result) => ["POST /api/patients/[claimId]/facts", claimId("K1"), result]),
+      ...["invalid", "invalid", "invalid", "rejected", "ok", "ok"].map((result) => ["POST /api/patients/[claimId]/facts", claimId("K1"), result]),
     ]);
   });
 });

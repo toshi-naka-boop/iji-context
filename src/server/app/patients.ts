@@ -6,6 +6,7 @@ import { BURDEN_RATIOS, COVERAGE_SOURCES, factsFromPatient, recordOfUke, toHalfW
 import { patientFindingText } from "../../messages";
 import type { UkePatient, UkeReceipt } from "../../uke/types";
 import { targetOfNeed } from "../../engine";
+import type { NeedKey } from "../../engine/types";
 import { badRequest, forbidden, notFound } from "../errors";
 import type { Role } from "../roles";
 import type { Clerks } from "./clerks";
@@ -185,6 +186,11 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   function buildingBandRows(patientId: string): Pick<PatientFact, "key" | "value">[] {
     return (sqlite.prepare("SELECT value FROM patient_facts WHERE patient_id = ? AND fact_key = 'buildingBand' ORDER BY id").all(patientId) as { value: string }[]).map((r) => ({ key: "buildingBand", value: JSON.parse(r.value) as PatientFact["value"] }));
   }
+  /** 要介護・要支援の認定の全部の行（careCert と今までの careLevel。古い順。月の途中で区分が変わったときの 2 行と、始まりの日で選ぶので、最新の 1 行だけでは足りない。design.md §18-1） */
+  function careRows(patientId: string): PatientFact[] {
+    const rows = sqlite.prepare("SELECT * FROM patient_facts WHERE patient_id = ? AND fact_key IN ('careCert', 'careLevel') ORDER BY id").all(patientId) as { patient_id: string; fact_key: string; value: string; source: string; valid_until: string | null; checked_at: string; checked_by: string }[];
+    return rows.map((r) => ({ patientId: r.patient_id, key: r.fact_key as PatientFact["key"], value: JSON.parse(r.value) as PatientFact["value"], source: r.source as PatientFact["source"], validUntil: r.valid_until, checkedAt: r.checked_at, checkedBy: r.checked_by }));
+  }
   function patientFacts(claimId: string) {
     const patientId = patientIdOf(claimId);
     return { patientId, facts: latestPatientFacts(patientId).map((f) => ({ ...f, expired: isExpired(f, now()) })) };
@@ -192,7 +198,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   /** role を渡すと宛先を守る：医師の役割が残せるのは、医師あての項目（別表第七など。エンジンの宛先の表）だけ。医療事務は、今までどおりどの項目も残せる（医師あての項目は「医師に確認」を根拠に） */
   function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput, role?: Role) {
     clerk(clerkId);
-    if (role === "doctor" && targetOfNeed(f.key) !== "doctor") throw forbidden("これは医療事務が確かめる項目です。事務・ベテランの役割で残します");
+    if (role === "doctor" && targetOfNeed(f.key as NeedKey) !== "doctor") throw forbidden("これは医療事務が確かめる項目です。事務・ベテランの役割で残します");
     // 入力の検査で落ちたものは、利用者に文言を返す（検査は src/patient/facts.ts）
     try {
       validatePatientFact(f, now());
@@ -213,8 +219,10 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
   function profileOfPatient(patientId: string, receiptType: string | null = null): PatientProfile {
     const p = sqlite.prepare("SELECT id, name, sex, birth FROM patients WHERE id = ?").get(patientId) as PatientRow | undefined;
     if (!p) throw notFound("患者マスタにない患者");
-    const care = latestPatientFacts(patientId).find((f) => f.key === "careLevel");
-    return { patientId, name: p.name, sex: p.sex, birth: p.birth, coverages: coveragesOf(patientId), careCertification: care ? { validUntil: care.validUntil } : null, receiptType };
+    // 要介護認定の期限（P07）：最後に残した認定の行。認定なし・分からないの行は期限を持たないので、出さない（design.md §18-1）
+    const care = careRows(patientId).at(-1);
+    const dated = care && !(care.key === "careCert" && ["認定なし", "分からない"].includes((care.value as { kind: string }).kind));
+    return { patientId, name: p.name, sex: p.sex, birth: p.birth, coverages: coveragesOf(patientId), careCertification: care && dated ? { validUntil: care.validUntil } : null, receiptType };
   }
 
   /** その患者について、エンジンの Facts の年齢・保険種別・負担割合を患者マスタから出す（design.md §6） */
@@ -263,7 +271,7 @@ export function createPatients(ctx: AppContext, clock: Clock, clerks: Clerks, uk
     return patientProfile(claimId, caseBurdenRatio);
   }
 
-  return { latestPatientFacts, existingIdOf, buildingBandRows, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
+  return { latestPatientFacts, existingIdOf, buildingBandRows, careRows, patientFacts, savePatientFact, ingest, masterFacts, patientProfile, confirmCoverage, checkConnectorPatient };
 }
 
 export type Patients = ReturnType<typeof createPatients>;

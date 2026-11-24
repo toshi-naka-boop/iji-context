@@ -5,15 +5,20 @@ import { useEffect, useState } from "react";
 import { BUILDING_BANDS, type Facts } from "../../src/engine/types";
 import { BUILDING_BAND_GUIDE } from "../../src/messages";
 import type { PatientFinding } from "../../src/patient/checks";
-import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES, type BuildingBandValue, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
+import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES, type BuildingBandValue, type CareCertValue, type PatientFact, type PatientFactKey } from "../../src/patient/facts";
+
+/** 入力で選べる項目：要介護度は認定（careCert）で入れる（design.md §18-1。今までの careLevel の行は読むだけ） */
+export const INPUT_KEYS = PATIENT_FACT_KEYS.filter((k) => k !== "careLevel");
 import { BURDEN_RATIOS, COVERAGE_SOURCES, type Coverage } from "../../src/patient/profile";
 import { DevicePanel } from "./device-panel";
+import { CareCertForm, careCertText } from "../care-cert-input";
 
 type Row = PatientFact & { expired: boolean };
 type Profile = { coverages: Coverage[]; caseBurdenRatio: number | null; findings: (PatientFinding & { text: string })[] };
 
 export const LABEL: Record<PatientFactKey, string> = {
   careLevel: "要介護度",
+  careCert: "要介護・要支援の認定",
   disabilitySupportLevel: "障害支援区分",
   table7: "別表第七",
   table8_2: "別表第八の二",
@@ -32,8 +37,9 @@ export const BAND_LABEL: Record<string, string> = { "1": "1 人", "2-9": "2〜9 
 /** 確かめ方の言い方（「医師に確認で確かめた」とならないように） */
 const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : `${s}で確かめた`);
 
-export function show(key: PatientFactKey, v: number | boolean | string | BuildingBandValue): string {
-  if (key === "buildingBand") return typeof v === "object" ? `${BAND_LABEL[v.band] ?? v.band}（${v.fromMonth} の診療月から）` : (BAND_LABEL[String(v)] ?? String(v));
+export function show(key: PatientFactKey, v: number | boolean | string | BuildingBandValue | CareCertValue, validUntil: string | null = null): string {
+  if (key === "careCert") return typeof v === "object" && "kind" in v ? careCertText(v, validUntil) : "";
+  if (key === "buildingBand") return typeof v === "object" && "band" in v ? `${BAND_LABEL[v.band] ?? v.band}（${v.fromMonth} の診療月から）` : (BAND_LABEL[String(v)] ?? String(v));
   if (typeof v === "object") return "";
   if (key === "careLevel") return v === 0 ? "要支援・非該当" : `要介護${v}`;
   if (key === "disabilitySupportLevel") return v === 0 ? "認定なし" : `区分${v}`;
@@ -63,7 +69,7 @@ const periodText = (c: Coverage) =>
 
 export function PatientPanel(props: { claimId: string; facts: Facts; editable: boolean; onSaved: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
-  const [key, setKey] = useState<PatientFactKey>("careLevel");
+  const [key, setKey] = useState<PatientFactKey>("careCert");
   const [value, setValue] = useState("");
   const [source, setSource] = useState<string>(FACT_SOURCES[0]);
   const [validUntil, setValidUntil] = useState("");
@@ -152,16 +158,17 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
       <h3>患者情報</h3>
       <table>
         <tbody>
-          {PATIENT_FACT_KEYS.map((k) => {
-            const f = props.facts[k] ?? { known: false };
-            const rec = rows.filter((r) => r.key === k).at(-1);
+          {PATIENT_FACT_KEYS.filter((k) => k !== "careCert").map((k) => {
+            const f = props.facts[k as keyof Facts] ?? { known: false };
+            // 要介護度の記録は、認定（careCert）の行か今までの careLevel の行の最後
+            const rec = rows.filter((r) => r.key === k || (k === "careLevel" && r.key === "careCert")).at(-1);
             return (
               <tr key={k}>
                 <td>{LABEL[k]}</td>
                 <td>{f.known ? show(k, f.value as number | boolean | string) : "分からない"}</td>
                 <td className="muted">
                   {rec
-                    ? `${rec.checkedAt.slice(0, 10)} に${how(rec.source)}（${show(k, rec.value)}）${rec.validUntil ? `・${rec.validUntil} まで` : ""}`
+                    ? `${rec.checkedAt.slice(0, 10)} に${how(rec.source)}（${show(rec.key, rec.value, rec.validUntil)}）${rec.validUntil ? `・${rec.validUntil} まで` : ""}`
                     : "カルテの値"}
                   {rec?.expired && <span className="notice warn">　有効期間が切れています。確かめ直してください</span>}
                 </td>
@@ -173,8 +180,11 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
       {props.editable && (
         <p>
           <select value={key} onChange={(e) => { setKey(e.target.value as PatientFactKey); setValue(""); }}>
-            {PATIENT_FACT_KEYS.map((k) => <option key={k} value={k}>{LABEL[k]}</option>)}
+            {INPUT_KEYS.map((k) => <option key={k} value={k}>{LABEL[k]}</option>)}
           </select>
+          {key === "careCert" ? (
+            <CareCertForm claimId={props.claimId} onSaved={(facts) => { setRows(facts as Row[]); void loadProfile(cov); props.onSaved(); }} />
+          ) : (<>
           <select value={value} onChange={(e) => setValue(e.target.value)}>
             <option value="">選ぶ</option>
             {choicesOf(key).map((v) => <option key={String(v)} value={String(v)}>{show(key, v)}</option>)}
@@ -191,6 +201,7 @@ export function PatientPanel(props: { claimId: string; facts: Facts; editable: b
           <button disabled={value === "" || (key === "buildingBand" && fromMonth === "")} onClick={() => void save()}>残す</button>
           {key === "buildingBand" && <span className="muted">　{BUILDING_BAND_GUIDE}</span>}
           {err && <span className="notice warn">{err}</span>}
+          </>)}
         </p>
       )}
       {profile && (

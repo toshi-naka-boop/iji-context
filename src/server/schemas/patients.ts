@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { CLAIM_FACT_KEYS, CLAIM_FACT_SOURCES, MAX_MAIN_DISEASE } from "../../claim/facts";
 import { BUILDING_BANDS } from "../../engine/types";
-import { FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES } from "../../patient/facts";
+import { CARE_CERT_KINDS, FACT_SOURCES, PATIENT_FACT_KEYS, RESIDENCES } from "../../patient/facts";
 import { COVERAGE_SOURCES } from "../../patient/profile";
 import { claimId, date } from "./cases";
 
@@ -13,7 +13,10 @@ export const factBody = z.strictObject({
   fact: z.strictObject({
     key: z.enum(PATIENT_FACT_KEYS),
     // 人数の区分は「いつの診療月から」つき（design.md §15-4。月の途中の変化の欄は持たない。V-4）
-    value: z.union([z.number().int().min(0).max(6), z.boolean(), z.enum(RESIDENCES), z.strictObject({ band: z.enum(BUILDING_BANDS), fromMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })]),
+    value: z.union([z.number().int().min(0).max(6), z.boolean(), z.enum(RESIDENCES), z.strictObject({ band: z.enum(BUILDING_BANDS), fromMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }),
+      // 要介護・要支援の認定（design.md §18-1）。区分・始まりの日の決まりは validatePatientFact が確かめる
+      z.strictObject({ kind: z.enum(CARE_CERT_KINDS), level: z.number().int().min(1).max(5).optional(), validFrom: date.optional() }),
+    ]),
     source: z.enum(FACT_SOURCES),
     validUntil: date.nullable(),
   }),
