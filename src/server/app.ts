@@ -95,7 +95,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const pasted = same.filter((id) => counts.has(id)).length;
     const coverage = `カルテを貼った患者だけを見ています（貼った ${pasted} 人・貼っていない ${same.length - pasted} 人）`;
     if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
-    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), ...notes.textsOf(claimId) }), coverage };
+    // 前の月の管理料の三値は、G12・G05 と同じ事実（design.md §19-13 の 3。G11 の背反の判定で HX-25 に使う）
+    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), ...notes.textsOf(claimId), oxygen: { prevHomeOxygen: oxygenOf(claimId).prevHomeOxygen } }), coverage };
   };
   /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
   const ukeTorikawasure = (claimId: string, clerkId: string) => {

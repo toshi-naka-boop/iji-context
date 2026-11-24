@@ -154,6 +154,8 @@ export const JITSUREI = JSON.parse(readFileSync(path.join(root, "fixtures", "uke
 export const TORIKAWASURE = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb.json"), "utf8")) as Jitsurei;
 /** 受け入れの症例 K12・K13 の合成の UKE の設定（design.md §16-10 の E-13。形は jitsurei.json と同じ） */
 export const KOZOKA = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb-structured.json"), "utf8")) as Jitsurei;
+/** 取り忘れの症例 K10 の前の月の請求の設定（design.md §19-13 の 3。形は jitsurei.json と同じ） */
+export const TORIKAWASURE_PREV = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "kb-prev.json"), "utf8")) as Jitsurei;
 /** 酸素の症例 K32〜K34 の合成の UKE の設定（design.md §19-13 の 4。EM 5-1。形は jitsurei.json と同じ） */
 export const SANSO = JSON.parse(readFileSync(path.join(root, "fixtures", "uke", "sanso.json"), "utf8")) as Jitsurei;
 
@@ -238,4 +240,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   console.log(`書き出し: ${KOZOKA.file}`);
   writeFileSync(path.join(root, SANSO.file), generateJitsurei(SANSO));
   console.log(`書き出し: ${SANSO.file}`);
+  writeFileSync(path.join(root, TORIKAWASURE_PREV.file), generateJitsurei(TORIKAWASURE_PREV));
+  console.log(`書き出し: ${TORIKAWASURE_PREV.file}`);
 }

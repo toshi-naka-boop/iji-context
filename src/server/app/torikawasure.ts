@@ -8,6 +8,7 @@ import type { Revision } from "../../engine/revisions/types";
 import type { ClaimContext, Finding } from "../../engine/types";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
+import type { GenericAboutMore } from "../../generic/types";
 import { evaluateG11, type ConfirmedAct, type G11Claim, type G11Devices, type G11Result, type G11Structured, type RxDay } from "../../generic/g11";
 import { rxConfirmedOf } from "../../structured/rx-mark";
 import { r18SameFamily, rulesStep3 } from "../../generic/g11-rules";
@@ -68,7 +69,11 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
    * G11 を掛ける。claim は突き合わせる請求（取り込んだ請求は UKE の単位、算定プレビュー・月末の点検は claimOfLines の単位）、base は元の請求の文脈（手順 3 と同じ族の例外が使う）、
    * hand は元の請求の手書きのルールの結果（R ルールと 2 回言わない）
    */
-  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[]; texts?: TextDay[]; pastTextsUnreadable?: boolean }): G11Result {
+  /**
+   * oxygen：前の月の同じ患者の請求の在宅酸素療法指導管理料の三値（G12・G05 と同じ事実。design.md §19-13 の 3）。取り込んだ請求の B の欄が渡す。
+   * 渡さなければ「取り込んでいない」と同じで、HX-25 は決まらない（注意つきの候補になる。U-79）
+   */
+  function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[]; texts?: TextDay[]; pastTextsUnreadable?: boolean; oxygen?: Pick<GenericAboutMore, "prevHomeOxygen"> }): G11Result {
     const { acts, rxDays } = actsInput(input.days);
     const ym = input.base.yearMonth;
     const declaration = declarationViewOf(ctx, clock);
@@ -102,7 +107,7 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
       const r = evaluateG11(
         input.claim,
         db,
-        { yearMonth: ym, generation: input.rev.generation, acts: joined.acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true, ...(structured ? { structured } : {}), ...(devices ? { devices } : {}) },
+        { yearMonth: ym, generation: input.rev.generation, acts: joined.acts, rxDays, path: input.path, dispensing, declaration, sideless: sidelessOf(input.rev), outpatient: true, ...(input.oxygen ?? {}), ...(structured ? { structured } : {}), ...(devices ? { devices } : {}) },
         input.rev,
         { step3: rulesStep3(input.base, input.rev, db, input.path === "uke"), sameFamily: r18SameFamily(input.base, input.rev, db), hand: input.hand },
       );

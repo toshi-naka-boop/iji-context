@@ -56,6 +56,8 @@ describe("取り込んだレセプトの点検の応答の B の欄（K8〜K11 �
     const clerkId = instance.clerkIdOf(user);
     instance.runAs(user, () => instance.getApp().uploadUke(clerkId, readFileSync(path.join(repo, "fixtures", "uke", "torikawasure.UKE"))));
     const ids = instance.runAs(user, () => instance.getApp().importedClaims(clerkId));
+    // K10 の前の月（在宅酸素療法指導管理料あり。design.md §19-13 の 3）も取り込む（基準月の請求の並びは変えないので、並びを取ったあとに）。取り込んだ点検は前の月の請求から HX-25 の事実を読む
+    instance.runAs(user, () => instance.getApp().uploadUke(clerkId, readFileSync(path.join(repo, "fixtures", "uke", "torikawasure-prev.UKE"))));
     const paste = (await import("../../app/api/uke/claims/[claimId]/notes/route")).POST;
     const confirm = (await import("../../app/api/chart/acts/route")).POST;
     // 取り込んだ順（UKE の RE の並び：K8・K9・K10・K11）
