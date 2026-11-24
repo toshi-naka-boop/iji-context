@@ -65,11 +65,22 @@ describe("印の付け直しと聞く記載（保存のとき）", () => {
     { category: "検査", written: "特異的ＩｇＥ", lookup: ["特異的ＩｇＥ"], quote: "特異的ＩｇＥ" },
     { category: "注射", written: "注射", lookup: [], quote: "注射", with: [{ kind: "薬", written: "ABC液", lookup: ["推し量り"], quote: "ABC液" }] },
   ];
-  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、名称の完全一致がある書き方には印を付けない", () => {
+  it("画面から来た印は使わず付け直す。聞く行為・子の lookup は空にし、名称の完全一致がある書き方は、引用に原文の略語がなければ印を付けない", () => {
     const m = markActs(acts, vocab, () => false);
     expect(m.map((a) => [a.abbrev, a.lookup])).toEqual([[["ECG12"], []], [undefined, ["特異的ＩｇＥ"]], [undefined, []]]);
     expect(m[2].with?.[0]).toMatchObject({ abbrev: ["ABC"], lookup: [] });
-    expect(markActs(acts, vocab, (_k, w) => w === "ＥＣＧ１２")[0].abbrev).toBeUndefined();
+    expect(markActs([{ ...acts[0], quote: "心電図" }], vocab, (_k, w) => w === "ＥＣＧ１２")[0].abbrev).toBeUndefined();
+  });
+  it("LLM が原文の略語を言い換えても、引用の原文の語で印が付き、lookup が空になる（X-490。ECG12→心電図、AF→心房細動）", () => {
+    // 言い換えた書き方が名称と完全に一致しても（exact が真）、引用に原文の略語が残れば印が付く
+    const m = markActs([{ category: "検査", written: "心電図", lookup: ["心電図"], quote: "ＥＣＧ１２" }], vocab, () => true);
+    expect(m[0]).toMatchObject({ abbrev: ["ECG12"], lookup: [] });
+    const f = markFacts([{ kind: "病名の記載", value: "心房細動", quote: "AF" }], vocab);
+    expect(f[0].abbrev).toEqual(["AF"]);
+    expect(askedItems("訪問診療", { acts: m, rx: [], rxChoice: null, rxChoiceBy: null }, f).map((x) => [x.place, x.written, x.tokens])).toEqual([
+      ["act", "心電図", ["ECG12"]],
+      ["fact", "心房細動", ["AF"]],
+    ]);
   });
   it("当てた・たたんだ行為は聞かない。病名の記載は傷病名と完全一致なら印を付けない。貼ったカルテは病名を聞かない", () => {
     const m = markActs(acts, vocab, () => false);

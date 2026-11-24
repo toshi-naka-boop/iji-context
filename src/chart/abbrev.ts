@@ -78,18 +78,24 @@ export const abbrevMarks = (text: string, vocab: AbbrevVocab): string[] => abbre
 /** 病名の記載が、傷病名マスターの名称と完全に一致するか（normName を両側に掛ける） */
 export const diseaseExact = (value: string, vocab: AbbrevVocab): boolean => vocab.diseases.has(normName(value));
 
-/** 印を付け直す（保存のとき・取り出した直後）。書かれた名前に印があり、引く表に名称の完全一致がない行為・子にだけ abbrev を持たせ、聞く行為・子の lookup は空にする（推し量りを見せない・残さない） */
+/**
+ * 書かれた名前・値と引用の印の語（反証 round-96 X-490）：書かれた名前・値の印（名称の完全一致があれば付けない）に、原文の引用の印を足す。
+ * LLM が原文の略語を言い換えて書いても（ECG12 → 心電図）、引用に残った原文の語で印が付く
+ */
+export const itemMarks = (written: string, quote: string, vocab: AbbrevVocab, exact: boolean): string[] => [...new Set([...(exact ? [] : abbrevMarks(written, vocab)), ...abbrevMarks(quote, vocab)])];
+
+/** 印を付け直す（保存のとき・取り出した直後）。書かれた名前（名称の完全一致がないとき）か引用に印がある行為・子にだけ abbrev を持たせ、聞く行為・子の lookup は空にする（推し量りを見せない・残さない） */
 export function markActs(acts: ChartAct[], vocab: AbbrevVocab, exact: (key: TableKey, written: string) => boolean): ChartAct[] {
-  const marksOf = (key: TableKey, written: string) => (exact(key, written) ? [] : abbrevMarks(written, vocab));
+  const marksOf = (key: TableKey, x: { written: string; quote: string }) => itemMarks(x.written, x.quote, vocab, exact(key, x.written));
   return acts.map((a) => {
     const { abbrev: _a, ...rest } = a;
-    const m = marksOf(tableKeyOfAct(a.category), a.written);
+    const m = marksOf(tableKeyOfAct(a.category), a);
     const act: ChartAct = m.length > 0 ? { ...rest, abbrev: m } : rest;
     if (askedAct(act)) act.lookup = [];
     if (a.with)
       act.with = a.with.map((c) => {
         const { abbrev: _c, ...cr } = c;
-        const cm = marksOf(tableKeyOfChild(c.kind), c.written);
+        const cm = marksOf(tableKeyOfChild(c.kind), c);
         const child = cm.length > 0 ? { ...cr, abbrev: cm } : cr;
         return askedChild(act, child) ? { ...child, lookup: [] } : child;
       });
@@ -97,11 +103,11 @@ export function markActs(acts: ChartAct[], vocab: AbbrevVocab, exact: (key: Tabl
   });
 }
 
-/** 事実の印を付け直す。病名の記載は傷病名マスターの名称と完全に一致するときは付けない */
+/** 事実の印を付け直す。病名の記載は値が傷病名マスターの名称と完全に一致するときは値の印を見ない（引用の原文の印は見る。X-490） */
 export function markFacts(facts: ExtractedFact[], vocab: AbbrevVocab): ExtractedFact[] {
   return facts.map((f) => {
     const { abbrev: _a, ...rest } = f;
-    const m = f.kind === "病名の記載" && diseaseExact(f.value, vocab) ? [] : abbrevMarks(f.value, vocab);
+    const m = itemMarks(f.value, f.quote, vocab, f.kind === "病名の記載" && diseaseExact(f.value, vocab));
     return (m.length > 0 ? { ...rest, abbrev: m } : rest) as ExtractedFact;
   });
 }

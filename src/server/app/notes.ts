@@ -1,10 +1,10 @@
 // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
 import { validateFacts, noteText, type ChartNote, type ExtractedFact } from "../../chart/extract";
 import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
-import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
+import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActChild, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
-import { abbrevMarks, abbrevVocabOf, itemKeyOf, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { abbrevMarks, abbrevVocabOf, itemKeyOf, itemMarks, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
 import { withMasters, type MastersDb } from "../../masters/db";
@@ -132,9 +132,9 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       return !!rows.get(key)?.some((x) => x.norm === w);
     };
   };
-  /** 書かれた名前に印があるか（印のある書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さない） */
-  const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string) =>
-    vocab !== null && !exact(key, written) && abbrevMarks(written, vocab).length > 0;
+  /** 書かれた名前か原文の引用に印があるか（X-490。印のある書き方は、前に選んだ対応を読まない・書かない。LLM の lookup で候補を出さない） */
+  const markedIn = (vocab: AbbrevVocab | null, exact: (key: TableKey, written: string) => boolean) => (key: TableKey, written: string, quote = "") =>
+    vocab !== null && itemMarks(written, quote, vocab, exact(key, written)).length > 0;
   /**
    * 取り出した直後の行ったこと・事実に印を付ける（FR-211）。聞く行為の lookup は空にする（保存もしない）。
    * 返すのは、印を付けた行ったこと・事実と、画面に出す印のまとめ
@@ -201,9 +201,10 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       };
       // 印のある書き方（FR-211）は、前に選んだ対応を読まず、LLM の lookup で候補を出さない（書かれた名前の部分一致の候補は出す）
       const marked = markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth));
-      const one = (k: TableKey, written: string, lookup: string[]) =>
-        marked(k, written) ? matchItem(rowsOf(k), k, written, [], null) : matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
-      const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.lookup)) }));
+      // 印のある記載は、名称の完全一致でも自動では当てない（初期値を出さない。X-490：言い換えた書き方が名称と一致しても、原文の略語は医師に聞く）
+      const one = (k: TableKey, written: string, quote: string, lookup: string[]) =>
+        marked(k, written, quote) ? { initial: null, candidates: matchItem(rowsOf(k), k, written, [], null).candidates } : matchItem(rowsOf(k), k, written, lookup, aliasOf(written, k, yearMonth));
+      const matches = acts.map((a) => ({ act: one(tableKeyOfAct(a.category), a.written, a.quote, a.lookup), with: (a.with ?? []).map((c) => one(tableKeyOfChild(c.kind), c.written, c.quote, c.lookup)) }));
       const aliasCount = matches.flatMap((m) => [m.act, ...m.with]).filter((m) => m.initial?.by === "alias").length;
       return { dispensing: dispensingFor(yearMonth), rxDefault: rxDefault(rx), aliasCount, mastersPresent: db !== null, matches };
     });
@@ -286,18 +287,24 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
    */
   function actCandidates(key: TableKey, yearMonth: string, written: string, lookup: string[], at?: { noteId: number; index: number; child?: number }): ItemMatch {
     return withMasters((db) =>
-      markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written)
-        ? matchItem(rowsFor(db, key, yearMonth), key, written, at ? doctorWordsAt(at, written) : [], null)
+      // 保存したカルテの位置を渡したときは、保存のときの印（引用の原文の語を含む。X-490）も見る
+      markedIn(abbrevVocabOf(db, yearMonth), exactIn(db, yearMonth))(key, written) || (at !== undefined && storedItemAt(at, written)?.abbrev?.length)
+        ? { initial: null, candidates: matchItem(rowsFor(db, key, yearMonth), key, written, at ? doctorWordsAt(at, written) : [], null).candidates }
         : matchItem(rowsFor(db, key, yearMonth), key, written, lookup, aliasOf(written, key, yearMonth)),
     );
   }
   /** 保存したカルテの行為・子に効く、医師の「指すものを記入する」の答えの語（書かれた名前が合わない・印がなければ空） */
-  function doctorWordsAt(at: { noteId: number; index: number; child?: number }, written?: string): string[] {
+  /** 保存したカルテの行為・子（書かれた名前が合わなければ null） */
+  function storedItemAt(at: { noteId: number; index: number; child?: number }, written?: string): ChartAct | ActChild | null {
     const r = sqlite.prepare("SELECT acts FROM chart_notes WHERE id = ?").get(at.noteId) as { acts: string | null } | undefined;
-    if (!r?.acts) return [];
+    if (!r?.acts) return null;
     const act = (JSON.parse(r.acts) as StoredActs).acts[at.index];
     const item = at.child === undefined ? act : act?.with?.[at.child];
-    if (!item?.abbrev?.length || (written !== undefined && normName(item.written) !== normName(written))) return [];
+    return item && (written === undefined || normName(item.written) === normName(written)) ? item : null;
+  }
+  function doctorWordsAt(at: { noteId: number; index: number; child?: number }, written?: string): string[] {
+    const item = storedItemAt(at, written);
+    if (!item?.abbrev?.length) return [];
     return abbrevs.writtenIn(at.noteId, at.child === undefined ? "act" : "child", itemKeyOf(item.written, item.quote), item.abbrev);
   }
   /** マスターを名前で探す（名称の部分一致で 20 件まで。表・コード・名称だけ） */
@@ -321,26 +328,26 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const a = validateActs({ acts: input.acts, rx: input.rx }, noteText(note), true);
     if (a.dropped.length) throw badRequest(`カルテにない言葉の行ったことがある: ${[...new Set(a.dropped.map((d) => d.why))].join("、")}`);
     const yearMonth = caseOf(r.claim_id).yearMonth;
-    const chosen: { written: string; key: TableKey; m: ActMatch }[] = [];
+    const chosen: { written: string; quote: string; key: TableKey; m: ActMatch }[] = [];
     const at = now();
     let vocab: AbbrevVocab | null = null;
     const acts = withMasters((db) => {
       const rows = new Map<TableKey, ReturnType<typeof rowsFor>>();
-      const check = (key: TableKey, written: string, m: ActMatch | null | undefined): ActMatch | null => {
+      const check = (key: TableKey, written: string, quote: string, m: ActMatch | null | undefined): ActMatch | null => {
         if (!m) return null;
         if (!rows.has(key)) rows.set(key, rowsFor(db, key, yearMonth));
         const row = rowIn(rows.get(key)!, m.tbl, m.code);
         if (!row) throw badRequest(`診療年月のマスターの、この行為の表にないコードです: ${m.code}`, ["acts"]);
         const out = { tbl: row.tbl, code: row.code, name: row.name, by: m.by };
-        if (m.by !== "name") chosen.push({ written, key, m: out });
+        if (m.by !== "name") chosen.push({ written, quote, key, m: out });
         return out;
       };
       const checked = a.acts.map((x, i) => {
         const src = input.acts[i];
-        const act: ChartAct = { ...x, match: check(tableKeyOfAct(x.category), x.written, src.match) };
+        const act: ChartAct = { ...x, match: check(tableKeyOfAct(x.category), x.written, x.quote, src.match) };
         const fold = checkFold(r.claim_id, yearMonth, r.date, act, src.fold);
         if (fold) act.fold = fold;
-        if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, src.with?.[j]?.match) }));
+        if (x.with) act.with = x.with.map((c, j) => ({ ...c, match: check(tableKeyOfChild(c.kind), c.written, c.quote, src.with?.[j]?.match) }));
         return act;
       });
       // 略語の印（FR-211）：当てたあとに付け直す（聞く行為の lookup は残さない）。印のある書き方は、選んだ対応をクリニックごとに覚えない
@@ -348,7 +355,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       if (!vocab) return checked;
       const exact = exactIn(db, yearMonth);
       const marked = markedIn(vocab, exact);
-      for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].key, chosen[k].written)) chosen.splice(k, 1);
+      for (let k = chosen.length - 1; k >= 0; k--) if (marked(chosen[k].key, chosen[k].written, chosen[k].quote)) chosen.splice(k, 1);
       return markActs(checked, vocab, exact);
     });
     const markedFacts: ExtractedFact[] = vocab ? markFacts(v.facts, vocab) : v.facts;

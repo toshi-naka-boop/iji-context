@@ -1,6 +1,6 @@
 // 略語の医師への確認（spec FR-211。plan-fr211.md の受け入れ条件 3）：ルートを実際に呼んで確かめる。
 // LLM は呼ばない（SDK の query を差し替える。偽の取り出しは lookup を挙げる）。マスターは手で作った小さな表（tests/chart/small-chart-masters.ts）。
-// ECG12 は小さな表・本物のマスターとも名称（ＥＣＧ１２）にあって印が付かないので、その 1 行を除いた表で「名称にない略語」として確かめる。
+// ECG12 は小さな表・本物のマスターとも名称（ＥＣＧ１２）にあって印が付かないので、その 1 行の名称を「心電図」に替えた表で「名称にない略語」として確かめる。
 // B の欄（G11）を動かすため、電子点数表つきの小さな表（tests/generic/small-tensuhyo.ts）を使う（計画の受け入れ条件 1 との食い違いは報告した）
 import Database from "better-sqlite3";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -37,7 +37,8 @@ beforeAll(async () => {
   const db = tensuhyoMasters("20261001");
   for (const c of abbrevCodes()) if (!db.prepare(`SELECT 1 FROM ${c.tbl} WHERE snapshot = '20261001' AND code = ?`).get(c.code)) put(db, c.tbl, "20261001", c.tbl === "shinryo" ? { code: c.code, name: c.name, alpha: "*" } : { code: c.code, name: c.name });
   put(db, "shobyo", "20261001", AF_DISEASE);
-  db.prepare("DELETE FROM shinryo WHERE code = '160068410'").run();
+  // ECG12 の行は名称を「心電図」にする（ECG12 は名称にない語になり、言い換えた「心電図」は名称と完全に一致する。X-490）
+  db.prepare("UPDATE shinryo SET name = '心電図' WHERE code = '160068410'").run();
   db.prepare("INSERT OR REPLACE INTO checks_ready (check_id, ready, reason) VALUES ('G03', 1, ''), ('G10', 1, ''), ('G11', 1, '')").run();
   writeFileSync(path.join(dir, "masters.db"), db.serialize());
   db.close();
@@ -80,6 +81,7 @@ const LOOKUP_ROW = "160056110";
 const ecgAct = (quote = "ＥＣＧ１２"): ChartAct => ({ category: "検査", written: "ＥＣＧ１２", lookup: ["特異的ＩｇＥ半定量・定量"], quote });
 type Written = { id: number; acts: ChartAct[]; abbrev: { marks: string[]; asked: number } | { unseen: string }; review: { matches: { act: { initial: unknown; candidates: { code: string; prior: boolean }[] } }[] } };
 
+const refNote = (ref: string) => Number(ref.split(":")[0]);
 /** 訪問カルテを書いて（偽の取り出し）、行為を当てずに確かめて保存する */
 async function writeAndSave(claim: string, o: string, acts: ChartAct[], facts: unknown[] = []): Promise<Written> {
   llm.runOnce.mockResolvedValueOnce({ structured: { facts, acts, rx: [] }, sessionId: "", stats: {} });
@@ -187,8 +189,7 @@ describe("答えを候補と B の欄に戻す（受け入れ条件 3 の後半�
     expect(r.status).toBe(200);
     return (await r.json()) as Claim;
   };
-  const refNote = (ref: string) => Number(ref.split(":")[0]);
-  const candidates = async (q: Record<string, string>) => {
+    const candidates = async (q: Record<string, string>) => {
     setRole("clerk");
     const r = await (await import("../../app/api/chart/acts/candidates/route")).GET(get(`/api/chart/acts/candidates?${new URLSearchParams({ table: "shinryo", ym: YM, written: "ＥＣＧ１２", ...q })}`));
     expect(r.status).toBe(200);
@@ -286,5 +287,28 @@ describe("B の欄の数の行（withAbbrev）", () => {
     expect(withAbbrev(r, [{ noteId: 1, acts: [marked] }], () => "asking")).toBe(r);
     expect((withAbbrev(r, [{ noteId: 1, acts: [marked], stored: true }], () => "asking") as typeof r).scope).toEqual(["もとの行", "略語を医師に確かめ中 1 件（その行為は見ていません）"]);
     expect((withAbbrev(r, [{ noteId: 1, acts: [marked], stored: true }], () => "answered") as typeof r).scope).toEqual(["もとの行"]);
+  });
+});
+
+describe("LLM が原文の略語を言い換えても医師確認を通る（反証 round-96 X-490）", () => {
+  it("ECG12 を「心電図」と書き換えても、引用の原文で印が付き、lookup は空・名称の完全一致でも初期値に当てず、医師に聞く", async () => {
+    // 比べる組：原文が「心電図」なら、名称の完全一致で初期値に当たる
+    llm.runOnce.mockResolvedValueOnce({ structured: { facts: [], acts: [{ category: "検査", written: "心電図", lookup: [], quote: "心電図" }], rx: [] }, sessionId: "", stats: {} });
+    const plain = (await (await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K4"), kind: "訪問診療", note: { s: "", o: "心電図。", a: "", p: "", rx: "" } }))).json()) as Written;
+    expect(plain.review.matches[0].act.initial).toMatchObject({ code: "160068410", by: "name" });
+    const aliases = aliasCount();
+    const w = await writeAndSave(claimId("K4"), "ＥＣＧ１２。", [{ category: "検査", written: "心電図", lookup: ["特異的ＩｇＥ半定量・定量"], quote: "ＥＣＧ１２" }]);
+    expect(w.acts[0]).toMatchObject({ written: "心電図", abbrev: ["ECG12"], lookup: [] });
+    expect(w.review.matches[0].act.initial).toBeNull();
+    expect(w.review.matches[0].act.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
+    expect(app().savedActs(w.id)!.acts[0]).toMatchObject({ abbrev: ["ECG12"], lookup: [], match: null });
+    expect(aliasCount()).toBe(aliases);
+    const q = (await list()).find((x) => x.token === "ECG12" && x.quotes.some((y) => refNote(y.ref) === w.id));
+    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)?.quote).toBe("ＥＣＧ１２");
+  });
+  it("AF を「心房細動」（傷病名の名称と完全一致）と書き換えても、引用の原文で印が付き、医師に聞く", async () => {
+    const w = await writeAndSave(claimId("K1"), "変わりなし。AF。", [], [{ kind: "病名の記載", value: "心房細動", quote: "AF" }]);
+    const q = (await list()).find((x) => x.token === "AF" && x.quotes.some((y) => refNote(y.ref) === w.id));
+    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)).toMatchObject({ ref: expect.stringContaining(":fact:"), quote: "AF" });
   });
 });
