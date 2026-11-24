@@ -36,3 +36,16 @@ describe("撮影部位のコメントの許可リスト（段 22c）", () => {
     expect(r.failures).toBeGreaterThan(0);
   });
 });
+
+describe("撮影部位はコードと記入値の組で数える（反証 round-95 X-480）", () => {
+  it.skipIf(!has)("肩（830181200）の「右」と「左」が付いた単純撮影（ロ）の写真診断（170000510。数量 2）は、違う部位が 2 つなので対象外（imagingSites）。同じ記入値が 2 つなら対象外にしない", async () => {
+    const { recalcClaim } = await import("../../src/generic/g02");
+    const db = openMasters(file)!;
+    const unit = { points: 1, count: 1, days: Array.from({ length: 31 }, (_, d) => (d === 9 ? 1 : 0)), items: [{ kind: "SI" as const, code: "170000510", line: 10, shikibetsu: "70", quantity: "2" }] };
+    const claim = (raws: string[]) => ({ units: [unit], comments: raws.map((raw, i) => ({ line: 11 + i, code: "830181200", raw, unit: null })) });
+    const about = { yearMonth: "2026-10", generation: r2026.generation };
+    expect(recalcClaim(claim(["右", "左"]), db, about)).toMatchObject([{ status: "excluded", reason: "imagingSites" }]);
+    const same = recalcClaim(claim(["右", "右"]), db, about) as { status: string; reason?: string }[];
+    expect(same[0].reason).not.toBe("imagingSites");
+  });
+});

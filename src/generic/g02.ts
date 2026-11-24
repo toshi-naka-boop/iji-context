@@ -89,8 +89,8 @@ export function recalcClaim(claim: GenericClaim, masters: MastersDb, about: Gene
     const from = span(units[i - 1])?.[1] ?? 0;
     const to = span(units[i + 1])?.[0] ?? Infinity;
     const commented = span(u) !== null && countedLines.some((line) => line > from && line < to);
-    // 違う撮影部位のコメントが 2 つ以上ある単位は、検算の対象外（理由つき。design.md §19-14 の 2。反証 round-94 C-612）
-    const sites = span(u) === null ? 0 : new Set(comments.filter((c) => allowed.has(c.code) && c.line > from && c.line < to).map((c) => c.code)).size;
+    // 違う撮影部位のコメントが 2 つ以上ある単位は、検算の対象外（理由つき。design.md §19-14 の 2。反証 round-94 C-612）。部位はコードと記入値（左右など）の組で数える（反証 round-95 X-480）
+    const sites = span(u) === null ? 0 : new Set(comments.filter((c) => allowed.has(c.code) && c.line > from && c.line < to).map((c) => `${c.code}\u0000${c.raw ?? ""}`)).size;
     if (sites >= 2) {
       out.push({ unit: i, uke: u.points, status: "excluded", reason: "imagingSites" });
       return;
