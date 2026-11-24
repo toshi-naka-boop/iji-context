@@ -35,14 +35,20 @@ const emCodes = new Map<string, EmRow>(
       return [c[0], { primary: c[1], accept: c[2] === "—" ? [] : c[2].split("・"), points: /^[\d,]+$/.test(c[4]) ? num(c[4]) : null, shikibetsu }];
     }),
 );
-/** 包括の区分 → 点数（「生化学的検査(Ⅰ) の包括」の表） */
+/** 包括の区分 → 点数（「生化学的検査(Ⅰ) の包括」の表と、「G・H のコード」の D008・D013 の表。design.md §19-1） */
 const emTiers = new Map(
   emSection()
     .split("\n")
     .map(cells)
-    .filter((c) => c.length === 5 && /^D007_\d+$/.test(c[0]))
+    .filter((c) => c.length === 5 && /^D0(07|08|13)_\d+$/.test(c[0]))
     .map((c) => [c[0], num(c[2])]),
 );
+/** EM §2-8「G・H のコード」の項目の一覧（D008・D013。design.md §19-1） */
+const emGroup = (name: string): string[] => {
+  const line = emSection().split("\n").find((l) => l.startsWith(`- ${name} `) && l.includes("の包括の項目"));
+  if (!line) throw new Error(`EM §2-8 に ${name} の項目の一覧がない`);
+  return line.slice(line.lastIndexOf("：") + 1).split("・");
+};
 /** 包括の対象のコード → マスターの名称（3 組が横に並ぶ表） */
 const emMembers = new Map(
   emSection()
@@ -57,10 +63,13 @@ describe("evidence-master §2-8 との対応（完了条件 1）", () => {
   // コードの表は 189 行：版の表の 48 行と、実務の算定 A で採った施設基準の 45 行（2026-11-22。段 17d で版に入れた。spec FR-189）、
   // 単一建物 2 人以上の区分の 96 行（EM R8-95〜R8-190。段 17f で §2-8-2 から §2-8 へ移し、版に入れた）、注14 の減の行の 90 行（段 17h で同じく移した。W-13＝E-10）、
   // 介護保険・ほかの医療機関との調整の 4 行（C001_2I・C001_2RO・C007・C010。2026-11-24 の EM の写し。設計 v37 §18-4）
-  it("EM の表が読めている（コードの表 283 行・包括の区分 3 行・包括の対象 66 コード）", () => {
+  // 包括の区分は、D007 の 3 行と、v44 で足した D008・D013 の 6 行（design.md §19-1）
+  it("EM の表が読めている（コードの表 283 行・包括の区分 9 行・D007 の包括の対象 66 コード・D008 79 コード・D013 20 コード）", () => {
     expect(emCodes.size).toBe(283);
-    expect([...emTiers.keys()].sort()).toEqual(["D007_10", "D007_5", "D007_8"]);
+    expect([...emTiers.keys()].sort()).toEqual(["D007_10", "D007_5", "D007_8", "D008_3", "D008_6", "D008_8", "D013_3", "D013_4", "D013_5"]);
     expect(emMembers.size).toBe(66);
+    expect(new Set(emGroup("D008")).size).toBe(79);
+    expect(new Set(emGroup("D013")).size).toBe(20);
   });
 
   it("どの版でも、codes の全行（primary・accept）が EM の表にある。facility は accept の 1 つ。診療識別は EM の列と同じ", () => {
@@ -85,18 +94,37 @@ describe("evidence-master §2-8 との対応（完了条件 1）", () => {
     }
   });
 
-  it("bundles の members は EM の包括の対象の表にあるコードだけ。尿・髄液・胸水・腹水の版の 18 個は入れていない", () => {
-    const blood = [...emMembers].filter(([, name]) => !/（(尿|髄液|胸水|腹水)）/.test(name)).map(([code]) => code);
-    expect(blood).toHaveLength(48);
-    for (const rev of REVISIONS) {
-      expect(rev.bundles).toHaveLength(1);
-      expect([...rev.bundles[0].members].sort(), rev.id).toEqual([...blood].sort());
-      expect(rev.bundles[0].tiers, rev.id).toEqual([
+  // v44（design.md §19-1）で、D007 の members を 66 個全部にし（尿・髄液・胸水・腹水の版の 18 個も項目数に合わせる。C-601・X-440）、D013 の群を足した。
+  // v45（design.md §19-13 の 1）で D008 の群を足した。BNP（160162350）は codes の D008_19 と D008 の群の両方にある（EM §2-8 DUP-01 の sharedCodes だけ）
+  it("bundles の members は EM の包括の対象の表のコードを、群ごとに全部持つ（D007 は 66 個、D008 は 79 個、D013 は 20 個）。D013 は血液だけを数える群", () => {
+    for (const rev of REVISIONS.filter((r) => r.bundles.length > 0)) {
+      expect(rev.bundles.map((b) => b.tiers[0].kubun.split("_")[0]), rev.id).toEqual(["D007", "D008", "D013"]);
+      const [d007, d008, d013] = rev.bundles;
+      expect([...d008.members].sort(), rev.id).toEqual([...emGroup("D008")].sort());
+      expect(d008.tiers).toEqual([
+        { min: 3, kubun: "D008_3" },
+        { min: 6, kubun: "D008_6" },
+        { min: 8, kubun: "D008_8" },
+      ]);
+      expect(d008.bloodOnly).toBeUndefined();
+      expect(rev.sharedCodes).toEqual(["160162350"]);
+      expect(kubunOfCode(rev, "160162350")).toBe("D008_19");
+      expect(bundleOfCode(rev, "160162350")).toBe(d008);
+      expect([...d007.members].sort(), rev.id).toEqual([...emMembers.keys()].sort());
+      expect(d007.tiers).toEqual([
         { min: 5, kubun: "D007_5" },
         { min: 8, kubun: "D007_8" },
         { min: 10, kubun: "D007_10" },
       ]);
-      for (const t of rev.bundles[0].tiers) expect(rev.shikibetsu[t.kubun]).toBe("60");
+      expect(d007.bloodOnly).toBeUndefined();
+      expect([...d013.members].sort(), rev.id).toEqual([...emGroup("D013")].sort());
+      expect(d013.tiers).toEqual([
+        { min: 3, kubun: "D013_3" },
+        { min: 4, kubun: "D013_4" },
+        { min: 5, kubun: "D013_5" },
+      ]);
+      expect(d013.bloodOnly).toBe(true);
+      for (const bundle of rev.bundles) for (const t of bundle.tiers) expect(rev.shikibetsu[t.kubun]).toBe("60");
     }
   });
 
@@ -111,7 +139,7 @@ describe("evidence-master §2-8 との対応（完了条件 1）", () => {
 });
 
 describe("コードの表の検査（assertRevisions）", () => {
-  const withCodes = (over: Partial<Pick<Revision, "codes" | "bundles" | "uncoded" | "shikibetsu" | "points">>): Revision => ({ ...r2026, ...over });
+  const withCodes = (over: Partial<Pick<Revision, "codes" | "bundles" | "uncoded" | "shikibetsu" | "points" | "sharedCodes">>): Revision => ({ ...r2026, ...over });
   const code = (kubun: string) => r2026.codes[kubun];
 
   it("同梱の版は通る", () => {
@@ -122,6 +150,11 @@ describe("コードの表の検査（assertRevisions）", () => {
     for (const bad of ["11400111", "1140011100", "11400111a", ""]) {
       expect(() => assertCodes(withCodes({ codes: { ...r2026.codes, C000: { primary: bad, accept: [] } } }))).toThrow(/9 桁/);
     }
+  });
+
+  it("codes と bundles の両方に置けるのは sharedCodes（EM §2-8 DUP-01）のコードだけ。ほかのコードは今までどおり拒否する", () => {
+    expect(() => assertCodes(withCodes({}))).not.toThrow();
+    expect(() => assertCodes(withCodes({ sharedCodes: [] }))).toThrow(/同じコードが 2 か所/);
   });
 
   it("同じコードが 2 つの区分に現れる版は拒否する（primary と accept を合わせて。bundles の members とも重ならない）", () => {

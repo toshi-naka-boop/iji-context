@@ -11,6 +11,7 @@ import { REVISIONS } from "../engine/revisions";
 import { recalcUnit, type RecalcItem } from "../generic/points";
 import type { Revision } from "../engine/revisions/types";
 import { MASTERS_CONFIG, type MastersConfig } from "./config";
+import { checkBundles, GROUPS, membersOf } from "./bundle-check";
 import { pickSnapshot } from "./db";
 import { LAYOUTS, TABLE_COLUMNS } from "./layout";
 import { checkCodes, emNames, type MasterRow } from "./revision-check";
@@ -331,6 +332,44 @@ export function verifyMasters(db: Database.Database, em: Em, opt: { write: boole
     }
     failures += hits;
     lines.push(`版の表との食い違い：${hits} 件`);
+  }
+
+  // 3-1. 包括の群と告示の号の対応（design.md §19-12。反証 round-94 C-621）：版の bundles の群（D008・D013）の members が、マスターの群の行と 1 対 1 で、区分番号・号の範囲が合うこと。
+  // マスターの次の世代で群が変わったら（号の新設・列の移り）、ここで止める
+  if (snapshotsOf("shinryo").length === 0) lines.push("包括の群と号の対応：医科診療行為マスターがないので飛ばした");
+  else {
+    let diff = 0;
+    for (const rev of (opt.revisions ?? REVISIONS).filter((r) => r.generation === generation && r.bundles.length > 0)) {
+      for (const s of snapshotsOf("shinryo")) {
+        const r = checkBundles(db, s, GROUPS.map((group) => ({ group, members: membersOf(rev.bundles, group.tierPrefix) })));
+        if (!r.ok) {
+          diff++;
+          for (const l of r.lines.filter((x) => x.includes("NG"))) lines.push(`包括の群がマスターと合わない（${rev.id} shinryo ${s}）：${l.trim()}`);
+        }
+      }
+    }
+    failures += diff;
+    lines.push(`包括の群と号の対応：食い違い ${diff} 件`);
+  }
+
+  // 3-2. 撮影部位のコメントの許可リスト（design.md §19-1・§19-10 完了条件 4）：コメントマスターの「撮影部位（」の行と、版の imagingSiteComments が同じこと
+  if (snapshotsOf("comment").length === 0) lines.push("撮影部位のコメントの許可リスト：コメントマスターがないので飛ばした");
+  else {
+    let diff = 0;
+    for (const rev of (opt.revisions ?? REVISIONS).filter((r) => r.generation === generation && r.imagingSiteComments.length > 0)) {
+      const mine = new Set(rev.imagingSiteComments);
+      for (const s of snapshotsOf("comment")) {
+        const master = new Set((db.prepare("SELECT code FROM comment WHERE snapshot = ? AND name LIKE '撮影部位（%'").all(s) as { code: string }[]).map((r) => r.code));
+        const onlyMaster = [...master].filter((x) => !mine.has(x));
+        const onlyMine = [...mine].filter((x) => !master.has(x));
+        if (onlyMaster.length + onlyMine.length > 0) {
+          diff++;
+          lines.push(`撮影部位のコメントの許可リストがマスターと違う（${rev.id} comment ${s}）：マスターだけ ${onlyMaster.join("・") || "なし"}／版だけ ${onlyMine.join("・") || "なし"}`);
+        }
+      }
+    }
+    failures += diff;
+    lines.push(`撮影部位のコメントの許可リスト：食い違い ${diff} 件`);
   }
 
   // 4. 点検の準備

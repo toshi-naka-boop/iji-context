@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { FacilityFactKey } from "../../src/engine/types";
 import { changeNotices, NOTE14_LABEL, prevMonthOf, valueLabel, type DeclarationRow, type RecheckNotice } from "../../src/facility/declaration";
 import { NOTE14_OVERRIDE_REASONS, NOTE14_TEXT } from "../../src/facility/note14";
+import { OXYGEN_BASES, OXYGEN_KIND_TEXT, OXYGEN_KINDS, yenText, type OxygenKind, type OxygenPriceRow } from "../../src/facility/oxygen";
 import { FACILITY_LABEL } from "../../src/messages";
 import { getJson, postJson } from "../get-json";
 
@@ -346,6 +347,87 @@ function ConfirmUnchanged(props: { data: Declarations; onSaved: (d: Declarations
   );
 }
 
+type OxygenView = { today: string; defaults: { validFrom: string; validUntil: string }; kinds: { kind: OxygenKind; todayCenti: number | null; limitCenti: number | null }[]; rows: OxygenPriceRow[] };
+
+/**
+ * 酸素の単価（任意。design.md §19-3・§19-8）：区分ごとに、今日に効く単価・期間・上限を並べ、行を足す・取り消す。どのロールも読み、入れるのは事務長と責任者（施設の申告と同じ）。
+ * 施設の値で、採用値ではない。上限を超える単価も入れられるが、請求には上限の額を使う
+ */
+function OxygenPrices(props: { canEdit: boolean }) {
+  const [data, setData] = useState<OxygenView | null>(null);
+  const [err, setErr] = useState("");
+  const [kind, setKind] = useState<OxygenKind>("small");
+  const [price, setPrice] = useState("");
+  const [from, setFrom] = useState("");
+  const [until, setUntil] = useState("");
+  const [basis, setBasis] = useState<string>(OXYGEN_BASES[0]);
+  useEffect(() => {
+    getJson<OxygenView>("/api/facility/oxygen-prices")
+      .then((d) => {
+        setData(d);
+        setFrom(d.defaults.validFrom);
+        setUntil(d.defaults.validUntil);
+      })
+      .catch((e: Error) => setErr(e.message));
+  }, []);
+  async function post(body: object) {
+    setErr("");
+    try {
+      setData(await postJson<OxygenView>("/api/facility/oxygen-prices", body));
+      setPrice("");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  const limit = data?.kinds.find((k) => k.kind === kind)?.limitCenti ?? null;
+  const over = limit !== null && /^\d+(\.\d{1,2})?$/.test(price) && Math.round(Number(price) * 100) > limit;
+  return (
+    <div className="panel" id="oxygen-prices">
+      <h3 style={{ marginTop: 0 }}>酸素の単価（任意）</h3>
+      <p className="muted">届け出た単価は任意です。入れないと上限だけを見ます。施設の値です。点検の文に出ます。</p>
+      {err && <p className="notice warn">{err}</p>}
+      {data && (
+        <>
+          <ul>
+            {data.kinds.map((k) => {
+              const rows = data.rows.filter((r) => r.kind === k.kind);
+              return (
+                <li key={k.kind} style={{ marginBottom: 6 }}>
+                  <div>
+                    {OXYGEN_KIND_TEXT[k.kind]}：今日（{data.today}）に効く単価 {k.todayCenti === null ? "なし" : `${yenText(k.todayCenti)} 円/L`}／上限 {k.limitCenti === null ? "（マスターがありません）" : `${yenText(k.limitCenti)} 円/L`}
+                  </div>
+                  {rows.map((r) => (
+                    <div key={r.id} className="muted">
+                      {yenText(r.priceCenti)} 円/L・{r.validFrom}〜{r.validUntil}・{r.basis}
+                      {k.limitCenti !== null && r.priceCenti > k.limitCenti && `（上限 ${yenText(k.limitCenti)} 円を超えています。請求には上限の額を使います）`}
+                      {props.canEdit && <button style={{ marginLeft: 6 }} onClick={() => void post({ revokes: r.id })}>取り消す</button>}
+                    </div>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
+          {props.canEdit && (
+            <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+              <select aria-label="酸素の区分" value={kind} onChange={(e) => setKind(e.target.value as OxygenKind)}>
+                {OXYGEN_KINDS.map((k) => <option key={k} value={k}>{OXYGEN_KIND_TEXT[k]}</option>)}
+              </select>
+              <input aria-label="単価（円/L）" inputMode="decimal" placeholder="単価（円/L）" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: 110 }} />
+              <input aria-label="適用の始め" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <input aria-label="適用の終わり" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+              <select aria-label="届出の元" value={basis} onChange={(e) => setBasis(e.target.value)}>
+                {OXYGEN_BASES.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <button disabled={price === ""} onClick={() => void post({ kind, price, validFrom: from, validUntil: until, basis })}>足す</button>
+              {over && limit !== null && <span className="notice warn">上限 {yenText(limit)} 円を超えています。請求には上限の額を使います</span>}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** 施設の申告（どのロールも読める。canEdit は事務長と責任者） */
 export function Declaration(props: { canEdit: boolean }) {
   const [data, setData] = useState<Declarations | null>(null);
@@ -396,6 +478,7 @@ export function Facility(props: { canEdit: boolean }) {
   return (
     <>
       <Declaration canEdit={props.canEdit} />
+      <OxygenPrices canEdit={props.canEdit} />
       {props.canEdit && <FacilitySettings />}
     </>
   );

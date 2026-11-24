@@ -562,9 +562,13 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
   if (unknown) return out(unknown.line, "診療年月の版の表にないコード");
   const dates = datesOf(yearMonth, unit.days, 1);
 
-  // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる
-  const bundle = bundleOfCode(rev, unit.items[0].code);
-  if (unit.items.some((it) => bundleOfCode(rev, it.code) !== bundle)) return out(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  // 包括の検査：単位の全部が、同じ包括の項目。項目数で区分が決まる（群を先に数える。design.md §19-13 の 1）。
+  // codes と群の両方にあるコード（BNP。EM §2-8 DUP-01）だけの単位で、項目数が下限に届かなければ、今までどおりコードの区分（D008_19）で読む
+  const first = bundleOfCode(rev, unit.items[0].code);
+  const sameBundle = first !== null && unit.items.every((it) => bundleOfCode(rev, it.code) === first) ? first : null;
+  const byCodes = unit.items.every((it) => kubunOfCode(rev, it.code) !== null);
+  if (sameBundle === null && unit.items.some((it) => bundleOfCode(rev, it.code) !== null && kubunOfCode(rev, it.code) === null)) return out(unit.line, "包括の検査の項目と、ほかの項目が同じ単位にある");
+  const bundle = sameBundle !== null && (bundleKubun(sameBundle, unit.items.length) !== null || !byCodes) ? sameBundle : null;
   if (bundle) {
     const items = unit.items.map((it) => it.code);
     if (new Set(items).size !== items.length) return no(unit.line, "包括の検査の同じ項目が、同じ単位に 2 つある");
@@ -573,7 +577,8 @@ function mapUnit(unit: UkeUnit, yearMonth: string, rev: Revision, lenient: boole
     // 包括にならない項目数（項目ごとに算定する）は、対応していない
     if (kubun === null) return out(unit.line, "包括の検査の項目数が、包括になる数に足りない");
     const listed = rev.points[kubun].points;
-    if (unit.points !== listed) return lenient && listed !== null ? { ok: true, lines: [{ kubun, count: unit.count, dates, items }], revPoints: listed } : no(unit.line, "点数が診療年月の版の点数表と合わない");
+    // 包括の検査は、表の値と違う点数（素の合算・2 回目以降の採血を外した書き方）も正しい請求であり得るので、取り込みでは断らない。点数の判定は G02 の三段に任せる（design.md §19-4 の 1。反証 round-94 X-470）
+    if (unit.points !== listed && lenient && listed !== null) return { ok: true, lines: [{ kubun, count: unit.count, dates, items }], revPoints: listed };
     return { ok: true, lines: [{ kubun, count: unit.count, dates, items }] };
   }
 

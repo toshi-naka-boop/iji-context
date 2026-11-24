@@ -255,6 +255,17 @@ CREATE TABLE other_institutions_none (id INTEGER PRIMARY KEY AUTOINCREMENT, pati
 CREATE INDEX other_institutions_none_patient ON other_institutions_none (patient_id, id);
 `,
   },
+  {
+    // 届け出た酸素の単価（design.md §19-3。v44 段 22e）。院内の設定で、患者のデータではない（患者マスタを消しても残る。FR-168 の全表走査の対象外）。追記だけ。
+    // kind は区分（CE・LGC・large〔大型ボンベ〕・small〔小型ボンベ〕。R8-320）、price_centi は単価の 100 倍（0.01 円の整数）、valid_from・valid_until は適用の始めと終わり（日付）、
+    // basis は届出の元（前年の購入実績〔R8-316〕・前年の実績なし／30% を超える変動の随時の届出〔R8-321〕）。
+    // 取り消しは、取り消す行の id を revokes に持つ行を足して表す（取り消しの行だけが revokes を持つ。ほかの列は取り消した行の値の写し）。
+    // 施設の値であって採用値ではない。AI に送る文脈と UKE の書き出しには入れない。監査ログには、入れた・取り消したことと区分だけを残す
+    version: 23,
+    sql: `
+CREATE TABLE oxygen_prices (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, price_centi INTEGER NOT NULL, valid_from TEXT NOT NULL, valid_until TEXT NOT NULL, basis TEXT NOT NULL, entered_by TEXT NOT NULL, entered_at TEXT NOT NULL, revokes INTEGER);
+`,
+  },
 ];
 
 /** ログインの auth.db */

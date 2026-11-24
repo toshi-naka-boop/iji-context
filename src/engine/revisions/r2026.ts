@@ -27,7 +27,7 @@ import { withVisit2Reads } from "../visit2";
 import { changes } from "./r2026-changes";
 import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
 import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
-import { bundles, codes as baseCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
+import { bundles, codes as baseCodes, imagingSiteComments, sharedCodes, shikibetsu as baseShikibetsu } from "./r2026-codes";
 import { commentCodes, comments } from "./r2026-comments";
 import { kisaiYoshi } from "./r2026-kisai";
 import { kanriRows } from "./kanri";
@@ -81,6 +81,14 @@ const points: Record<string, KubunDef> = {
   D007_8: em("血液化学検査 8〜9項目", "D007 注 ロ", 99),
   D007_10: em("血液化学検査 10項目以上", "D007 注 ハ", 103),
   D008_19: em("BNP", "D008 19", 130),
+  // D008 内分泌学的検査の包括（R8-305。項目数で決まる。design.md §19-1）
+  D008_3: em("内分泌学的検査 3〜5項目", "D008 注", 410),
+  D008_6: em("内分泌学的検査 6〜7項目", "D008 注", 623),
+  D008_8: em("内分泌学的検査 8項目以上", "D008 注", 900),
+  // D013 肝炎ウイルス関連検査の包括（R8-307。項目数で決まる。design.md §19-1）
+  D013_3: em("肝炎ウイルス関連検査 3項目", "D013 注", 290),
+  D013_4: em("肝炎ウイルス関連検査 4項目", "D013 注", 360),
+  D013_5: em("肝炎ウイルス関連検査 5項目以上", "D013 注", 425),
   D026_3: em("血液学的検査判断料", "D026 3", 125),
   D026_4: em("生化学的検査(Ⅰ)判断料", "D026 4", 144),
   D026_5: em("生化学的検査(Ⅱ)判断料", "D026 5", 144),
@@ -272,6 +280,8 @@ export const r2026: Revision = {
   points,
   codes,
   bundles,
+  imagingSiteComments,
+  sharedCodes,
   // EM §2-8 で、r2026 の点数表の区分はすべてコード（か包括の項目）が決まっている
   uncoded: {},
   shikibetsu,

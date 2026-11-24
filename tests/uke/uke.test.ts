@@ -493,7 +493,7 @@ describe("単位で読む（§11-14 完了条件 (a)・(b)・(d)）", () => {
     expect(() => readUke(ukeOf([base[0], co("", "810000001", "途中")], 0))).toThrow(`${FIRST} 行目：点数のない行で単位が終わっている`);
   });
 
-  it("注加算の合算が版の点数表と合わない・包括の検査の項目数と点数が合わない単位は断る。包括にならない項目数（4 項目以下）・包括の対象でない項目が混ざる単位は、断らずに点検の対象外にする", () => {
+  it("注加算の合算が版の点数表と合わない単位は断る（包括の検査の項目数と点数が合わない単位は、断らずに項目数の区分で読む。X-470）。包括にならない項目数（4 項目以下）・包括の対象でない項目が混ざる単位は、断らずに点検の対象外にする", () => {
     const sum = pts("C000") + pts("C000_N1_KINKYU");
     expect(() => readUke(ukeOf([si("14", code("C000")), si("", code("C000_N1_KINKYU"), { points: sum + 1 })], sum + 1))).toThrow(`${FIRST + 1} 行目：点数が診療年月の版の点数表と合わない`);
     const bundle = (n: number, points: number, extra: string[] = []) => {
@@ -506,8 +506,8 @@ describe("単位で読む（§11-14 完了条件 (a)・(b)・(d)）", () => {
     expect(readUke(bundle(9, pts("D007_8"))).receipts[0].lines[0].kubun).toBe("D007_8");
     expect(readUke(bundle(10, pts("D007_10"))).receipts[0].lines[0].kubun).toBe("D007_10");
     expect(readUke(bundle(12, pts("D007_10"))).receipts[0].lines[0].kubun).toBe("D007_10");
-    // 8 項目なのに 10 項目以上の点数
-    expect(() => readUke(bundle(8, pts("D007_10")))).toThrow(`${FIRST + 7} 行目：点数が診療年月の版の点数表と合わない`);
+    // 8 項目なのに 10 項目以上の点数：包括の検査は、表の値と違う点数でも取り込みでは断らず、項目数の区分で読む。点数の判定は G02 の三段に任せる（反証 round-94 X-470。design.md §19-4 の 1）
+    expect(readUke(bundle(8, pts("D007_10"))).receipts[0].lines[0].kubun).toBe("D007_8");
     const outside = (buf: Buffer) => {
       const r = readUke(buf).receipts[0];
       return [r.lines, r.others?.map((o) => [o.unit, o.codes.length, o.points])];
@@ -515,6 +515,18 @@ describe("単位で読む（§11-14 完了条件 (a)・(b)・(d)）", () => {
     expect(outside(bundle(4, pts("D007_5")))).toEqual([[], [[0, 4, pts("D007_5")]]]);
     expect(outside(bundle(5, pts("D007_5"), [code("D005_5")]))).toEqual([[], [[0, 6, pts("D007_5")]]]);
     expect(() => readUke(bundle(5, pts("D007_5"), [members[0]]))).toThrow(`${FIRST + 5} 行目：包括の検査の同じ項目が、同じ単位に 2 つある`);
+  });
+
+  it("包括の検査を素の合算で書いた単位（D008 の 3 項目。三段の (2)）も、取り込み・保存済みの請求の読み直しで断らない（X-470）", () => {
+    const d008 = rev.bundles.find((x) => x.tiers[0].kubun === "D008_3")!;
+    // FT3・FT4・コルチゾール（号 14。EM §2-15 表 1-2）。点数は版の表の値（410）と違う値にする
+    const codes = ["160033210", "160033310", "160034010"];
+    expect(codes.every((c) => d008.members.includes(c))).toBe(true);
+    const buf = ukeOf(codes.map((c, i) => si(i === 0 ? "60" : "", c, i === codes.length - 1 ? { points: pts("D008_3") + 1 } : {})), pts("D008_3") + 1);
+    expect(readUke(buf).receipts[0].lines.map((l) => l.kubun)).toEqual(["D008_3"]);
+    const stored = readStoredUke(buf).receipts[0];
+    expect(stored.unreadable).toBeUndefined();
+    expect(stored.lines.map((l) => l.kubun)).toEqual(["D008_3"]);
   });
 
   it("数量データは、きざみで算定する区分（外来迅速検体検査加算）の項目数。ない・きざみでない区分にある UKE は断る", () => {

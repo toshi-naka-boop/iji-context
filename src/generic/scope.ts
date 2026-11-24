@@ -5,26 +5,30 @@ import { minashiOneLines } from "../engine/rules/r19";
 import type { ClaimContext, ClaimLine } from "../engine/types";
 import { hasShisetsuGroups, OLD_SHISETSU_G03_REASON, pickSnapshot, shinryoOf, type MastersDb } from "../masters/db";
 import { GENERIC_SCOPE_NOTE, LOCAL_PAIR_TEXT } from "../messages";
-import { recalcClaim, recalcSummary } from "./g02";
+import { recalcClaim, recalcNotesOf, recalcSummary } from "./g02";
 import { g03NotDone } from "./g03";
 import { conditionalOf, formOnlyNote, g07NotDone, type Conditional } from "./g07";
 import { g08NotDone } from "./g08";
 import { g09NotDone } from "./g09";
 import { g10NotDone } from "./g10";
+import { g12NotDone } from "./g12";
 import type { GenericAbout, GenericClaim, GenericResult, RecalcSummary } from "./types";
 
 /**
  * recalc は、G02 が動いて、点数の書いてある単位があるときだけ。notDone は、していない点検（文）。g09 は、適応・併用（G09）の但し書きと、見たもの・見ていないもの（G09 が動いたときだけ。画面は、G09 の見出しの下に出す）。
  * conditional は、記載が要ることがある項目（条件区分 00。判定しない。design.md §17-1）：G07 が動いて、並べる項番か外した組があるときだけ。指摘の数・提出の判定には入れない
  */
-export type GenericScope = { recalc?: RecalcSummary; notDone: string[]; g09?: string[]; conditional?: Conditional };
+export type GenericScope = { recalc?: RecalcSummary; recalcNotes?: string[]; notDone: string[]; g09?: string[]; conditional?: Conditional };
 
 export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, about: GenericAbout, result: GenericResult): GenericScope {
   const out: GenericScope = { notDone: [] };
   const ran = (id: string) => result.ran.some((r) => r.check === id);
   if (masters !== null && ran("G02")) {
     const list = recalcClaim(claim, masters, about);
-    if (Array.isArray(list) && list.length > 0) out.recalc = recalcSummary(list);
+    if (Array.isArray(list) && list.length > 0) {
+      out.recalc = recalcSummary(list);
+      out.recalcNotes = recalcNotesOf(about);
+    }
     else out.notDone.push("点数の検算は、点数の書いてある単位（取り込んだレセプトの単位）にだけ掛けます。ここの行には点数が書いていないので、検算していません");
   }
   if (ran("G03")) out.notDone.push(...g03NotDone(about), ...(masters !== null && !hasShisetsuGroups(masters) ? [OLD_SHISETSU_G03_REASON] : []));
@@ -43,6 +47,7 @@ export function genericScopeOf(claim: GenericClaim, masters: MastersDb | null, a
   if (masters !== null && ran("G08")) out.notDone.push(...g08NotDone(masters, about));
   if (masters !== null && ran("G09")) out.g09 = g09NotDone(claim, masters, about);
   if (masters !== null && ran("G10")) out.notDone.push(...g10NotDone(claim, masters, about));
+  if (masters !== null && ran("G12")) out.notDone.push(...g12NotDone(claim, masters, about));
   return out;
 }
 

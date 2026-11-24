@@ -6,7 +6,9 @@
 //     在宅（C200）・検査（D500）・画像診断（E300）・リハビリテーション（H100）・精神科専門療法（I100）・処置（J300）・手術（K940）・麻酔（L200）は 15 円以下を算定せず、超えたら同じ式
 //   特定器材料：材料価格 × 使用量 ÷ 10 円を四捨五入（告示 B200・C300・E400 ほか「材料価格を 10 円で除して得た点数」、端数は［基］p22〜23 項番22 と作成手引き p41 の点数計算方法）。
 //     酸素は TO に書いた購入単価 × 使用量 × 補正率を 1 円未満で四捨五入してから（留意事項通知 酸素の価格、作成手引き p40〜41）。％加算・乗算割合は、直前の器材に掛ける
-//   包括の検査：版の表（EM §2-8 の bundles）にある群だけ。項目数が最初の区分に届かなければ、項目の点数の合算
+//   包括の検査：版の表（EM §2-8 の bundles）にある群だけ。項目数が最初の区分に届かなければ、項目の点数の合算。
+//     検体と採血の回数は UKE にないので、群の行だけの単位は三段で判定する（design.md §19-4 の 1。確定は置かない）：
+//     (1) 表の値に合う／(2) 同じ日の 2 回目以降の採血の項目（D013 は血液でない検体の項目も）を表の外と読んだ値に合う／(3) どれとも合わない
 // 原文の記録例が、上の式と違う決め方をしている形は、検算しない（作成手引き 第15章の記録例を全部通して見つけたもの）：
 //   同じ区分番号のきざみの行が 2 つ以上ある単位（麻酔の区分をまたぐ時間、アナログとデジタルの同時撮影は、行を合わせて数える。p83・p97・p99）／
 //   きざみの行のある単位・医薬品の単位に、コメントが付いている（6 歳未満の自己血貯血は患者体重のコメントから、残量廃棄はコメントの使用量から計算する。p81〜82・p58）／
@@ -15,7 +17,7 @@
 import { iyakuhinOf, shinryoOf, tokuteiOf, type MastersDb, type ShinryoRow } from "../masters/db";
 
 /** 検算の対象外にした理由 */
-export type ExcludeReason = "notInMaster" | "mixed" | "percent" | "amount" | "purchase" | "bundleNoTable" | "bundleMixed" | "bundleSplit" | "shikibetsu" | "quantity" | "fraction" | "noPrice" | "deviceRate" | "kizamiCombined" | "commented" | "perCount";
+export type ExcludeReason = "notInMaster" | "mixed" | "percent" | "amount" | "purchase" | "bundleNoTable" | "bundleMixed" | "bundleSplit" | "shikibetsu" | "quantity" | "fraction" | "noPrice" | "deviceRate" | "kizamiCombined" | "commented" | "perCount" | "imagingSites";
 
 /** 理由の文（点検の範囲の説明と、scripts/measure-generic.ts が出す） */
 export const EXCLUDE_TEXT: Record<ExcludeReason, string> = {
@@ -33,19 +35,35 @@ export const EXCLUDE_TEXT: Record<ExcludeReason, string> = {
   noPrice: "薬価がマスターにない（0 円）",
   deviceRate: "％加算・乗算割合の器材の付け先がない",
   kizamiCombined: "同じ区分番号のきざみの行が 2 つ以上ある（行を合わせて数える決まりがある）",
-  commented: "きざみの行のある単位・医薬品の単位に、コメントが付いている（患者体重・残量廃棄など、コメントの値で計算する場合がある）",
+  commented: "きざみの行のある単位・医薬品の単位に、撮影部位のほかのコメントが付いている（患者体重・残量廃棄など、コメントの値で計算する場合がある）",
   perCount: "検査の薬剤で、回数が 2 以上（使用量に回数を掛けて計算する書き方がある）",
+  imagingSites: "違う撮影部位のコメントが 2 つ以上ある（部位の違う撮影を 1 つの単位にまとめた書き方の点数の決め方を確かめていない）",
 };
 
 /** 単位の 1 行。quantity は数量データ（SI）・使用量（IY・TO）、unitPrice は単価（TO）。どれも UKE の欄のまま */
 export type RecalcItem = { kind: "SI" | "IY" | "TO"; code: string; quantity?: string; unitPrice?: string };
 /** 診療年月に使う 1 枚（マスターごと。その行の種類が単位になければ null でよい） */
 export type RecalcSnapshots = { SI: string | null; IY: string | null; TO: string | null };
-/** 包括の検査の群（版の表から）。tiers は min の昇順 */
-export type RecalcBundle = { members: string[]; tiers: { min: number; points: number }[] };
+/**
+ * 包括の検査の群（版の表から）。tiers は min の昇順。name は区分番号（D007 など。文に出す）。
+ * bloodOnly＝注が「1 回に採取した血液」だけを数え、同じ日の検体を合わせる決まり（留意事項 D001 (10)・D004 (14)。R8-332・R8-333）が当たらない群（D013。免疫学的検査）
+ */
+export type RecalcBundle = { name?: string; members: string[]; tiers: { min: number; points: number }[]; bloodOnly?: boolean };
+
+/**
+ * 三段の判定の結果（design.md §19-4 の 1）。stage 1＝表の値（基本）に合う／2＝表の外と読んだ値に合う（read は外と読んだ行のコード、more はほかにも合う読みがある）／3＝どれとも合わない。
+ * lower＝請求の点数が基本より小さい
+ */
+export type BundleTier = { stage: 1 } | { stage: 2; read: string[]; more: boolean; lower: boolean } | { stage: 3; lower: boolean };
+
+/** 一部外しの k の上限と、一部外しを試す単位の項目数の上限（design.md §19-4 の 1。22a の数えで (2) は多くなかったので、設計の値のまま） */
+export const BUNDLE_MAX_OUT = 3;
+export const BUNDLE_MAX_ITEMS = 12;
+/** 名前に血液でない検体が付いた行（D007・D008 では外の候補にしない） */
+const NON_BLOOD = /（(尿|髄液|胸水|腹水)）/;
 
 export type Recalc =
-  | { ok: true; points: number; formula: string; table: "shinryo" | "iyakuhin" | "tokutei"; rows: { code: string; changedOn: string }[] }
+  | { ok: true; points: number; formula: string; table: "shinryo" | "iyakuhin" | "tokutei"; rows: { code: string; changedOn: string }[]; tier?: BundleTier; bundle?: RecalcBundle; declared?: boolean }
   | { ok: false; reason: ExcludeReason };
 
 const no = (reason: ExcludeReason): Recalc => ({ ok: false, reason });
@@ -95,7 +113,38 @@ export function kizamiCenti(r: Pick<ShinryoRow, "points" | "kizami_lower" | "kiz
   return base + Math.ceil((upTo - r.kizami_lower) / r.kizami_step) * Math.round(r.kizami_points * 100);
 }
 
-function recalcShinryo(db: MastersDb, snapshot: string, items: RecalcItem[], bundles: RecalcBundle[], commented: boolean): Recalc {
+/**
+ * 包括の検査の三段（design.md §19-4 の 1）。基本＝表(n)。外の候補を区分番号・号・コードの昇順に並べ、k ＝ 1〜上限の小さい順に、各 k の中は辞書順で
+ * 「表(n−k)＋表(k)」（表は下限未満なら素の合算。design.md §19-14 の 1）を試し（n が上限を超える単位と、n−k が下限に届かない k は試さない）、最後に全部外し（外の候補を全部外す）を試す。最初に合った組を返す
+ */
+export function bundleTier(bundle: RecalcBundle, rows: Pick<ShinryoRow, "code" | "name" | "points" | "kubun_no" | "kou">[], uke: number): { base: number; tier: BundleTier } {
+  const n = rows.length;
+  const min = bundle.tiers[0].min;
+  const raw = (idx: number[]) => idx.reduce((s, i) => s + rows[i].points, 0);
+  const table = (idx: number[]) => bundle.tiers.filter((t) => t.min <= idx.length).at(-1)?.points ?? raw(idx);
+  const all = rows.map((_, i) => i);
+  const base = table(all);
+  const lower = uke < base;
+  if (uke === base) return { base, tier: { stage: 1 } };
+  const cand = all
+    .filter((i) => bundle.bloodOnly === true || !NON_BLOOD.test(rows[i].name))
+    .sort((a, b) => rows[a].kubun_no - rows[b].kubun_no || rows[a].kou - rows[b].kou || (rows[a].code < rows[b].code ? -1 : rows[a].code > rows[b].code ? 1 : 0));
+  // 外した k 行も、2 回目以降の採血なら同じ注の包括が当たるので表(k)（下限未満なら素の合算と同じ）で足す（design.md §19-14 の 1。反証 round-94 C-611）
+  const value = (out: number[]) => table(all.filter((i) => !out.includes(i))) + table(out);
+  const tries: number[][] = [];
+  const combos = (from: number, k: number, pick: number[]) => {
+    if (pick.length === k) tries.push(pick);
+    else for (let j = from; j < cand.length; j++) combos(j + 1, k, [...pick, cand[j]]);
+  };
+  if (n <= BUNDLE_MAX_ITEMS) for (let k = 1; k <= Math.min(BUNDLE_MAX_OUT, cand.length) && n - k >= min; k++) combos(0, k, []);
+  tries.push(cand);
+  const hits = tries.filter((t) => t.length > 0 && value(t) === uke);
+  if (hits.length === 0) return { base, tier: { stage: 3, lower } };
+  const read = hits[0].map((i) => rows[i].code);
+  return { base, tier: { stage: 2, read, more: hits.some((h) => h.map((i) => rows[i].code).join() !== read.join()), lower } };
+}
+
+function recalcShinryo(db: MastersDb, snapshot: string, items: RecalcItem[], bundles: RecalcBundle[], commented: boolean, uke?: number): Recalc {
   const rows: ShinryoRow[] = [];
   for (const it of items) {
     const r = shinryoOf(db, snapshot, it.code);
@@ -115,8 +164,15 @@ function recalcShinryo(db: MastersDb, snapshot: string, items: RecalcItem[], bun
     if (grouped.some((r) => !bundles.some((b) => b.members.includes(r.code)))) return no("bundleNoTable");
     const bundle = bundles.find((b) => rows.every((r) => b.members.includes(r.code)));
     if (!bundle || grouped.length !== rows.length) return no("bundleMixed");
-    const tier = bundle.tiers.filter((t) => t.min <= rows.length).at(-1);
-    if (tier) return { ok: true, points: tier.points, formula: `包括の検査（${rows.length} 項目）`, table: "shinryo", rows: used };
+    if (rows.some((r) => !Number.isInteger(r.points))) return no("fraction");
+    const formula = `包括の検査（${bundle.name ? `${bundle.name} の表。` : ""}${rows.length} 項目）`;
+    // UKE の点数が分からない呼び出し（式の錨）は、表の値（項目数が下限に届かなければ素の合算）だけを返す
+    if (uke === undefined) {
+      const tier = bundle.tiers.filter((t) => t.min <= rows.length).at(-1);
+      return { ok: true, points: tier ? tier.points : rows.reduce((s, r) => s + r.points, 0), formula, table: "shinryo", rows: used };
+    }
+    const t = bundleTier(bundle, rows, uke);
+    return { ok: true, points: t.base, formula, table: "shinryo", rows: used, tier: t.tier, bundle };
   }
   // 100 分の 1 点で足す。きざみの行は、行ごとに四捨五入する（［基］p33 の点数算定式は、式の全体を四捨五入する。留意事項通知 第2章第4部 エックス線診断料の端数処理の例も、診断料・撮影料ごと）。
   // きざみでない行の点数に端数があるもの（丸め方を確かめていない）は、検算しない
@@ -163,7 +219,12 @@ function recalcIyakuhin(db: MastersDb, snapshot: string, items: RecalcItem[], sh
   return { ok: true, points: drugPoints(yen, rule), formula: rule === "one" ? "薬剤料（15 円以下は 1 点）" : "薬剤料（15 円以下は算定しない）", table: "iyakuhin", rows: used };
 }
 
-function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Recalc {
+/**
+ * declaredOxygen：単価の欄が空の酸素の行に使う、届け出た単価（0.01 円の整数。design.md §19-5 の G02 と届け出た単価）。なければ null（今のまま購入価格で対象外）。
+ * 効く単価は、届け出た単価と上限（マスターの金額）の小さい方
+ */
+function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[], declaredOxygen?: (code: string) => bigint | null): Recalc {
+  let declared = false;
   /** 器材 1 つと、それに掛ける％加算・乗算割合。金額は yen ÷ 10^scale 円（途中で丸めない） */
   const groups: { yen: bigint; scale: number; oxygen: boolean; rated: boolean }[] = [];
   const used: { code: string; changedOn: string }[] = [];
@@ -199,8 +260,10 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
     let price = master;
     if (oxygen) {
       // 酸素のマスターの金額は上限。書いてある購入単価で計算する
-      if (written === null || written > master) return no("purchase");
-      price = written;
+      const own = given ? written : (declaredOxygen?.(it.code) ?? null);
+      if (own === null || (given && own > master)) return no("purchase");
+      if (!given) declared = true;
+      price = own > master ? master : own;
     } else if (given && written !== master) return no("purchase");
     // 100 分の 1 円 × 10 万分の 1 ＝ 1,000 万分の 1 円
     groups.push({ yen: price * q, scale: 7, oxygen, rated: false });
@@ -217,21 +280,22 @@ function recalcTokutei(db: MastersDb, snapshot: string, items: RecalcItem[]): Re
   const points = total(asIs);
   // 点数の四捨五入は、単位の価格を合算してから（作成手引き 第15章 (10) キの例：器材ごとに丸めると 36 点、合算してからだと原文どおり 37 点。EM §2-11 F28）
   if (points !== total(rounded)) return no("fraction");
-  return { ok: true, points, formula: "特定器材料（価格 × 使用量 ÷ 10 円を四捨五入）", table: "tokutei", rows: used };
+  return { ok: true, points, formula: declared ? "特定器材料（届け出た単価で。価格 × 使用量 ÷ 10 円を四捨五入）" : "特定器材料（価格 × 使用量 ÷ 10 円を四捨五入）", table: "tokutei", rows: used, ...(declared ? { declared: true } : {}) };
 }
 
 /**
  * 単位 1 つの 1 回分の点数を再計算する。行の種類が 1 つだけの単位を扱う（混ざった単位は対象外）。
  * shikibetsu は、その単位の診療識別（省略されていれば、前の行から引き継いだもの）。shikibetsuSure が偽＝引き継ぎが確かでない。
  * commented＝その単位にコメントが付いている（行のコメント欄、単位の中・直前・直後のコメントレコード）。count＝回数
+ * uke＝UKE に書いてある 1 回分の点数（包括の検査の三段に使う。省けば表の値だけ）
  */
-export function recalcUnit(db: MastersDb, snapshots: RecalcSnapshots, items: RecalcItem[], opt: { shikibetsu: string; shikibetsuSure: boolean; bundles: RecalcBundle[]; commented?: boolean; count?: number }): Recalc {
+export function recalcUnit(db: MastersDb, snapshots: RecalcSnapshots, items: RecalcItem[], opt: { shikibetsu: string; shikibetsuSure: boolean; bundles: RecalcBundle[]; commented?: boolean; count?: number; uke?: number; declaredOxygen?: (code: string) => bigint | null }): Recalc {
   const kinds = new Set(items.map((it) => it.kind));
   if (kinds.size !== 1) return no("mixed");
   const kind = items[0].kind;
   const snapshot = snapshots[kind];
   if (snapshot === null) return no("notInMaster");
-  if (kind === "SI") return recalcShinryo(db, snapshot, items, opt.bundles, opt.commented === true);
+  if (kind === "SI") return recalcShinryo(db, snapshot, items, opt.bundles, opt.commented === true, opt.uke);
   if (kind === "IY") return recalcIyakuhin(db, snapshot, items, opt.shikibetsu, opt.shikibetsuSure, opt.commented === true, opt.count ?? 1);
-  return recalcTokutei(db, snapshot, items);
+  return recalcTokutei(db, snapshot, items, opt.declaredOxygen);
 }

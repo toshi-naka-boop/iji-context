@@ -209,7 +209,7 @@ describe("G02 点数の検算", () => {
     expect(g02.run(good(), db, about)).toEqual([]);
     const list = recalcClaim(good(), db, about);
     expect(Array.isArray(list) && list.map((r) => r.status)).toEqual(["match", "match", "match", "match", "excluded"]);
-    expect(recalcSummary(Array.isArray(list) ? list : [])).toEqual({ units: 5, checked: 4, matched: 4, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
+    expect(recalcSummary(Array.isArray(list) ? list : [])).toEqual({ units: 5, checked: 4, matched: 4, bundleRead: 0, bundleNone: 0, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
   });
 
   it("点数・数量を変えた単位だけが出る。指摘は、UKE の点数・再計算した点数・式の種類を持つ", () => {
@@ -227,9 +227,10 @@ describe("G02 点数の検算", () => {
     // 出荷の時点では一覧が空なので、出るのは言い切らない文。一覧に載せたときの文は別に持つ
     expect(genericText({ ...f, certainty: "条件つき" })).toBe("この単位の 1 回分の点数が、マスターからの再計算と合いません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）。コード・数量・点数を確かめてください");
     expect(genericText(f)).toBe("この単位の 1 回分の点数が、マスターからの再計算と合っていません（UKE は 1400 点、再計算は 1370 点。診療行為の点数の合算）");
-    // G02・G03 の種類は、どれも 2 つの文を持つ
-    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k));
+    // G02・G03 の種類は、どれも 2 つの文を持つ。包括の検査の三段の (2)・(3)（G02.bundle_*）は言い切らないので、言い切りの文を持たない（design.md §19-4 の 1。v44 で足した 4 種類）
+    const mine = Object.keys(GENERIC_TEXT).filter((k) => /^G0[23]\./.test(k) && !k.startsWith("G02.bundle_") && k !== "G02.points_declared");
     expect(mine).toHaveLength(5);
+    expect(Object.keys(GENERIC_TEXT).filter((k) => k.startsWith("G02.bundle_") || k === "G02.points_declared").filter((k) => GENERIC_TEXT_CERTAIN[k])).toEqual([]);
     expect(mine.filter((k) => !GENERIC_TEXT_CERTAIN[k])).toEqual([]);
   });
 
@@ -266,6 +267,28 @@ describe("G02 点数の検算", () => {
     (spaced.units[1] as GenericUnitDetail).items[0].line = 20;
     const withCo = { ...spaced, comments: [{ line: 15, code: "810000001", raw: "", unit: null }] };
     expect(recalcClaim(withCo, db, about)).toMatchObject([{ status: "match" }, { status: "excluded", reason: "commented" }]);
+  });
+
+  it("撮影部位のコメント（版の許可リスト）だけが付いたきざみの単位は検算する。ほかのコメントが 1 つでも並べば対象外（design.md §19-4 の 2。完了条件 4）", () => {
+    const db = masters();
+    const IMAGING = "830189000"; // 撮影部位（単純撮影）：その他；（EM 5-1 K10）
+    const OTHER = "842100072"; // 動脈血酸素分圧（在宅酸素療法指導管理料）（EM 5-1 K10）
+    expect(r2026.imagingSiteComments).toContain(IMAGING);
+    expect(r2026.imagingSiteComments).not.toContain(OTHER);
+    const unit = claimOf({ items: [si(JINSOKU, "2")], points: 20, shikibetsu: "60" });
+    const line = (unit.units[0] as GenericUnitDetail).items[0].line!;
+    const only = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(only, db, about)).toMatchObject([{ status: "match" }]);
+    const both = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: OTHER, raw: "", unit: null }] };
+    expect(recalcClaim(both, db, about)).toMatchObject([{ status: "excluded", reason: "commented" }]);
+    // 行のコメント欄（行と同じ行番号）に撮影部位のコメントだけ
+    const own = { ...unit, comments: [{ line, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(own, db, about)).toMatchObject([{ status: "match" }]);
+    // 違う撮影部位のコメントが 2 つ（胸部 820181220 と その他 830189000）：理由つきで対象外（§19-14 の 2。C-612）。同じコードが 2 つなら検算する
+    const two = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: "820181220", raw: "", unit: null }] };
+    expect(recalcClaim(two, db, about)).toMatchObject([{ status: "excluded", reason: "imagingSites" }]);
+    const same = { ...unit, comments: [{ line: line + 1, code: IMAGING, raw: "", unit: null }, { line: line + 2, code: IMAGING, raw: "", unit: null }] };
+    expect(recalcClaim(same, db, about)).toMatchObject([{ status: "match" }]);
   });
 
   it("同じ群の包括の検査が、同じ日の 2 つの単位に分かれていれば対象外。点数のない単位（区分キーから作った単位）は数えない", () => {
@@ -380,7 +403,7 @@ describe("点検の範囲（src/generic/scope.ts）", () => {
     const db = masters();
     const claim = claimOf({ items: [si(HOUMON)], points: pts("C001_1I") }, { items: [si(OUSHIN), si(PERCENT)], points: 1008 });
     const scope = genericScopeOf(claim, db, about, evaluateGeneric(claim, db, about));
-    expect(scope.recalc).toEqual({ units: 2, checked: 1, matched: 1, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
+    expect(scope.recalc).toEqual({ units: 2, checked: 1, matched: 1, bundleRead: 0, bundleNone: 0, excluded: [{ reason: "percent", text: EXCLUDE_TEXT.percent, count: 1 }] });
     expect(scope.notDone).toHaveLength(1);
     const lines: GenericClaim = { units: [{ items: [{ kind: "SI", code: HOUMON }] }] };
     const bare = { yearMonth: YM, generation: GEN };

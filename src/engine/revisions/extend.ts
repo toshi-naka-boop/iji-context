@@ -20,6 +20,8 @@ export function extendRevision(base: Revision, diff: RevisionDiff): Revision {
     points,
     codes: base.codes,
     bundles: base.bundles,
+    sharedCodes: base.sharedCodes,
+    imagingSiteComments: base.imagingSiteComments,
     uncoded: base.uncoded,
     shikibetsu: base.shikibetsu,
     consts: base.consts,

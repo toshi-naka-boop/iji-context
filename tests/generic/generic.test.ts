@@ -19,9 +19,9 @@ const OUSHIN = r2026.codes.C000.primary;
 /** どのマスターにもないコード（作り物） */
 const UNKNOWN = "100000000";
 const claimOf = (...units: [kind: "SI" | "IY" | "TO", code: string][][]): GenericClaim => ({ units: units.map((items) => ({ items: items.map(([kind, code]) => ({ kind, code })) })) });
-/** 入っている点検（G01、段 11 の G02・G03、段 12 の G04〜G06、段 13 の G07・G08、段 14 の G09、段 17e の G10）。一覧から外した点検は「まだ入っていない」 */
-const BUILT = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10"];
-const ALL = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10"];
+/** 入っている点検（G01、段 11 の G02・G03、段 12 の G04〜G06、段 13 の G07・G08、段 14 の G09、段 17e の G10、v44 段 22f の G12。design.md §19-5）。一覧から外した点検は「まだ入っていない」 */
+const BUILT = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G12"];
+const ALL = ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G12"];
 
 describe("evaluateGeneric の骨組み", () => {
   it("masters.db がなければ、どの点検も動かさない。「指摘なし」ではなく、動かさなかった点検と理由を返す", () => {

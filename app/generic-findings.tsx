@@ -38,7 +38,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
   const hidden = [judged > 0 ? `手書きのルールが判定済み ${judged} 件` : "", duplicate > 0 ? `ユスティの指摘と同じ内容 ${duplicate} 件` : ""].filter((x) => x !== "").join("、");
   // 検算（G02）の数：再計算できた単位・合った単位と、検算の対象外の単位（理由ごと）。対象外は「合っている」ではない
   const recalc = generic.scope?.recalc;
-  const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
+  const recalcText = recalc ? `点数の検算：点数の書いてある ${recalc.units} 単位のうち、再計算できたのは ${recalc.checked} 単位（UKE の点数と合った ${recalc.matched} 単位${recalc.bundleRead + recalc.bundleNone > 0 ? `。包括の検査で、表の外の読みで合う ${recalc.bundleRead} 単位・どの読みとも合わない ${recalc.bundleNone} 単位` : ""}）。検算の対象外は ${recalc.units - recalc.checked} 単位${recalc.excluded.length > 0 ? `（${recalc.excluded.map((e) => `${e.text}：${e.count}`).join("／")}）` : ""}` : "";
   const notDone = generic.scope?.notDone ?? [];
   const conditionalItems = generic.scope?.conditional;
   const g09 =generic.findings.filter((f) => f.check === "G09");
@@ -54,7 +54,7 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
     ...noData.map((n) => `データがなくて動かなかった点検：${n.check}（${n.kind}）。${n.text}`),
     ...notReady.map((n) => `準備ができていない点検：${n.check}（${n.kind}）。${n.text}`),
     ...(notBuilt.length > 0 ? [`まだ入っていない点検：${names(notBuilt)}`] : []),
-    ...(recalc ? [recalcText] : []),
+    ...(recalc ? [recalcText, ...(generic.scope?.recalcNotes ?? [])] : []),
     ...notDone,
     ...(!g09Open ? g09Notes : []),
   ];

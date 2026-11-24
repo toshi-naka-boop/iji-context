@@ -119,6 +119,8 @@ export const r2024: Revision = {
   points,
   codes: {},
   bundles: [],
+  // 令和6年度のコメントコードは確かめていない（EM §2-10 は令和8年度）。許可リストは持たない
+  imagingSiteComments: [],
   uncoded: {},
   shikibetsu: {},
   // 導出が読む定数だけを持つ（上の DeriveConsts）

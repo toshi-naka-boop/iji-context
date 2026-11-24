@@ -44,6 +44,11 @@ export type HaihanException = {
   pre?: ReceiptCond;
   /** kind=receipt：成り立てば「当たる」 */
   allow?: ReceiptCond;
+  /**
+   * kind=receipt で、レセプトの条件の形（L-71）では表せず、G12 が求めた事実で決める例外（design.md §19-13 の 3。HX-25）。
+   * homeOxygenIntro：前の月の同じ患者の請求に在宅酸素療法指導管理料が「ある」うえに、組の他方（酸素吸入）の算定日がすべてその月の管理料の算定日以後なら「当たらない」、ほかは「決まらない」（G12 の 1 と同じ事実と条件）
+   */
+  g12?: "homeOxygenIntro";
   /** kind=fact：医療事務に問う */
   ask?: Ask;
   /** 当たったあとに要るもの */

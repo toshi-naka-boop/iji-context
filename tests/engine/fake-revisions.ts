@@ -29,6 +29,7 @@ export function fakeRevision(over: Partial<Revision> & Pick<Revision, "id" | "ef
     // 作り物の区分はコードを持たない（UKE に書けない）
     codes: {},
     bundles: [],
+    imagingSiteComments: [],
     uncoded: { [kubun]: "作り物の区分" },
     shikibetsu: {},
     consts: {} as RevisionConsts,

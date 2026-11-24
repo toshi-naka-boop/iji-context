@@ -1,6 +1,7 @@
 // テスト用：取り忘れ（G11）の入力を、同梱の合成データ（fixtures/charts/K8〜K11.json と -abbrev、fixtures/uke/torikawasure.UKE）から作る。
 // カルテは本人が確かめたあとの形の acts を持つので、LLM は通さない
 import { readFileSync } from "node:fs";
+import { HOME_OXYGEN_KANRI } from "../../src/generic/g12";
 import path from "node:path";
 import type { ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
 import { rxDefault } from "../../src/chart/rx-default";
@@ -42,9 +43,21 @@ export const demoDeclaration = (): DeclarationView => declarationView(demoSeedRo
 /** どのコードも分からない申告（申告が空の実在用のクリニック） */
 export const emptyDeclaration = (): DeclarationView => declarationView([], seedDates().checkedOn);
 
-export function aboutOf(k: string, opt: { abbrev?: boolean; dispensing?: Dispensing; path?: "uke" | "preview"; declaration?: DeclarationView } = {}): G11About {
+/**
+ * 前の月の同じ患者の請求の在宅酸素療法指導管理料の三値（取り込んだ点検の oxygenOf と同じ読み。design.md §19-13 の 3）：
+ * torikawasure-prev.UKE（K10 の前の月 2026-09）の請求を見る。なければ「取り込んでいない」
+ */
+export function prevHomeOxygenOf(k: string): "ある" | "ない" | "取り込んでいない" {
+  const [y, m] = YM.split("-").map(Number);
+  const prevYm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+  const prev = parseUke(readFileSync(path.join(repo, "fixtures", "uke", "torikawasure-prev.UKE"))).claims.filter((x) => x.patientNo === k && x.yearMonth === prevYm);
+  if (prev.length === 0) return "取り込んでいない";
+  return prev.some((c) => c.units.some((u) => u.items.some((it) => it.kind === "SI" && HOME_OXYGEN_KANRI.includes(it.code)))) ? "ある" : "ない";
+}
+
+export function aboutOf(k: string, opt: { abbrev?: boolean; dispensing?: Dispensing; path?: "uke" | "preview"; declaration?: DeclarationView; prevHomeOxygen?: G11About["prevHomeOxygen"] } = {}): G11About {
   const { acts, rxDays } = actsOf(k, opt.abbrev);
-  return { yearMonth: YM, generation: rev.generation, acts, rxDays, path: opt.path ?? "uke", dispensing: opt.dispensing ?? "inside", declaration: opt.declaration ?? demoDeclaration(), outpatient: true };
+  return { yearMonth: YM, generation: rev.generation, acts, rxDays, path: opt.path ?? "uke", dispensing: opt.dispensing ?? "inside", declaration: opt.declaration ?? demoDeclaration(), outpatient: true, prevHomeOxygen: opt.prevHomeOxygen ?? prevHomeOxygenOf(k) };
 }
 
 /** 請求から、そのコードの行（単位の中の行）を外す。単位の行がなくなれば単位ごと外す。day を渡すとその日の分だけ（回数を 1 減らす） */

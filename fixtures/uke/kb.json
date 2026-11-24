@@ -96,13 +96,14 @@
      "shikibetsu": "31",
      "days": {
       "14": 1
-     }
+     },
+     "points": 25
     },
     {
      "rec": "IY",
      "code": "641140046",
      "quantity": "1",
-     "points": 35,
+     "points": 10,
      "days": {
       "14": 1
      }
@@ -113,7 +114,8 @@
      "shikibetsu": "31",
      "days": {
       "14": 1
-     }
+     },
+     "points": 25
     },
     {
      "rec": "IY",
@@ -127,7 +129,7 @@
      "rec": "IY",
      "code": "647130028",
      "quantity": "1",
-     "points": 69,
+     "points": 44,
      "days": {
       "14": 1
      }
@@ -145,13 +147,14 @@
      "code": "130000110",
      "days": {
       "14": 1
-     }
+     },
+     "points": 40
     },
     {
      "rec": "IY",
      "code": "646320003",
      "quantity": "1",
-     "points": 157,
+     "points": 117,
      "days": {
       "14": 1
      }
@@ -169,13 +172,14 @@
        "850100268",
        "５０８１０１４"
       ]
-     ]
+     ],
+     "points": 147
     },
     {
      "rec": "IY",
      "code": "620008991",
      "quantity": "20",
-     "points": 173,
+     "points": 26,
      "days": {
       "14": 1,
       "28": 1
@@ -718,7 +722,8 @@
      "shikibetsu": "33",
      "days": {
       "14": 2
-     }
+     },
+     "points": 80
     },
     {
      "rec": "IY",
@@ -732,7 +737,7 @@
      "rec": "IY",
      "code": "620002613",
      "quantity": "1",
-     "points": 103,
+     "points": 23,
      "days": {
       "14": 2
      }

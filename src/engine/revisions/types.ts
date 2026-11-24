@@ -131,7 +131,8 @@ export type CodeDef = { primary: string; accept: string[]; facility?: string; qu
  * 包括の検査（design.md §11-1。型の定義はここ 1 か所）。項目のコード（members）を 1 行ずつ並べ、項目数で区分が決まる。
  * tiers は min の昇順で、項目数が min 以上の最後の区分を採る。最初の min に届かない項目数は、どの区分にもならない
  */
-export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[] };
+/** 包括の検査の群。bloodOnly＝注が「1 回に採取した血液」だけを数え、同じ日の検体を合わせる決まり（留意事項 D001 (10)・D004 (14)）が当たらない群（D013。design.md §19-4 の 1） */
+export type Bundle = { members: string[]; tiers: { min: number; kubun: string }[]; bloodOnly?: true };
 
 /**
  * 摘要欄に要る記載（design.md §11-13。値は EM §2-10 表 1 の行だけ）。
@@ -185,6 +186,16 @@ export type Revision = {
    */
   codes: Record<string, CodeDef>;
   bundles: Bundle[];
+  /**
+   * 版の中で codes と bundles の両方に置くことを許すコード（§11-1 の例外。EM §2-8 の明示の一覧〔DUP-01〕。design.md §19-13 の 1）。
+   * ここにないコードは、今までどおり 1 か所だけ
+   */
+  sharedCodes?: string[];
+  /**
+   * 撮影部位のコメントの許可リスト（design.md §19-1・§19-4 の 2。R8-314）。きざみの単位・医薬品の単位に付いたコメントが全部このコードなら、G02 は「コメントが付いている」で対象外にしない。
+   * コメントマスターで名称が「撮影部位（」で始まる行（作り方は EM §2-11）。check:masters がマスターと突き合わせる
+   */
+  imagingSiteComments: string[];
   uncoded: Record<string, string>;
   /** 区分 → 診療識別（別表20。2 桁）。UKE の書き出しにだけ使い、読み取りでは判定に使わない。codes・bundles の区分は必ず持つ */
   shikibetsu: Record<string, string>;

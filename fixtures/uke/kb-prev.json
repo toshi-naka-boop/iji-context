@@ -1,0 +1,44 @@
+{
+ "_note": "取り忘れの症例 K10 の前の月（2026-09）の合成の請求（scripts/gen-uke.ts が fixtures/uke/torikawasure-prev.UKE にする。design.md §19-13 の 3。HX-25）。患者は kb.json の K10 と同じ（架空）。前の月にも在宅酸素療法指導管理料（114003710。2,400 点。動脈血酸素分圧のコメント 842100072）がある患者。torikawasure.UKE の 4 件（K8〜K11 の基準月）は変えないので、別のファイルにした",
+ "file": "fixtures/uke/torikawasure-prev.UKE",
+ "payer": "国保連",
+ "receipts": [
+  {
+   "yearMonth": "2026-09",
+   "patientNo": "K10",
+   "receiptType": "1318",
+   "patient": {
+    "name": "架空　十郎",
+    "sex": 1,
+    "birth": "19401010",
+    "insurer": {
+     "number": "39139998",
+     "symbol": "",
+     "no": "00000101"
+    }
+   },
+   "diseases": [],
+   "visits": {
+    "14": 1
+   },
+   "rows": [
+    {
+     "rec": "SI",
+     "shikibetsu": "14",
+     "code": "114003710",
+     "points": 2400,
+     "days": {
+      "14": 1
+     },
+     "comments": [
+      [
+       "842100072",
+       "５０"
+      ]
+     ]
+    }
+   ],
+   "notes": []
+  }
+ ]
+}

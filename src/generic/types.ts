@@ -5,10 +5,11 @@ import type { DeclarationView } from "../facility/declaration";
 import type { CodePair } from "../lifecycle/types";
 import type { LocalPairKnowledge } from "./local-pair";
 import type { MastersDb } from "../masters/db";
+import type { OxygenPriceRow } from "../facility/oxygen";
 import type { UkeComment, UkeItem, UkeUnit } from "../uke/types";
 
-export type GenericCheckId = "G01" | "G02" | "G03" | "G04" | "G05" | "G06" | "G07" | "G08" | "G09" | "G10";
-export type GenericKind = "コード" | "点数" | "行の属性" | "包括" | "背反" | "回数" | "記載もれ" | "傷病名" | "適応" | "施設基準";
+export type GenericCheckId = "G01" | "G02" | "G03" | "G04" | "G05" | "G06" | "G07" | "G08" | "G09" | "G10" | "G12";
+export type GenericKind = "コード" | "点数" | "行の属性" | "包括" | "背反" | "回数" | "記載もれ" | "傷病名" | "適応" | "施設基準" | "酸素";
 
 /** 点検の一覧（design.md §12-3 の表の順） */
 export const GENERIC_CHECKS: { id: GenericCheckId; kind: GenericKind }[] = [
@@ -22,6 +23,8 @@ export const GENERIC_CHECKS: { id: GenericCheckId; kind: GenericKind }[] = [
   { id: "G08", kind: "傷病名" },
   { id: "G09", kind: "適応" },
   { id: "G10", kind: "施設基準" },
+  // G11（取り忘れ）は別の道（src/generic/g11.ts）。G12 は v44（design.md §19-5）
+  { id: "G12", kind: "酸素" },
 ];
 
 export type GenericFinding = {
@@ -84,6 +87,16 @@ export type GenericAbout = {
    * r17Codes＝版の R17 の規則のうち、このレセプトの区分に当たる規則のコメントコード（R17 が見ている記載。00 の一覧と 0237 の指摘から外す）。渡さない呼び出しでは要旨なし・外さない
    */
   kisai?: { yoshi: KisaiYoshi[]; r17Codes: ReadonlySet<string> };
+  /**
+   * 届け出た酸素の単価（design.md §19-3。表の全部の行。取り消しは点検の側で除く）。取り込んだレセプトの点検が渡す。渡さない呼び出しでは届出との比べ（G12 の 5）と、
+   * 届け出た単価での検算（G02）をしない
+   */
+  oxygenPrices?: OxygenPriceRow[];
+  /**
+   * 前の診療年月の同じ患者（患者マスタの id）の取り込んだ請求に、在宅酸素療法指導管理料があるか（G12 の 1。design.md §19-5。U-79）。
+   * 取り込んだレセプトの点検の呼び出し側が渡す。渡さない呼び出し（試算・measure-generic）は「取り込んでいない」と同じ
+   */
+  prevHomeOxygen?: "ある" | "ない" | "取り込んでいない";
 };
 
 /**
@@ -144,5 +157,8 @@ export type GenericAboutMore = GenericAbout & {
   diseases?: { code: string; suspected?: boolean }[];
 };
 
-/** 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位、excluded＝検算の対象外の単位（理由ごと） */
-export type RecalcSummary = { units: number; checked: number; matched: number; excluded: { reason: string; text: string; count: number }[] };
+/**
+ * 検算（G02）の数（design.md §12-6）。units＝点数の書いてある単位、checked＝再計算できた単位、matched＝そのうち UKE の点数と合った単位（包括の検査は三段の (1) だけ）、
+ * bundleRead・bundleNone＝包括の検査の三段の (2)・(3)（design.md §19-4 の 4。再計算できたに入り、合ったに入らない）、excluded＝検算の対象外の単位（理由ごと）
+ */
+export type RecalcSummary = { units: number; checked: number; matched: number; bundleRead: number; bundleNone: number; excluded: { reason: string; text: string; count: number }[] };
