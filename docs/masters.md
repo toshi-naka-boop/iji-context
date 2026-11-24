@@ -90,7 +90,10 @@ npm run check:masters              # 今ある masters.db を確かめ直す（�
   tensuhyo/20261102/01….csv 02….csv 03-1….csv 03-2….csv 03-3….csv 03-4….csv 05….csv
   comment_kanren/20261112/ck_ALL_20261112.csv
   checkmaster/20261030/IY_Tekio_….csv SI_Shobyo_….csv IY_HeiyoKinki_….csv
+  manbyo/20210602/MANBYO_20210602.csv
 ```
+
+万病辞書 MANBYO（奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室、https://sociocom.naist.jp/manbyou-dic/ 、CC BY 4.0）は、略語の意味の候補に使います（spec FR-211）。落とすリンクが動的なので `masters:fetch` では落としません。公開ページから MANBYO_202106 の zip を手で落とし、中の `MANBYO_20210602.csv`（UTF-8）を上の形に置いて `npm run masters:build` で取り込みます。取り込みの検査（見出しの行・項目数・信頼度レベルの値・文字コード）は、ほかのデータと同じです。辞書の中身は変えず、出典は設定の「マスターの状態」と、カルテの略語の候補の欄に出します。
 
 zip の中の日本語のファイル名は、展開のしかたで化けます。ファイルは名前の先頭の英数字（`01`・`03-1`・`IY_Tekio_` など）で見分けるので、化けたままで構いません。電子点数表の 7 本は、そろえて置いてください（背反の 4 本のどれかが欠けると、その表の錨が外れて失敗します）。
 

@@ -18,9 +18,13 @@ const dataset = z.strictObject({
   publisher: z.string(),
   /** 公開ページ */
   page: https,
-  download: download.refine((d) => (d.url === undefined) !== (d.href === undefined), "url か href のどちらか 1 つ"),
-  /** 読み取りは Shift_JIS に決め打ち（src/masters/csv.ts）なので、値は読まない。残す理由：公開元が文字コードを変えたら、config の読み込みで止まるように（round-32 O-20） */
-  encoding: z.literal("shift_jis"),
+  download: download.refine((d) => (d.url === undefined) !== (d.href === undefined), "url か href のどちらか 1 つ").optional(),
+  /** 自動では落とさず、手で raw/ に置く（落とすリンクが動的なもの。万病辞書。docs/masters.md の「手で置く場合」）。download と manual のどちらか 1 つ */
+  manual: z.literal(true).optional(),
+  /** 文字コード（src/masters/csv.ts がこの値で読む）。公開元が文字コードを変えたら、読めずに止まる（round-32 O-20） */
+  encoding: z.enum(["shift_jis", "utf-8"]),
+  /** 出典の表示が要るデータ（CC BY など）。画面（設定のマスターの状態・略語の候補の欄）と README に出す */
+  license: z.strictObject({ name: z.string(), url: https, credit: z.string() }).optional(),
   /** この日（西暦 8 桁）より前の更新分は、この世代のデータとして扱わない */
   since: z.string().regex(/^\d{8}$/).optional(),
   /** 取り込むファイル。layout は src/masters/layout.ts の表の id、name はファイル名の形、fields は 1 行の項目数 */
@@ -29,7 +33,7 @@ const dataset = z.strictObject({
 const schema = z.strictObject({
   /** 改定の世代（Revision.generation）。いま持つのは 1 つだけ */
   generation: z.string(),
-  datasets: z.record(z.string().regex(/^[a-z_]+$/), dataset),
+  datasets: z.record(z.string().regex(/^[a-z_]+$/), dataset.refine((d) => (d.download === undefined) !== (d.manual === undefined), "download か manual のどちらか 1 つ")),
 });
 
 export type MastersConfig = z.infer<typeof schema>;

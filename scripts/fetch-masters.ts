@@ -23,9 +23,9 @@ const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 1024 * 1024 * 1024;
 const MAX_ENTRIES = 50;
 
-/** 接続してよいホスト：config/masters.json に書いてある URL のホストだけ */
+/** 接続してよいホスト：config/masters.json に書いてある URL のホストだけ（手で置くデータの公開ページには接続しない） */
 export const allowedHosts = (): Set<string> =>
-  new Set(Object.values(MASTERS_CONFIG.datasets).flatMap((d) => [d.page, ...(d.download.url ? [d.download.url] : [])]).map((u) => new URL(u).hostname));
+  new Set(Object.values(MASTERS_CONFIG.datasets).flatMap((d) => (d.download ? [d.page, ...(d.download.url ? [d.download.url] : [])] : [])).map((u) => new URL(u).hostname));
 
 /** https で 1 つ読む。sink があればファイルに流し、なければ本文を返す。失敗は定型文の Error（相手の応答の中身は入れない） */
 async function get(url: URL, maxBytes: number, sink?: string): Promise<Buffer> {
@@ -74,7 +74,7 @@ export type Target = { dataset: string; url: string; snapshot: string | null; sk
 export function linksOf(html: string, page: string, ds: DatasetConfig, dataset: string): Target[] {
   const out: Target[] = [];
   for (const m of html.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*>([^<]*)/g)) {
-    if (!new RegExp(ds.download.href ?? "$^").test(m[1])) continue;
+    if (!ds.download || !new RegExp(ds.download.href ?? "$^").test(m[1])) continue;
     const url = new URL(m[1], page);
     const snapshot = snapshotOf(ds.download.date, `${m[1]} ${m[2]}`);
     out.push({ dataset, url: url.href, snapshot, ...(snapshot === null ? { skip: "更新日を読み取れない" } : ds.since !== undefined && snapshot < ds.since ? { skip: `世代 ${MASTERS_CONFIG.generation} より前の更新分` } : {}) });
@@ -166,6 +166,11 @@ async function main() {
   const targets: Target[] = [];
   for (const [dataset, ds] of Object.entries(MASTERS_CONFIG.datasets)) {
     if (only.length > 0 && !only.includes(dataset)) continue;
+    // 手で置くデータ（万病辞書）は落とさない（docs/masters.md の「手で置く場合」）
+    if (!ds.download) {
+      targets.push({ dataset, url: ds.page, snapshot: null, skip: "手で raw/ に置くデータ（docs/masters.md の「手で置く場合」）" });
+      continue;
+    }
     if (ds.download.url) targets.push({ dataset, url: ds.download.url, snapshot: null });
     else {
       const found = linksOf((await get(new URL(ds.page), MAX_PAGE_BYTES)).toString("utf8"), ds.page, ds, dataset);
@@ -193,7 +198,7 @@ async function main() {
         const zip = path.join(work, `${++n}.zip`);
         await get(new URL(t.url), MAX_FILE_BYTES, zip);
         const files = await unzipTo(zip, path.join(work, `${n}`), ds);
-        const snapshot = t.snapshot ?? files.map((f) => snapshotOf(ds.download.date, f.name)).find((s) => s !== null) ?? null;
+        const snapshot = t.snapshot ?? files.map((f) => snapshotOf(ds.download?.date ?? "$^", f.name)).find((s) => s !== null) ?? null;
         if (files.length === 0 || snapshot === null) throw new Error("中に、形に合うファイルがない、または更新日を読み取れない");
         if (ds.since !== undefined && snapshot < ds.since) throw new Error(`世代 ${MASTERS_CONFIG.generation} より前の更新分`);
         const dest = path.join(raw, t.dataset, snapshot);

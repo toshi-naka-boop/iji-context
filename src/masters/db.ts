@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { YEAR_MONTH } from "../demo/period";
 import { dataDir } from "../server/auth-db";
+import { MASTERS_CONFIG } from "./config";
 
 /** masters.db のあるフォルダ。既定は <データ置き場>/masters。RESEMEN_MASTER_DIR があればそこ（テストと、別の場所に置くとき） */
 export const mastersDir = (): string => path.resolve(process.env.RESEMEN_MASTER_DIR ?? path.join(dataDir(), "masters"));
@@ -153,6 +154,8 @@ export type MastersStatus = {
   checks: { check: string; ready: boolean; reason: string }[];
   /** 形式が合わず、取り込まなかったファイル */
   rejected: { dataset: string; snapshot: string; file: string; reason: string }[];
+  /** 出典の表示が要るデータ（取り込んであるものだけ。万病辞書の CC BY 4.0。config/masters.json の license） */
+  licenses?: { dataset: string; title: string; name: string; url: string; credit: string }[];
 };
 
 /** checks_ready の行。施設基準の組ごとの列のない古い masters.db では、G10・G11 を準備ができていないことにする（行がなくても出す） */
@@ -169,11 +172,16 @@ export function mastersStatus(): MastersStatus {
   const db = openMasters();
   if (!db) return { present: false, sources: [], checks: [], rejected: [] };
   try {
+    const licenses = Object.entries(MASTERS_CONFIG.datasets).flatMap(([dataset, d]) =>
+      d.license && sourcesOf(db).some((s) => s.dataset === dataset) ? [{ dataset, title: d.title, name: d.license.name, url: d.license.url, credit: d.license.credit }] : [],
+    );
     return {
       present: true,
       sources: sourcesOf(db).map((s) => ({ dataset: s.dataset, snapshot: s.snapshot, table: s.tbl, file: s.file, rows: s.rows, importedAt: s.imported_at, verified: s.verified, newer: s.verified !== null && s.snapshot > s.verified })),
       checks: checksOf(db),
       rejected: db.prepare("SELECT dataset, snapshot, file, reason FROM rejected ORDER BY dataset, snapshot, file").all() as MastersStatus["rejected"],
+      // 出典の表示が要るデータを取り込んであるときだけ持つ
+      ...(licenses.length > 0 ? { licenses } : {}),
     };
   } catch {
     // 別の作り方の masters.db（表がない）は、ないものとして扱う

@@ -8,13 +8,14 @@ type Status = {
   sources: { dataset: string; snapshot: string; table: string; file: string; rows: number; importedAt: string; verified: string | null; newer: boolean }[];
   checks: { check: string; ready: boolean; reason: string }[];
   rejected: { dataset: string; snapshot: string; file: string; reason: string }[];
+  licenses?: { dataset: string; title: string; name: string; url: string; credit: string }[];
 };
 
 /** データ名・表の名前の表示（config/masters.json の title と同じ言い方） */
 const TABLE_LABELS: Record<string, string> = {
   shinryo: "医科診療行為マスター", iyakuhin: "医薬品マスター", tokutei: "特定器材マスター", shobyo: "傷病名マスター", shushokugo: "修飾語マスター", comment: "コメントマスター",
   hojo: "電子点数表（補助マスター）", houkatsu: "電子点数表（包括）", haihan: "電子点数表（背反）", kaisu: "電子点数表（算定回数）",
-  comment_kanren: "コメント関連テーブル", cm_tekio: "チェックマスタ（医薬品の適応）", cm_si_shobyo: "チェックマスタ（診療行為の適応）", cm_heiyo_kinki: "チェックマスタ（併用禁忌）",
+  comment_kanren: "コメント関連テーブル", cm_tekio: "チェックマスタ（医薬品の適応）", cm_si_shobyo: "チェックマスタ（診療行為の適応）", cm_heiyo_kinki: "チェックマスタ（併用禁忌）", manbyo: "万病辞書 MANBYO（略語の意味の候補）",
 };
 const CHECK_LABELS: Record<string, string> = { G01: "コード", G02: "点数の検算", G03: "行の属性", G04: "包括", G05: "背反", G06: "算定回数", G07: "必須コメント", G08: "傷病名の要件", G09: "適応・併用", G10: "施設基準", G11: "取り忘れ" };
 
@@ -64,6 +65,11 @@ export function Masters() {
               ))}
             </tbody>
           </table>
+          {(status.licenses ?? []).map((l) => (
+            <p key={l.dataset} className="muted">
+              出典：{l.credit}（<a href={l.url} target="_blank" rel="noreferrer">{l.name}</a>）
+            </p>
+          ))}
           {status.rejected.length > 0 && (
             <div className="notice warn">
               形式が合わず、取り込まなかったファイルがあります：

@@ -33,7 +33,7 @@ CREATE TABLE checks_ready (check_id TEXT PRIMARY KEY, ready INTEGER NOT NULL, re
  * ファイル 1 つを、その表の 1 枚（snapshot）として取り込む。形式が合わなければ MasterFormatError（呼び出し側のトランザクションごと取り消す）。
  * 戻り値は件数と sha256
  */
-export function ingestFile(db: Database.Database, layout: TableLayout, file: string, fields: number, snapshot: string): { rows: number; sha256: string } {
+export function ingestFile(db: Database.Database, layout: TableLayout, file: string, fields: number, snapshot: string, encoding: "shift_jis" | "utf-8" = "shift_jis"): { rows: number; sha256: string } {
   const items = layout.columns.flatMap((x) => (Array.isArray(x.item) ? x.item : [x.item]));
   if (items.some((i) => i < 1 || i > fields)) throw new Error(`レイアウト ${layout.id} の項番が、項目数 ${fields} の外`);
   const fixed = Object.entries(layout.fixed ?? {});
@@ -77,7 +77,7 @@ export function ingestFile(db: Database.Database, layout: TableLayout, file: str
       throw new MasterFormatError("同じコードの行が 2 つある", line);
     }
     rows++;
-  });
+  }, undefined, encoding);
   if (rows === 0) throw new MasterFormatError("件数が 0");
   return { rows, sha256 };
 }
@@ -125,7 +125,7 @@ export function ingestAll(db: Database.Database, rawDir: string, config: Masters
           continue;
         }
         try {
-          const r = db.transaction(() => ingestFile(db, layout, path.join(dir, hit[0]), f.fields, snapshot))();
+          const r = db.transaction(() => ingestFile(db, layout, path.join(dir, hit[0]), f.fields, snapshot, ds.encoding))();
           addSource.run(dataset, snapshot, config.generation, layout.table, hit[0], r.sha256, r.rows, now);
           log(`  ${dataset}/${snapshot}/${hit[0]} → ${layout.table}：${r.rows.toLocaleString("ja-JP")} 件`);
         } catch (e) {

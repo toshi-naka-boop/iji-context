@@ -85,6 +85,15 @@
         { "layout": "cm_si_shobyo", "name": "^SI_Shobyo_.*\\.csv$", "fields": 13 },
         { "layout": "cm_heiyo_kinki", "name": "^IY_HeiyoKinki_.*\\.csv$", "fields": 10 }
       ]
+    },
+    "manbyo": {
+      "title": "万病辞書 MANBYO",
+      "publisher": "奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室",
+      "page": "https://sociocom.naist.jp/manbyou-dic/",
+      "manual": true,
+      "encoding": "utf-8",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/deed.ja", "credit": "万病辞書 MANBYO_202106（奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室。CC BY 4.0）を、略語の意味の候補に使っています。辞書の中身は変えていません" },
+      "files": [{ "layout": "manbyo", "name": "^MANBYO_\\d{8}\\.csv$", "fields": 6 }]
     }
   }
 }

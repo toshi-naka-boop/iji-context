@@ -419,7 +419,29 @@ const cmHeiyoKinki: TableLayout = {
 };
 
 /** 取り込む表の一覧。config/masters.json の files に載っていないファイル（入院基本料テーブル・本部点検条件・チェックマスタのほかの 4 本）は、フォルダにあっても読まない */
-export const LAYOUTS: TableLayout[] = [shinryo, iyakuhin, tokutei, shobyo, shushokugo, comment, hojo, houkatsu, haihan(1), haihan(2), haihan(3), haihan(4), kaisu, commentKanren, cmTekio, cmSiShobyo, cmHeiyoKinki];
+// ───────────────────────────────────────────────────────────────────────────
+// 万病辞書 MANBYO（奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室。CC BY 4.0。spec FR-211 の辞書方式の決め 1）。UTF-8・引用符なし・見出しの行あり。
+// 略語の意味の候補にだけ使い、一致しても正しいとはみなさない。複数の意味は「;」でつなぎ、「-1」と空の標準病名は「意味なし」（src/chart/abbrev-dict.ts）。
+// 出現形は全角のまま持ち、大文字と小文字を分ける（ＡＦ＝心房細動、Ａｆ＝心室細動）。読み方は README.pdf（MANBYO_202106）と実物の列で確かめた
+const manbyo: TableLayout = {
+  id: "manbyo",
+  table: "manbyo",
+  header: ["出現形", "出現形よみ", "ICDコード", "標準病名", "信頼度レベル", "頻度レベル"],
+  columns: [
+    c(1, "surface", "出現形", text),
+    c(2, "yomi", "出現形よみ", text),
+    c(3, "icd", "ICDコード", text),
+    c(4, "name", "標準病名", text),
+    // 信頼度レベル（S・A〜F）
+    c(5, "reliability", "信頼度レベル", oneOf("S", "A", "B", "C", "D", "E", "F")),
+    c(6, "frequency", "頻度レベル", text),
+  ],
+  index: [["surface"]],
+  unique: true,
+  loose: ["yomi", "icd", "frequency"],
+};
+
+export const LAYOUTS: TableLayout[] = [shinryo, iyakuhin, tokutei, shobyo, shushokugo, comment, hojo, houkatsu, haihan(1), haihan(2), haihan(3), haihan(4), kaisu, commentKanren, cmTekio, cmSiShobyo, cmHeiyoKinki, manbyo];
 
 /** 表の名前 → 列の名前（snapshot と fixed を含む）。SQL に書く名前は、必ずここにあるものだけ */
 export const TABLE_COLUMNS: Record<string, string[]> = {};

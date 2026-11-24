@@ -1,4 +1,4 @@
-// 公開データの CSV を流して読む（design.md §12-1）。Shift_JIS・カンマ区切り・全項目が二重引用符つき・CRLF。
+// 公開データの CSV を流して読む（design.md §12-1）。Shift_JIS・カンマ区切り・全項目が二重引用符つき・CRLF（万病辞書は UTF-8・引用符なし・LF。config の encoding）。
 // ファイルをまるごとメモリに載せない（128 万行のファイルがある）。大きさ・行数・1 行の長さに上限を置き、超えたら断る
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
@@ -47,13 +47,14 @@ export function cellsOf(line: string, lineNo?: number): string[] {
  * ファイルを 1 行ずつ読み、欄に分けて onRow に渡す（行番号は 1 起算）。Shift_JIS として読めない・上限を超える・引用符が閉じない入力は MasterFormatError。
  * 戻り値はファイルの sha256（16 進）と大きさ
  */
-export function readCsv(file: string, onRow: (cells: string[], line: number) => void, limits: { maxBytes: number; maxRows: number; maxLineChars: number } = MASTER_LIMITS): { sha256: string; bytes: number } {
+export function readCsv(file: string, onRow: (cells: string[], line: number) => void, limits: { maxBytes: number; maxRows: number; maxLineChars: number } = MASTER_LIMITS, encoding: "shift_jis" | "utf-8" = "shift_jis"): { sha256: string; bytes: number } {
+  const label = encoding === "utf-8" ? "UTF-8" : "Shift_JIS";
   const fd = openSync(file, "r");
   try {
     const bytes = fstatSync(fd).size;
     if (bytes > limits.maxBytes) throw new MasterFormatError("ファイルが大きすぎる");
     const hash = createHash("sha256");
-    const decoder = new TextDecoder("shift_jis", { fatal: true });
+    const decoder = new TextDecoder(encoding, { fatal: true, ignoreBOM: false });
     const buf = Buffer.alloc(1024 * 1024);
     let rest = "";
     let line = 0;
@@ -80,14 +81,14 @@ export function readCsv(file: string, onRow: (cells: string[], line: number) => 
         feed(decoder.decode(chunk, { stream: true }));
       } catch (e) {
         if (e instanceof MasterFormatError) throw e;
-        throw new MasterFormatError("Shift_JIS として読めない");
+        throw new MasterFormatError(`${label} として読めない`);
       }
     }
     try {
       feed(decoder.decode());
     } catch (e) {
       if (e instanceof MasterFormatError) throw e;
-      throw new MasterFormatError("Shift_JIS として読めない");
+      throw new MasterFormatError(`${label} として読めない`);
     }
     if (rest !== "") emit(rest.replace(/\r$/, ""));
     return { sha256: hash.digest("hex"), bytes };
