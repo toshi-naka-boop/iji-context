@@ -122,7 +122,8 @@ function judge(x: HaihanException, row: Row, aCode: string, day: number | undefi
     // G12 の事実で決める（design.md §19-13 の 3。L-71 の形は増やさない）：組の他方（酸素吸入）の算定日が、導入より前の日でないと言えれば当たらない。言えなければ決まらない
     const other = aCode === row.code1 ? row.code2 : row.code1;
     const o = c.occ.get(other);
-    const days = o && o.timed ? o.days.flatMap((n, i) => (n > 0 ? [i + 1] : [])) : [];
+    // 算定日ごとに決める（同一月の表でも、HX-25 の組は酸素吸入の算定日ごとの単位で判定する。反証 round-94 C-610）
+    const days = day !== undefined ? [day] : o && o.timed ? o.days.flatMap((n, i) => (n > 0 ? [i + 1] : [])) : [];
     out = c.claim && c.about && homeOxygenSettled(c.claim, c.about, days) ? { r: "miss", answered: false } : { r: "undecided" };
   } else if (x.kind === "receipt") {
     const a = cond(x.allow!, c, day);
@@ -349,7 +350,12 @@ export function makeG05(config: HaihanConfig = HAIHAN): GenericCheck {
           cur = bucket.h;
           const hit2 = cur;
           // 例外の判定の単位：1 日の表・同時の表は算定日ごと（算定日がなければ 1 つ）、同一月の表はレセプトごと（design.md §13-2）
-          const slots: (number | undefined)[] = row.tani === 2 || bucket.days.length === 0 ? [undefined] : bucket.days;
+          // G12 の事実で決める例外（HX-25）を持つ同一月の組は、組の他方（酸素吸入）の算定日ごとに判定する（G12 の 1 と同じ日の単位。反証 round-94 C-610）
+          const g12Days = row.tani === 2 && p.exceptions.some((id) => config.exceptions.find((x) => x.id === id)?.g12 !== undefined) ? (() => {
+            const o = ctx.occ.get(aCode === row.code1 ? row.code2 : row.code1);
+            return o && o.timed ? o.days.flatMap((n, i) => (n > 0 ? [i + 1] : [])) : [];
+          })() : [];
+          const slots: (number | undefined)[] = g12Days.length > 0 ? g12Days : row.tani === 2 || bucket.days.length === 0 ? [undefined] : bucket.days;
           const where = (days: (number | undefined)[]) => {
             const ds = days.filter((d): d is number => d !== undefined);
             return row.tani === 2 ? "同じレセプト" : hit2.key === "same_unit" ? `同じ算定単位${ds.length ? `（${daysText(ds)}日）` : ""}` : hit2.key === "same_day" ? `別の算定単位ですが、同じ日（${daysText(ds)}日）` : `同じ日（${daysText(ds)}日）`;

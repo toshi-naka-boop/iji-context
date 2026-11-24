@@ -54,6 +54,16 @@ describe("HX-25（G05）と G12 の 1 の強さが揃う", () => {
     }
   });
 
+  it("再導入の月を 1 枚の請求に書いた（管理料 20 日、酸素吸入と酸素 3 日・25 日）：導入前の 3 日は G05・G12 とも条件つき、導入後の 25 日は G05・G12 とも確定（算定日ごと。C-610）", () => {
+    const c: GenericClaim = { units: [unit([C.sanso], [20]), unit([C.sansoKyunyu], [3], [SMALL]), unit([C.sansoKyunyu], [25], [SMALL])] };
+    const r = evaluateGeneric(c, db(), about({ prevHomeOxygen: "ある" }), [g05, g12], new Set(["G05.exception_none", "G12.home_oxygen"]));
+    const g05s = r.findings.filter((f) => f.check === "G05").map((f) => [f.messageKey, f.certainty, f.params.days]);
+    const g12s = r.findings.filter((f) => f.check === "G12").map((f) => [f.messageKey, f.certainty, f.units[0]]);
+    expect(g05s).toEqual(expect.arrayContaining([["G05.exception_none", "確定", "25"], [expect.stringMatching(/^G05\.exception_/), "条件つき", "3"]]));
+    expect(g05s).toHaveLength(2);
+    expect(g12s).toEqual([["G12.home_oxygen_intro", "条件つき", 1], ["G12.home_oxygen", "確定", 2]]);
+  });
+
   it("入院のレセプトは HX-20 に当たるので、G05 は出さない", () => {
     expect(strengths(claimOf(1, 10), about({ outpatient: false, prevHomeOxygen: "ある" })).g05).toEqual([]);
   });
