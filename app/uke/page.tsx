@@ -26,6 +26,8 @@ type Uke = {
   receipts: { claimId: string; patient: string; patientNo: string | null; sameMonth: boolean; otherRows: number; unreadable: string | null; revisionId: string | null }[];
   imported: boolean;
 };
+/** 取り込んだあとの主な入口：点検できる（版があり、読める）最初のレセプト。なければ最初のレセプト（試算を開く） */
+const firstOf = (u: Uke) => (u.receipts.find((r) => r.revisionId !== null && !r.unreadable) ?? u.receipts[0]).claimId;
 
 export default function UkeImport() {
   const { clerk: user, ready } = useClerk();
@@ -79,7 +81,7 @@ export default function UkeImport() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return setErr(d.error ?? "アップロードできませんでした");
       setList(d);
-      setDone("取り込みました。診療年月に版があるレセプトは、算定画面の「月末の点検」に並びます。UKE に書いてあるとおりの点検と、版を選ぶ試算は、上の一覧から開けます。");
+      setDone("取り込みました。上の一覧の「取り込んだレセプトの点検」から、UKE に書いてあるとおりの点検（摘要欄の記載まで見ます）と、版を選ぶ試算を開けます。診療年月に版があるレセプトは、算定画面の「月末の点検」にも並びます（摘要欄の記載は見ません）。");
     } catch {
       setErr("アップロードできませんでした。通信の状態を確かめて、もう一度試してください");
     } finally {
@@ -154,7 +156,7 @@ export default function UkeImport() {
               )}
               {u.imported && (
                 <div style={{ margin: "0 0 14px" }}>
-                  <div className="muted">UKE に書いてあるとおりの点検（摘要欄の記載を含む）と、版を選ぶ試算</div>
+                  <div className="muted">取り込んだレセプトの点検（UKE に書いてあるとおり。摘要欄の記載まで見ます）と、版を選ぶ試算</div>
                   <div className="chips">
                     {u.receipts.map((r) => <a key={r.claimId} href={`/uke/${encodeURIComponent(r.claimId)}`}>{u.uploaded ? r.claimId : r.claimId.split("-")[0]} を開く →</a>)}
                   </div>
@@ -166,10 +168,11 @@ export default function UkeImport() {
                 </div>
               )}
               <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-                {u.imported ? <a href="/work">算定画面の「月末の点検」で点検する →</a> : <button className="primary" onClick={() => take(u.name)}>取り込む</button>}
+                {u.imported ? <a href={`/uke/${encodeURIComponent(firstOf(u))}`}>取り込んだレセプトの点検を 1 件目から開く →</a> : <button className="primary" onClick={() => take(u.name)}>取り込む</button>}
                 {!u.uploaded && <a href={`/api/uke/sample?name=${encodeURIComponent(u.name)}`} download={u.name}>見本をダウンロード</a>}
                 {u.uploaded && canDelete && <button onClick={() => remove(u)}>消す</button>}
               </div>
+              {u.imported && <p className="muted" style={{ margin: "8px 0 0" }}><a href="/work">算定画面の「月末の点検」</a>でも点検できます（明細を入れ直して点検するので、摘要欄の記載は見ません）。</p>}
               {u.uploaded && <p className="muted" style={{ margin: "12px 0 0" }}>カルテ側の記録がないレセプトです。足りない事実は「情報不足」として出ます。訪問カルテ・選択モード・練習問題の対象外です。</p>}
             </div>
           </article>
@@ -193,7 +196,7 @@ export default function UkeImport() {
             <input type="file" accept=".UKE,.uke" aria-label="アップロードする UKE のファイル" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDone(""); setErr(""); }} />
             <button className="primary" disabled={!file || busy} onClick={upload}>{busy ? "確かめています…" : "アップロードして取り込む"}</button>
           </div>
-          {done && <p style={{ margin: "12px 0 0" }}>{done} <a href="/work">点検する →</a></p>}
+          {done && <p style={{ margin: "12px 0 0" }}>{done}</p>}
         </div>
       </section>
     </main>
