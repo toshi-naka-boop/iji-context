@@ -18,6 +18,7 @@ import { createDoctorFacts } from "./app/doctor-facts";
 import { createErase } from "./app/erase";
 import { createFacility, declarationViewOf } from "./app/facility";
 import { createNote14 } from "./app/note14";
+import { createOxygenPrices, type OxygenPriceInput } from "./app/oxygen";
 import { createKnowledgeOps } from "./app/knowledge";
 import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
 import { samePair } from "../generic/local-pair";
@@ -53,6 +54,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
   // 介護保険・ほかの医療機関との調整の申告（design.md §18-2。v37）
   const care = createCare(ctx, clock, clerks);
+  // 届け出た酸素の単価（design.md §19-3。v44）
+  const oxygen = createOxygenPrices(ctx, clock, clerks);
   const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf, care);
   const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
   const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
@@ -238,6 +241,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
     createPair: localPairOps.createPair,
     // 介護保険・ほかの医療機関との調整の申告（design.md §18-2・§18-5）。答えの月は、開いた請求の診療年月（C-513）
+    /** 届け出た酸素の単価（任意。design.md §19-3・§19-8） */
+    oxygenPrices: oxygen.oxygenPrices,
+    saveOxygenPrice: (clerkId: string, input: OxygenPriceInput) => oxygen.saveOxygenPrice(clerkId, input),
     careHomes: care.careHomes,
     saveCareHome: (clerkId: string, input: CareHomeInput) => care.saveCareHome(clerkId, input),
     careView: (claimId: string) => {

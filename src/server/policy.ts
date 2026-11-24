@@ -52,6 +52,9 @@ export const POLICY = {
   // 施設の申告（design.md §15-9）：読むのはどのロールも（指摘の根拠を見られるように）、残すのは事務長と責任者
   "GET /api/facility/declaration": row(ALL, "none", false),
   "POST /api/facility/declaration": row(["manager", "veteran"], "none", false),
+  // 届け出た酸素の単価（design.md §19-8）：入れられる役割は施設の申告と同じ
+  "GET /api/facility/oxygen-prices": row(ALL, "none", false),
+  "POST /api/facility/oxygen-prices": row(["manager", "veteran"], "none", false),
   "GET /api/facility/declaration/history": row(ALL, "none", false),
   // まとめて「変わりなし」（design.md §15-2）：残すのは事務長と責任者。初期の選択を読むのも同じ
   "GET /api/facility/declaration/confirm": row(["manager", "veteran"], "none", false),
