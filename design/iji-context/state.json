@@ -1,22 +1,21 @@
 {
   "currentNode": "完了",
   "status": "done",
-  "designVersion": "v36",
-  "approvedDesignVersion": "v36",
-  "approvedDesignSha256": "1d653e5130e673a28770d8e75704e00d4701066f744bd8ac051bf68d6aaa3912",
+  "designVersion": "v43",
+  "approvedDesignVersion": "v43",
+  "approvedDesignSha256": "bec2ab6be25c4d0a5e1e8b766b9645e5107b601bd005533194dc1d61dd7dbf72",
   "approvedAt": "2026-11-24",
-  "approvalEvidence": "アで承認（直前のメッセージで v36:1d653e5130e6 を示し「v36（v36:1d653e5130e6）と EM 追記案を「ア」で承認しますか」と聞いた答え。返事に指紋はない。提示のあと design.md は変えていない）",
-  "requiredApprovalFingerprint": "v36:1d653e5130e6",
-  "baseline": "feat/integration（f576407）",
-  "criticRound": 72,
+  "approvalEvidence": "承認する（直前のメッセージで v43:bec2ab6be25c を示し「v43 を承認しますか」と聞いた答え。v42 の内容〔分からないを後の月にも〕は利用者の判断「後の月にも効かせる」による。提示のあと design.md は変えていない）",
+  "requiredApprovalFingerprint": "v43:bec2ab6be25c",
+  "baseline": "feat/integration（90e2fe4。feat/v37-cdf をマージ）",
+  "criticRound": 88,
   "openIssueIds": [],
   "requiredReads": [
-    "design.md §17",
-    "ledger.md",
-    "reviews/fable-consult-e.md",
-    "sources/em-v36-draft.md"
+    "design.md §18-12",
+    "sources/em-v38-draft.md",
+    "ledger.md"
   ],
-  "nextAction": "C〜I の次は C＋D＋F の入れ物（設計の版）。C・D の EM 追記案を kyufu-chosei-r8.md・takikan-r8.md から作る",
+  "nextAction": "C＋D＋F は完了。次は G＋H（承認済みの順）。残り：選択肢の名前「申請中（この月だけ…）」の文言",
   "lastUpdated": "2026-11-24",
   "delegation": {
     "実装": "claude サブエージェント（2026-11-21 から claude-opus-5-5。Fable が利用上限のため）",
@@ -55,6 +54,48 @@
     "fingerprint": "v35:dc78bfce4a2a",
     "sha256": "dc78bfce4a2aba1c610509f36b212cfbaa85c401270354bbeac74cebbe2d4e43",
     "evidence": "v35（v35:dc78bfce4a2a）を承認",
+    "at": "2026-11-24"
+  },
+  "v36Approval": {
+    "fingerprint": "v36:1d653e5130e6",
+    "sha256": "1d653e5130e673a28770d8e75704e00d4701066f744bd8ac051bf68d6aaa3912",
+    "evidence": "アで承認（直前のメッセージで v36:1d653e5130e6 を示した答え）",
+    "at": "2026-11-24"
+  },
+  "v37Approval": {
+    "fingerprint": "v37:0bb4458d976e",
+    "sha256": "0bb4458d976e3d5afefc7c0171102f86f8dba7612b479bf5b98f326e725184a7",
+    "evidence": "v37（v37:0bb4458d976e）と EM 追記案を承認します",
+    "at": "2026-11-24"
+  },
+  "v38Approval": {
+    "fingerprint": "v38:0b7819eca246",
+    "sha256": "0b7819eca246e7ac866702dbf895abeecfce7bb664367acae6d7c7f184c557c9",
+    "evidence": "勧めどおりで承認（直前のメッセージで v38:0b7819eca246 を示し「U-67〜U-72 を上の勧めどおりにして、v38 と EM 追記案 em-v38-draft.md を承認しますか」と聞いた答え。U-72 は Fable の案。返事に指紋はない。提示のあと design.md は変えていない）",
+    "at": "2026-11-24"
+  },
+  "v39Approval": {
+    "fingerprint": "v39:4ccb93d96ab5",
+    "sha256": "4ccb93d96ab54b34b18e1d5ff14c3815769c5767b2551f3ffc9dba6ae873fcab",
+    "evidence": "v39:4ccb93d96ab5）の規則の置き換えを承認します",
+    "at": "2026-11-24"
+  },
+  "v40Approval": {
+    "fingerprint": "v40:4057acef8101",
+    "sha256": "4057acef8101cc26231a3bab2c772d9539ef70893d2cfdd5852f42b1a6723e55",
+    "evidence": "v40（v40:4057acef8101）の全会一致の規則を承認します",
+    "at": "2026-11-24"
+  },
+  "v41Approval": {
+    "fingerprint": "v41:ea303fe609fb",
+    "sha256": "ea303fe609fbab9ce4d73dcf370df143553539d56afc86805f89a7e7a5e94712",
+    "evidence": "承認する（直前のメッセージで v41:ea303fe609fb を示し「v41 の補い 3 点を承認しますか」と聞いた答え。提示のあと design.md は変えていない）",
+    "at": "2026-11-24"
+  },
+  "v43Approval": {
+    "fingerprint": "v43:bec2ab6be25c",
+    "sha256": "bec2ab6be25c4d0a5e1e8b766b9645e5107b601bd005533194dc1d61dd7dbf72",
+    "evidence": "承認する（直前のメッセージで v43:bec2ab6be25c を示し「v43 を承認しますか」と聞いた答え。v42 の内容〔分からないを後の月にも〕は利用者の判断「後の月にも効かせる」による。提示のあと design.md は変えていない）",
     "at": "2026-11-24"
   }
 }
