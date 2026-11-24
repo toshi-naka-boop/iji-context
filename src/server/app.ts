@@ -3,6 +3,7 @@
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
 import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
 import { careScopeNotes, hasCareScene, hasOthersScene } from "../engine/care-judge";
+import { kanriLines } from "../engine/predicates";
 import { careStateOf, certifiedOf } from "../patient/facts";
 import { monthRange } from "../demo/period";
 import { createCases } from "./app/cases";
@@ -288,7 +289,16 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
           // ほかの機関：申告がない・在医総管を取る側が分からない・(Ⅰ)2 の月に求めた機関の行がない・特別の関係やしていることが分からない
           const rows = c.others?.rows ?? [];
           const v2 = c.lines.some((l) => l.count > 0 && (rev.consts.visit2Kubun ?? []).includes(l.kubun));
-          const open = !c.others || rows.some((r) => r.kanriSide === "分からない" || r.specialRelation === "分からない" || Object.values(r.activities).includes("分からない")) || (v2 && !rows.some((r) => r.activities["求めによる訪問診療の求めた側"] === "はい" && r.referredOn !== null));
+          // その請求の場面で読む項目の「分からない」だけを見る（§18-2 C-514。round-83 X-403）：⑤ 管理料の行→在医総管を取る側、⑥ (Ⅰ)2 の行→求めた機関と求めた日、
+          // ⑦ 訪問看護指示料の行→医療機関の特別の関係と、医療機関が行う訪問看護
+          const kanri = kanriLines(c, rev.consts).length > 0;
+          const shiji = c.lines.some((l) => l.count > 0 && l.kubun === rev.consts.care?.shiji);
+          const med = rows.filter((r) => r.kind === "医療機関");
+          const open =
+            !c.others ||
+            (kanri && rows.some((r) => r.kanriSide === "分からない")) ||
+            (v2 && !rows.some((r) => r.activities["求めによる訪問診療の求めた側"] === "はい" && r.referredOn !== null)) ||
+            (shiji && med.some((r) => r.specialRelation === "分からない" || (r.specialRelation === "はい" && (r.activities["医療機関が行う訪問看護"] ?? "分からない") === "分からない")));
           if (open) asks.push("others");
         }
         // 「見ていません」の文（最初の行の「見ている場面」は除く）。答えても消えないもの（月の途中の変化・読みが割れるなど）もカードに出す

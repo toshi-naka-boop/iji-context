@@ -124,3 +124,30 @@ describe("?claim= で開く（round-82 C-543）", () => {
     expect(r.targets.some((t) => t.claimId === next)).toBe(true);
   });
 });
+
+describe("ほかの機関の問いは、その請求の場面で読む項目の「分からない」だけで決める（round-83 X-403）", () => {
+  it("管理料の請求で取る側が「当院」と分かっていれば、使わない項目（在がん総診など）が分からなくても聞かない", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: `${YM}-01` }, source: "介護保険証", validUntil: `${month(5)}-01` });
+    app.saveCare(id, "new1", { item: "residenceType", value: { type: "自宅" }, ...b });
+    app.saveCare(id, "new1", { item: "shortStay", value: { status: "使っていない" }, ...b });
+    app.saveOther(id, "new1", { name: "架空の診療所", kind: "医療機関", specialRelation: "分からない", kanriSide: "当院", activities: { 在がん総診: "分からない" }, ...b });
+    expect(target(id)).toBeUndefined();
+  });
+});
+
+describe("今ある機関の行を、聞き取りの画面から直す（round-83 X-402）", () => {
+  it("在医総管を取る側が「分からない」の行を、同じ機関（instId）で「当院」に答え直すと、問いと「見ていません」が消える", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: `${YM}-01` }, source: "介護保険証", validUntil: `${month(5)}-01` });
+    app.saveCare(id, "new1", { item: "residenceType", value: { type: "自宅" }, ...b });
+    app.saveCare(id, "new1", { item: "shortStay", value: { status: "使っていない" }, ...b });
+    const { instId } = app.saveOther(id, "new1", { name: "架空の診療所", kind: "医療機関", specialRelation: "いいえ", kanriSide: "分からない", activities: {}, ...b });
+    expect(target(id)).toMatchObject({ asks: ["others"], notDone: true });
+    // 画面は careView の行（instId つき）から、その機関を選んで直す
+    expect(app.careView(id).others.map((o) => o.instId)).toEqual([instId]);
+    app.saveOther(id, "new1", { instId, name: "架空の診療所", kind: "医療機関", specialRelation: "いいえ", kanriSide: "当院", activities: {}, ...b });
+    expect(app.careView(id).others).toHaveLength(1);
+    expect(target(id)).toBeUndefined();
+  });
+});
