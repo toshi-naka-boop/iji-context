@@ -40,5 +40,6 @@ export function judgePick(base: ClaimContext, groups: ChoiceGroup[], lineIndex: 
   if (!item.options.includes(option)) throw new Error(`選択肢にない: ${option}`);
   if (option === UNDECIDABLE) return { correct: false, findings: [] };
   const r = evaluate({ ...base, lines: replaced(base.lines, lineIndex, option) });
-  return { correct: isCorrect(r), findings: r.findings.filter((f) => f.kind !== "情報不足") };
+  // 条件つきの指摘は、間違いの理由として返さない（判断 F。round-82 C-540）
+  return { correct: isCorrect(r), findings: r.findings.filter((f) => f.kind !== "情報不足" && f.params?.conditional !== "1") };
 }

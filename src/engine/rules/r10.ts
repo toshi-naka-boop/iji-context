@@ -4,8 +4,11 @@ import { billedOushinDays, billedVisitDays, sameDayOf, sameDayPairs, visitBillab
 import type { RevisionConsts } from "../revisions/types";
 import type { ClaimContext, Finding, NeedKey, Rule } from "../types";
 import { addDays, finding, has, present } from "./util";
+import { withVisit2Kubun } from "../visit2";
 
-export function makeR10(c: RevisionConsts): Rule {
+export function makeR10(c0: RevisionConsts): Rule {
+  // 訪問診療料(Ⅰ)2 の日も、同じ日・翌日の往診の判定で訪問診療の日として数える（EM §2-14 W-122・W-123）。kubun は (Ⅰ)1 のまま（reads に (Ⅰ)2 を足す。visit2.ts）
+  const c = withVisit2Kubun(c0);
   const OUSHIN = c.oushin.kubun;
   /** 緊急往診加算の、種別ごとの区分の全部（design.md §15-4。X-139）。対象患者かは種別で分かれない。種別が合っているかは R18 の担当 */
   const KINKYU = Object.values(c.oushin.kinkyu);
@@ -22,7 +25,7 @@ export function makeR10(c: RevisionConsts): Rule {
   }
   return {
     id: "R10",
-    kubun: [OUSHIN, ...KINKYU, ...c.visitKubun],
+    kubun: [OUSHIN, ...KINKYU, ...c0.visitKubun],
     reference: "C000 注1・C001 注1・注10（留意事項 C001 (11)(21)）",
     recordFindings: [],
     // 緊急往診加算の対象患者かは、加算の行と確かめた事実だけで決まる（ほかの行に依らない）。同じ日・翌日の判定は、ほかの行の有無に依るので申告しない

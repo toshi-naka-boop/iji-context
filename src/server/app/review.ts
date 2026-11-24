@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { resolveRevision } from "../../engine/revisions";
+import type { Finding } from "../../engine/types";
 import { findingText, patientFindingText } from "../../messages";
 import { codeFingerprint } from "../../review/fingerprint";
 import { KIND_LABEL, readReviewCsv, ReviewError, type ReviewFileName, type ReviewKind, type ReviewRow } from "../../review/format";
@@ -25,6 +26,9 @@ type JudgmentRow = { id: number; item_id: number; fingerprint: string; revision_
 /** 画面に出す指摘。text は画面の文（記載の値を含むことがある）。判定の記録（review_judgments.finding）には text を残さず、JudgedFinding だけを残す（X-322） */
 export type ReviewFinding = { key: string; system: "ユスティ" | "データで動く点検" | "患者情報チェック"; id: string; messageKey: string; certainty: Certainty; codes: string[]; text: string; related: boolean };
 /** 判定の記録に残す指摘：系統・ID・文言の鍵・確度・コード（ユスティは行の区分）だけ。文と値は残さない */
+/** ユスティの指摘の確からしさ：取り忘れを先に確かめる文（g11First）と、申告のとおりならの指摘（R20・R21。design.md §18-3）は条件つき */
+export const handCertaintyOf = (f: Finding): Certainty => (f.params?.g11First || f.params?.conditional === "1" ? "条件つき" : "確定");
+
 export type JudgedFinding = Pick<ReviewFinding, "system" | "id" | "messageKey" | "certainty" | "codes">;
 
 /** 判定で選べる値 */
@@ -198,7 +202,7 @@ export function createReview(ctx: AppContext, uke: Uke, check: UkeCheck["ukeChec
     if (!("rows" in r) || !r.rows) return { revisionId: null, findings: [] };
     const claimWide = lineBy === "claim" || lineCode === null || (LINE_OTHERS as readonly string[]).includes(lineCode);
     const kubun = new Set(r.rows.filter((row) => row.items.some((i) => i.code === lineCode)).flatMap((row) => row.kubun));
-    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, messageKey: f.messageKey, codes: f.lineRefs, certainty: f.params?.g11First ? "条件つき" : "確定", text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
+    const hand = r.findings.map((f, i): ReviewFinding => ({ key: `R:${i}`, system: "ユスティ", id: f.ruleId, messageKey: f.messageKey, codes: f.lineRefs, certainty: handCertaintyOf(f), text: findingText(f), related: claimWide || f.lineRefs.some((k) => kubun.has(k)) }));
     const generic = (r.generic?.findings ?? []).map((f, i): ReviewFinding => ({ key: `G:${i}`, system: "データで動く点検", id: f.check, messageKey: f.messageKey, codes: f.codes.map((c) => c.code), certainty: f.certainty, text: f.text, related: claimWide || f.codes.some((c) => c.code === lineCode) }));
     const patient = r.patientFindings.filter((f) => f.kind !== "情報不足").map((f, i): ReviewFinding => ({ key: `P:${i}`, system: "患者情報チェック", id: f.checkId, messageKey: f.messageKey, codes: [], certainty: "患者情報", text: patientFindingText(f), related: true }));
     return { revisionId: r.revisionId, findings: [...hand, ...generic, ...patient] };

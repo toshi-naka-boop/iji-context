@@ -1,4 +1,7 @@
-// R16 管理料の族（在医総管／施設総管）は、患者の居住の場所で決まる。族だけを見る（区分は R01・R02）
+// R16 管理料の族（在医総管／施設総管）は、患者の居住の場所で決まる。族だけを見る（区分は R01・R02）。
+// 居住の場所の 2 値は住まいの種別から導く（design.md §18-2）。2 値に当たらない月・月の途中で住まいが変わった月・短期入所生活介護などの月は黙る（familySilence。R20 が見る）。
+// 分からないときに聞くのは住まいの種別（C-494）
+import { familySilence } from "../care-scope";
 import { kanriKubun, kanriLines } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { Finding, Rule } from "../types";
@@ -15,8 +18,8 @@ export function makeR16(c: RevisionConsts): Rule {
     reads() {
       return this.kubun;
     },
-    appliesTo: (ctx) => kanriLines(ctx, c).length > 0,
-    needs: () => ["residence"],
+    appliesTo: (ctx) => kanriLines(ctx, c).length > 0 && familySilence(ctx) === null,
+    needs: (ctx) => (ctx.facts.residence.known ? [] : ["residenceType"]),
     check(ctx) {
       const out: Finding[] = [];
       const expected = c.kanri.familyOf[fact(ctx, "residence")];

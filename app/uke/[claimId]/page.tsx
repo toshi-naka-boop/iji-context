@@ -5,6 +5,7 @@
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
 // 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
 import { useParams } from "next/navigation";
+import { handMarksOf } from "../../../src/uke/marks";
 import { useEffect, useState } from "react";
 import type { Finding } from "../../../src/engine/types";
 import type { RowNames } from "../../../src/generic/lookup";
@@ -43,6 +44,8 @@ type Check = {
   otherRows?: number;
   findings?: Finding[];
   commentMissingCount?: number;
+  /** 条件つきの指摘（R20・R21）の件数 */
+  conditionalCount?: number;
   missing?: Finding[];
   comments?: { code: string; text: string }[];
   patientFindings?: { checkId: string; kind: string; text: string }[];
@@ -163,7 +166,9 @@ export default function UkeClaimCheck() {
   /** 単位に当たる指摘を、種類ごとの件数にする（手書きのルールは行の区分で、データで動く点検は行のコードで当てる） */
   const countBy = (kinds: string[]) => [...new Set(kinds)].map((k) => `${k} ${kinds.filter((x) => x === k).length}`).join("・");
   const marksOf = (r: Row) => ({
-    hand: countBy(findings.filter((f) => f.lineRefs.some((k) => r.kubun.includes(k))).map((f) => f.kind)),
+    // 条件つきの指摘（申告のとおりなら。R20・R21 など）は確定の指摘と分けて数える（判断 F。round-82 C-531）
+    hand: Object.entries(handMarksOf(findings, r.kubun).kinds).map(([k, n]) => `${k} ${n}`).join("・"),
+    conditional: handMarksOf(findings, r.kubun).conditional,
     generic: countBy((c?.generic?.findings ?? []).filter((f) => f.codes.some((x) => r.items.some((it) => it.code === x.code))).map((f) => f.kind)),
   });
   const CHECKED_BY: Record<Row["checkedBy"], string> = {
@@ -261,11 +266,12 @@ export default function UkeClaimCheck() {
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
               {(c.commentMissingCount ?? 0) > 0 && <p style={{ margin: 0 }}>記載もれを {c.commentMissingCount} 件見つけました。</p>}
+              {(c.conditionalCount ?? 0) > 0 && <p style={{ margin: 0 }}>条件つきの指摘が {c.conditionalCount} 件あります（医療事務が確かめた申告のとおりなら当たるもの。指摘の数・防いだ額には入りません）。</p>}
               {KINDS.filter((k) => findings.some((f) => f.kind === k)).map((k) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {findings.filter((f) => f.kind === k).map((f, i) => (
                     <div key={i} className="notice warn">
-                      <span className="badge warn">{f.kind}</span> {findingText(f)}
+                      <span className="badge warn">{f.kind}</span>{f.params?.conditional === "1" && <span className="badge"> 条件つき</span>} {findingText(f)}
                       {f.params?.g11First && <div className="muted">（条件つき）{f.params.g11First}</div>}
                       {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map((k, n) => <span key={n}>{n > 0 && "、"}{unitHref(k) ? <a href={unitHref(k)}>{nameOf(k)}</a> : nameOf(k)}</span>)}</div>}
                     </div>
@@ -346,6 +352,7 @@ export default function UkeClaimCheck() {
                         <td>
                           <span className="muted">{CHECKED_BY[r.checkedBy]}</span>
                           {m.hand !== "" && <div><a href="#yusti-findings" className="badge warn">ユスティ：{m.hand}</a></div>}
+                          {m.conditional > 0 && <div><a href="#yusti-findings" className="badge">ユスティ：条件つき {m.conditional}</a></div>}
                           {m.generic !== "" && <div><a href="#generic-findings" className="badge">データ：{m.generic}</a></div>}
                         </td>
                       </tr>

@@ -475,7 +475,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
   const info = revInfo(rev);
   // 往診料と訪問診療料の組（背反区分 3・特例条件あり）は R10 が日つきの添え書きで扱うので、G05 の抑えにしない（段 18c のまま。C-291）
   const isOushin = (code: string) => info.kubunOf(code) === rev.consts.oushin.kubun;
-  const isVisit = (code: string) => rev.consts.visitKubun.includes(info.kubunOf(code) ?? "");
+  // 訪問診療料(Ⅰ)2 も入れる（(Ⅰ)1 と同じく急変の往診の例外がある。EM §2-14 W-122）
+  const isVisit = (code: string) => [...rev.consts.visitKubun, ...(rev.consts.visit2Kubun ?? [])].includes(info.kubunOf(code) ?? "");
   const eitherSkip = (a: string, b: string) => (isOushin(a) && isVisit(b)) || (isOushin(b) && isVisit(a));
   const c: Ctx = { db, about, snapshot: { si: si.snapshot, iy: pickSnapshot(db, "iyakuhin", about.yearMonth, about.generation)?.snapshot ?? null, to: pickSnapshot(db, "tokutei", about.yearMonth, about.generation)?.snapshot ?? null }, eitherSkip };
   const checks = opt.checks ?? [g03, g04, g05, g10];
@@ -1093,7 +1094,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
       // (e) 文章との照らし合わせ（当月の全部の日。L-206・L-211）
       const visitDates = new Set<string>([
         ...(S.chart.visits.status === "supported" ? S.chart.visits.items.filter((v) => inMonth(v.date)).map((v) => v.date) : []),
-        ...codeDays([...rev.consts.visitKubun, rev.consts.oushin.kubun, rev.consts.oushin.revisit].flatMap(kubunCodes)),
+        // 訪問の日に (Ⅰ)2 の日も入れる（訪問して診療した日。EM §2-14 の 2-3）
+        ...codeDays([...rev.consts.visitKubun, ...(rev.consts.visit2Kubun ?? []), rev.consts.oushin.kubun, rev.consts.oushin.revisit].flatMap(kubunCodes)),
         ...textsNow.map((x) => x.date),
         ...acts.filter((a) => a.source !== "structured").map((a) => a.date),
       ]);
@@ -1153,7 +1155,8 @@ export function evaluateG11(claim: G11Claim, db: MastersDb | null, about: G11Abo
 
   // 患家診療時間加算（T7。16-4-6）：記録の時刻の差が 61 分以上で、その日の基本の行（訪問診療料・往診料）が請求か候補にある日。基本の行がなく初診料・再診料がある日は 2 人目以降の添え書きつき
   if (S) {
-    const visitSet = new Set(rev.consts.visitKubun.flatMap(kubunCodes));
+    // 基本の行に (Ⅰ)2 も入れる（注5 は (Ⅰ)2 にもかかる。EM §2-14 W-127）
+    const visitSet = new Set([...rev.consts.visitKubun, ...(rev.consts.visit2Kubun ?? [])].flatMap(kubunCodes));
     const oushinSet = new Set(kubunCodes(rev.consts.oushin.kubun));
     const candHas = (set: Set<string>, day: number) => cands.some((x) => x.day === day && x.kind !== "qty" && x.kind !== "rule" && x.units.some((u) => u.items.some((it) => set.has(it.code))));
     const baseOf = (set: Set<string>, day: number) => codesOnDay(set, day) || candHas(set, day);

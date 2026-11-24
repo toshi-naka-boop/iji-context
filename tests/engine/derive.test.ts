@@ -413,8 +413,8 @@ describe("管理料・保留・未対応・見込み", () => {
       expect(r.totalStatus).toBe("withheld");
     });
   });
-  it("居住の場所・注16（区分を左右するとき）・施設の届出が不明なら、その区分だけ保留になる", () => {
-    expect(derive(withFact(K2, "residence", unknown)).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["residence"]);
+  it("居住の場所・注16（区分を左右するとき）・施設の届出が不明なら、その区分だけ保留になる（聞くのは住まいの種別。design.md §18-2 C-494）", () => {
+    expect(derive(withFact(K2, "residence", unknown)).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["residenceType"]);
     expect(derive(withFacility(K2, { note16Met: unknown })).pending.map((p) => p.kind === "事実不足" && p.need)).toEqual(["facility.note16Met"]);
     // K1 は重症区分なので、注16 が不明でも保留にならない
     expect(derive(withFacility(K1, { note16Met: unknown })).pending).toEqual([]);

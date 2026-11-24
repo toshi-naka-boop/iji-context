@@ -6,6 +6,7 @@ import { kanriKubun, overLimitVisitDays } from "../predicates";
 import type { CommentRule } from "../revisions/types";
 import type { ClaimContext, Comment, Finding, Rule } from "../types";
 import { eventsOf, present } from "./util";
+import { hasVisit2, mixedVisitMonth } from "../visit2";
 
 export function makeR17(spec: CommentSpec): Rule {
   const kubun = [...new Set(spec.comments.flatMap((r) => r.kubun))];
@@ -33,6 +34,12 @@ export function makeR17(spec: CommentSpec): Rule {
       for (const rule of spec.comments) {
         const refs = present(ctx, rule.kubun);
         if (refs.length === 0) continue;
+        // 訪問診療料(Ⅰ)2 の行がある請求の、在医総管の月の訪問日の記載（T176）：(Ⅰ)2 の日を含めるかは記載要領を確かめていないので決めない（EM §2-14 R17 T176）。
+        // (Ⅰ)1 と (Ⅰ)2 が同じ月にある月は判定不能で、事情は R01 が 1 回だけ聞く（U-67）。(Ⅰ)2 だけの月は、決めていないことを情報不足で返す
+        if (rule.id === "T176-date" && hasVisit2(ctx.lines, spec.consts)) {
+          if (!mixedVisitMonth(ctx, spec.consts)) out.push({ ruleId: this.id, kind: "情報不足", lineRefs: refs, missing: { target: "clerk", field: "visit2Undecided" }, messageKey: `${this.id}.missing_fact`, params: { rule: rule.id }, reference: this.reference });
+          continue;
+        }
         const found = (key: string, params: Record<string, string> = {}): Finding => ({
           ruleId: this.id,
           kind: "記載もれ",
@@ -108,7 +115,9 @@ export function makeR17(spec: CommentSpec): Rule {
       }
       case "hokatsuState": {
         // 事実と対応のあるコード（要介護3・4・5、障害支援区分2 以上）だけを、確かめてある事実と比べる。事実が不明なら比べない
-        const care = ctx.facts.careLevel;
+        // 月の途中で要介護度が変わり、区間で値が違う月は、要介護度の記載を比べない（design.md §18-12 の 4）
+        const mixed = ctx.facts.careLevelMixed?.known === true && ctx.facts.careLevelMixed.value;
+        const care = mixed ? ({ known: false } as const) : ctx.facts.careLevel;
         const disability = ctx.facts.disabilitySupportLevel;
         const used = mine.filter((x) => {
           const note = spec.commentCodes[x.code];

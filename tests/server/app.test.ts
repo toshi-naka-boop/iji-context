@@ -49,12 +49,19 @@ describe("患者ごとに確かめた情報", () => {
     expect(app.patientFacts(claimId("K4")).facts).toEqual([expect.objectContaining({ key: "careLevel", value: 2, source: "介護保険証", checkedBy: "new1", expired: false })]);
   });
 
-  it("時計を有効期間の終わりの翌日に進めると、要介護度は分からないに戻り R03 の情報不足が戻る", () => {
+  // design.md §18-1（判断 A）：期限は今日ではなく診療年月で比べる。時計を有効期間の終わりの翌日に進めても、診療年月（基準月）に効く要介護度は効いたまま（患者の画面の「期限切れ」は今日で比べる）
+  it("時計を有効期間の終わりの翌日に進めても、診療年月に効く要介護度は効いたまま。患者の画面の期限切れは今日で比べる", () => {
     app.savePatientFact(claimId("K4"), "new1", care);
     app.advanceClock(`${dateIn(3, 1)}T09:00:00+09:00`);
+    expect(app.caseOf(claimId("K4")).facts.careLevel).toEqual({ known: true, value: 2 });
+    expect(evaluate(app.caseOf(claimId("K4"))).findings).toEqual([]);
+    expect(app.patientFacts(claimId("K4")).facts[0].expired).toBe(true);
+  });
+
+  it("有効期間の終わりが診療年月の中の日なら、要介護度は分からないになり R03 の情報不足が出る（design.md §18-1）", () => {
+    app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(15) });
     expect(app.caseOf(claimId("K4")).facts.careLevel).toEqual({ known: false });
     expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind])).toEqual([["R03", "情報不足"]]);
-    expect(app.patientFacts(claimId("K4")).facts[0].expired).toBe(true);
   });
 
   it("K2 で別表第八の二を当たるに直すと、在医総管の区分の指摘（R02）が出る", () => {
@@ -66,7 +73,8 @@ describe("患者ごとに確かめた情報", () => {
   it("要介護度に有効期間の終わりがない・範囲外の値・登録していない医療事務は残せない", () => {
     expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: null })).toThrow(/有効期間の終わり/);
     expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, value: 6 })).toThrow(/0〜5/);
-    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(3) })).toThrow(/今日より前/);
+    // 有効期間の終わりが今日より前でも残せる（過ぎた月の点検のため。design.md §18-1）
+    expect(() => app.savePatientFact(claimId("K4"), "new1", { ...care, validUntil: day(3) })).not.toThrow();
     expect(() => app.savePatientFact(claimId("K4"), "nobody", care)).toThrow(/登録されていない/);
   });
 

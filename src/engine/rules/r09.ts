@@ -3,6 +3,7 @@ import { terminalVisitsOk } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { Finding, Rule } from "../types";
 import { finding, has, present } from "./util";
+import { visit2Terminal } from "../visit2";
 
 export function makeR09(c: RevisionConsts): Rule {
   const { mitori: MITORI, shibou: SHIBOU } = c.terminal;
@@ -26,6 +27,9 @@ export function makeR09(c: RevisionConsts): Rule {
     check(ctx) {
       const out: Finding[] = [];
       if (has(ctx, MITORI) && has(ctx, SHIBOU)) out.push(finding(this, "背反", [MITORI, SHIBOU], "mitori_with_shibou"));
+      // (Ⅰ)2 だけの月の C001 の加算：付く先は (Ⅰ)1（W-120 高）。前の月に (Ⅰ)1 がなく死亡日に往診料もない月だけ確定。ほかは点検の範囲に「見ていません」（U-72）
+      const v2 = visit2Terminal(ctx, c);
+      if (v2?.verdict === "wrong") out.push(finding(this, "要件不足", v2.refs, "addition_needs_visit1"));
       const terminal = present(ctx, TERMINALS);
       if (terminal.length) {
         const visits = terminalVisitsOk(ctx, c);

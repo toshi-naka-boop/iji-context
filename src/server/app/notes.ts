@@ -556,7 +556,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     const claimNote14Side = rev.consts.kanri.note14Pairs ? claimNote14SideOf(base.lines, own.consts) : "なし";
     // 原請求の 2 人以上の区分の管理料の行も、日で絞る前の請求の全部の行から求める（round-61 X-200）
     const claimMultiBand = claimMultiBandOf(base.lines, own.consts);
-    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, manual, choices, claimNote14Side, claimMultiBand, ...(midMonth ? { asOf: r.date } : {}) }, rev);
+    const plain = deriveLines({ yearMonth: upTo.yearMonth, facility: upTo.facility, facts, events, history: upTo.history, ...(upTo.care ? { care: upTo.care } : {}), manual, choices, claimNote14Side, claimMultiBand, ...(midMonth ? { asOf: r.date } : {}) }, rev);
     // 人が入れる記載（needsInput）に、このカルテで医療事務が入れた値があれば、ready の記載として付ける（FR-176）
     const derived = { ...plain, comments: withInputs(plain.comments, savedComments(id), rev, { ...upTo, events, facts, lines: plain.lines, comments: [], commentsKnown: true }) };
     const comments = derived.comments.flatMap((c) => (c.status === "ready" ? [commentOf(c.code!, c.text!, [c.kubun])] : []));

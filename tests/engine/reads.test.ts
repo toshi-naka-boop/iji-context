@@ -96,17 +96,23 @@ describe("reads の申告を縛る（design.md §12-4。C-105）", () => {
     }
   }, 300_000);
 
-  it("kubun より広い申告：R02・R03（訪問診療料）、R08・R15・R11（訪問診療料・往診料）。ほかは kubun と同じ（R17 の kubun は、訪問診療料・往診料・管理料をもう含んでいる）", () => {
+  it("kubun より広い申告：R02・R03（訪問診療料）、R08・R15・R11（訪問診療料・往診料）、(Ⅰ)2 の行で指摘が変わるルールの (Ⅰ)2。ほかは kubun と同じ（R17 の kubun は、訪問診療料・往診料・管理料をもう含んでいる）", () => {
     const extra = Object.fromEntries(rev.rules.map((r) => [r.id, readsOf(r, rev).filter((k) => !r.kubun.includes(k))]).filter(([, x]) => x.length > 0));
     const c = rev.consts;
+    // 訪問診療料(Ⅰ)2（v2）：(Ⅰ)2 の行の有無で指摘が変わるルール（R01〜R03・R08〜R11・R15・R17）は、(Ⅰ)2 を読む区分として申告する（EM §2-14。src/engine/visit2.ts）
+    const v2 = c.visit2Kubun ?? [];
     expect(extra).toEqual({
-      R02: c.visitKubun,
-      R03: c.visitKubun,
-      R08: [...c.visitKubun, c.oushin.kubun],
-      R11: [...c.visitKubun, c.oushin.kubun],
-      R15: [...c.visitKubun, c.oushin.kubun],
+      R01: v2,
+      R02: [...c.visitKubun, ...v2],
+      R03: [...c.visitKubun, ...v2],
+      R08: [...c.visitKubun, ...v2, c.oushin.kubun],
+      R09: v2,
+      R10: v2,
+      R11: [...c.visitKubun, c.oushin.kubun, ...v2],
+      R15: [...c.visitKubun, ...v2, c.oushin.kubun],
       // R17 の kubun は摘要欄の記載の表（EM §2-10 表 1）の区分。管理料は在支診（強化型以外）の区分だけが表にあるので、ほかの種別の管理料は reads だけにある
-      R17: kanriKubun(c).filter((k) => !rev.rules.find((r) => r.id === "R17")!.kubun.includes(k)),
+      R17: [...kanriKubun(c).filter((k) => !rev.rules.find((r) => r.id === "R17")!.kubun.includes(k)), ...v2],
+      // R20 は訪問診療料(Ⅰ)1・(Ⅰ)2 と管理料・連携指導料を kubun に持つ（reads と同じ）
     });
     const r17 = readsOf(rev.rules.find((r) => r.id === "R17")!, rev);
     expect([...c.visitKubun, c.oushin.kubun, ...c.kanri.rows.map((r) => r.kubun)].filter((k) => !r17.includes(k))).toEqual([]);

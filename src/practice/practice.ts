@@ -49,7 +49,8 @@ export function checkDraft(q: Question, ctx: ClaimContext, now: string, judge: J
   return { question: { ...q, drafts: [...q.drafts, { lines: ctx.lines, findings: result.findings, at: now }] }, result };
 }
 
-export const isCorrect = (r: EngineResult): boolean => r.findings.every((f) => f.kind === "情報不足");
+/** 正解か：確定の指摘がない。情報不足と、条件つきの指摘（申告のとおりなら。R20・R21 など。design.md §18-3 判断 F。round-82 C-540）は誤りに数えない */
+export const isCorrect = (r: EngineResult): boolean => r.findings.every((f) => f.kind === "情報不足" || f.params?.conditional === "1");
 
 /** 本人が確定する。ここでエンジンが判定する */
 export function confirm(q: Question, ctx: ClaimContext, now: string, judge: Judge = evaluate): Question {

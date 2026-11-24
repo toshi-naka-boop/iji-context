@@ -1,4 +1,5 @@
 // ルールエンジンの入出力の型（design.md §2-1・§2-2）
+import type { CareFacts, OtherFacts, ResidenceType } from "./care";
 import type { Revision } from "./revisions/types";
 
 /** 三値の事実。known=false は「わからない」（C-4） */
@@ -115,6 +116,18 @@ export type Facts = {
    * 施設の申告 building が none のときは使わない（どの患者も 1 人の区分）。持たない請求（同梱の症例・練習問題）は「分からない」
    */
   buildingBand?: Fact<BuildingBand>;
+  /**
+   * 住まいの種別（design.md §18-2。判断 B）。医療事務が確かめた申告（追記だけの表）の、その診療年月に効く値。申告がない請求は持たない。
+   * 2 値の residence はここから導く（自宅→居宅、有料・サ高住・特定施設・GH・特養など→施設入居等、老健・介護医療院・養護〔それ以外〕→2 値に当たらない）
+   */
+  residenceType?: Fact<ResidenceType>;
+  /**
+   * 月の途中で要介護度が変わり、区間で値が違う月か（design.md §18-12 の 4）。真なら careLevel は R03 の境が同じときの月の終わりの値で、
+   * R17 の包括的支援加算の状態の記載は比べない。持たない請求は偽
+   */
+  careLevelMixed?: Fact<boolean>;
+  /** 末期の悪性腫瘍か（医師に確かめる事実。患者ごとに続く。期限なし。design.md §18-4。判断 H）。持たない請求は「分からない」 */
+  terminalCancer?: Fact<boolean>;
 };
 
 export type FactKey = keyof Facts;
@@ -194,6 +207,14 @@ export type ClaimContext = {
    * 「申告だけを根拠に点数の高い区分へ直さない」決まりは、出どころが declaration の値にだけ掛ける
    */
   facilityBasis?: Partial<Record<FacilityFactKey, FacilityBasis>>;
+  /**
+   * 前の月の当院の請求に訪問診療料(Ⅰ)1 の行があったか（R09 の (Ⅰ)2 だけの月の加算。EM §2-14 W-120・U-72）。前の月の請求を取り込んでいなければ null。持たない請求も null として扱う
+   */
+  prevMonthVisit1?: boolean | null;
+  /** 介護保険との調整の申告（診療年月に効く申告から作る。design.md §18-3）。ない請求は申告なし（R20 の場面は「見ていません」） */
+  care?: CareFacts;
+  /** ほかの機関の申告（design.md §18-4）。ない請求は申告なし（R21 の場面は「見ていません」） */
+  others?: OtherFacts;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
 };

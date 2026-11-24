@@ -1,6 +1,11 @@
 // 画面から呼ぶ処理をまとめた層（API Route はここを薄く呼ぶだけ）。データは SQLite と、knowledge/・query-log/ のファイル
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
+import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
+import { careScopeNotes, hasCareScene, hasOthersScene } from "../engine/care-judge";
+import { kanriLines } from "../engine/predicates";
+import { careStateOf, certifiedOf } from "../patient/facts";
+import { monthRange } from "../demo/period";
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
 import { createClaimReviews } from "./app/claim-reviews";
@@ -46,7 +51,9 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const uke = createUke(ctx, clerks);
   const patientFactsOf = createPatients(ctx, clock, clerks, uke);
   const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
-  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf);
+  // 介護保険・ほかの医療機関との調整の申告（design.md §18-2。v37）
+  const care = createCare(ctx, clock, clerks);
+  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf, care);
   const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
   const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
   const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
@@ -230,6 +237,94 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
     localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
     createPair: localPairOps.createPair,
+    // 介護保険・ほかの医療機関との調整の申告（design.md §18-2・§18-5）。答えの月は、開いた請求の診療年月（C-513）
+    careHomes: care.careHomes,
+    saveCareHome: (clerkId: string, input: CareHomeInput) => care.saveCareHome(clerkId, input),
+    careView: (claimId: string) => {
+      const { receipt } = uke.receiptOf(claimId);
+      const patientId = patientFactsOf.ingest(receipt.patient);
+      const eff = care.effectiveCare(patientId, receipt.yearMonth);
+      const others = care.effectiveOthers(patientId, receipt.yearMonth);
+      // 今までに残した 2 値の居住の場所（住まいの種別の申告がない月だけ判定に使う。画面には「古い入力です」）
+      const legacy = eff.residenceType ? null : (patientFactsOf.latestPatientFacts(patientId).find((f) => f.key === "residence")?.value ?? null);
+      return { claimId, yearMonth: receipt.yearMonth, care: eff, legacyResidence: legacy, others: others.rows, none: others.none, homes: care.careHomes() };
+    },
+    /**
+     * 聞き取りの画面（design.md §18-5）：その診療年月の取り込んだ請求のうち、R20・R21 の場面の区分の行があり、使う申告が効いていない・分からない・
+     * 認定の期限が診療年月の中か前・確かめ直す日を過ぎた患者（1 患者 1 枚。聞く問いだけ）と、点検の範囲に「見ていません」がある患者の数。
+     * month を省くと、月ごとの数だけを返す（月の一覧の入口）
+     */
+    careCheck: (monthIn?: string, claimId?: string) => {
+      // ?claim= で開いたときは、その請求の診療年月を開く（C-513。round-82 C-543）
+      const month = monthIn ?? (claimId ? uke.receiptOf(claimId).receipt.yearMonth : undefined);
+      const all = casesOf.cases().filter((c) => !month || c.yearMonth === month);
+      const rows = all.flatMap((c) => {
+        const rev = resolveRevision(c.yearMonth);
+        const careScene = hasCareScene(c, rev.consts);
+        const othersScene = hasOthersScene(c, rev.consts);
+        if (!careScene && !othersScene) return [];
+        const { receipt } = uke.receiptOf(c.claimId);
+        const patientId = patientFactsOf.ingest(receipt.patient);
+        const eff = care.effectiveCare(patientId, c.yearMonth);
+        const certState = careStateOf(patientFactsOf.careRows(patientId), c.yearMonth);
+        const cert = certifiedOf(certState);
+        // 申請中が残る月も聞き取りの対象（認定の結果を聞く。EM U-71 の v40・v41 の書き足し）
+        const applying = certState.known && certState.segments.some((g) => g.kind === "申請中");
+        const residence = eff.residenceType?.value as { type: string; careHomeId?: string } | undefined;
+        const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
+        // 聞く問い（design.md §18-5）：申告がない・分からないのほか、判定に要る項目に「分からない」「欠け」が残るもの（round-82 C-541・X-391）
+        const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
+        if (careScene) {
+          // 認定：診療年月に効かない（期限が月の中か前・分からない・申請中のあとの月）患者だけ。期限が近いだけの患者は聞かない（P07。design.md §18-12 の 5）
+          if (!cert.known || applying) asks.push("careCert");
+          // 住まいの種別：申告がない・分からない・入所先の施設を付けていない（特養）・施設の値が分からない（確かめ直す日を過ぎたを含む）
+          const facility = residence && residence.type !== "自宅" && residence.type !== "分からない";
+          const h = c.care?.residence?.home ?? null;
+          const homeOpen = residence?.type === "特養（地域密着型を含む）" ? !h || h.mitoriFacility === "分からない" : !!h && (h.placedPhysician === "分からない" || h.mitoriFacility === "分からない");
+          if (!residence || residence.type === "分からない" || (facility && homeOpen) || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
+          // 短期入所：申告がない・分からない・使ったが日付や退院日からかが欠けている
+          const stay = eff.shortStay?.value as { status: string } | undefined;
+          const uses = c.care?.shortStay?.status === "使った" ? c.care.shortStay.uses : [];
+          const stayOpen = uses.some((u) => u.start === null || u.end === null || u.fromDischarge === "分からない");
+          if (((!stay || stay.status === "分からない") && askShortStay(c.care ?? {})) || stayOpen) asks.push("shortStay");
+        }
+        if (othersScene) {
+          // ほかの機関：申告がない・在医総管を取る側が分からない・(Ⅰ)2 の月に求めた機関の行がない・特別の関係やしていることが分からない
+          const rows = c.others?.rows ?? [];
+          const v2 = c.lines.some((l) => l.count > 0 && (rev.consts.visit2Kubun ?? []).includes(l.kubun));
+          // その請求の場面で読む項目の「分からない」だけを見る（§18-2 C-514。round-83 X-403）：⑤ 管理料の行→在医総管を取る側、⑥ (Ⅰ)2 の行→求めた機関と求めた日、
+          // ⑦ 訪問看護指示料の行→医療機関の特別の関係と、医療機関が行う訪問看護
+          const kanri = kanriLines(c, rev.consts).length > 0;
+          const shiji = c.lines.some((l) => l.count > 0 && l.kubun === rev.consts.care?.shiji);
+          const med = rows.filter((r) => r.kind === "医療機関");
+          const open =
+            !c.others ||
+            (kanri && rows.some((r) => r.kanriSide === "分からない")) ||
+            (v2 && !rows.some((r) => r.activities["求めによる訪問診療の求めた側"] === "はい" && r.referredOn !== null)) ||
+            (shiji && med.some((r) => r.specialRelation === "分からない" || (r.specialRelation === "はい" && (r.activities["医療機関が行う訪問看護"] ?? "分からない") === "分からない")));
+          if (open) asks.push("others");
+        }
+        // 「見ていません」の文（最初の行の「見ている場面」は除く）。答えても消えないもの（月の途中の変化・読みが割れるなど）もカードに出す
+        const notes = careScopeNotes(c, rev.consts).slice(1);
+        return [{ claimId: c.claimId, yearMonth: c.yearMonth, patient: receipt.patient.name, asks, notDone: notes.length > 0, notes }];
+      });
+      // 画面に出すのは、聞く問いがあるか「見ていません」がある患者（月の帯の「見ていない」の人数は、画面に出る人数に入る）
+      const shown = (r: (typeof rows)[number]) => r.asks.length > 0 || r.notDone;
+      const months = [...new Set(rows.map((r) => r.yearMonth))].sort().map((m) => ({ month: m, targets: rows.filter((r) => r.yearMonth === m && shown(r)).length, notDone: rows.filter((r) => r.yearMonth === m && r.notDone).length }));
+      return { month: month ?? null, months, targets: month ? rows.filter(shown) : [], notDoneCount: rows.filter((r) => r.notDone).length, homes: care.careHomes() };
+    },
+    saveCare: (claimId: string, clerkId: string, input: CareInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveCare(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOther: (claimId: string, clerkId: string, input: OtherInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOther(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOtherNone: (claimId: string, clerkId: string, input: Parameters<typeof care.saveOtherNone>[3]) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOtherNone(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
     ...erase,
     ...review,
     ...revision,

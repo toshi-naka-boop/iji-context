@@ -223,8 +223,8 @@ describe("請求ごとに確かめた事実のルート", () => {
   it("患者ごとに残した事実（居住の場所など 4 つ）は、同じ患者の別の月の請求にも効く。請求ごとに残した古い行は使わない", async () => {
     setRole("clerk");
     const residenceOf = (id: string) => instance.runAs(owner, () => instance.getApp().caseOf(id)).facts.residence;
-    // 次の月の請求：管理料の行があるので、居住の場所を聞かれる
-    expect(check("R16", NEXT).missing).toEqual(["residence@:clerk"]);
+    // 次の月の請求：管理料の行があるので、居住の場所を聞かれる（聞くのは住まいの種別。design.md §18-2 C-494）
+    expect(check("R16", NEXT).missing).toEqual(["residenceType@:clerk"]);
     expect([residenceOf(ID), residenceOf(NEXT)]).toEqual([{ known: false }, { known: false }]);
     // 形の違う値・期限つきは 400
     expect((await savePatient("residence", "病院")).status).toBe(400);

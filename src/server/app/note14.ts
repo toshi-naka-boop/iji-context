@@ -5,7 +5,7 @@ import type Database from "better-sqlite3";
 import { hasRevision, resolveRevision } from "../../engine/revisions";
 import { kubunOfCode } from "../../engine/revisions/codes";
 import type { Note14Result } from "../../facility/note14";
-import { isExpired } from "../../patient/facts";
+import { careLevelOf, careStateOf, effectiveFor } from "../../patient/facts";
 import { AUTO_TEXT, countMonths, type AutoMonth } from "../../note14/count";
 import { draftOf as stage2DraftOf, DRAFT_TEXT, type Draft, type DraftReceipt } from "../../note14/drafts";
 import { fieldKeys } from "../../note14/readings";
@@ -75,7 +75,7 @@ function view(r: Row) {
 }
 export type WorksheetView = ReturnType<typeof view>;
 
-export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "now">, uke: Pick<Uke, "parsedClaims" | "ukeReceipts">, patients: Pick<Patients, "existingIdOf" | "latestPatientFacts">) {
+export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock, "now">, uke: Pick<Uke, "parsedClaims" | "ukeReceipts">, patients: Pick<Patients, "existingIdOf" | "latestPatientFacts" | "careRows">) {
   const today = () => clock.now().slice(0, 10);
 
   /**
@@ -103,16 +103,20 @@ export function createNote14(ctx: Pick<AppContext, "sqlite">, clock: Pick<Clock,
         const live = r.lines.filter((l) => l.count > 0);
         return { yearMonth: r.yearMonth, patient: r.patient, families: [...new Set(live.flatMap((l) => (family.has(l.kubun) ? [family.get(l.kubun)!] : [])))], excluded: live.some((l) => ex.has(l.kubun)) };
       });
-    const now = clock.now();
+    // 患者の事実の期限は、今日ではなく診療年月で比べる（design.md §18-1。判断 A）：期間の月のどれかで効く値を使う（「期間中に 1 回でも」の読み）
     return stage2DraftOf(receipts, months, (p) => {
       const id = patients.existingIdOf(p);
       if (id === null) return null;
-      const facts = patients.latestPatientFacts(id).filter((f) => !isExpired(f, now));
-      const care = facts.find((f) => f.key === "careLevel")?.value;
-      const t8 = facts.find((f) => f.key === "table8_2")?.value;
-      if (care !== undefined && Number(care) >= 3) return true;
+      const t8Row = patients.latestPatientFacts(id).find((f) => f.key === "table8_2");
+      const t8 = t8Row && months.some((m) => effectiveFor(t8Row, m)) ? t8Row.value : undefined;
+      const rows = patients.careRows(id);
+      const levels = months.flatMap((m) => {
+        const c = careLevelOf(careStateOf(rows, m), 3);
+        return c.known ? [c.value] : [];
+      });
+      if (levels.some((v) => v >= 3)) return true;
       if (t8 === true) return true;
-      return care !== undefined && t8 === false ? false : null;
+      return levels.length > 0 && t8 === false ? false : null;
     });
   }
 

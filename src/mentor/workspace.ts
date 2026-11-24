@@ -159,7 +159,7 @@ export function clerkMemo(p: ClerkProfile, questions: Question[]): string {
     .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
     .slice(0, 20);
   const miss = new Map<string, number>();
-  for (const q of recent) for (const f of q.confirmed!.result.findings) if (f.kind !== "情報不足") miss.set(f.ruleId, (miss.get(f.ruleId) ?? 0) + 1);
+  for (const q of recent) for (const f of q.confirmed!.result.findings) if (f.kind !== "情報不足" && f.params?.conditional !== "1") miss.set(f.ruleId, (miss.get(f.ruleId) ?? 0) + 1);
   const missText = [...miss.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([r, n]) => `${r} ${n} 回`).join("、") || "なし";
   return [
     `# ${p.name}${p.callName}について`,

@@ -227,6 +227,34 @@ CREATE TABLE review_judgments (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INT
 CREATE INDEX review_judgments_item ON review_judgments (item_id, id);
 `,
   },
+  {
+    // 介護保険との調整（design.md §18-2。v37 21b）。どちらも追記だけ。
+    // care_homes：入所先の施設（院内の設定。患者のデータではない。患者を消しても残る）。home_id ごとに最新の行を使う。kind は住まいの種別のうち施設のもの、
+    //   placed_physician は当院の医師がその施設の配置医師か、mitori_facility は看取り介護加算の施設基準に合うか（どちらも はい・いいえ・分からない）。recheck_on は確かめ直す日。
+    // patient_care：患者の介護の申告。1 行＝患者×項目×from_month（項目は residenceType・shortStay・nurseInsurance）。value は値の JSON。
+    //   確かめた人（checked_by）・確かめた日（checked_on）・出どころ（source）は必須。「分からない」の行も残す。患者 id を持つので、患者マスタを消すと一緒に消す。
+    // ログ・監査ログ・AI に送る文脈に値・施設名を出さない（監査ログは項目の鍵だけ）
+    version: 21,
+    sql: `
+CREATE TABLE care_homes (id INTEGER PRIMARY KEY AUTOINCREMENT, home_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, placed_physician TEXT NOT NULL, mitori_facility TEXT NOT NULL, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, recheck_on TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX care_homes_home ON care_homes (home_id, id);
+CREATE TABLE patient_care (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, item TEXT NOT NULL, from_month TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX patient_care_patient ON patient_care (patient_id, item, id);
+`,
+  },
+  {
+    // ほかの医療機関・訪問看護ステーションとの調整（design.md §18-2。v37 21b）。どちらも追記だけで、患者 id を持つ（患者マスタを消すと一緒に消す）。
+    // other_institutions：1 行＝患者×機関（inst_id）×from_month。終わったら end_month を入れた行を足す。name は自由記入の機関名（判定・ログ・AI に出さない）。
+    //   kind は医療機関・訪問看護ステーション、special_relation は特別の関係（三値。判断 D）、kanri_side は在医総管を取る側、activities は していること（項目ごとに三値）の JSON、referred_on は求めた日。
+    // other_institutions_none：「ほかの機関はないと確かめた」。for_month（確かめた診療月）から 6 か月の診療月に効く（設計値。config）
+    version: 22,
+    sql: `
+CREATE TABLE other_institutions (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, inst_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, special_relation TEXT NOT NULL, kanri_side TEXT NOT NULL, activities TEXT NOT NULL, referred_on TEXT, from_month TEXT NOT NULL, end_month TEXT, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX other_institutions_patient ON other_institutions (patient_id, inst_id, id);
+CREATE TABLE other_institutions_none (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, for_month TEXT NOT NULL, source TEXT NOT NULL, checked_by TEXT NOT NULL, checked_on TEXT NOT NULL, entered_at TEXT NOT NULL);
+CREATE INDEX other_institutions_none_patient ON other_institutions_none (patient_id, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

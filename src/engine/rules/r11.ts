@@ -4,14 +4,17 @@ import { billedOushinDays, billedVisitDays } from "../predicates";
 import type { RevisionConsts } from "../revisions/types";
 import type { ClaimContext, Finding, Rule } from "../types";
 import { fact, finding, has, lineOf } from "./util";
+import { withVisit2Kubun } from "../visit2";
 
 export function makeR11(c: RevisionConsts): Rule {
   const { judgement: D026, bnp: BNP, bnpJudgement: BNP_JUDGEMENT, rapid: RAPID } = c.tests;
   /** 訪問診療料または往診料を算定した日に、外来迅速検体検査加算の行があるか */
-  function rapidAtHome(ctx: ClaimContext): boolean {
-    const home = new Set([...billedVisitDays(ctx, c), ...billedOushinDays(ctx, c)]);
+  function rapidAtHome(ctx: ClaimContext, cc: RevisionConsts = c): boolean {
+    const home = new Set([...billedVisitDays(ctx, cc), ...billedOushinDays(ctx, cc)]);
     return (lineOf(ctx, RAPID)?.dates ?? []).some((d) => home.has(d));
   }
+  /** 訪問診療料(Ⅰ)2 の日も訪問診療の日として数える見方（EM §2-14 W-125。確度 中。U-70：採るが指摘は条件つき） */
+  const cv = withVisit2Kubun(c);
   return {
     id: "R11",
     kubun: [...D026, BNP, RAPID],
@@ -25,13 +28,16 @@ export function makeR11(c: RevisionConsts): Rule {
     // 判断料は区分ごとに月 1 回（電子点数表では算定回数の月 1 回）。BNP の判断料の区分・外来迅速検体検査加算は、表に載らないので申告しない
     covers: () => ({ kind: "回数", finding: "judgement_once_a_month", kubun: D026.map((k) => [k]) }),
     appliesTo: (ctx) => [...D026, BNP, RAPID].some((k) => has(ctx, k)),
-    needs: (ctx) => (rapidAtHome(ctx) ? ["rapidSameDayDocumented"] : []),
+    needs: (ctx) => (rapidAtHome(ctx, cv) ? ["rapidSameDayDocumented"] : []),
     check(ctx) {
       const out: Finding[] = [];
       const over = D026.filter((k) => (lineOf(ctx, k)?.count ?? 0) > 1);
       if (over.length) out.push(finding(this, "背反", over, "judgement_once_a_month"));
       if (has(ctx, BNP) && !has(ctx, BNP_JUDGEMENT)) out.push(finding(this, "区分誤り", [BNP], "bnp_is_biochem2"));
       if (rapidAtHome(ctx) && !fact(ctx, "rapidSameDayDocumented")) out.push(finding(this, "要件不足", [RAPID], "rapid_needs_same_day_doc"));
+      // (Ⅰ)2 の日だけに当たるときは条件つき（U-70）
+      else if (rapidAtHome(ctx, cv) && !fact(ctx, "rapidSameDayDocumented"))
+        out.push({ ...finding(this, "要件不足", [RAPID], "rapid_needs_same_day_doc_visit2"), params: { premise: "訪問診療料(Ⅰ)2 の日も訪問診療の日と同じに扱う読みなら", conditional: "1" } });
       return out;
     },
   };

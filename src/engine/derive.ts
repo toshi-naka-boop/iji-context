@@ -1,6 +1,8 @@
 // deriveLines(input, rev)：出来事と確かめた事実から、算定行を決定的に導出する（design.md §2-8。spec FR-94〜103）
 // 決めるのは「どの区分を何回・どの日に立てるか」だけ。要件（背反・要件不足・週の限度など）は evaluate が判定する。
 // 判定の述語は predicates.ts のものを検証（ルール）と共有する。LLM は使わない（src/mentor と LLM の SDK を import しない）
+import { familySilence } from "./care-scope";
+import { hasVisit2, withVisit2Kubun } from "./visit2";
 import { requiredComments, type RequiredComment } from "./comments";
 import { targetOfNeed } from "./index";
 import {
@@ -32,6 +34,8 @@ export type DeriveInput = {
   facts: Facts;
   events: ClaimEvent[];
   history?: ClaimContext["history"];
+  /** 介護保険との調整の申告（design.md §18-3）。管理料の族を言わない月（familySilence）を決めるのに使う。省くと申告なし */
+  care?: ClaimContext["care"];
   /** 導出しない区分の行（入力どおりに通す） */
   manual: ClaimLine[];
   /** 要選択への答え（pending の id → 選んだ選択肢の id） */
@@ -66,6 +70,8 @@ export type LineBasis = {
   tentative: boolean;
 };
 
+/** care_family：住まいの種別・短期入所などで管理料の族を決めない月（design.md §18-2・§18-3。介護保険との調整の点検が見る） */
+export type PendingReason = "note14_conflict" | "note8" | "declaration_conflict" | "care_family";
 export type PendingOption = { id: string; label: string; kubun: string[] };
 export type Pending =
   /** date は、日付ごとの事実（sameDaySeparate・sameDayOushinAfterVisit）の対象の日 */
@@ -77,7 +83,7 @@ export type Pending =
       blocks: string[];
       date?: string;
       /** 事実がないのではなく決められない理由（段 17h）：note14_conflict＝申告（通常）と原請求（減の行）の食い違い（画面は R18.note14_conflict と同じ文）／note8＝注8 に当たるかを見ていないので減の行を 1 つに決められない／declaration_conflict＝申告（2 人以上の建物はない）と原請求（2 人以上の区分の行）の食い違い（画面は R19.declaration_conflict と同じ文。round-61 X-200） */
-      reason?: "note14_conflict" | "note8" | "declaration_conflict";
+      reason?: PendingReason;
     }
   | { kind: "要選択"; id: string; question: string; options: PendingOption[]; blocks: string[] };
 
@@ -85,7 +91,7 @@ export type Pending =
  * 導出の未対応。grade_not_in_revision は、その版に施設の種別の区分がない（比較用の版）。baseup_note5 は、注5 の区分の表を持たない版（比較用の版）。
  * 単一建物の人数別の管理料は段 17f で導出する（D03 が人数の区分を buildingBandOf で引く。design.md §15-4）
  */
-export type Unsupported = { code: "grade_not_in_revision" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement"; detail: string };
+export type Unsupported = { code: "grade_not_in_revision" | "baseup_note5" | "unmapped_test_item" | "rx_same_day_multi" | "terminal_requirement" | "visit2_pending"; detail: string };
 
 export type DeriveResult = {
   revisionId: string;
@@ -179,7 +185,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   const notBilled: DeriveResult["notBilled"] = [];
   const asked = new Set<string>();
   // 述語に渡す請求。行は「ここまでに立てた行」（lines は同じ配列を指す）。請求 id・審査支払機関は述語が見ないので空・仮の値
-  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, commentsKnown: false, lines, history: input.history };
+  const ctx: ClaimContext = { claimId: "", yearMonth: input.yearMonth, facility, payer: "国保連", prefecture: facility.prefecture, facts, events: input.events, recordsKnown: true, commentsKnown: false, lines, history: input.history, ...(input.care ? { care: input.care } : {}) };
 
   const ref = (e: EventRef): EventRef => ({ type: e.type, date: e.date });
   /** その版の点数表にある区分か。版で有無が変わる導出（物価対応料など）は、これで決める（版の id では分けない。design.md §11-2） */
@@ -190,7 +196,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     lines.push({ kubun, count: sorted.length, dates: sorted });
     basis.push({ kubun, dates: sorted, derive: b.derive, events: b.events.map(ref), needs: b.needs ?? [], ...(b.choice ? { choice: b.choice } : {}), tentative: b.tentative ?? false });
   }
-  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: "note14_conflict" | "note8" | "declaration_conflict") => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
+  const lack = (id: string, need: NeedKey, blocks: string[], date?: string, reason?: PendingReason) => pending.push({ kind: "事実不足", id, need, target: targetOfNeed(need), blocks, ...(date ? { date } : {}), ...(reason ? { reason } : {}) });
   /** 要選択。答えが選択肢にあればその id を返し、なければ pending に出す（本人が選ぶまで行にしない。FR-97） */
   function ask(id: string, question: string, options: PendingOption[], blocks: string[]): string | undefined {
     asked.add(id);
@@ -201,8 +207,20 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   }
 
   const byDate = <T extends { date: string }>(xs: T[]) => [...xs].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const visits = byDate(eventsOf(ctx, "visit"));
+  // 訪問診療料(Ⅰ)2 の行が入力にある月（design.md §18-12 の 8。EM §2-14 の 2-2）：訪問の出来事だけでは (Ⅰ)1 か (Ⅰ)2 か決められない（D01 は決められない）。
+  // 出来事の訪問は立てず（保留）、確定した (Ⅰ)1 だけ（ここでは 0）で数え直す。保留の訪問から管理料・加算・処方箋料（D03〜D05・D10）と、付く先の (Ⅰ)1 のない加算（D11・D12）は立てない。
+  // (Ⅰ)2 の日は、往診料・再診料（D02）・DX 加算（D06）・ベースアップ評価料(Ⅰ)（D07）・物価対応料（D08）で訪問診療の日として数える（W-115〜W-117・W-122・W-124）
+  const v2Lines = hasVisit2(input.manual, c) ? input.manual.filter((l) => (c.visit2Kubun ?? []).includes(l.kubun) && l.count > 0) : [];
+  const v2Dates = new Set(v2Lines.flatMap((l) => l.dates));
+  const allVisits = byDate(eventsOf(ctx, "visit"));
+  const v2Held = v2Lines.length > 0 && allVisits.length > 0;
+  if (v2Held) unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行がある月なので、訪問の出来事が (Ⅰ)1 か (Ⅰ)2 か決められず、訪問診療料と、そこから立てる管理料・加算・処方箋料・看取り加算・死亡診断加算・在宅ターミナルケア加算は立てていません" });
+  const visits = v2Lines.length > 0 ? [] : allVisits;
   const oushins = byDate(eventsOf(ctx, "oushin"));
+  /** (Ⅰ)2 の行も訪問診療料として数える述語の見方（D02・D06〜D08） */
+  const cv = withVisit2Kubun(c);
+  const ctxV: ClaimContext = { ...ctx, lines: [] };
+  Object.defineProperty(ctxV, "lines", { get: () => [...lines, ...v2Lines] });
   const rxs = byDate(eventsOf(ctx, "prescription"));
   const visitKubunOf = (e: { sameBuildingCount: number }) => (e.sameBuildingCount >= 2 ? c.visitKubun[1] : c.visitKubun[0]);
   /** 訪問診療料の回数に依存する区分（管理料と、それに付く加算。管理料が決まらない間は処方箋料も） */
@@ -265,10 +283,24 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const mine = billedVisits.filter((v) => visitKubunOf(v) === k);
     add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate", "sameDayOushinAfterVisit"] : [] });
   }
-  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill");
+  // (Ⅰ)2 の日の往診料は、(Ⅰ)1 と同じく同じ日の関係（R10 と同じ述語 sameDayOf）で決める（W-122）：訪問診療のあとの急変の往診なら立て、
+  // 1 回の診療・急変の往診でないと分かれば立てない。分からなければ聞いて保留にし、言い切らない（round-82 C-532）
+  const v2Oushin = new Map<string, Decision>();
+  for (const d of [...v2Dates].filter((x) => oushins.some((o) => o.date === x))) {
+    const s2 = sameDayOf(ctx, d);
+    if (s2.known === false) {
+      lack(`D01-sameDay:${d}`, s2.need, [c.oushin.kubun, ...dayBlocks], d);
+      v2Oushin.set(d, "hold");
+    } else if (s2.value === "after") v2Oushin.set(d, "bill");
+    else {
+      v2Oushin.set(d, "skip");
+      for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: s2.value === "same" ? "same_encounter" : "oushin_not_after_visit" });
+    }
+  }
+  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill" && (v2Oushin.get(o.date) ?? "bill") === "bill");
   add(c.oushin.kubun, billedOushins.map((o) => o.date), { derive: "D02", events: billedOushins });
   // 往診料と併せて再診料（留意 C001 (11)。L-40 の推奨案）。訪問診療料も立てた日には重ねない（算定を増やさない側）
-  const visitDaySet = new Set(billedVisits.map((v) => v.date));
+  const visitDaySet = new Set([...billedVisits.map((v) => v.date), ...v2Dates]);
   const revisitOushins = billedOushins.filter((o) => !visitDaySet.has(o.date));
   add(c.oushin.revisit, revisitOushins.map((o) => o.date), { derive: "D02", events: revisitOushins });
   const emergencies = billedOushins.filter((o) => o.kind === "emergency");
@@ -291,7 +323,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   /** 管理料を立てるかが決まっていない（保留か未対応）。決まるまで、処方箋料（D10）も立てない */
   let kanriOpen = false;
   const care = facts.comprehensiveCare;
-  if (visitHeld) kanriOpen = true;
+  if (visitHeld || v2Held) kanriOpen = true;
   else if (!care.known) {
     lack(`D03-care:${input.yearMonth}`, "comprehensiveCare", kanriBlocks);
     kanriOpen = true;
@@ -303,8 +335,12 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       // 施設の種別が分からないと、管理料の区分（族×種別×区分）が決まらない（design.md §15-4）
       lack(`D03-grade:${input.yearMonth}`, "facility.grade", kanriBlocks);
       kanriOpen = true;
+    } else if (familySilence(ctx) !== null) {
+      // 住まいの種別が 2 値に当たらない・月の途中で住まいが変わった・短期入所生活介護などの月は、族を決めない（R16 と同じ。design.md §18-2・§18-3。C-500）
+      lack(`D03-residence:${input.yearMonth}`, "residenceType", kanriBlocks, undefined, "care_family");
+      kanriOpen = true;
     } else if (!family.known) {
-      lack(`D03-residence:${input.yearMonth}`, "residence", kanriBlocks);
+      lack(`D03-residence:${input.yearMonth}`, "residenceType", kanriBlocks);
       kanriOpen = true;
     } else if (tier.known === false) {
       lack(`D03-tier:${input.yearMonth}`, tier.need, kanriBlocks);
@@ -359,17 +395,19 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
   }
 
   // --- D06：在宅医療DX情報活用加算。月 1 回、最初の訪問診療料の日
-  if (visitDays.length && Object.values(c.dx.tiers).some(has)) {
+  // D06〜D08 は (Ⅰ)2 の日も訪問診療の日として数える（W-115〜W-117・W-124）
+  const visitDaysV = billedVisitDays(ctxV, cv);
+  if (visitDaysV.length && Object.values(c.dx.tiers).some(has)) {
     const dx = facility.dxTier;
     if (!dx.known) lack(`D06-dx:${input.yearMonth}`, "facility.dxTier", Object.values(c.dx.tiers));
-    else if (dx.value !== "なし") add(c.dx.tiers[dx.value], [visitDays[0]], { derive: "D06", events: billedVisits.slice(0, 1), needs: ["facility.dxTier"] });
+    else if (dx.value !== "なし") add(c.dx.tiers[dx.value], [visitDaysV[0]], { derive: "D06", events: billedVisits.slice(0, 1), needs: ["facility.dxTier"] });
   }
 
   // --- D07・D08：ベースアップ評価料(Ⅰ)と物価対応料。訪問診療料を立てた日は訪問診療時の区分、往診料だけを立てた日は再診時等の区分。
   // 両方を立てた日は訪問診療時の区分だけ（再診時等を重ねない。L-32）。行を立てなかった日は数えない
-  const oushinOnly = oushinOnlyBilledDays(ctx, c);
+  const oushinOnly = oushinOnlyBilledDays(ctxV, cv);
   const oushinOnlyEvents = billedOushins.filter((o) => oushinOnly.includes(o.date));
-  if (visitDays.length || oushinOnly.length) {
+  if (visitDaysV.length || oushinOnly.length) {
     const bu = facility.baseUp;
     const note5 = c.baseUp.note5;
     if (![...c.baseUp.visit, c.baseUp.revisit].some(has)) {
@@ -379,9 +417,10 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     else if (bu.value !== "なし") {
       // 注5 の届出のある施設は、同じ区分の注5 の区分で立てる（design.md §15-4。X-133）
       const kubunOf = (k: string) => (bu.value === "注5" ? note5![k] : k);
-      c.visitKubun.forEach((vk, i) => {
-        const days = visitDays.filter((d) => visitKubunOn(ctx, c, d).includes(vk));
-        add(kubunOf(c.baseUp.visit[i]), days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
+      // (Ⅰ)2 イの日は 3 イ、(Ⅰ)2 ロの日は 3 ロ（W-115）。cv.visitKubun は [(Ⅰ)1 イ, (Ⅰ)1 ロ, (Ⅰ)2 イ, (Ⅰ)2 ロ]
+      cv.visitKubun.forEach((vk, i) => {
+        const days = visitDaysV.filter((d) => visitKubunOn(ctxV, cv, d).includes(vk));
+        add(kubunOf(c.baseUp.visit[i % 2]), days, { derive: "D07", events: billedVisits.filter((v) => days.includes(v.date)), needs: ["facility.baseUp"] });
       });
       add(kubunOf(c.baseUp.revisit), oushinOnly, { derive: "D07", events: oushinOnlyEvents, needs: ["facility.baseUp"] });
     }
@@ -390,7 +429,7 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
       // この版に物価対応料の区分がない：施設の設定を聞かない
     } else if (!pr.known) lack(`D08-price:${input.yearMonth}`, "facility.priceResponse", [...c.price.visit, c.price.revisit]);
     else if (pr.value) {
-      add(c.price.visit[0], visitDays, { derive: "D08", events: billedVisits, needs: ["facility.priceResponse"] });
+      add(c.price.visit[0], visitDaysV, { derive: "D08", events: billedVisits, needs: ["facility.priceResponse"] });
       add(c.price.revisit, oushinOnly, { derive: "D08", events: oushinOnlyEvents, needs: ["facility.priceResponse"] });
     }
   }
@@ -439,7 +478,8 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
 
   // --- D11・D12：看取り加算・死亡診断加算・ターミナルケア加算は自動で立てない（FR-98）。本人が選んだときだけ行にする
   const death = byDate(eventsOf(ctx, "death"))[0];
-  if (death) {
+  // (Ⅰ)2 の行がある月で、確定した (Ⅰ)1 がなければ、C001 の看取り加算・死亡診断加算・在宅ターミナルケア加算は立てない（付く先は (Ⅰ)1。W-120）
+  if (death && !(v2Lines.length > 0 && billedVisits.length === 0)) {
     const { mitori, shibou } = c.terminal;
     // 在宅ターミナルケア加算は施設の種別で区分が分かれる（design.md §15-4）。保留が待たせるのは種別の区分で、種別が分からない間は全部の種別の区分
     const terminalKubun = byGradeOf(c.terminal.terminal);

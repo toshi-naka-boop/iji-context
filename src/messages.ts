@@ -1,6 +1,7 @@
 // エンジンの指摘を画面に出す文言（UI 文言。禁止語を使わない。点数で「多く取る」方向に誘わない）
 // 判定の中身はエンジンが決める。ここは言い方だけ
 import type { FacilityFactKey, FactKey, Finding, NeedKey, Payer } from "./engine/types";
+import type { PendingReason } from "./engine/derive";
 import type { GenericFinding, GenericNotRun } from "./generic/types";
 import type { TriggerKind } from "./lifecycle/types";
 import type { PatientFinding } from "./patient/checks";
@@ -70,6 +71,32 @@ export const FINDING_TEXT: Record<string, string> = {
   // R19 単一建物の人数（design.md §15-4。段 17f）。{fixName} はその患者の人数の区分に合う区分の名前
   "R19.use_band": "単一建物診療患者の人数の区分が、行の区分と違います。{fixText}",
   "R19.declaration_conflict": "申告（2 人以上の建物はない）と請求が食い違っています。申告を確かめてください",
+  // 訪問診療料(Ⅰ)2 の扱い（EM §2-14。v38）
+  "R01.visit2_only": "{premise}、この月は区分を決める訪問診療料(Ⅰ)1 の算定がありません（区分の回数は (Ⅰ)1 だけで数えます）。他の医療機関の求めによる訪問診療料(Ⅰ)2 を算定する側は、在医総管・施医総管を算定しない読みです",
+  "R09.addition_needs_visit1": "看取り加算・死亡診断加算・在宅ターミナルケア加算は訪問診療料(Ⅰ)1 に付ける加算です。この月は (Ⅰ)1 がなく、前の月にも (Ⅰ)1 がなく、死亡日に往診料もありません",
+  "R11.rapid_needs_same_day_doc_visit2": "{premise}、訪問診療料(Ⅰ)2 の日の外来迅速検体検査加算は、当日中に結果を説明し文書で提供した記録を確かめてから算定します",
+  // 介護保険との調整（R20）・ほかの医療機関との調整（R21）。どれも条件つきで、文は前提から始まる（design.md §18-3・§18-4。v37）
+  "R20.tokuyou": "{premise}、特養の入所者には、末期の悪性腫瘍か施設での看取りの場合でなければ、訪問診療料・施医総管は算定できません",
+  "R20.rouken": "{premise}、老健・介護医療院の入所者には、訪問診療料・在医総管・施医総管は算定できません",
+  "R20.ryouyou_visit": "{premise}、短期入所療養介護の期間の訪問診療料（{days}）は算定できません",
+  "R20.ryouyou_kanri": "{premise}、訪問診療の日がすべて短期入所療養介護の期間にあるので、在医総管・施医総管は算定できません",
+  "R20.seikatsu_family": "{premise}、短期入所生活介護の利用中は、在医総管ではなく施医総管で算定します",
+  "R20.seikatsu_prior_kanri": "{premise}、利用前 30 日以内に当院が訪問診療料等を算定していないので、施医総管は算定できません",
+  "R20.seikatsu_haichi_kanri": "{premise}、当院の医師は利用先の施設の医師なので、施医総管は算定できません",
+  "R20.seikatsu_prior_visit": "{premise}、利用前 30 日以内に当院が訪問診療料等を算定していないので、短期入所生活介護の期間の訪問診療料（{days}）は算定できません",
+  "R20.seikatsu_haichi_visit": "{premise}、当院の医師は利用先の施設の医師なので、短期入所生活介護の期間の訪問診療料（{days}）は算定できません",
+  "R20.seikatsu_30": "{premise}、短期入所生活介護の利用開始後 30 日を過ぎた日の訪問診療料（{days}）は算定できません",
+  "R20.shoutaki_family": "{premise}、小規模多機能型居宅介護・看護小規模多機能型居宅介護の宿泊の利用中は、施医総管ではなく在医総管で算定します",
+  "R20.shoutaki_prior_kanri": "{premise}、利用前 30 日以内に当院が訪問診療料等を算定していないので、在医総管は算定できません",
+  "R20.shoutaki_haichi_kanri": "{premise}、当院の医師は利用先の施設の医師なので、在医総管は算定できません",
+  "R20.shoutaki_prior_visit": "{premise}、利用前 30 日以内に当院が訪問診療料等を算定していないので、宿泊サービスの期間の訪問診療料（{days}）は算定できません",
+  "R20.shoutaki_haichi_visit": "{premise}、当院の医師は利用先の施設の医師なので、宿泊サービスの期間の訪問診療料（{days}）は算定できません",
+  "R20.shoutaki_30": "{premise}、宿泊サービスの利用開始後 30 日を過ぎた日の訪問診療料（{days}）は算定できません",
+  "R20.renkei": "{premise}、要介護・要支援の認定のある患者には、在宅患者連携指導料は算定できません",
+  "R21.kanri_one": "{premise}、在医総管・施医総管は主として診療を行う 1 つの医療機関だけが算定します",
+  "R21.visit2_count": "{premise}、他の医療機関の求めによる訪問診療料(Ⅰ)2 は月 1 回です（この月は {count} 回）",
+  "R21.visit2_6m": "{premise}、求めた日を含む月から 6 月を超える訪問診療料(Ⅰ)2 の算定は、新たな求めか別に定める疾病等の場合に限ります（摘要欄に理由を書きます）",
+  "R21.shiji": "{premise}、特別の関係にある医療機関が同じ月に訪問看護・指導料を算定しているので、訪問看護指示料は算定できません",
 };
 
 /**
@@ -278,6 +305,9 @@ export const FACT_LABEL: Record<FactKey, string> = {
   rapidSameDayDocumented: "検査の結果を当日中に説明し、文書で提供した記録があるか",
   comprehensiveCare: "管理料（在医総管・施設総管）を算定する患者か",
   buildingBand: "単一建物診療患者の人数の区分（みなしを当てたあとの、請求に使う区分）",
+  residenceType: "住まいの種別（自宅・有料老人ホーム・サ高住・特養・老健など）",
+  terminalCancer: "末期の悪性腫瘍か",
+  careLevelMixed: "月の途中で要介護度が変わったか",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
@@ -331,6 +361,9 @@ export function findingText(f: Finding): string {
     const day = f.missing.date ? `（${Number(f.missing.date.slice(5, 7))}月${Number(f.missing.date.slice(8, 10))}日）` : "";
     // カルテ側の記録がない請求：入力を求めない（記録を足す手段がこの請求にはない。design.md §11-6）
     if (f.missing.field === "chartRecord") return "この請求にはカルテ側の記録がありません。訪問・処方・退院などの記録で決まる点は確かめていません";
+    // 訪問診療料(Ⅰ)2（EM §2-14）：同じ月に (Ⅰ)1 と (Ⅰ)2 がある月は判定不能（U-67）、在医総管の月の訪問日の記載は (Ⅰ)2 の日の扱いを決めていない
+    if (f.missing.field === "visit2Mixed") return "同じ月に訪問診療料(Ⅰ)1 と (Ⅰ)2（他の医療機関の求めによる）の両方があるので、在医総管・施医総管の区分・包括的支援加算・摘要欄の訪問日は判定していません。主治医が移った月かなど、事情を確かめてください";
+    if (f.missing.field === "visit2Undecided") return "訪問診療料(Ⅰ)2 の日を摘要欄の訪問日に含めるかを確かめていないので、この記載は判定していません";
     // 点検の対象外の行がある請求：ほかの行の有無や回数で決まる点は決められない（design.md §11-11）
     if (f.missing.field === "unsupportedLines") return "この請求には点検の対象外の行があるため、決められません";
     // 処方の記録と対応がとれない行：区分誤りとも正しいとも言えない（design.md §11-5）
@@ -474,7 +507,8 @@ export function eventText(event: string, trigger?: string): string {
  * 導出の保留（事実不足）の文（src/chart/claim.ts）。reason のある保留は、事実がないのではなく決められない理由の文（段 17h）：
  * note14_conflict は R18.note14_conflict と同じ文と、施設の申告の画面への案内（round-58 C-330＝X-181）。declaration_conflict は R19.declaration_conflict と同じ文と同じ案内（round-61 X-200）。note8 は注8 を見ていないので減の行を決められないこと（round-57 X-171）
  */
-export function pendingText(p: { need: NeedKey; date?: string; reason?: "note14_conflict" | "note8" | "declaration_conflict" }, md: (d: string) => string): string {
+export function pendingText(p: { need: NeedKey; date?: string; reason?: PendingReason }, md: (d: string) => string): string {
+  if (p.reason === "care_family") return "住まいの種別（老健・介護医療院・養護老人ホームなど）・月の途中の住まいの変化・短期入所などで、この月の管理料の族（在医総管か施設総管か）を決めていません（介護保険との調整の点検で見ます）";
   if (p.reason === "note14_conflict") return `${FINDING_TEXT["R18.note14_conflict"]}。${DECLARATION_GUIDE}`;
   if (p.reason === "declaration_conflict") return `${FINDING_TEXT["R19.declaration_conflict"]}。${DECLARATION_GUIDE}`;
   if (p.reason === "note8") return "注8 の減算に当たるかを見ていないので、減の行を 1 つに決められません";

@@ -20,6 +20,10 @@ import { makeR16 } from "../rules/r16";
 import { makeR17 } from "../rules/r17";
 import { makeR18 } from "../rules/r18";
 import { makeR19 } from "../rules/r19";
+import { makeR20 } from "../rules/r20";
+import { makeR21 } from "../rules/r21";
+import { careCodes, carePoints, careShikibetsu } from "./r2026-care";
+import { withVisit2Reads } from "../visit2";
 import { changes } from "./r2026-changes";
 import { bandCodes, bandPoints, bandRows, bandShikibetsu } from "./r2026-band";
 import { note14Codes, note14Pairs, note14Points, note14Shikibetsu, note14WithNote8 } from "./r2026-note14";
@@ -144,11 +148,13 @@ const points: Record<string, KubunDef> = {
   O001_3RO_N5: em("外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時ロ（注5）", "O001 3 ロ 注5", 26),
   // 単一建物 2 人以上の管理料の区分（EM §2-2 R8-95〜R8-190。段 17f。r2026-band.ts）
   ...bandPoints,
+  // 介護保険・ほかの医療機関との調整の区分（EM §2-8。v37 21c。r2026-care.ts）
+  ...carePoints,
 };
 // 注14 の減の行（EM §2-8 の「注14 の減算の行」。段 17h。r2026-note14.ts）
 Object.assign(points, note14Points(points));
-const codes = { ...baseCodes, ...bandCodes, ...note14Codes };
-const shikibetsu = { ...baseShikibetsu, ...bandShikibetsu, ...note14Shikibetsu };
+const codes = { ...baseCodes, ...bandCodes, ...note14Codes, ...careCodes };
+const shikibetsu = { ...baseShikibetsu, ...bandShikibetsu, ...note14Shikibetsu, ...careShikibetsu };
 const normalKanriRows: KanriRow[] = [
   ...kanriRows({
     在医総管: { "1B": ["C002_1B_I1", "C002_1B_RO1", "C002_1B_NI1"], "1N": ["C002_1N_I1", "C002_1N_RO1", "C002_1N_NI1"], "2": ["C002_2I1", "C002_2RO1", "C002_2NI1"], "3": ["C002_3I1", "C002_3RO1", "C002_3NI1"] },
@@ -166,6 +172,10 @@ const reducedKanriRows: KanriRow[] = Object.entries(note14Pairs).map(([kubun, no
 
 const consts: RevisionConsts = {
   visitKubun: ["C001_1I", "C001_1RO"],
+  // 介護保険・ほかの医療機関との調整（R20・R21。design.md §18-3・§18-4）。訪問診療料(Ⅰ)2 は他の保険医療機関の求めによる（EM R8-274）。
+  // referralMonths：求めた日を含む月から 6 月まで（R8-274 ③）。stayDays：利用開始後 30 日まで、priorDays：利用開始前 30 日以内（R8-248・R8-250）
+  visit2Kubun: ["C001_2I", "C001_2RO"],
+  care: { renkei: "C010", shiji: "C007", referralMonths: 6, stayDays: 30, priorDays: 30 },
   kanri: {
     // 族×種別×区分（design.md §15-4 の表。EM R8-9〜11・19・55〜72）の単一建物 1 人の区分と、人数の区分の行（EM R8-95〜R8-190。段 17f）、注14 の減の行（段 17h）
     rows: [...normalKanriRows, ...reducedKanriRows],
@@ -269,12 +279,15 @@ export const r2026: Revision = {
   comments,
   commentCodes,
   kisaiYoshi,
-  rules: [
+  // 訪問診療料(Ⅰ)2 の行で「決められない」に置くルールは、(Ⅰ)2 を読む区分として申告する（design.md §18-12 の 8。src/engine/visit2.ts）
+  rules: withVisit2Reads([
     makeR01(consts, points),
     ...[makeR02, makeR03, makeR04, makeR05, makeR06, makeR07, makeR08, makeR09, makeR10, makeR11, makeR12, makeR13, makeR14, makeR15, makeR16].map((make) => make(consts)),
     makeR17({ consts, comments, commentCodes }),
     makeR18(consts, points),
     makeR19(consts, points),
-  ],
+    makeR20(consts),
+    makeR21(consts),
+  ], { consts }),
   changes,
 };

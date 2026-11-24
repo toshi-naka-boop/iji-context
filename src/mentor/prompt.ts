@@ -113,7 +113,7 @@ export function turnContext(engine: EngineResult, reveal: boolean, cross: CrossI
       : []),
   ].join("\n");
   if (reveal) {
-    return [head, `このレセプトに当てはまるルール（違反の有無によらない）：${engine.applied.join("、") || "なし"}`, "ユスティの判定（これが正）：", JSON.stringify({ total: engine.total, findings: engine.findings.map((f) => ({ ruleId: f.ruleId, kind: f.kind, lineRefs: f.lineRefs, missing: f.missing, reference: f.reference })) })].join("\n");
+    return [head, `このレセプトに当てはまるルール（違反の有無によらない）：${engine.applied.join("、") || "なし"}`, "ユスティの判定（これが正）：", JSON.stringify({ total: engine.total, findings: engine.findings.map((f) => ({ ruleId: f.ruleId, kind: f.kind, lineRefs: f.lineRefs, missing: f.missing, reference: f.reference, ...(f.params?.conditional === "1" ? { conditional: true } : {}) })) }), ...(engine.findings.some((f) => f.params?.conditional === "1") ? ["conditional が真の指摘は、医療事務が確かめた申告のとおりならの条件つきで、本人の確定の誤りではない。「申告のとおりなら」と添えて伝える（申告の中身は渡していない）"] : [])].join("\n");
   }
   // 情報不足は本人の誤りでも答えでもないので、入っていない事実と確かめ方を画面と同じ文で渡す（prompt-eval M5 の改訂）
   const lacking = engine.findings.filter((f) => f.kind === "情報不足" && f.missing).map((f) => `情報不足（本人の誤りではない）：${findingText(f)}`);
