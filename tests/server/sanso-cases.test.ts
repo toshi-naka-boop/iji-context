@@ -49,10 +49,12 @@ describe("K32〜K34（EM 5-1。完了条件 7・8）", () => {
       const c = claims.find((x) => x.patientNo === id && x.yearMonth === YM)!;
       // 前の月の管理料は、取り込んだ点検（oxygenOf）と同じ三値：K32 は前の月の請求があるので「ある」
       const prev = id === "K32" ? "ある" : "取り込んでいない";
-      const fs = evaluateGeneric(c, openMasters()!, { yearMonth: YM, generation: "R8", outpatient: true, clinic: true, prevHomeOxygen: prev } as GenericAboutMore, undefined, LIST).findings;
+      const fs = evaluateGeneric(c, openMasters()!, { yearMonth: YM, generation: "R8", outpatient: true, clinic: true, birth: c.patient.birth, diseases: c.patient.diseases.map((d) => ({ code: d.code ?? "0000999" })), prevHomeOxygen: prev } as GenericAboutMore, undefined, LIST).findings;
       const g12 = fs.filter((f) => f.check === "G12");
       expect([id, g12.length, g12.every((f) => f.certainty === want.g12!.certainty)]).toEqual([id, want.g12!.count, true]);
       expect([id, fs.filter((f) => f.check === "G05").length]).toEqual([id, want.g05]);
+      // EM の行の正解の指摘のほかに、G 系の指摘は出ない（反証 round-94 C-622）
+      expect([id, fs.filter((f) => f.check !== "G12" && f.check !== "G05")]).toEqual([id, []]);
     }
   });
 

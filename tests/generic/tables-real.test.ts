@@ -331,16 +331,18 @@ describe("段 12：実データの masters.db で", () => {
   withData("(e) 同梱の UKE 全部と、同梱の症例：G04〜G06 の言い切りの候補は 0 件。条件つきの指摘は、確かめた 2 件だけ", () => {
     const db = openMasters(file)!;
     const cond: string[][] = [];
+    const sure: string[][] = [];
     let claims = 0;
     for (const name of readdirSync(path.join(root, "fixtures", "uke")).filter((f) => f.endsWith(".UKE")).sort()) {
-      // sanso.UKE（K32〜K34。design.md §19-13 の 4）は、G05 の指摘が出るように作った症例（EM 5-1 の行の件数）で、件数は tests/server/sanso-cases.test.ts が縛る
-      if (name === "sanso.UKE") continue;
       parseUke(readFileSync(path.join(root, "fixtures", "uke", name))).claims.forEach((claim, i) => {
         if (claim.unsupported !== undefined || !hasRevision(claim.yearMonth)) return;
         claims++;
         const fs = tables(evaluateGeneric(claim, db, { yearMonth: claim.yearMonth, generation: resolveRevision(claim.yearMonth).generation }, undefined, ALL).findings);
-        expect(fs.filter((f) => f.certainty === "確定"), `${name} #${i + 1}`).toEqual([]);
-        for (const f of fs) cond.push([`${name} #${i + 1}`, f.messageKey, ...f.codes]);
+        // sanso.UKE（EM 5-1 の K33。design.md §19-13 の 4）の酸素療法加算 × 酸素吸入（同一月。特例条件なし）は、正解の指摘として言い切りの候補に出る。それ以外は 0 件
+        const known = (f: GenericFinding) => name === "sanso.UKE" && f.messageKey === "G05.month" && f.codes.join("+") === "114705910+140005610";
+        for (const f of fs.filter(known)) sure.push([`${name} #${i + 1}`, f.messageKey, ...f.codes]);
+        expect(fs.filter((f) => f.certainty === "確定" && !known(f)), `${name} #${i + 1}`).toEqual([]);
+        for (const f of fs.filter((f) => f.certainty !== "確定")) cond.push([`${name} #${i + 1}`, f.messageKey, ...f.codes]);
       });
     }
     expect(claims).toBeGreaterThanOrEqual(13);
@@ -349,8 +351,12 @@ describe("段 12：実データの masters.db で", () => {
     // 週 4 回の訪問診療（K3。上限 3）は、round-32 codex-2 で出なくなった（連続する 7 日に上限の 2 倍を超えないので、起算日の数え方では正しい請求であり得る）。
     // 週 3 回を超える訪問診療は、手書きの R13 が見ている
     // 段 15a（design.md §13-5）：K5 の組は、例外 HX-02（死亡日の往診だけの日の在宅ターミナルケア加算）に当たるので、条件つきの背反（G05.day_cond）から、要件を挙げた G05.exception_needs_check に変わる
+    // v45（design.md §19-13 の 3・4。EM 5-1 の K32・K33）：sanso.UKE の K33 の G05 が言い切りの候補に 1 件、K32 の在宅酸素療法指導管理料 × 酸素吸入が、
+    // 前の月を渡さないこの点検では HX-25 が決まらないので条件つきに 1 件（取り込んだ点検で前の月を読めば言い切りの候補。tests/server/sanso-cases.test.ts）
+    expect(sure).toEqual([["sanso.UKE #3", "G05.month", "114705910", "140005610"]]);
     expect(cond).toEqual([
       ["kokuhoren.UKE #5", "G05.exception_needs_check", "114000110", "114018370"],
+      ["sanso.UKE #2", "G05.exception_check", "114003710", "140005610"],
     ]);
     // 同梱の症例（区分キーの行をコードに直して掛ける道）でも、言い切りの候補は 0 件
     for (const name of NAMES) expect(run(db, claimOfLines(loadCase(name).lines, rev).claim.units).filter((f) => f.certainty === "確定"), name).toEqual([]);
