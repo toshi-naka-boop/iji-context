@@ -4,9 +4,7 @@
 import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
 import { careNotDone, hasCareScene, hasOthersScene } from "../engine/care-judge";
 import { careStateOf, certifiedOf } from "../patient/facts";
-import { CARE_EXPIRY_NOTICE_DAYS } from "../patient/checks";
 import { monthRange } from "../demo/period";
-import { addDays } from "../engine/rules/util";
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
 import { createClaimReviews } from "./app/claim-reviews";
@@ -270,10 +268,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
         const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
         const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
         if (careScene) {
-          // 認定：診療年月に効かない（期限が月の中か前・分からない）か、期限が近い（FR-199。CARE_EXPIRY_NOTICE_DAYS）
-          const lastCert = patientFactsOf.careRows(patientId).at(-1);
-          const soon = lastCert?.validUntil != null && lastCert.validUntil <= addDays(clock.now().slice(0, 10), CARE_EXPIRY_NOTICE_DAYS);
-          if (!cert.known || soon) asks.push("careCert");
+          // 認定：診療年月に効かない（期限が月の中か前・分からない）患者だけ。期限が近いだけの患者は聞かない（期限の知らせは患者の画面の P07。design.md §18-12 の 5）
+          if (!cert.known) asks.push("careCert");
           // 住まいの種別：申告がない・分からない・入所先の施設の確かめ直す日を過ぎた
           if (!residence || residence.type === "分からない" || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
           const stay = eff.shortStay?.value as { status: string } | undefined;

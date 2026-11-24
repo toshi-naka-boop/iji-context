@@ -1,5 +1,6 @@
 // 聞き取りの画面（design.md §18-5。v37 21d）の一覧と、医師に確かめる事実 terminalCancer（判断 H）。AI は呼ばない
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { monthRange } from "../../src/demo/period";
 import type { App } from "../../src/server/app";
 import { fileOf, receiptOf, tempApp, upload } from "../helpers/care";
 import { day, YM } from "../helpers/period";
@@ -50,5 +51,15 @@ describe("医師に確かめる事実 terminalCancer（判断 H。FR-174）", ()
     app.savePatientFact(id, "doc1", { key: "terminalCancer", value: true, source: "医師に確認", validUntil: null }, "doctor");
     expect(app.caseOf(id).facts.terminalCancer).toEqual({ known: true, value: true });
     expect(app.doctorFacts().some((i) => i.claimId === id && i.field === "terminalCancer")).toBe(false);
+  });
+});
+
+describe("期限が近いだけの患者（design.md §18-12 の 5）", () => {
+  it("認定が診療年月の全部の日に効いていれば、期限が近くても聞き取りの対象にしない（期限の知らせは患者の画面の P07）", () => {
+    const [id] = upload(app, fileOf([receiptOf(1, YM, zaii)]));
+    // 時計（基準月の 13 日）から 30 日以内に切れるが、基準月の末日までは効く
+    app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: `${YM}-01` }, source: "介護保険証", validUntil: monthRange(YM).end });
+    expect(target(id)?.asks).not.toContain("careCert");
+    expect(app.patientProfile(id).findings.map((f) => f.messageKey)).toContain("P07.expiring_soon");
   });
 });
