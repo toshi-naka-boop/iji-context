@@ -136,6 +136,32 @@ describe("印の付け直しと聞く記載（保存のとき）", () => {
       const d = markDay([{ category: "検査", written: "ECG12", lookup: [], quote: "ECG12 施行" }], [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], vocab, "O: AF 継続。ECG12 施行");
       expect(linkedOf(d)).toEqual({ acts: [["ECG12", ["ECG12"], []]], facts: [["病名の記載", "心房細動", undefined]], unlinked: ["AF"] });
     });
+    it("引用が 2 文にまたがる組（round-99 C-650）：言い換えた訪問診療の行為は、名前と重なる節の語だけを結ぶ。ECG12 は結び付かない語になり、訪問診療は確かめ待ちにならない", () => {
+      const d = markDay(
+        [
+          { category: "診療行為", written: "在宅患者訪問診療料", lookup: ["在宅患者訪問診療料"], quote: "在宅患者訪問診療。ECG12、採血。" },
+          { category: "検査", written: "心電図", lookup: ["心電図（１２誘導）"], quote: "前回の心電図" },
+        ],
+        [],
+        vocab,
+        "O: 在宅患者訪問診療。ECG12、採血。前回の心電図と著変なし",
+      );
+      expect(linkedOf(d)).toEqual({
+        acts: [
+          ["在宅患者訪問診療料", undefined, ["在宅患者訪問診療料"]],
+          ["心電図", undefined, ["心電図（１２誘導）"]],
+        ],
+        facts: [],
+        unlinked: ["ECG12"],
+      });
+      expect(askedItems("訪問診療", { acts: d.acts, rx: [], rxChoice: null, rxChoiceBy: null }, d.facts)).toEqual([]);
+    });
+    it("重なる節がない言い換え（AF→心房細動）は、今までどおり引用全体の語を結ぶ（引用「AF」・「AF継続」）", () => {
+      for (const quote of ["AF", "AF継続"]) {
+        const d = markDay([], [{ kind: "病名の記載", value: "心房細動", quote }], vocab, `A: ${quote}`);
+        expect([quote, linkedOf(d)]).toEqual([quote, { acts: [], facts: [["病名の記載", "心房細動", ["AF"]]], unlinked: [] }]);
+      }
+    });
     it("問いの引用は、原文のその語を含む文", () => {
       const note = { s: "ADL低下、NRS3", o: "在宅患者訪問診療。ＥＣＧ１２施行。前回の心電図と著変なし", a: "AF", p: "", rx: "" };
       expect(sentenceWith(note, "ECG12")).toBe("ＥＣＧ１２施行。");

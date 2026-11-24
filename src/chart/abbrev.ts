@@ -82,12 +82,29 @@ const flat = (t: string) => t.normalize("NFKC").replace(/\s+/g, "");
 /** 書かれた名前・値が引用の中にそのまま含まれていない（NFKC・空白を除いて比べる）。これだけでは医師に聞かない（plan-fr211.md「規則の作り直し」5） */
 export const paraphrased = (written: string, quote: string): boolean => !flat(quote).includes(flat(written));
 
+/** 2 つの文字列が文字で重なるか（NFKC・空白を除き、2 文字の並びを 1 つでも共有する。どちらかが 1 文字なら、その文字を含むか） */
+function overlaps(a: string, b: string): boolean {
+  const [x, y] = [flat(a), flat(b)];
+  if (x.length < 2 || y.length < 2) return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+  for (let i = 0; i + 2 <= x.length; i++) if (y.includes(x.slice(i, i + 2))) return true;
+  return false;
+}
 /**
- * 記載に結び付く語（plan-fr211.md「規則の作り直し」3）：書かれた名前・値にある分からない略語と、
- * 書かれた名前・値が引用に含まれないとき（言い換え）の、引用にある分からない略語。day を渡すと、その日の原文の印の語に限る
+ * 言い換えの記載の引用のうち、語を結ぶ範囲（plan-fr211.md「作り直しの補い」C-650）：引用を「。、・改行」で節に区切り、書かれた名前と文字が重なる節だけ。
+ * 重なる節がなければ（AF→心房細動のような言い換え）引用全体
+ */
+export function linkScope(written: string, quote: string): string {
+  const clauses = quote.split(/[。、・\n]/).filter((c) => c.trim() !== "");
+  const hit = clauses.filter((c) => overlaps(c, written));
+  return hit.length > 0 ? hit.join("。") : quote;
+}
+
+/**
+ * 記載に結び付く語（plan-fr211.md「規則の作り直し」3・「作り直しの補い」）：書かれた名前・値にある分からない略語と、
+ * 書かれた名前・値が引用に含まれないとき（言い換え）の、引用の結ぶ範囲（linkScope）にある分からない略語。day を渡すと、その日の原文の印の語に限る
  */
 export function linkedTokens(written: string, quote: string, vocab: AbbrevVocab, day?: readonly string[]): string[] {
-  const all = [...new Set([...abbrevMarks(written, vocab), ...(paraphrased(written, quote) ? abbrevMarks(quote, vocab) : [])])];
+  const all = [...new Set([...abbrevMarks(written, vocab), ...(paraphrased(written, quote) ? abbrevMarks(linkScope(written, quote), vocab) : [])])];
   return day ? all.filter((w) => day.includes(w)) : all;
 }
 
