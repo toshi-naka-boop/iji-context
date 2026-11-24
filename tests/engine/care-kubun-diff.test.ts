@@ -86,11 +86,11 @@ describe("版の区分を足す前と後（design.md §18-11）", () => {
 
 describe("訪問診療料(Ⅰ)2 の行がある請求（design.md §18-12 の 8。当面の形。em-v38-draft.md §2）", () => {
   const K1 = loadCase("K1");
-  const HELD = ["R08", "R09", "R10", "R15"];
+  const HELD = ["R08", "R09", "R10", "R11", "R15"];
   /** 確定の指摘のうち、決められないに置いたルール（と R17 の T176）のもの */
   const heldOf = (xs: string[]) => xs.filter((k) => HELD.some((id) => k.startsWith(`${id}.`)));
 
-  it("決められないに置くのは R08・R09・R10・R15（と R17 の T176）だけ。R01・R02・R03・R13 などは今のまま", () => {
+  it("決められないに置くのは R08・R09・R10・R11・R15（と R17 の T176）だけ。R01・R02・R03・R13 などは今のまま", () => {
     expect(after.rules.filter((r) => heldByVisit2(r, after)).map((r) => r.id)).toEqual(HELD);
   });
 
@@ -138,15 +138,28 @@ describe("訪問診療料(Ⅰ)2 の行がある請求（design.md §18-12 の 8�
 });
 
 describe("導出（算定プレビュー）で (Ⅰ)2 の行が入力にある月（design.md §18-12 の 8。当面の形）", () => {
-  it("D01・D02・D06・D07・D08・D12 は行にせず「決められない」（visit2_pending）。D03（管理料）は今のまま立つ", async () => {
+  it("D01・D02・D06・D07・D08・D12 と、D01 が保留にした訪問から立てる D03・D04・D05・D10・D11 は行にせず「決められない」（visit2_pending）。検査（D09）は立つ", async () => {
     const { deriveLines } = await import("../../src/engine/derive");
     const K1 = loadCase("K1");
     const input = { yearMonth: K1.yearMonth, facility: K1.facility, facts: K1.facts, events: K1.events, history: K1.history, choices: {} };
     const plain = deriveLines({ ...input, manual: [] });
     const held = deriveLines({ ...input, manual: [line("C001_2I", 1, [day(9)])] });
     expect(plain.basis.some((b) => b.derive === "D01")).toBe(true);
-    expect(held.basis.filter((b) => ["D01", "D02", "D06", "D07", "D08", "D12"].includes(b.derive))).toEqual([]);
+    expect(plain.basis.some((b) => b.derive === "D03")).toBe(true);
+    expect(held.basis.filter((b) => ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D10", "D11", "D12"].includes(b.derive))).toEqual([]);
     expect(held.unsupported.map((u) => u.code)).toContain("visit2_pending");
-    expect(held.basis.filter((b) => b.derive === "D03").map((b) => b.kubun)).toEqual(plain.basis.filter((b) => b.derive === "D03").map((b) => b.kubun));
+    expect(held.basis.filter((b) => b.derive === "D09").map((b) => b.kubun)).toEqual(plain.basis.filter((b) => b.derive === "D09").map((b) => b.kubun));
+  });
+});
+
+describe("取り忘れ（G11）で (Ⅰ)2 の行がある請求（design.md §18-12 の 8。当面の形）", () => {
+  it("G11 は (Ⅰ)1 の行だけを訪問診療料として読むので、(Ⅰ)2 の行がある請求は見ず、理由を出す", async () => {
+    const { VISIT2_G11_SKIP } = await import("../../src/engine/visit2");
+    const { createTorikawasure } = await import("../../src/server/app/torikawasure");
+    // (Ⅰ)2 の行で先に返すので、DB と時計は使わない
+    const tori = createTorikawasure({ sqlite: null as never, paths: null as never }, { now: () => "" });
+    const K1 = loadCase("K1");
+    const r = tori.run({ claim: null as never, base: withLines(K1, line("C001_2I", 1, [day(9)])), rev: after, path: "uke", days: [], hand: [] });
+    expect(r).toEqual({ skip: VISIT2_G11_SKIP });
   });
 });

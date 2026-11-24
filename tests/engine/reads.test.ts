@@ -107,7 +107,7 @@ describe("reads の申告を縛る（design.md §12-4。C-105）", () => {
       R08: [...c.visitKubun, c.oushin.kubun, ...v2],
       R09: v2,
       R10: v2,
-      R11: [...c.visitKubun, c.oushin.kubun],
+      R11: [...c.visitKubun, c.oushin.kubun, ...v2],
       R15: [...c.visitKubun, c.oushin.kubun, ...v2],
       // R17 の kubun は摘要欄の記載の表（EM §2-10 表 1）の区分。管理料は在支診（強化型以外）の区分だけが表にあるので、ほかの種別の管理料は reads だけにある
       R17: [...kanriKubun(c).filter((k) => !rev.rules.find((r) => r.id === "R17")!.kubun.includes(k)), ...v2],

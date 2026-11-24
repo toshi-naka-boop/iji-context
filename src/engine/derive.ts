@@ -487,13 +487,13 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     }
   }
 
-  // 訪問診療料(Ⅰ)2 の行（入力の行）がある月：(Ⅰ)2 の日の扱いを決めていない導出（D01・D02・D06・D07・D08・D12）は、行にせず「決められない」（design.md §18-12 の 8。当面の形。src/engine/visit2.ts）
+  // 訪問診療料(Ⅰ)2 の行（入力の行）がある月：(Ⅰ)2 の日の扱いを決めていない導出と、D01 が保留にした訪問から立てる導出（VISIT2_HELD_DERIVES）は、行にせず「決められない」（design.md §18-12 の 8。当面の形。src/engine/visit2.ts）
   if (hasVisit2(input.manual, c)) {
     for (let i = lines.length - 1; i >= 0; i--) if (VISIT2_HELD_DERIVES.includes(basis[i].derive)) {
       lines.splice(i, 1);
       basis.splice(i, 1);
     }
-    unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行があるので、訪問診療料・往診料・再診料・在宅医療DX情報活用加算・ベースアップ評価料(Ⅰ)・物価対応料・在宅ターミナルケア加算は行にしていません（(Ⅰ)2 の日の扱いを確かめています）" });
+    unsupported.push({ code: "visit2_pending", detail: "訪問診療料(Ⅰ)2（他の医療機関の求めによる）の行があるので、訪問診療料・往診料・再診料と、訪問から立てる管理料・加算・処方箋料・看取り加算・死亡診断加算・在宅ターミナルケア加算は行にしていません（(Ⅰ)2 の日の扱いを確かめています）" });
   }
   const all = [...lines, ...input.manual];
   return {

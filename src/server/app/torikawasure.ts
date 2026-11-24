@@ -2,6 +2,7 @@
 // （区分誤りの出る前に選んだ対応は、消さずに読むときに外す。src/server/app/notes.ts の aliasOf。反証 round-55 C-293）。判定は src/generic/g11.ts の決まった規則だけで、LLM は使わない。
 // 行ったことは、取り込んだ請求では貼って確かめたカルテ（kind「記録」）、合成の症例では合成カルテの確かめたあとの acts と、本人が確かめたカルテの acts
 import { readFileSync } from "node:fs";
+import { hasVisit2, VISIT2_G11_SKIP } from "../../engine/visit2";
 import type { ChartAct, RxChoice, RxNote, StoredActs } from "../../chart/acts";
 import { rxDefault } from "../../chart/rx-default";
 import type { Revision } from "../../engine/revisions/types";
@@ -69,6 +70,8 @@ export function createTorikawasure(ctx: Pick<AppContext, "sqlite" | "paths">, cl
    * hand は元の請求の手書きのルールの結果（R ルールと 2 回言わない）
    */
   function run(input: { claim: G11Claim; base: ClaimContext; rev: Revision; path: "uke" | "preview"; days: Parameters<typeof actsInput>[0]; hand: Finding[]; texts?: TextDay[]; pastTextsUnreadable?: boolean }): G11Result {
+    // 訪問診療料(Ⅰ)2 の行がある請求は見ない（G11 は (Ⅰ)1 の行だけを訪問診療料として読む。design.md §18-12 の 8。当面の形）
+    if (hasVisit2(input.base.lines, input.rev.consts)) return { skip: VISIT2_G11_SKIP };
     const { acts, rxDays } = actsInput(input.days);
     const ym = input.base.yearMonth;
     const declaration = declarationViewOf(ctx, clock);
