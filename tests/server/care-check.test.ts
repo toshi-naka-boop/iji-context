@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { monthRange } from "../../src/demo/period";
 import type { App } from "../../src/server/app";
 import { fileOf, receiptOf, tempApp, upload } from "../helpers/care";
-import { day, YM } from "../helpers/period";
+import { day, month, YM } from "../helpers/period";
 
 let app: App;
 let close: () => void;
@@ -71,5 +71,39 @@ describe("確かめた日の初期値（design.md §18-12 の 7）", () => {
     const src = readFileSync(path.join(__dirname, "..", "..", "app", "uke", "care-check", "page.tsx"), "utf8");
     expect(src).toContain('"/api/clock"');
     expect(src).not.toMatch(/new Date\(/);
+  });
+});
+
+describe("判定に要る項目の「分からない」「欠け」も聞く（round-82 C-541・X-391）", () => {
+  const b2 = { checkedOn: day(3), source: "施設との契約" as const };
+  it("特養で入所先の施設を付けていない・在医総管を取る側が分からない・(Ⅰ)2 の月に求めた機関がない・短期入所の日付が欠けている患者も、その問いを出す。「見ていません」の患者はみな画面に出る", () => {
+    const shisetsu = [{ kubun: "C001_1I", count: 2, dates: [day(6), day(20)] }, { kubun: "C002-2_2RO1", count: 1, dates: [day(20)] }];
+    const [a, bId, cId, dId] = upload(app, fileOf([receiptOf(1, YM, shisetsu), receiptOf(2, YM, zaii), receiptOf(3, YM, [{ kubun: "C001_2I", count: 1, dates: [day(9)] }]), receiptOf(4, YM, zaii)]));
+    const cert = (id: string) => app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: `${YM}-01` }, source: "介護保険証", validUntil: `${month(5)}-01` });
+    for (const id of [a, bId, cId, dId]) cert(id);
+    // (a) 特養で施設を付けていない
+    app.saveCare(a, "new1", { item: "residenceType", value: { type: "特養（地域密着型を含む）" }, ...b });
+    app.saveOtherNone(a, "new1", b);
+    expect(target(a)?.asks).toEqual(["residenceType"]);
+    // (b) 在医総管を取る側が分からない
+    app.saveCare(bId, "new1", { item: "residenceType", value: { type: "自宅" }, ...b });
+    app.saveCare(bId, "new1", { item: "shortStay", value: { status: "使っていない" }, ...b });
+    app.saveOther(bId, "new1", { name: "架空の診療所", kind: "医療機関", specialRelation: "いいえ", kanriSide: "分からない", activities: {}, ...b });
+    expect(target(bId)?.asks).toEqual(["others"]);
+    // (c) (Ⅰ)2 の月に「ないと確かめた」だけ
+    app.saveCare(cId, "new1", { item: "residenceType", value: { type: "自宅" }, ...b });
+    app.saveCare(cId, "new1", { item: "shortStay", value: { status: "使っていない" }, ...b });
+    app.saveOtherNone(cId, "new1", b);
+    expect(target(cId)?.asks).toEqual(["others"]);
+    // (d) 同じ月に 2 回の短期入所で日付が欠けている
+    app.saveCare(dId, "new1", { item: "residenceType", value: { type: "自宅" }, ...b });
+    app.saveOtherNone(dId, "new1", b);
+    app.saveCare(dId, "new1", { item: "shortStay", value: { status: "使った", uses: [{ kind: "短期入所生活介護" }, { kind: "短期入所生活介護", start: day(25), end: day(27) }] }, ...b2 });
+    expect(target(dId)?.asks).toEqual(["shortStay"]);
+    // 「見ていません」の人数は、画面に出る人数に入る
+    const all = app.careCheck(YM);
+    const m = app.careCheck().months.find((x) => x.month === YM)!;
+    expect(m.targets).toBe(all.targets.length);
+    expect(all.targets.filter((t) => t.notDone).length).toBe(m.notDone);
   });
 });

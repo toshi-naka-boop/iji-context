@@ -2,7 +2,7 @@
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
 // 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
 import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
-import { careNotDone, hasCareScene, hasOthersScene } from "../engine/care-judge";
+import { careScopeNotes, hasCareScene, hasOthersScene } from "../engine/care-judge";
 import { careStateOf, certifiedOf } from "../patient/facts";
 import { monthRange } from "../demo/period";
 import { createCases } from "./app/cases";
@@ -266,20 +266,37 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
         const cert = certifiedOf(careStateOf(patientFactsOf.careRows(patientId), c.yearMonth));
         const residence = eff.residenceType?.value as { type: string; careHomeId?: string } | undefined;
         const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
+        // 聞く問い（design.md §18-5）：申告がない・分からないのほか、判定に要る項目に「分からない」「欠け」が残るもの（round-82 C-541・X-391）
         const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
         if (careScene) {
-          // 認定：診療年月に効かない（期限が月の中か前・分からない）患者だけ。期限が近いだけの患者は聞かない（期限の知らせは患者の画面の P07。design.md §18-12 の 5）
+          // 認定：診療年月に効かない（期限が月の中か前・分からない・申請中のあとの月）患者だけ。期限が近いだけの患者は聞かない（P07。design.md §18-12 の 5）
           if (!cert.known) asks.push("careCert");
-          // 住まいの種別：申告がない・分からない・入所先の施設の確かめ直す日を過ぎた
-          if (!residence || residence.type === "分からない" || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
+          // 住まいの種別：申告がない・分からない・入所先の施設を付けていない（特養）・施設の値が分からない（確かめ直す日を過ぎたを含む）
+          const facility = residence && residence.type !== "自宅" && residence.type !== "分からない";
+          const h = c.care?.residence?.home ?? null;
+          const homeOpen = residence?.type === "特養（地域密着型を含む）" ? !h || h.mitoriFacility === "分からない" : !!h && (h.placedPhysician === "分からない" || h.mitoriFacility === "分からない");
+          if (!residence || residence.type === "分からない" || (facility && homeOpen) || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
+          // 短期入所：申告がない・分からない・使ったが日付や退院日からかが欠けている
           const stay = eff.shortStay?.value as { status: string } | undefined;
-          if ((!stay || stay.status === "分からない") && askShortStay(c.care ?? {})) asks.push("shortStay");
+          const uses = c.care?.shortStay?.status === "使った" ? c.care.shortStay.uses : [];
+          const stayOpen = uses.some((u) => u.start === null || u.end === null || u.fromDischarge === "分からない");
+          if (((!stay || stay.status === "分からない") && askShortStay(c.care ?? {})) || stayOpen) asks.push("shortStay");
         }
-        if (othersScene && !c.others) asks.push("others");
-        return [{ claimId: c.claimId, yearMonth: c.yearMonth, patient: receipt.patient.name, asks, notDone: careNotDone(c, rev.consts) }];
+        if (othersScene) {
+          // ほかの機関：申告がない・在医総管を取る側が分からない・(Ⅰ)2 の月に求めた機関の行がない・特別の関係やしていることが分からない
+          const rows = c.others?.rows ?? [];
+          const v2 = c.lines.some((l) => l.count > 0 && (rev.consts.visit2Kubun ?? []).includes(l.kubun));
+          const open = !c.others || rows.some((r) => r.kanriSide === "分からない" || r.specialRelation === "分からない" || Object.values(r.activities).includes("分からない")) || (v2 && !rows.some((r) => r.activities["求めによる訪問診療の求めた側"] === "はい" && r.referredOn !== null));
+          if (open) asks.push("others");
+        }
+        // 「見ていません」の文（最初の行の「見ている場面」は除く）。答えても消えないもの（月の途中の変化・読みが割れるなど）もカードに出す
+        const notes = careScopeNotes(c, rev.consts).slice(1);
+        return [{ claimId: c.claimId, yearMonth: c.yearMonth, patient: receipt.patient.name, asks, notDone: notes.length > 0, notes }];
       });
-      const months = [...new Set(rows.map((r) => r.yearMonth))].sort().map((m) => ({ month: m, targets: rows.filter((r) => r.yearMonth === m && r.asks.length > 0).length, notDone: rows.filter((r) => r.yearMonth === m && r.notDone).length }));
-      return { month: month ?? null, months, targets: month ? rows.filter((r) => r.asks.length > 0) : [], notDoneCount: rows.filter((r) => r.notDone).length, homes: care.careHomes() };
+      // 画面に出すのは、聞く問いがあるか「見ていません」がある患者（月の帯の「見ていない」の人数は、画面に出る人数に入る）
+      const shown = (r: (typeof rows)[number]) => r.asks.length > 0 || r.notDone;
+      const months = [...new Set(rows.map((r) => r.yearMonth))].sort().map((m) => ({ month: m, targets: rows.filter((r) => r.yearMonth === m && shown(r)).length, notDone: rows.filter((r) => r.yearMonth === m && r.notDone).length }));
+      return { month: month ?? null, months, targets: month ? rows.filter(shown) : [], notDoneCount: rows.filter((r) => r.notDone).length, homes: care.careHomes() };
     },
     saveCare: (claimId: string, clerkId: string, input: CareInput) => {
       const { receipt } = uke.receiptOf(claimId);

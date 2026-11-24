@@ -11,7 +11,7 @@ import { getJson, postJson } from "../../get-json";
 import { CareCertForm } from "../../care-cert-input";
 
 type Ask = "careCert" | "residenceType" | "shortStay" | "others";
-type Target = { claimId: string; yearMonth: string; patient: string; asks: Ask[]; notDone: boolean };
+type Target = { claimId: string; yearMonth: string; patient: string; asks: Ask[]; notDone: boolean; notes: string[] };
 type Home = { homeId: string; name: string; kind: string; placedPhysician: string; mitoriFacility: string; recheckOn: string };
 type Check = { month: string | null; months: { month: string; targets: number; notDone: number }[]; targets: Target[]; notDoneCount: number; homes: Home[] };
 type CareView = { care: Record<string, { value: Record<string, unknown>; checkedOn: string; source: string } | undefined>; legacyResidence: string | null; others: { name: string; kind: string; kanriSide: string }[]; none: { forMonth: string } | null };
@@ -228,7 +228,8 @@ function Card(props: { t: Target; homes: Home[]; onHomes: (h: Home[]) => void; e
           <h2 style={{ margin: 0, fontSize: 18 }}>{t.patient}（{t.claimId}）</h2>
           <a href={`/uke/${encodeURIComponent(t.claimId)}`}>このレセプトの点検を開く →</a>
         </div>
-        {t.notDone && <div className="notice warn">いまは点検の範囲に「見ていません」があります。</div>}
+        {t.notDone && <div className="notice warn">いまは点検の範囲に「見ていません」があります：{t.notes.join("。")}。</div>}
+        {t.asks.length === 0 && <div className="muted">ここで答えて消せる問いはありません（月の途中の変化・読みが割れるなどは、答えても「見ていません」のままです）。</div>}
         <div className="muted">今の申告：住まいの種別 {now("residenceType")}／今月の短期入所 {now("shortStay")}{view?.legacyResidence ? `／古い入力（居住の場所：${view.legacyResidence}）` : ""}／ほかの機関 {view ? (view.others.length > 0 ? `${view.others.length} 件` : view.none ? "ないと確かめた" : "申告なし") : ""}</div>
         {t.asks.map((a) => (
           <div key={a} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
