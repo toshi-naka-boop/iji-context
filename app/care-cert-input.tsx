@@ -2,8 +2,8 @@
 // 要介護・要支援の認定の入力（design.md §18-1。C-510）：要介護（1〜5）／要支援（1・2）／認定なし（確かめた）／分からない。
 // 要介護・要支援は有効期間の始まりと終わりの日が要る。月の途中で区分が変わったときは、続いた 2 つの認定を 1 つずつ残す。
 // 残し先は患者ごとの事実（POST /api/patients/[claimId]/facts。キー careCert）。患者情報の欄・情報不足の入力・聞き取りの画面が同じ部品を使う
-import { useState } from "react";
-import { FACT_SOURCES, type CareCertValue } from "../src/patient/facts";
+import { useEffect, useState } from "react";
+import { FACT_SOURCES, FROM_APPLICATION, type CareCertValue } from "../src/patient/facts";
 
 /** 確かめ方の言い方（「医師に確認で確かめた」とならないように） */
 const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : `${s}で確かめた`);
@@ -24,9 +24,9 @@ export function careCertText(v: CareCertValue | { kind: string; level?: number; 
 }
 
 /** 選択肢の文字と日付を、残す値にする */
-export function careCertValueOf(choice: string, validFrom: string): CareCertValue {
+export function careCertValueOf(choice: string, validFrom: string, fromApplication?: string): CareCertValue {
   const [kind, level] = choice.split(":");
-  if (kind === "要介護" || kind === "要支援") return { kind, level: Number(level), validFrom };
+  if (kind === "要介護" || kind === "要支援") return { kind, level: Number(level), validFrom, ...(fromApplication ? { fromApplication: fromApplication as (typeof FROM_APPLICATION)[number] } : {}) };
   return { kind: kind as "認定なし" | "申請中" | "分からない" };
 }
 
@@ -36,10 +36,20 @@ export function CareCertForm(props: { claimId: string; onSaved: (facts: unknown)
   const [validUntil, setValidUntil] = useState("");
   const [source, setSource] = useState<string>(FACT_SOURCES[0]);
   const [err, setErr] = useState("");
+  /** 申請中が残っている患者か（そのときだけ「この認定は申請の結果ですか」を聞く。design.md §18-12 の 1 v40） */
+  const [pending, setPending] = useState(false);
+  const [fromApp, setFromApp] = useState("");
+  useEffect(() => {
+    fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { applicationPending?: boolean } | null) => setPending(d?.applicationPending === true))
+      .catch(() => setPending(false));
+  }, [props.claimId]);
   const dated = choice.startsWith("要介護") || choice.startsWith("要支援");
+  const askApp = dated && pending;
   async function save() {
     setErr("");
-    const fact = { key: "careCert", value: careCertValueOf(choice, validFrom), source, validUntil: dated ? validUntil || null : null };
+    const fact = { key: "careCert", value: careCertValueOf(choice, validFrom, askApp ? fromApp : undefined), source, validUntil: dated ? validUntil || null : null };
     const r = await fetch(`/api/patients/${encodeURIComponent(props.claimId)}/facts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fact }) });
     const d = await r.json().catch(() => null);
     if (!r.ok) return setErr(d?.error ?? "エラー");
@@ -56,10 +66,18 @@ export function CareCertForm(props: { claimId: string; onSaved: (facts: unknown)
       </select>
       {dated && <label>有効期間 <input type="date" aria-label="有効期間の始まり" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} /></label>}
       {dated && <label>〜 <input type="date" aria-label="有効期間の終わり" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>}
+      {askApp && (
+        <label>この認定は申請の結果ですか{" "}
+          <select aria-label="この認定は申請の結果ですか" value={fromApp} onChange={(e) => setFromApp(e.target.value)}>
+            <option value="">選ぶ</option>
+            {FROM_APPLICATION.map((v) => <option key={v} value={v}>{v === "いいえ" ? "いいえ（前からの認定）" : v}</option>)}
+          </select>
+        </label>
+      )}
       <select aria-label="確かめ方" value={source} onChange={(e) => setSource(e.target.value)}>
         {FACT_SOURCES.map((s) => <option key={s} value={s}>{how(s)}</option>)}
       </select>
-      <button disabled={choice === "" || (dated && (validFrom === "" || validUntil === ""))} onClick={() => void save()}>残す</button>
+      <button disabled={choice === "" || (dated && (validFrom === "" || validUntil === "")) || (askApp && fromApp === "")} onClick={() => void save()}>残す</button>
       {dated && <span className="muted">月の途中で区分が変わったときは、前の認定と新しい認定を 1 つずつ残します。</span>}
       {err && <span className="notice warn">{err}</span>}
     </span>

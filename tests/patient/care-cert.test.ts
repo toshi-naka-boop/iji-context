@@ -197,3 +197,33 @@ describe("「分からない」は答えた診療月だけに効く（C-533）",
     for (const m of [0, 3]) expect(certifiedOf(careStateOf(rows, month(m)))).toEqual({ known: true, value: false });
   });
 });
+
+describe("「この認定は申請の結果ですか」（design.md §18-12 の 1 v40）", () => {
+  it("申請中が残っている患者に期間つきの認定を入れるときだけ聞く。はい→申請中に勝つ、いいえ・分からない→両方残って分からない。答えは行に残る", async () => {
+    const { tempApp, upload, fileOf, receiptOf } = await import("../helpers/care");
+    const t = tempApp();
+    try {
+      const lines = [{ kubun: "C001_1I", count: 2, dates: [day(6), day(20)] }, { kubun: "C002_2RO1", count: 1, dates: [day(20)] }];
+      const [id] = upload(t.app, fileOf([receiptOf(1, YM, lines)]));
+      const cert = (extra: object = {}) => ({ key: "careCert" as const, value: { kind: "要介護" as const, level: 3, validFrom: dateIn(-1, 1), ...extra }, source: "介護保険証" as const, validUntil: dateIn(5, 28) });
+      expect(t.app.patientFacts(id).applicationPending).toBe(false);
+      t.app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null });
+      expect(t.app.patientFacts(id).applicationPending).toBe(true);
+      expect(() => t.app.savePatientFact(id, "new1", cert())).toThrow(/申請の結果/);
+      expect(() => t.app.savePatientFact(id, "new1", cert({ fromApplication: "たぶん" }))).toThrow(/申請の結果/);
+      t.app.savePatientFact(id, "new1", cert({ fromApplication: "いいえ" }));
+      expect(t.app.caseOf(id).facts.careLevel).toEqual({ known: false });
+      expect((t.app.patientFacts(id).facts.find((f) => f.key === "careCert")?.value as { fromApplication?: string }).fromApplication).toBe("いいえ");
+      t.app.savePatientFact(id, "new1", cert({ fromApplication: "はい" }));
+      expect(t.app.caseOf(id).facts.careLevel).toEqual({ known: true, value: 3 });
+      expect(t.app.patientFacts(id).applicationPending).toBe(false);
+    } finally {
+      t.close();
+    }
+  });
+  it("zod でも答えの形を確かめる", async () => {
+    const { factBody } = await import("../../src/server/schemas/patients");
+    const v = (fromApplication: unknown) => factBody.safeParse({ fact: { key: "careCert", value: { kind: "要介護", level: 3, validFrom: day(1), fromApplication }, source: "介護保険証", validUntil: day(28) } }).success;
+    expect([v("はい"), v("いいえ"), v("分からない"), v("たぶん")]).toEqual([true, true, true, false]);
+  });
+});

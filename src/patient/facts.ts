@@ -23,7 +23,9 @@ export type BuildingBandValue = { band: BuildingBand; fromMonth: string };
  * 要介護・要支援は有効期間の始まり（validFrom。値の中に持つ）と終わり（validUntil）が要る。認定なし・分からないは日付を持たない。
  * 認定なし・分からないの forMonth は答えた診療月（答えた請求の診療年月。入力では受け取らず、残すときにサーバーが付ける。design.md §18-12 の 1）
  */
-export type CareCertValue = { kind: "要介護"; level: number; validFrom: string; forMonth?: string } | { kind: "要支援"; level: number; validFrom: string; forMonth?: string } | { kind: "認定なし"; forMonth?: string } | { kind: "申請中"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
+/** 申請の結果ですか（申請中が残っている患者に期間つきの認定を入れるときに聞く。design.md §18-12 の 1 v40）。いいえ＝前からの認定 */
+export const FROM_APPLICATION = ["はい", "いいえ", "分からない"] as const;
+export type CareCertValue = { kind: "要介護"; level: number; validFrom: string; forMonth?: string; fromApplication?: (typeof FROM_APPLICATION)[number] } | { kind: "要支援"; level: number; validFrom: string; forMonth?: string; fromApplication?: (typeof FROM_APPLICATION)[number] } | { kind: "認定なし"; forMonth?: string } | { kind: "申請中"; forMonth?: string } | { kind: "分からない"; forMonth?: string };
 /** 申請中（EM §7-2 U-71。2026-11-24 利用者の判断）：R03 には「分からない」、④・短期入所には「認定なし」に準じて読む。答えた診療月だけに効く（6 か月は残さず、翌月の点検でまた聞く） */
 export const CARE_CERT_KINDS = ["要介護", "要支援", "認定なし", "申請中", "分からない"] as const;
 /** 「認定なし」を確かめ直すまでの月数（設計で置いた値。制度の数字ではない。design.md §18-1） */
@@ -76,7 +78,9 @@ export function validatePatientFact(f: PatientFactInput, now: string): void {
       if (typeof v.validFrom !== "string" || !DATE_RE.test(v.validFrom)) throw new Error("認定には有効期間の始まりの日が要る");
       if (!f.validUntil || !DATE_RE.test(f.validUntil)) throw new Error("認定には有効期間の終わりの日が要る");
       if (v.validFrom > f.validUntil) throw new Error("有効期間の始まりが、終わりより後になっている");
-      if (Object.keys(v).some((k) => !["kind", "level", "validFrom"].includes(k))) throw new Error("認定の値に余分な項目がある");
+      if (Object.keys(v).some((k) => !["kind", "level", "validFrom", "fromApplication"].includes(k))) throw new Error("認定の値に余分な項目がある");
+      const app = (v as { fromApplication?: unknown }).fromApplication;
+      if (app !== undefined && !(FROM_APPLICATION as readonly unknown[]).includes(app)) throw new Error("申請の結果かは、はい・いいえ（前からの認定）・分からないから選ぶ");
     } else {
       if (Object.keys(v).some((k) => k !== "kind")) throw new Error("認定なし・申請中・分からないには、区分と日付を付けない");
       if (f.validUntil !== null) throw new Error("認定なし・申請中・分からないに期限は付けない");
@@ -154,6 +158,16 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
  * 答えた月は forMonth（持たない今までの行は確かめた日の月）。期間つきの認定が M の全部の日を覆わない（月の途中で切れる・始まる）ときは分からない。月の途中で区分が変わった続いた 2 行は、2 つの区間として返す（§18-1）
  */
 export function careCertFor(certs: PatientFact[], yearMonth: string): CareState {
+  return decide(remainingOf(certs, yearMonth), yearMonth);
+}
+
+/** 申請中が残っているか（M で、語って負けていない申請中がある）。期間つきの認定を入れるときに「申請の結果ですか」を聞くのに使う */
+export function applicationPending(rows: PatientFact[], yearMonth: string): boolean {
+  return remainingOf(rows.filter((r) => r.key === "careCert"), yearMonth).some((r) => (r.value as CareCertValue).kind === "申請中");
+}
+
+/** 1・2 段：M について語り、負けていない行 */
+function remainingOf(certs: PatientFact[], yearMonth: string): PatientFact[] {
   const { start, end } = monthRange(yearMonth);
   const monthOf = (r: PatientFact) => (r.value as { forMonth?: string }).forMonth ?? r.checkedAt.slice(0, 7);
   const kindOf = (r: PatientFact) => (r.value as CareCertValue).kind;
@@ -175,7 +189,15 @@ export function careCertFor(certs: PatientFact[], yearMonth: string): CareState 
   const overlap = (a: PatientFact, b: PatientFact) => !valid(a) || !valid(b) || (from(a) <= (b.validUntil ?? "9999-12-31") && from(b) <= (a.validUntil ?? "9999-12-31"));
   const beats = (y: { r: PatientFact; i: number }, x: { r: PatientFact; i: number }) =>
     y.i > x.i && monthOf(y.r) >= monthOf(x.r) && !(kindOf(x.r) === "申請中" && notFromApplication(y.r)) && !(isDated(x.r) && isDated(y.r) && !overlap(x.r, y.r));
-  const rest = talking.filter((x) => !talking.some((y) => beats(y, x))).map((x) => x.r);
+  return talking.filter((x) => !talking.some((y) => beats(y, x))).map((x) => x.r);
+}
+
+/** 3 段：残った行がすべて同じ確定の値ならその値、ほかは分からない */
+function decide(rest: PatientFact[], yearMonth: string): CareState {
+  const kindOf = (r: PatientFact) => (r.value as CareCertValue).kind;
+  const isDated = (r: PatientFact) => kindOf(r) === "要介護" || kindOf(r) === "要支援";
+  const from = (r: PatientFact) => (r.value as { validFrom: string }).validFrom;
+  const valid = (r: PatientFact) => isRealDate(from(r)) && (r.validUntil === null || isRealDate(r.validUntil));
   // 3. 決める。残ったのが申請中だけなら申請中（R03 には分からない、④・短期入所には認定なしに準じる。U-71）
   if (rest.length > 0 && rest.every((r) => kindOf(r) === "申請中")) {
     const r = rest[rest.length - 1];
