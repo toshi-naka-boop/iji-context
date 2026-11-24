@@ -283,10 +283,21 @@ export function deriveLines(input: DeriveInput, rev: Revision = resolveRevision(
     const mine = billedVisits.filter((v) => visitKubunOf(v) === k);
     add(k, mine.map((v) => v.date), { derive: "D01", events: mine, needs: sameDay.size ? ["sameDaySeparate", "sameDayOushinAfterVisit"] : [] });
   }
-  // (Ⅰ)2 の日の往診料は、訪問診療のあとの急変の往診（sameDayOushinAfterVisit）のときだけ立てる（W-122）
-  const afterV2 = (d: string) => facts.sameDayOushinAfterVisit.known && facts.sameDayOushinAfterVisit.value[d] === true;
-  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill" && (!v2Dates.has(o.date) || afterV2(o.date)));
-  if (v2Dates.size > 0) for (const o of oushins.filter((x) => v2Dates.has(x.date) && !afterV2(x.date))) notBilled.push({ event: ref(o), reason: "oushin_not_after_visit" });
+  // (Ⅰ)2 の日の往診料は、(Ⅰ)1 と同じく同じ日の関係（R10 と同じ述語 sameDayOf）で決める（W-122）：訪問診療のあとの急変の往診なら立て、
+  // 1 回の診療・急変の往診でないと分かれば立てない。分からなければ聞いて保留にし、言い切らない（round-82 C-532）
+  const v2Oushin = new Map<string, Decision>();
+  for (const d of [...v2Dates].filter((x) => oushins.some((o) => o.date === x))) {
+    const s2 = sameDayOf(ctx, d);
+    if (s2.known === false) {
+      lack(`D01-sameDay:${d}`, s2.need, [c.oushin.kubun, ...dayBlocks], d);
+      v2Oushin.set(d, "hold");
+    } else if (s2.value === "after") v2Oushin.set(d, "bill");
+    else {
+      v2Oushin.set(d, "skip");
+      for (const o of oushins.filter((x) => x.date === d)) notBilled.push({ event: ref(o), reason: s2.value === "same" ? "same_encounter" : "oushin_not_after_visit" });
+    }
+  }
+  const billedOushins = oushins.filter((o) => oushinDecision(o.date) === "bill" && (v2Oushin.get(o.date) ?? "bill") === "bill");
   add(c.oushin.kubun, billedOushins.map((o) => o.date), { derive: "D02", events: billedOushins });
   // 往診料と併せて再診料（留意 C001 (11)。L-40 の推奨案）。訪問診療料も立てた日には重ねない（算定を増やさない側）
   const visitDaySet = new Set([...billedVisits.map((v) => v.date), ...v2Dates]);

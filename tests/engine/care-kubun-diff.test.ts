@@ -149,3 +149,18 @@ describe("導出で (Ⅰ)2 の行が入力にある月（EM §2-14 の 2-2）", 
     expect(noVisits.basis.filter((b) => b.derive === "D03")).toEqual([]);
   });
 });
+
+describe("導出 D02：(Ⅰ)2 の日の往診（round-82 C-532）", () => {
+  it("同じ日の事情が分からなければ往診料を落とさず、R10 と同じ事実を保留で聞く。急変の往診と分かれば立てる", async () => {
+    const { deriveLines } = await import("../../src/engine/derive");
+    const K1 = loadCase("K1");
+    const events = [{ type: "oushin" as const, date: day(12), kind: "normal" as const }];
+    const input = { yearMonth: K1.yearMonth, facility: K1.facility, history: K1.history, choices: {}, events, manual: [line("C001_2I", 1, [day(12)])] };
+    const unknown = deriveLines({ ...input, facts: { ...K1.facts, sameDaySeparate: { known: false }, sameDayOushinAfterVisit: { known: false } } });
+    expect(unknown.pending.filter((p) => p.id === `D01-sameDay:${day(12)}`).length).toBe(1);
+    expect(unknown.notBilled).toEqual([]);
+    expect(unknown.lines.some((l) => l.kubun === "C000")).toBe(false);
+    const after = deriveLines({ ...input, facts: { ...K1.facts, sameDaySeparate: { known: true, value: { [day(12)]: true } }, sameDayOushinAfterVisit: { known: true, value: { [day(12)]: true } } } });
+    expect(after.lines.some((l) => l.kubun === "C000" && l.dates.includes(day(12)))).toBe(true);
+  });
+});
