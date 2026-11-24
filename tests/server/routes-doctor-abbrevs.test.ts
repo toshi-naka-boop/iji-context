@@ -467,3 +467,21 @@ describe("医師の答えを事務の画面に返す（反証 round-101 X-511）
     setCount(0);
   });
 });
+
+describe("受け取った医師の答えは、確認依頼を外しても残る（反証 round-102 X-521）", () => {
+  it("Lv.5：AMI＝心筋梗塞で医師確認に回す → 医師が心臓破裂と答える → 事務が「医師確認に回す」を外して保存し直しても、医師の答えがこのカルテの意味のまま", async () => {
+    setCount(180); // Lv.5
+    const w = await write(claimId("K1"), { a: "AMI。" });
+    await select(w.id, "AMI", "辞書の意味", { meaning: "心筋梗塞", askDoctor: true });
+    const q = (await list()).find((x) => x.token === "AMI" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
+    expect((await answer(q, "指すものを記入する", "心臓破裂", q.quotes.filter((y) => refNote(y.ref) === w.id).map((y) => y.ref))).status).toBe(200);
+    const s = (await (await select(w.id, "AMI", "辞書の意味", { meaning: "心筋梗塞", askDoctor: false })).json()) as Summary;
+    expect(tokenOf({ abbrev: s }, "AMI")).toMatchObject({
+      selection: { meaning: "心筋梗塞", askDoctor: false },
+      doctorAnswer: { option: "指すものを記入する", text: "心臓破裂" },
+      meaning: "心臓破裂",
+      doctorPending: false,
+    });
+    setCount(0);
+  });
+});

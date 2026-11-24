@@ -130,11 +130,15 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       });
     });
   }
-  /** そのカルテのその略語への、いちばん新しい医師の答え（答えの記録は追記のまま。答えがなければ null） */
+  /**
+   * そのカルテのその略語への、いちばん新しい医師の答え（答えの記録は追記のまま。答えがなければ null）。
+   * 答えを受け取ったあとに事務が医師確認に回すのを外しても、答えはそのカルテの意味として残す（反証 round-102 X-521。今の問いの一覧からは引かない）
+   */
   function doctorAnswerOf(noteId: number, token: string): { option: string; text: string | null } | null {
-    const it = items().find((x) => x.noteId === noteId && x.tokens[0] === token);
-    const a = it ? latest().get(`${it.ref}|${token}`) : undefined;
-    return a && a.option !== ABBREV_VARIES ? { option: a.option, text: a.freeText } : null;
+    const a = sqlite
+      .prepare("SELECT a.option, a.free_text FROM abbrev_answer_items i JOIN abbrev_answers a ON a.id = i.answer_id WHERE i.note_id = ? AND i.place = 'text' AND a.token = ? ORDER BY a.id DESC LIMIT 1")
+      .get(noteId, token) as { option: string; free_text: string | null } | undefined;
+    return a && a.option !== ABBREV_VARIES ? { option: a.option, text: a.free_text } : null;
   }
   /** 医師確認中か：医師確認に回していて、答えがまだない（「記載によって違う」で割ったあとも、答えるまで確認中） */
   function doctorPending(noteId: number, token: string): boolean {
