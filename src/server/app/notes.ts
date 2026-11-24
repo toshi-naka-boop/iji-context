@@ -4,7 +4,7 @@ import { claimMultiBandOf, claimNote14SideOf } from "../../engine/predicates";
 import { tableKeyOfAct, tableKeyOfChild, validateActs, type AbbrevSummary, type ActChild, type ActFold, type ActMatch, type ChartAct, type RxChoice, type RxNote, type StoredActs, type TableKey, type Tbl } from "../../chart/acts";
 import { matchItem, rowIn, rowsFor, searchRows, type Alias, type ItemMatch } from "../../chart/match";
 import { rxDefault } from "../../chart/rx-default";
-import { abbrevMarks, abbrevVocabOf, itemKeyOf, itemMarks, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
+import { abbrevMarks, abbrevVocabOf, askedItems, itemKeyOf, itemMarks, markActs, markFacts, NO_MASTER_NOTE, type AbbrevVocab } from "../../chart/abbrev";
 import { dispensingOf } from "../../facility/declaration";
 import { readDeclarations } from "../../facility/seed";
 import { withMasters, type MastersDb } from "../../masters/db";
@@ -36,7 +36,7 @@ import { declarationViewOf, facilityJsonOf, todayOf } from "./facility";
 import { genericOfLines } from "./generic";
 import { claimOfLines } from "../../generic/overlap";
 import { createTorikawasure, type TextDay } from "./torikawasure";
-import { createDoctorAbbrevs, forgetAbbrevAnswers } from "./doctor-abbrevs";
+import { ABBREV_WRITE_IN, createDoctorAbbrevs, forgetAbbrevAnswers } from "./doctor-abbrevs";
 import { RULE_CODES, structuredConfig } from "../../structured/rule-codes";
 import { hasTimeHint } from "../../structured/time-hint";
 import { rxConfirmedOf, rxHashOf } from "../../structured/rx-mark";
@@ -461,7 +461,8 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
   /**
    * 確かめたあとで付け直す一覧（GET /api/chart/acts/fixes。design.md §16-4-1・16-3・16-7。C-441）：その請求の確かめて残したカルテのうち、
    * 処方の日の印の効く日で印がない日（rxMark）と、当てられない行為に同じ日の電子カルテの同じ種類の行為があるもの（pairs）。見える範囲は確かめる画面と同じ
-   * （取り込んだ請求は貼ったカルテ〔チーム〕、合成の症例は本人が書いたカルテ）。返すのはカルテの id・日・処方の文・行為の書かれた名前と電子カルテの表示名だけ
+   * （取り込んだ請求は貼ったカルテ〔チーム〕、合成の症例は本人が書いたカルテ）。返すのはカルテの id・日・処方の文・行為の書かれた名前と電子カルテの表示名だけ。
+   * 病名の記載に医師が「指すものを記入する」で答えていれば、その記載と答えの語（doctorAnswers。X-492）も返す（その記載を開き直したときの札）
    */
   function confirmedFixes(claimId: string, clerkId: string) {
     clerk(clerkId);
@@ -484,8 +485,14 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
           ? [{ index, written: stored.acts[index].written, pairs: o.pairs.map((x) => ({ ref: x.ref, name: x.name })), fold: stored.acts[index].fold ?? null }]
           : [],
       );
-      if (mark === null && pairs.length === 0) return [];
-      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs }];
+      // 病名の記載への医師の「指すものを記入する」の答え（FR-211。反証 round-96 X-492）：表示するだけで、事実の値は書き換えず、取り出し・判定にも使わない
+      const facts = r.facts === null ? null : (JSON.parse(r.facts) as ExtractedFact[]);
+      const doctorAnswers = askedItems(r.kind, null, facts).flatMap((it) => {
+        const got = abbrevs.answersOf(r.id, "fact", it.key, it.tokens).filter((x) => x.answer.option === ABBREV_WRITE_IN && x.answer.freeText);
+        return got.length > 0 ? [{ index: it.index, value: it.written, quote: it.quote, answers: got.map((x) => ({ token: x.token, text: x.answer.freeText! })) }] : [];
+      });
+      if (mark === null && pairs.length === 0 && doctorAnswers.length === 0) return [];
+      return [{ noteId: r.id, date: r.date, rx: stored.rx.map((x) => x.quote), rxChoice: choice, rxMark: mark, pairs, ...(doctorAnswers.length > 0 ? { doctorAnswers } : {}) }];
     });
   }
   /** 保存した行ったこと（確かめていなければ null） */

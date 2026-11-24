@@ -338,3 +338,27 @@ describe("「違う」を選んだ行為も確かめる対象に残る（反証 
     expect(await scope()).toEqual(before);
   });
 });
+
+describe("病名の記載への医師の記入の答えを、その記載を開き直したときに出す（反証 round-96 X-492）", () => {
+  it("記入で答えると、確かめたカルテの一覧（GET /api/chart/acts/fixes）にその記載と「医師の答え」が出る。事実の値は書き換えず、書き方の表にも覚えない", async () => {
+    const w = await writeAndSave(claimId("K1"), "著変なし。PAF。", [], [{ kind: "病名の記載", value: "PAF", quote: "PAF" }]);
+    const fixes = async () => {
+      setRole("clerk");
+      const r = await (await import("../../app/api/chart/acts/fixes/route")).GET(get(`/api/chart/acts/fixes?claimId=${encodeURIComponent(claimId("K1"))}`));
+      expect(r.status).toBe(200);
+      return ((await r.json()) as { noteId: number; doctorAnswers?: unknown[] }[]).find((x) => x.noteId === w.id);
+    };
+    expect(await fixes()).toBeUndefined();
+    const aliases = aliasCount();
+    const q = (await list()).find((x) => x.token === "PAF")!;
+    expect((await answer(q, "指すものを記入する", "発作性心房細動")).status).toBe(200);
+    expect((await fixes())?.doctorAnswers).toEqual([{ index: 0, value: "PAF", quote: "PAF", answers: [{ token: "PAF", text: "発作性心房細動" }] }]);
+    const db = sql();
+    try {
+      expect(JSON.parse((db.prepare("SELECT facts FROM chart_notes WHERE id = ?").get(w.id) as { facts: string }).facts)).toEqual([{ kind: "病名の記載", value: "PAF", quote: "PAF", abbrev: ["PAF"] }]);
+    } finally {
+      db.close();
+    }
+    expect(aliasCount()).toBe(aliases);
+  });
+});

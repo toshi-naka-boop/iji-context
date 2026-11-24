@@ -106,6 +106,11 @@ export function MatchPicker(props: { item: Sel; table: TableKey; ym: string; wri
 const abbrevBadge = (abbrev: string[] | undefined, sel: ActMatch | null) =>
   abbrev && abbrev.length > 0 && !sel ? <span className="badge">略語：{abbrev.join("・")}（医師に確かめ中）</span> : null;
 
+/** 病名の記載への医師の答えの札（FR-211。反証 round-96 X-492）。表示するだけで、事実の値は書き換えない（取り出し・判定にも使わない） */
+export function DoctorAnswerBadge({ value, answers }: { value: string; answers: { token: string; text: string }[] }) {
+  return <span className="badge">{value}　医師の答え：{answers.map((a) => `${a.token}＝${a.text}`).join("、")}</span>;
+}
+
 /** 取り出した直後の略語の印のまとめ（FR-211。貼った直後とカルテを書いた直後に出す）。印がなければ何も出さない */
 export function AbbrevSummaryNote({ abbrev }: { abbrev: AbbrevSummary | undefined }) {
   if (!abbrev) return null;
