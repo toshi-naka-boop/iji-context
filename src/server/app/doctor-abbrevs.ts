@@ -5,9 +5,9 @@
 // 答えは、答えた時点で並んでいた記載にだけ効く（あとから同じ月に増えた記載は新しい問い）。答えはクリニックごとに覚えず、翌月の同じ語は改めて聞く。
 // 患者の氏名・患者 id は持たない・返さない（請求の番号と日付だけ）。ログ・監査ログに引用と答えの文を出さない
 import type Database from "better-sqlite3";
-import { askedItems, type AbbrevItem } from "../../chart/abbrev";
+import { askedItems, sentenceWith, type AbbrevItem } from "../../chart/abbrev";
 import type { AbbrevState, StoredActs } from "../../chart/acts";
-import type { ExtractedFact } from "../../chart/extract";
+import type { ChartNote, ExtractedFact } from "../../chart/extract";
 import { businessDaysElapsed, MONEY, OTHER, UNDETERMINABLE, validateQuery } from "../../query/doctor-query";
 import { badRequest, conflict } from "../errors";
 import type { Clerks } from "./clerks";
@@ -47,7 +47,7 @@ export type AbbrevRequest = {
 const refOf = (noteId: number, place: string, key: string) => `${noteId}:${place}:${key}`;
 const REF = /^([1-9][0-9]{0,9}):(act|child|fact):([0-9a-f]{16})$/;
 
-/** 引用を語を含む文 1 つに切り、点数・金額の語（MONEY の正規表現そのもの）を伏せる */
+/** 引用（原文のその語を含む文。plan-fr211.md「規則の作り直し」2）を語を含む文 1 つに切り、点数・金額の語（MONEY の正規表現そのもの）を伏せる */
 export function quoteOf(quote: string, token: string): { quote: string; masked: boolean } {
   const sentences = quote.split(/(?<=[。\n])/).map((x) => x.trim()).filter(Boolean);
   const one = sentences.find((x) => x.normalize("NFKC").includes(token)) ?? quote.trim();
@@ -63,7 +63,7 @@ export function forgetAbbrevAnswers(sqlite: Database.Database, noteIds: number[]
   sqlite.prepare("DELETE FROM abbrev_answers WHERE id NOT IN (SELECT answer_id FROM abbrev_answer_items)").run();
 }
 
-type Item = AbbrevItem & { noteId: number; claimId: string; date: string; yearMonth: string; at: string; ref: string };
+type Item = AbbrevItem & { noteId: number; claimId: string; date: string; yearMonth: string; at: string; ref: string; note: ChartNote };
 type Answer = { id: number; option: string; freeText: string | null };
 
 export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClaim" | "businessDays">, clock: Pick<Clock, "now">, clerks: Pick<Clerks, "clerk">, yearMonthOf: (claimId: string) => string) {
@@ -71,11 +71,12 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
 
   /** 保存したカルテの、医師に聞く記載（見本の請求は demo 以外のクリニックでは出さない） */
   function items(): Item[] {
-    const rows = sqlite.prepare("SELECT id, claim_id, date, kind, facts, acts, created_at FROM chart_notes WHERE facts IS NOT NULL OR acts IS NOT NULL ORDER BY id").all() as {
+    const rows = sqlite.prepare("SELECT id, claim_id, date, kind, note, facts, acts, created_at FROM chart_notes WHERE facts IS NOT NULL OR acts IS NOT NULL ORDER BY id").all() as {
       id: number;
       claim_id: string;
       date: string;
       kind: string;
+      note: string;
       facts: string | null;
       acts: string | null;
       created_at: string;
@@ -100,7 +101,8 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
       const yearMonth = monthOf(r.claim_id);
       if (yearMonth === null) return [];
       const at = stored?.abbrev?.at ?? r.created_at;
-      return found.map((x) => ({ ...x, noteId: r.id, claimId: r.claim_id, date: r.date, yearMonth, at, ref: refOf(r.id, x.place, x.key) }));
+      const note = JSON.parse(r.note) as ChartNote;
+      return found.map((x) => ({ ...x, noteId: r.id, claimId: r.claim_id, date: r.date, yearMonth, at, ref: refOf(r.id, x.place, x.key), note }));
     });
   }
   /** 記載と語ごとの、いちばん新しい答え（鍵は「参照|語」） */
@@ -130,7 +132,7 @@ export function createDoctorAbbrevs(ctx: Pick<AppContext, "sqlite" | "hiddenClai
     const order = (a: { claimId: string; date: string; ref: string }, b: { claimId: string; date: string; ref: string }) =>
       a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : a.date < b.date ? -1 : a.date > b.date ? 1 : a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0;
     const make = (yearMonth: string, token: string, list: Item[], split: boolean): AbbrevRequest => {
-      const quotes = list.map((it) => ({ ref: it.ref, claimId: it.claimId, date: it.date, ...quoteOf(it.quote, token) })).sort(order);
+      const quotes = list.map((it) => ({ ref: it.ref, claimId: it.claimId, date: it.date, ...quoteOf(sentenceWith(it.note, token) ?? it.quote, token) })).sort(order);
       const since = list.map((x) => x.at).sort()[0];
       const n = businessDaysElapsed(since, now, ctx.businessDays);
       return { yearMonth, token, question: abbrevQuestion(token), options: [...ABBREV_OPTIONS], quotes, split, since, reminded: n >= 1, held: n >= 3 };

@@ -142,7 +142,8 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
     const q = qs[0];
     expect(q).toMatchObject({ yearMonth: YM, token: "ECG12", question: "この記載の『ECG12』は何を指しますか", split: false });
     expect(q.quotes.map((x) => x.claimId).sort()).toEqual([claimId("K1"), claimId("K4")].sort());
-    expect(q.quotes.every((x) => x.quote === "ＥＣＧ１２" && x.date.length === 10)).toBe(true);
+    // 引用は原文のその語を含む文（記載の引用ではない。規則の作り直し 2）
+    expect(q.quotes.every((x) => x.quote === "ＥＣＧ１２。" && x.date.length === 10)).toBe(true);
     expect(q.options).toEqual([...ABBREV_OPTIONS]);
     expect(q.options).toHaveLength(4);
     expect(q.options).toEqual(expect.arrayContaining(["その他", "判定不能"]));
@@ -153,7 +154,7 @@ describe("印・lookup・書き方の表（受け入れ条件 3 の前半）", (
   it("引用に「加算」を含む文は伏せて返る。医師以外の役割は 403", async () => {
     const w = await writeAndSave(claimId("K4"), "ＭＲＩ（加算の確認）。", [{ category: "検査", written: "ＭＲＩ", lookup: [], quote: "ＭＲＩ（加算の確認）" }]);
     const q = (await list()).find((x) => x.token === "MRI")!;
-    expect(q.quotes).toEqual([expect.objectContaining({ quote: "ＭＲＩ（＊＊の確認）", masked: true })]);
+    expect(q.quotes).toEqual([expect.objectContaining({ quote: "ＭＲＩ（＊＊の確認）。", masked: true })]);
     expect(abbrevQueryErrors(q)).toEqual([]);
     for (const role of ["clerk", "veteran", "manager"] as Role[]) {
       setRole(role);
@@ -304,12 +305,12 @@ describe("LLM が原文の略語を言い換えても医師確認を通る（反
     expect(app().savedActs(w.id)!.acts[0]).toMatchObject({ abbrev: ["ECG12"], lookup: [], match: null });
     expect(aliasCount()).toBe(aliases);
     const q = (await list()).find((x) => x.token === "ECG12" && x.quotes.some((y) => refNote(y.ref) === w.id));
-    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)?.quote).toBe("ＥＣＧ１２");
+    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)?.quote).toBe("ＥＣＧ１２。");
   });
   it("AF を「心房細動」（傷病名の名称と完全一致）と書き換えても、引用の原文で印が付き、医師に聞く", async () => {
     const w = await writeAndSave(claimId("K1"), "変わりなし。AF。", [], [{ kind: "病名の記載", value: "心房細動", quote: "AF" }]);
     const q = (await list()).find((x) => x.token === "AF" && x.quotes.some((y) => refNote(y.ref) === w.id));
-    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)).toMatchObject({ ref: expect.stringContaining(":fact:"), quote: "AF" });
+    expect(q?.quotes.find((y) => refNote(y.ref) === w.id)).toMatchObject({ ref: expect.stringContaining(":fact:"), quote: "AF。" });
   });
 });
 
@@ -409,30 +410,20 @@ describe("確かめる画面の「候補を引き直す」でも自動選択が�
   });
 });
 
-describe("言い換えの疑いは、引用に略語がなくても医師に聞く（反証 round-97 C-631）", () => {
-  it("原文「ＡＦ継続。ＥＣＧ１２施行」で、引用を「施行」「継続」と言い換えた組：初期値に当てず lookup も空で、AF・ECG12 の問いに出る。答えられる", async () => {
+describe("言い換えの疑いだけでは聞かない（規則の作り直し 5。round-97 C-631 の組の期待を改めた）", () => {
+  it("原文「ＡＦ継続。ＥＣＧ１２施行」で引用を「施行」「継続」と言い換えた組は、記載に結び付かない。酸素ボンベ加算などの名前も問いの語にならない", async () => {
     llm.runOnce.mockResolvedValueOnce({
-      structured: { facts: [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], acts: [{ category: "検査", written: "心電図", lookup: ["特異的ＩｇＥ半定量・定量"], quote: "施行" }], rx: [] },
+      structured: { facts: [{ kind: "病名の記載", value: "心房細動", quote: "継続" }], acts: [{ category: "検査", written: "心電図", lookup: [], quote: "施行" }], rx: [] },
       sessionId: "",
       stats: {},
     });
     setRole("clerk");
     const w = (await (await (await import("../../app/api/chart/route")).POST(post("/api/chart", { claimId: claimId("K1"), kind: "訪問診療", note: { s: "", o: "ＡＦ継続。ＥＣＧ１２施行", a: "", p: "", rx: "" } }))).json()) as Written & { facts: { abbrev?: string[] }[] };
-    expect(w.acts[0]).toMatchObject({ written: "心電図", abbrev: ["AF", "ECG12"], lookup: [] });
-    expect(w.facts[0].abbrev).toEqual(["AF", "ECG12"]);
-    expect(w.review.matches[0].act.initial).toBeNull();
-    expect(w.review.matches[0].act.candidates.map((c) => c.code)).not.toContain(LOOKUP_ROW);
-    const s = await (await import("../../app/api/chart/acts/route")).POST(post("/api/chart/acts", { noteId: String(w.id), facts: w.facts, acts: w.acts.map((a) => ({ ...a, match: null })), rx: [], rxChoice: null }));
-    expect(s.status).toBe(200);
-    const mine = (await list()).filter((x) => x.quotes.some((y) => refNote(y.ref) === w.id));
-    expect(mine.map((x) => x.token).sort()).toEqual(["AF", "ECG12"]);
-    expect(mine.every((x) => x.quotes.filter((y) => refNote(y.ref) === w.id).length === 2)).toBe(true);
-  });
-  it("原文に分からない略語がない言い換えは、記載そのものを問いの語にして聞き、その語でも答えられる", async () => {
-    const w = await writeAndSave(claimId("K4"), "心電図の検査をした。", [{ category: "検査", written: "心電図", lookup: [], quote: "検査をした" }]);
-    const q = (await list()).find((x) => x.token === "心電図" && x.quotes.some((y) => refNote(y.ref) === w.id))!;
-    expect(q.question).toBe("この記載の『心電図』は何を指しますか");
-    expect(abbrevQueryErrors(q)).toEqual([]);
-    expect((await answer(q, "判定不能", undefined, q.quotes.filter((y) => refNote(y.ref) === w.id).map((y) => y.ref))).status).toBe(200);
+    expect(w.acts[0].abbrev).toBeUndefined();
+    expect(w.facts[0].abbrev).toBeUndefined();
+    // 問いの語は英字の略語だけ（記載の名前は受け取らない）
+    setRole("doctor");
+    const r = await (await import("../../app/api/doctor/abbrevs/route")).POST(post("/api/doctor/abbrevs", { yearMonth: YM, token: "酸素ボンベ加算", refs: [`${w.id}:act:0000000000000000`], option: "判定不能" }));
+    expect(r.status).toBe(400);
   });
 });
