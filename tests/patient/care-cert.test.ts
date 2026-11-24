@@ -116,3 +116,18 @@ describe("請求の判定（design.md §18-9 の 2）", () => {
     expect(evaluate(app.caseOf(claimId("K4"))).findings.map((f) => [f.ruleId, f.kind, f.missing?.field])).toEqual([["R03", "情報不足", "careLevel"]]);
   });
 });
+
+describe("月の途中で要介護度が変わった月の R17（design.md §18-12 の 4）", () => {
+  it("区間で値が違う月は careLevelMixed が立つ（R03 は境が同じなら効くまま）", async () => {
+    const { tempApp, upload, fileOf, receiptOf } = await import("../helpers/care");
+    const t = tempApp();
+    try {
+      const [id] = upload(t.app, fileOf([receiptOf(1, YM, [{ kubun: "C001_1I", count: 2, dates: [day(6), day(20)] }, { kubun: "C002_2RO1", count: 1, dates: [day(20)] }])]));
+      t.app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 3, validFrom: dateIn(-6, 1) }, source: "介護保険証", validUntil: day(15) });
+      t.app.savePatientFact(id, "new1", { key: "careCert", value: { kind: "要介護", level: 4, validFrom: day(16) }, source: "介護保険証", validUntil: dateIn(5, 30) });
+      expect([t.app.caseOf(id).facts.careLevel, t.app.caseOf(id).facts.careLevelMixed]).toEqual([{ known: true, value: 4 }, { known: true, value: true }]);
+    } finally {
+      t.close();
+    }
+  });
+});

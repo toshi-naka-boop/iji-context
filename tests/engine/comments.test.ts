@@ -296,6 +296,8 @@ describe("中身の突き合わせ（完了条件 (d)）", () => {
     expect(tags(withCode("820100629", withFact(K2, "disabilitySupportLevel", { known: true, value: 2 })))).toEqual([]);
     expect(tags(withCode("820100629"))).toEqual([]);
     expect(tags(withCode("820100635", care(2)))).toEqual([]);
+    // 月の途中で要介護度が 3→4 に変わった月（careLevel は月の終わりの 4）：「要介護 3」と書いた請求に指摘を出さない（design.md §18-12 の 4）
+    expect(tags(withFact(care(4), "careLevelMixed", { known: true, value: true }))).toEqual([]);
   });
 
   it("deathDate：死亡年月日の記載が死亡の記録の日と違えば指摘。カルテ側の記録がない請求では比べない", () => {

@@ -108,7 +108,9 @@ export function makeR17(spec: CommentSpec): Rule {
       }
       case "hokatsuState": {
         // 事実と対応のあるコード（要介護3・4・5、障害支援区分2 以上）だけを、確かめてある事実と比べる。事実が不明なら比べない
-        const care = ctx.facts.careLevel;
+        // 月の途中で要介護度が変わり、区間で値が違う月は、要介護度の記載を比べない（design.md §18-12 の 4）
+        const mixed = ctx.facts.careLevelMixed?.known === true && ctx.facts.careLevelMixed.value;
+        const care = mixed ? ({ known: false } as const) : ctx.facts.careLevel;
         const disability = ctx.facts.disabilitySupportLevel;
         const used = mine.filter((x) => {
           const note = spec.commentCodes[x.code];

@@ -121,6 +121,11 @@ export type Facts = {
    * 2 値の residence はここから導く（自宅→居宅、有料・サ高住・特定施設・GH・特養など→施設入居等、老健・介護医療院・養護〔それ以外〕→2 値に当たらない）
    */
   residenceType?: Fact<ResidenceType>;
+  /**
+   * 月の途中で要介護度が変わり、区間で値が違う月か（design.md §18-12 の 4）。真なら careLevel は R03 の境が同じときの月の終わりの値で、
+   * R17 の包括的支援加算の状態の記載は比べない。持たない請求は偽
+   */
+  careLevelMixed?: Fact<boolean>;
   /** 末期の悪性腫瘍か（医師に確かめる事実。患者ごとに続く。期限なし。design.md §18-4。判断 H）。持たない請求は「分からない」 */
   terminalCancer?: Fact<boolean>;
 };

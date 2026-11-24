@@ -105,7 +105,9 @@ export function createCases(ctx: AppContext, clock: Clock, uke: Uke, patients: P
     // 要介護度は認定の行の全部から決める（月の途中で区分が変わった 2 行。R03 の要介護 3 以上かの境は、その月の版の値）。認定の行がなければカルテ側の値のまま
     const rows = careRows(patientId);
     const certState = careStateOf(rows, r.yearMonth);
-    const careLevel = rows.length > 0 ? { careLevel: careLevelOf(certState, resolveRevision(r.yearMonth).consts.hokatsu.careLevelMin) } : {};
+    // 月の途中で区分が変わり、区間で値が違う月は careLevelMixed（R17 の包括的支援加算の状態の記載を比べない。design.md §18-12 の 4）
+    const mixed = certState.known && new Set(certState.segments.map((s) => s.level)).size > 1;
+    const careLevel = rows.length > 0 ? { careLevel: careLevelOf(certState, resolveRevision(r.yearMonth).consts.hokatsu.careLevelMin), ...(mixed ? { careLevelMixed: { known: true as const, value: true } } : {}) } : {};
     // 住まいの種別（design.md §18-2。判断 B）：診療年月に効く申告があれば、2 値の residence はそこから導く。なければ今までの 2 値の行（患者の事実 residence）を使う
     const rt = care?.residenceTypeOf(patientId, r.yearMonth);
     const residence = rt ? { residenceType: rt.fact, residence: residenceFactOf(rt.fact) } : {};

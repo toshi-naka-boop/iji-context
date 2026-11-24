@@ -303,6 +303,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
   buildingBand: "単一建物診療患者の人数の区分（みなしを当てたあとの、請求に使う区分）",
   residenceType: "住まいの種別（自宅・有料老人ホーム・サ高住・特養・老健など）",
   terminalCancer: "末期の悪性腫瘍か",
+  careLevelMixed: "月の途中で要介護度が変わったか",
 };
 
 /** 足りない施設の設定の名前（施設の設定で確かめるよう案内する。design.md §6-1） */
