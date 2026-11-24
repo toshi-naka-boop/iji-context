@@ -178,3 +178,12 @@ describe("申請中（EM §7-2 U-71。2026-11-24 利用者の判断）", () => {
     expect(() => validatePatientFact({ key: "careCert", value: { kind: "申請中" }, source: "介護保険証", validUntil: null }, `${day(13)}T09:00:00+09:00`)).not.toThrow();
   });
 });
+
+describe("申請中は、それより前に答えた「認定なし」の 6 か月を断ち切る（C-530）", () => {
+  it("9 月「認定なし」→ 10 月「申請中」の順で、10・11・12 月は分からない（R03 に 0 を渡さず、聞き取りの対象になる）。9 月は認定なし", () => {
+    const rows = [row({ key: "careCert", value: { kind: "認定なし", forMonth: month(-1) } }), row({ key: "careCert", value: { kind: "申請中", forMonth: YM } })];
+    expect(certifiedOf(careStateOf(rows, month(-1)))).toEqual({ known: true, value: false });
+    expect(careLevelOf(careStateOf(rows, YM), 3)).toEqual({ known: false });
+    for (const m of [1, 2]) expect([m, careStateOf(rows, month(m))]).toEqual([m, { known: false }]);
+  });
+});

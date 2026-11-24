@@ -171,8 +171,11 @@ export function careStateOf(rows: PatientFact[], yearMonth: string): CareState {
       return from <= yearMonth && yearMonth <= addMonthsTo(`${from}-01`, CARE_NONE_RECHECK_MONTHS - 1).slice(0, 7);
     };
     // 申請中は答えた診療月だけに効く（U-71）
-    const applying = (r: PatientFact) => (r.value as CareCertValue).kind === "申請中" && (r.value as { forMonth?: string }).forMonth === yearMonth;
-    const hit = certs.filter((r) => none(r) || applying(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
+    const monthOf = (r: PatientFact) => (r.value as { forMonth?: string }).forMonth ?? r.checkedAt.slice(0, 7);
+    const applying = (r: PatientFact) => (r.value as CareCertValue).kind === "申請中" && monthOf(r) === yearMonth;
+    // 「申請中」より前に答えた「認定なし」は、申請中の答えた診療月以降の月に効かせない（申請は認定なしの 6 か月を断ち切る。認定は申請日に遡り得る。C-530）
+    const cut = (r: PatientFact, i: number) => certs.some((a, j) => j > i && (a.value as CareCertValue).kind === "申請中" && monthOf(a) <= yearMonth);
+    const hit = certs.filter((r, i) => (none(r) && !cut(r, i)) || applying(r) || (r.value as CareCertValue).kind === "分からない").at(-1);
     const hk = hit ? (hit.value as CareCertValue).kind : null;
     return hit && (hk === "認定なし" || hk === "申請中") ? { known: true, segments: [{ kind: hk, level: 0 }], source: hit.source, checkedAt: hit.checkedAt } : { known: false };
   }
