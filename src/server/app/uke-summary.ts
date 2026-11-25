@@ -1,7 +1,7 @@
 // 取り込んだレセプトの全件の一覧（採点 r1 医療事務課長 P1-1）：月末の点検で、取り込んだ全件を、点検の結果の件数つきで 1 画面に並べる。
 // 件数は、取り込んだレセプトの点検（src/server/app/uke-check.ts の ukeCheck。UKE に書いてあるとおりのまま）と同じ数え方：
 // 確定＝条件つきでない指摘（手書きのルールとデータで動く点検）／条件つき＝条件つきの指摘／情報不足＝点検の画面と同じまとめ方の件数／
-// 見ていません＝どの点検も見ていない行（単位）の数。読めない・版のないレセプトは、点検していないとして状態だけを出す。
+// 見ていません＝どの点検も見ていない行（単位）の数／患者情報＝患者情報の指摘（P 系。ユスティの指摘とは別に数える。宛先は医療事務）の件数。読めない・版のないレセプトは、点検していないとして状態だけを出す。
 // 読むだけで、何も記録しない（院内の知識の USED も付けない）。接続先（構造化データ）は読まない
 import type { Finding } from "../../engine/types";
 import type { ClaimReviews } from "./claim-reviews";
@@ -27,6 +27,8 @@ export type UkeSummaryRow = {
   conditional: number;
   missing: number;
   unchecked: number;
+  /** 患者情報の指摘（P 系）の件数。確定・条件つきには入れない（ユスティの指摘とは別の系統） */
+  patientFindings: number;
   /** 本人がこの請求の点検を確かめたか（実在のデータで使うクリニックだけ。ほかは持たない） */
   reviewed?: boolean;
 };
@@ -40,7 +42,7 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
     return uke.ukeList(clerkId).filter((u) => u.uploaded || u.imported).flatMap((u) =>
       u.receipts.map((x): UkeSummaryRow => {
         const head = { claimId: x.claimId, label: u.uploaded ? x.claimId : x.claimId.split("-")[0], patient: x.patient, patientNo: x.patientNo };
-        const zero = { confirmed: 0, conditional: 0, missing: 0, unchecked: 0 };
+        const zero = { confirmed: 0, conditional: 0, missing: 0, unchecked: 0, patientFindings: 0 };
         if (x.unreadable !== null) return { ...head, state: "unreadable", ...zero };
         if (x.revisionId === null) return { ...head, state: "noRevision", ...zero };
         const r = ukeCheck(x.claimId, clerkId);
@@ -55,6 +57,7 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
           conditional: hand.filter((f) => f.params?.conditional === "1").length + generic.filter((f) => f.certainty === "条件つき").length,
           missing: missingCount(r.missing),
           unchecked: r.rows.filter((row) => row.checkedBy === "none").length,
+          patientFindings: r.patientFindings.length,
           ...(reviewed !== undefined ? { reviewed: reviewed !== null } : {}),
         };
       }),
