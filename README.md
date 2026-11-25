@@ -84,7 +84,7 @@
 
 - **連絡先**：漏えいの疑い・セキュリティの問題は、GitHub の非公開の報告（[Report a vulnerability](https://github.com/toshi-naka-boop/iji-context/security/advisories/new)）で送ってください。報告は運営者だけが読めます。それ以外の問い合わせは [Issues](https://github.com/toshi-naka-boop/iji-context/issues) へ（公開されるので、患者の情報は書かないでください）。
 - **バックアップ**：公開版はバックアップを取っていません。まだ製品ではないためです。サーバーが壊れたり、運営者が公開版を止めたりすると、入れたデータは戻りません。
-- **置き場の地域**：公開版のサーバーは、手順書（[docs/deploy-gcp.md](docs/deploy-gcp.md)）にある東京（asia-northeast1）ではありません。地域は、製品にする前に決めて書きます。
+- **置き場の地域**：公開版のサーバーは、Google Cloud の東京（asia-northeast1）にあります（2026-11-25 の差し替えのときに確かめた）。
 
 登録は招待制です。招待コードがあれば、ログイン ID とパスワードを決めるだけで使えます。インストールは要りません。クリニックごとに専用の DB を持つので、ほかのクリニックの操作とは混ざりません。
 
