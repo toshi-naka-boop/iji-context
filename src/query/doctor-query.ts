@@ -72,6 +72,7 @@ function markdown(q: DoctorQuery): string {
     `- 確認したいこと: ${q.field}`,
     `- 作成: ${q.createdBy === "mentor" ? "メンター（AI）" : "医療事務"} ${q.createdAt}`,
     `- 状態: ${q.status}`,
+    ...(q.sentAt ? [`- 医師に送った: ${q.sentAt}`] : []),
     "",
     "## 質問",
     "",
@@ -121,16 +122,29 @@ export function listQueries(log: QueryLog): DoctorQuery[] {
 
 export type QueryDraft = Pick<DoctorQuery, "claimId" | "field" | "why" | "question" | "indicators" | "options" | "createdBy">;
 
-/** 質問を作る。7 要件の検証に落ちたら例外（医師に届けない） */
-export function createQuery(log: QueryLog, draft: QueryDraft, now: string): DoctorQuery {
+/**
+ * 質問を作る。7 要件の検証に落ちたら例外（医師に届けない）。
+ * initial が「送る前」なら、医療事務が中身を確かめて送る（sendQuery）まで医師に届けない（メンターが書いたもの）
+ */
+export function createQuery(log: QueryLog, draft: QueryDraft, now: string, initial: "未回答" | "送る前" = "未回答"): DoctorQuery {
   assertTime(now, "now");
   const errors = validateQuery(draft);
   if (errors.length) throw new Error(`医師確認の要件を満たさない: ${errors.join(" / ")}`);
   const id = `q-${createHash("sha256").update([draft.claimId, draft.field, now].join("\0")).digest("hex").slice(0, 12)}`;
   if (existsSync(path.join(log.dir, `${id}.json`))) throw conflict(`同じ医師確認がすでにある: ${id}`);
-  const q: DoctorQuery = { ...draft, id, createdAt: now, status: "未回答", answer: null, approval: null, remindedAt: null, heldAt: null };
+  const q: DoctorQuery = { ...draft, id, createdAt: now, status: initial, answer: null, approval: null, remindedAt: null, heldAt: null };
   save(log, q);
   return q;
+}
+
+/** 送る前の質問を、医療事務が中身を確かめて医師に送る（未回答にする）。送った日時を残し、リマインドと保留はここから数える */
+export function sendQuery(log: QueryLog, id: string, now: string): DoctorQuery {
+  assertTime(now, "now");
+  const q = readQuery(log, id);
+  if (q.status !== "送る前") throw conflict(`送れない状態: ${q.status}`);
+  const next: DoctorQuery = { ...q, status: "未回答", sentAt: now };
+  save(log, next);
+  return next;
 }
 
 /** 医師の回答。選択肢から 1 つ。「その他」は自由記述が必須 */
@@ -168,7 +182,7 @@ export function tickQueries(log: QueryLog, now: string, cal: BusinessDays): { re
   const held: string[] = [];
   for (const q of listQueries(log)) {
     if (q.status !== "未回答") continue;
-    const n = businessDaysElapsed(q.createdAt, now, cal);
+    const n = businessDaysElapsed(q.sentAt ?? q.createdAt, now, cal);
     if (n >= 3) {
       save(log, { ...q, status: "保留", heldAt: now, remindedAt: q.remindedAt ?? now });
       held.push(q.id);
@@ -184,15 +198,16 @@ export function tickQueries(log: QueryLog, now: string, cal: BusinessDays): { re
 // ask_missing（FR-36）：宛先が医師なら F1、医療事務なら F3
 
 export type AskMissing =
-  | { target: "doctor"; claimId: string; field: string; why: string; question: string; indicators: DoctorQuery["indicators"]; options: string[]; createdBy: DoctorQuery["createdBy"] }
+  | { target: "doctor"; claimId: string; field: string; why: string; question: string; indicators: DoctorQuery["indicators"]; options: string[]; createdBy: DoctorQuery["createdBy"]; hold?: boolean }
   | { target: "clerk"; claimId: string; field: string; why: string };
 
 export function askMissing(log: QueryLog, req: AskMissing, now: string): { route: "F1"; query: DoctorQuery } | { route: "F3"; task: ClerkTask } {
   assertTime(now, "now");
   if (!req.field.trim() || !req.why.trim()) throw new Error("ask_missing には field と why が必要");
   if (req.target === "doctor") {
-    const { target: _t, ...draft } = req;
-    return { route: "F1", query: createQuery(log, draft, now) };
+    // hold は、医療事務が確かめて送るまで医師に届けない（メンターが書いたもの）
+    const { target: _t, hold, ...draft } = req;
+    return { route: "F1", query: createQuery(log, draft, now, hold ? "送る前" : "未回答") };
   }
   const id = `t-${createHash("sha256").update([req.claimId, req.field, now].join("\0")).digest("hex").slice(0, 12)}`;
   return { route: "F3", task: { id, claimId: req.claimId, field: req.field, why: req.why, createdAt: now } };

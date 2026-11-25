@@ -377,6 +377,20 @@ ALTER TABLE tenants_v6 RENAME TO tenants;
 ALTER TABLE users ADD COLUMN disabled_at TEXT;
 `,
   },
+  {
+    // 持ち主の引き継ぎ（採点 r2 事務長 #3）：クリニックの持ち主の利用者 id。空なら、クリニックを始めた人（tenant id と同じ id の人）が持ち主
+    version: 8,
+    sql: `
+ALTER TABLE tenants ADD COLUMN owner_id TEXT;
+`,
+  },
+  {
+    // 仮のパスワード（採点 r2 事務長 #4）：事務長か持ち主が発行したら 1。本人が自分のパスワードに変えるまで、ほかの操作を断る。値は保存しない（ハッシュだけ）
+    version: 9,
+    sql: `
+ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

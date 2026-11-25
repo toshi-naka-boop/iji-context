@@ -1,4 +1,4 @@
-// API Route（薄い入口。処理は src/server/app.ts）。議題に答えるのはベテラン。監査ログの対象は議題の項目の id（自由記述・条件の文は入れない）
+// API Route（薄い入口。処理は src/server/app.ts）。議題に答えるのはベテランと事務長。監査ログの対象は議題の項目の id（自由記述・条件の文は入れない）
 import { route } from "../../../../src/server/http";
 import { getApp } from "../../../../src/server/instance";
 import { allow } from "../../../../src/server/policy";

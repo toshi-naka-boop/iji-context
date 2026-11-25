@@ -11,6 +11,7 @@ import {
   businessDaysElapsed,
   createQuery,
   readQuery,
+  sendQuery,
   tickQueries,
   validateQuery,
   type BusinessDays,
@@ -123,6 +124,19 @@ describe("⑦ 未回答：翌営業日にリマインド、3 営業日で保留�
     expect(readQuery(log(), q.id)).toMatchObject({ status: "保留", remindedAt: T(day(9)), heldAt: T(day(14)) });
     answerQuery(log(), q.id, { option: "非弁膜症性心房細動", answeredBy: "院長" }, T(day(15)));
     expect(readQuery(log(), q.id).status).toBe("回答済み");
+  });
+
+  it("送る前（メンターが書いた下書き）は、医療事務が送るまで回答できず、リマインドも保留もしない。送った日から数える（採点 r2 エンジニアの上司 #4）", () => {
+    const r = askMissing(log(), { target: "doctor", ...k4, hold: true }, T(day(8)));
+    const q = r.route === "F1" ? r.query : (() => { throw new Error(); })();
+    expect(q.status).toBe("送る前");
+    expect(Object.keys(readQuery(log(), q.id))).not.toContain("hold");
+    expect(() => answerQuery(log(), q.id, { option: "判定不能", answeredBy: "院長" }, T(day(9)))).toThrow(/回答できない状態: 送る前/);
+    expect(tickQueries(log(), T(day(14)), cal)).toEqual({ reminded: [], held: [] });
+    expect(sendQuery(log(), q.id, T(day(14)))).toMatchObject({ status: "未回答", sentAt: T(day(14)) });
+    expect(() => sendQuery(log(), q.id, T(day(14)))).toThrow(/送れない状態: 未回答/);
+    expect(tickQueries(log(), T(day(14)), cal)).toEqual({ reminded: [], held: [] });
+    expect(tickQueries(log(), T(day(15)), cal)).toEqual({ reminded: [q.id], held: [] });
   });
 
   it("回答済みの質問はリマインドも保留もしない", () => {

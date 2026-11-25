@@ -11,6 +11,7 @@ import { Staff } from "./staff";
 import { EraseClinic } from "./erase-clinic";
 import { Facility } from "./facility";
 import { Masters } from "./masters";
+import { ChangePassword } from "../password-gate";
 
 export default function Settings() {
   const { clerk: user, ready } = useClerk();
@@ -19,8 +20,9 @@ export default function Settings() {
   const [saved, setSaved] = useState("");
   // 役割（1 人で使っているクリニックだけ、自分で切り替えられる）
   const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; hasManager: boolean; isOwner: boolean; login: string; tenantKind: string } | null>(null);
+  const loadMe = () => fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
   useEffect(() => {
-    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
+    loadMe();
   }, []);
   async function switchRole(role: Role) {
     setErr("");
@@ -57,7 +59,7 @@ export default function Settings() {
           )}
         </div>
       )}
-      {me?.canManageStaff && !me.canSwitchRole && <Staff real={me.tenantKind !== "demo"} />}
+      {me?.canManageStaff && !me.canSwitchRole && <Staff real={me.tenantKind !== "demo"} isOwner={me.isOwner} onOwnerChanged={loadMe} />}
       {me?.canInvite && <Invites noManager={!me.hasManager} />}
       {me && <Facility canEdit={me.role === "manager" || me.role === "veteran"} />}
       {me?.role === "manager" && <Masters />}
@@ -73,6 +75,13 @@ export default function Settings() {
           />
         )}
       </div>
+      {me && (
+        <div className="panel" style={{ margin: "16px 0" }}>
+          <h3 style={{ marginTop: 0 }}>自分のパスワードを変える</h3>
+          <p className="muted">今のパスワードを入れ直して変えます。変えると、ほかの端末のログインは切れます。パスワードを忘れたときは、事務長に仮のパスワードを発行してもらってください。</p>
+          <ChangePassword temporary={false} onDone={() => {}} />
+        </div>
+      )}
       {me?.isOwner && <EraseClinic login={me.login} />}
     </main>
   );

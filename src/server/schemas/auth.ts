@@ -19,5 +19,9 @@ export const auditQuery = z.strictObject({ limit: z.coerce.number().int().min(1)
 export const staffParams = z.strictObject({ id: z.string().regex(/^t[0-9a-f]{12}$/) });
 /** 職員の役割を変える（POST /api/staff/[id]/role） */
 export const staffRoleBody = z.strictObject({ role: z.enum(ROLES) });
-/** クリニックをまるごと消す（POST /api/tenant/erase）。確かめに、持ち主のログイン ID を入れる */
-export const eraseTenantBody = z.strictObject({ login: z.string().max(64) });
+/** クリニックをまるごと消す（POST /api/tenant/erase）。確かめに、持ち主のログイン ID とパスワードを入れる */
+export const eraseTenantBody = z.strictObject({ login: z.string().max(64), password: z.string().max(256) });
+/** 持ち主を引き継ぐ（POST /api/staff/[id]/owner）。本人のパスワードを入れ直す */
+export const ownerTransferBody = z.strictObject({ password: z.string().max(256) });
+/** 自分のパスワードを変える（POST /api/auth/password）。今のパスワード（仮のパスワードを含む）と新しいパスワード */
+export const passwordChangeBody = z.strictObject({ current: z.string().max(256), next: z.string().max(256) });

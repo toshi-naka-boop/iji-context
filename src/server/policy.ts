@@ -34,9 +34,11 @@ export const POLICY = {
   // 注意書きへの同意（design.md §11-11）。本人だけ（誰の同意かはセッションで決める）
   "POST /api/consent": row(ALL, "none", false),
   "GET /api/auth/me": row(ALL, "none", false),
+  // 自分のパスワードを変える（採点 r2 事務長 #4）。本人だけ（誰のパスワードかはセッションで決める）。今のパスワードを入れ直す
+  "POST /api/auth/password": row(ALL, "none", false),
   // 未定のクリニックの使い方（demo／real）を一度だけ選ぶ（2026-11-22 利用者の判断）：事務長と、1 人で使っているクリニックの持ち主
   "POST /api/tenant/kind": row({ roles: ["manager"], solo: true }, "none", false),
-  // クリニックをまるごと消す（採点 r1 事務長 #8）。クリニックの持ち主だけ（持ち主かどうかは src/server/auth.ts の assertCanEraseTenant が照合する）。消す操作は同意を条件にしない
+  // クリニックをまるごと消す（採点 r1 事務長 #8）。クリニックの持ち主だけ（持ち主かどうかは src/server/auth.ts の assertCanEraseTenant が照合する。ログイン ID とパスワードを入れ直す）。消す操作は同意を条件にしない
   "POST /api/tenant/erase": row(ALL, "none", false),
   // 役割の切替（FR-144）：1 人で使っているクリニックの持ち主だけ。ロールでは許さない
   "POST /api/auth/role": row({ roles: [], solo: true }, "none", false),
@@ -52,6 +54,10 @@ export const POLICY = {
   "POST /api/staff/[id]/role": row(ALL, "none", false),
   "POST /api/staff/[id]/suspend": row(ALL, "none", false),
   "POST /api/staff/[id]/resume": row(ALL, "none", false),
+  // 職員の仮のパスワードを発行する（採点 r2 事務長 #4）。事務長とクリニックの持ち主（src/server/auth.ts の issueTempPassword が照合する）。発行した値は応答で 1 回だけ返す
+  "POST /api/staff/[id]/password": row(ALL, "none", false),
+  // 持ち主をほかの事務長に引き継ぐ（採点 r2 事務長 #3）。持ち主だけ（src/server/auth.ts の transferOwner が照合する）。パスワードを入れ直す
+  "POST /api/staff/[id]/owner": row(ALL, "none", false),
   // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
   "GET /api/masters": row(["manager"], "none", false),
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）
@@ -75,6 +81,8 @@ export const POLICY = {
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),
+  // メンターが書いた送る前の医師確認を、医療事務（事務・ベテラン）が中身を確かめて医師に送る（採点 r2 エンジニアの上司 #4）
+  "POST /api/doctor/[id]/send": row(WORK, "none", true),
   "POST /api/doctor/[id]/answer": row(["doctor"], "none", true),
   "POST /api/doctor/[id]/approve": row(["doctor"], "none", true),
   // 医師に確かめてほしい項目（医師あての情報不足）の一覧と、決められなかった答え（その他・判定不能）の記録。医師の役割だけ
@@ -209,10 +217,10 @@ export const POLICY = {
   "POST /api/knowledge/[id]/official-check/not-applies": row(["veteran"], "none", false),
   "GET /api/peer": row(ALL, "none", true),
   "POST /api/peer/[id]/answer": row(["veteran"], "none", true),
-  // レセメン会議：回答はベテラン。議題は事務長も見られる
+  // レセメン会議：議題を見る・整理を回す・回答するのは、ベテランと事務長（2026-11-25 事務長にも開く。利用者の判断。採点 r2 事務長 #1）
   "GET /api/meeting": row(["veteran", "manager"], "none", true),
-  "POST /api/meeting": row(["veteran"], "none", true),
-  "POST /api/meeting/answer": row(["veteran"], "none", true),
+  "POST /api/meeting": row(["veteran", "manager"], "none", true),
+  "POST /api/meeting/answer": row(["veteran", "manager"], "none", true),
   "POST /api/notice": row(["veteran"], "ai", true),
   "POST /api/notice/register": row(["veteran"], "none", true),
 
@@ -243,7 +251,9 @@ export type PolicyKey = keyof typeof POLICY;
  * 使い方が未定のクリニックでも通す操作（ログインしている人の、選ぶ・待つための操作だけ）。ほかは src/server/http.ts の route が 409 で断る。
  * 点検などの操作は、使い方が決まるまでさせない（2026-11-22 利用者の判断）
  */
-export const UNDECIDED_ALLOWED: ReadonlySet<PolicyKey> = new Set<PolicyKey>(["GET /api/auth/me", "POST /api/auth/role", "POST /api/consent", "GET /api/clock", "POST /api/tenant/kind"]);
+export const UNDECIDED_ALLOWED: ReadonlySet<PolicyKey> = new Set<PolicyKey>(["GET /api/auth/me", "POST /api/auth/role", "POST /api/consent", "GET /api/clock", "POST /api/tenant/kind", "POST /api/auth/password"]);
+/** 仮のパスワードでログインしている人にも通す操作（自分のパスワードに変える・自分のことを読む）。ほかは src/server/http.ts の route が 403 で断る（採点 r2 事務長 #4） */
+export const PASSWORD_CHANGE_ALLOWED: ReadonlySet<PolicyKey> = new Set<PolicyKey>(["GET /api/auth/me", "POST /api/auth/password"]);
 /** ルートヘルパに渡す形（表のキーと、その行） */
 export type Allowed = { key: PolicyKey } & Row;
 

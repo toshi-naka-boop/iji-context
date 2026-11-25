@@ -34,6 +34,13 @@ export class TenantUndecided extends UserError {
   }
 }
 
+/** 仮のパスワードでログインしている利用者の操作（採点 r2 事務長 #4）。共通のルートヘルパは 403 と、画面が変更の欄を出すための印（password: "change"）を返す */
+export class PasswordChangeRequired extends UserError {
+  constructor() {
+    super(403, "仮のパスワードでログインしています。先に、自分のパスワードに変えてください");
+  }
+}
+
 export const badRequest = (message: string, fields?: string[]) => new UserError(400, message, fields);
 export const forbidden = (message: string) => new UserError(403, message);
 export const notFound = (message: string) => new UserError(404, message);

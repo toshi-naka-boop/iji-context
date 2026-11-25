@@ -97,6 +97,39 @@ describe("医師確認の回答と承認", () => {
     ]);
   });
 
+  it("メンターが書いた送る前の医師確認は、医師の一覧に出ず、医療事務が送ると届く。医師は送れない（採点 r2 エンジニアの上司 #4）", async () => {
+    const { askMissing } = await import("../../src/query/doctor-query");
+    const send = (await import("../../app/api/doctor/[id]/send/route")).POST;
+    const list = (await import("../../app/api/doctor/route")).GET;
+    const answer = (await import("../../app/api/doctor/[id]/answer/route")).POST;
+    const owner = auth().register("hold_owner", "したがき", "password123");
+    const cookie = cookieOf(owner);
+    const draft = { claimId: claimId("K4"), field: "SY:心房細動の病型", why: "病型の記載がない", question: "心房細動の病型について、診療録に記載がありません。該当するものを選んでください。", indicators: [{ source: "処方", text: "DOAC" }], options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"], createdBy: "mentor" as const };
+    const id = instance.runAs(owner, () => {
+      const a = instance.getApp();
+      const r = askMissing(a.queryLog, { target: "doctor", ...draft, hold: true }, a.now());
+      return r.route === "F1" ? r.query.id : "";
+    });
+    const ids = async () => ((await (await list(new Request("http://localhost/api/doctor", { headers: { cookie } }))).json()) as { id: string; status: string }[]).map((q) => [q.id, q.status]);
+    // 医療事務には「送る前」で見える。医師には出ず、回答もできない
+    expect(await ids()).toEqual([[id, "送る前"]]);
+    await switchTo(cookie, "doctor");
+    expect(await ids()).toEqual([]);
+    expect((await answer(post(`/api/doctor/${id}/answer`, cookie, { option: "判定不能" }), params(id))).status).toBe(409);
+    expect((await send(post(`/api/doctor/${id}/send`, cookie), params(id))).status).toBe(403);
+    // 医療事務が送ると、医師に届く
+    await switchTo(cookie, "clerk");
+    expect((await send(post(`/api/doctor/${id}/send`, cookie), params(id))).status).toBe(200);
+    expect((await send(post(`/api/doctor/${id}/send`, cookie), params(id))).status).toBe(409);
+    await switchTo(cookie, "doctor");
+    expect(await ids()).toEqual([[id, "未回答"]]);
+    expect(instance.runAs(owner, () => instance.getApp().audit.list()).reverse().filter((r) => r.action === "POST /api/doctor/[id]/send").map((r) => [r.target, r.result, r.role])).toEqual([
+      [id, "denied", "doctor"],
+      [id, "ok", "clerk"],
+      [id, "rejected", "clerk"],
+    ]);
+  });
+
   it("医師確認の id の形でないものは、記録のファイルを探す前に断る", async () => {
     const approve = (await import("../../app/api/doctor/[id]/approve/route")).POST;
     const u = auth().register("clinic_path", "ぱす", "password123");

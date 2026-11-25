@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
-import { month } from "../helpers/period";
+import { month, YM } from "../helpers/period";
 import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
@@ -206,7 +206,7 @@ describe("メンター同士の問い・会議・通知", () => {
     expect((await rowsOf(another)).map((r) => [r.id, r.from_clerk])).toEqual([[open, undefined], [solved, undefined], [mine, anotherId]]);
   });
 
-  it("議題はベテランと事務長が見られ、回答と整理はベテランだけ", async () => {
+  it("議題を見る・整理を回す・回答するのは、ベテランと事務長（2026-11-25 事務長にも開く）", async () => {
     const meeting = await import("../../app/api/meeting/route");
     const answer = (await import("../../app/api/meeting/answer/route")).POST;
     const owner = auth().register("meeting_owner", "かいぎ", "password123");
@@ -217,7 +217,9 @@ describe("メンター同士の問い・会議・通知", () => {
     expect((await answer(post("/api/meeting/answer", cookie, { itemId, answer: 1 }))).status).toBe(403);
     await switchTo(cookie, "manager");
     expect((await meeting.GET(get("/api/meeting", cookie))).status).toBe(200);
-    expect((await answer(post("/api/meeting/answer", cookie, { itemId, answer: 1 }))).status).toBe(403);
+    expect((await meeting.POST(post("/api/meeting", cookie))).status).toBe(200);
+    // 事務長の回答は権限で断らず、項目を探しに行く（ない項目なので 404）
+    expect((await answer(post("/api/meeting/answer", cookie, { itemId, answer: 1 }))).status).toBe(404);
     await switchTo(cookie, "veteran");
     expect((await meeting.GET(get("/api/meeting", cookie))).status).toBe(200);
     expect((await meeting.POST(post("/api/meeting", cookie))).status).toBe(200);
@@ -228,7 +230,7 @@ describe("メンター同士の問い・会議・通知", () => {
     // ロールで断ったとき・検証で落ちたときは本文を読んでいないので、対象は残らない（対象が本文にあるルート）
     expect(rows.map((r) => [r.target, r.result, r.role])).toEqual([
       [null, "denied", "clerk"],
-      [null, "denied", "manager"],
+      [itemId, "rejected", "manager"],
       [null, "invalid", "veteran"],
       [null, "invalid", "veteran"],
       [null, "invalid", "veteran"],
@@ -329,6 +331,10 @@ describe("本人のこと・事務長の集計・開発用", () => {
     expect((await GET(get("/api/manager", cookie))).status).toBe(403);
     await switchTo(cookie, "manager");
     expect((await GET(get("/api/manager", cookie))).status).toBe(200);
+    // 期間（確定した月）：省けば全期間の累計（month は null）。形の違う月は 400
+    expect((await (await GET(get("/api/manager", cookie))).json()).month).toBeNull();
+    expect((await (await GET(get(`/api/manager?month=${YM}`, cookie))).json()).month).toBe(YM);
+    expect((await GET(get(`/api/manager?month=${YM.slice(0, 4)}-13`, cookie))).status).toBe(400);
   });
 
   it("開発用のルートは本番で 404、開発時もログインが要る", async () => {

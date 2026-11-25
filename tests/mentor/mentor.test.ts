@@ -262,6 +262,23 @@ describe("医師に聞く前に正しい決まりを読む（照合の不一致 
       rmSync(root, { recursive: true, force: true });
     }
   });
+  it("照合の不一致がなければ、メンターの医師確認は「送る前」で作り、医師には届けない（医療事務が確かめて送る。採点 r2 エンジニアの上司 #4）", async () => {
+    const { mentorServer } = await import("../../src/mentor/session");
+    const { listQueries } = await import("../../src/query/doctor-query");
+    const root = mkdtempSync(path.join(tmpdir(), "iji-hold-"));
+    try {
+      const deps = { store: { knowledgeDir: path.join(root, "k"), skillsDir: path.join(root, "s") }, queryLog: { dir: path.join(root, "q") }, askPeerMentor: async () => null, askHuman: async () => ({ queued: "x" }), crosscheck: () => [] };
+      const server = mentorServer(deps, claimForAi(loadCase("K4")), () => T);
+      const tools = (server.instance as unknown as { _registeredTools: Record<string, { handler?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }>; callback?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> })._registeredTools;
+      const t = tools.ask_doctor;
+      const fn = t.handler ?? t.callback!;
+      const r = await fn({ field: "病型", why: "w", question: "心房細動の病型について、診療録に記載がありません。該当するものを選んでください。", indicators: [{ source: "カルテ", text: "AF" }], options: ["発作性", "持続性", "その他", "判定不能"] }, {});
+      expect(r.content[0].text).toContain("まだ医師には届いていません");
+      expect(listQueries(deps.queryLog).map((q) => [q.createdBy, q.status])).toEqual([["mentor", "送る前"]]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("照合の規則 M01 は、作業場所に crosscheck-m01 として置かれ、いつでも読める（状態を持たない決まった規則）", async () => {
     const { crosscheckSkills } = await import("../../src/uke/crosscheck");
     const root = mkdtempSync(path.join(tmpdir(), "iji-cross-"));

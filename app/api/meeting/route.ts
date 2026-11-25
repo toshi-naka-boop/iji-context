@@ -1,4 +1,4 @@
-// API Route（薄い入口。処理は src/server/app.ts）。議題はベテランと事務長が見られる。整理を回すのはベテラン
+// API Route（薄い入口。処理は src/server/app.ts）。議題を見る・整理を回すのは、ベテランと事務長
 import { route } from "../../../src/server/http";
 import { getApp } from "../../../src/server/instance";
 import { allow } from "../../../src/server/policy";

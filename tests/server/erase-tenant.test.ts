@@ -34,8 +34,8 @@ afterAll(() => {
 
 const auth = () => instance.getAuth();
 const cookieOf = (u: User) => `resemen_session=${auth().createSession(u.id).token}`;
-const erase = async (cookie: string, login: string) =>
-  (await import("../../app/api/tenant/erase/route")).POST(new Request("http://localhost/api/tenant/erase", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ login }) }));
+const erase = async (cookie: string, login: string, password = "password123") =>
+  (await import("../../app/api/tenant/erase/route")).POST(new Request("http://localhost/api/tenant/erase", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ login, password }) }));
 /** 実在の形の UKE（同梱の見本と同じ内容は断られるので、患者を変える） */
 const upload = () => {
   const f = readUke(readFileSync(path.join(repo, "fixtures", "uke", "kokuhoren.UKE")));
@@ -43,7 +43,7 @@ const upload = () => {
 };
 
 describe("クリニックをまるごと消す", () => {
-  it("持ち主だけが、ログイン ID の確かめつきで消せる。DB・ファイル・アカウント・メンターのセッションが消え、ほかのクリニックは残る", async () => {
+  it("持ち主だけが、ログイン ID とパスワードの確かめつきで消せる。DB・ファイル・アカウント・メンターのセッションが消え、ほかのクリニックは残る", async () => {
     const owner = auth().switchRole(auth().register("erase_owner", "おーなー", "password123", "real"), "manager");
     const clerk = auth().registerWithInvite("erase_clerk", "じむ", "password123", auth().createInvite(owner, "clerk").code);
     const other = auth().register("erase_other", "よそ", "password123", "real");
@@ -60,6 +60,10 @@ describe("クリニックをまるごと消す", () => {
     expect((await erase(cookieOf(clerk), "erase_clerk")).status).toBe(403);
     const wrong = await erase(cookieOf(owner), "erase_ownr");
     expect(wrong.status).toBe(400);
+    expect(existsSync(dir)).toBe(true);
+    // パスワードを入れ直さないと消さない（セッションを奪われただけでは消せない。採点 r2 エンジニアの上司 #6）
+    const noPass = await erase(cookieOf(owner), "erase_owner", "wrong-password");
+    expect([noPass.status, (await noPass.json()).fields]).toEqual([400, ["password"]]);
     expect(existsSync(dir)).toBe(true);
 
     const ok = await erase(cookieOf(owner), "erase_owner");
