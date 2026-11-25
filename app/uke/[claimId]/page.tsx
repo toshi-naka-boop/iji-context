@@ -65,6 +65,8 @@ type Check = {
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
   /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
   localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
+  /** 介護保険・ほかの医療機関との調整で「見ていません」の文（聞き取りの答えがないなど。点検の範囲にも入っている） */
+  careUnseen?: string[];
   /** 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。確かめていなければ null。design.md §14-3・段 17g） */
   reviewed?: { at: string } | null;
   /** B の欄（取り忘れ。G11。design.md §15-9）。貼ったカルテで動く */
@@ -277,6 +279,13 @@ export default function UkeClaimCheck() {
                 <span className="badge">見ていません</span> カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。入力では変わりません。
                 {unseenRules.length > 0 && <div className="muted">記録で決まる点を見ていないルール：{unseenRules.join("・")}</div>}
               </div>
+              {!trial && (check?.careUnseen ?? []).length > 0 && (
+                <div className="notice warn">
+                  <span className="badge">見ていません</span> 介護保険・ほかの医療機関との調整（R20・R21）
+                  <ul style={{ margin: "4px 0", paddingLeft: 20 }}>{check!.careUnseen!.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                  <a href={`/uke/care-check?claim=${encodeURIComponent(claimId)}`}>聞き取りの画面で答える →</a>
+                </div>
+              )}
 
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}

@@ -1,7 +1,7 @@
 // 取り込んだレセプトの全件の一覧（採点 r1 医療事務課長 P1-1）：月末の点検で、取り込んだ全件を、点検の結果の件数つきで 1 画面に並べる。
 // 件数は、取り込んだレセプトの点検（src/server/app/uke-check.ts の ukeCheck。UKE に書いてあるとおりのまま）と同じ数え方：
 // 確定＝条件つきでない指摘（手書きのルールとデータで動く点検）／条件つき＝条件つきの指摘／情報不足＝点検の画面と同じまとめ方の件数（missing は今までどおりカルテ側の記録がない分も含む。画面は、入力で消えるものだけの missingOpen を出す）／
-// 見ていません＝どの点検も見ていない行（単位）の数と、見ていないこと（カルテ側の記録で決まる点）の数／患者情報＝患者情報の指摘（P 系。ユスティの指摘とは別に数える。宛先は医療事務）の件数。読めない・版のないレセプトは、点検していないとして状態だけを出す。
+// 見ていません＝どの点検も見ていない行（単位）の数と、見ていないこと（カルテ側の記録で決まる点・介護保険とほかの医療機関との調整）の数／患者情報＝患者情報の指摘（P 系。ユスティの指摘とは別に数える。宛先は医療事務）の件数。読めない・版のないレセプトは、点検していないとして状態だけを出す。
 // 読むだけで、何も記録しない（院内の知識の USED も付けない）。接続先（構造化データ）は読まない
 import type { Finding } from "../../engine/types";
 import type { ClaimReviews } from "./claim-reviews";
@@ -35,7 +35,10 @@ export type UkeSummaryRow = {
   /** 情報不足のうち、確かめて入れれば消えるものの件数（カルテ側の記録がない分を除く。一覧の「情報不足」の列） */
   missingOpen: number;
   unchecked: number;
-  /** 見ていないこと（行ではなく、点検の範囲で見ていないもの）の数。カルテ側の記録で決まる点を見ていなければ 1 */
+  /**
+   * 見ていないこと（行ではなく、点検の範囲で見ていないもの）の数。カルテ側の記録で決まる点を見ていなければ 1、
+   * 介護保険・ほかの医療機関との調整の「見ていません」（聞き取りの答えがないなど）は文の数だけ足す
+   */
   unseen: number;
   /** 患者情報の指摘（P 系）の件数。確定・条件つきには入れない（ユスティの指摘とは別の系統） */
   patientFindings: number;
@@ -68,7 +71,7 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
           missing: missingCount(r.missing),
           missingOpen: missingCount(r.missing.filter((f) => f.missing?.field !== UNSEEN_MISSING)),
           unchecked: r.rows.filter((row) => row.checkedBy === "none").length,
-          unseen: r.missing.some((f) => f.missing?.field === UNSEEN_MISSING) ? 1 : 0,
+          unseen: (r.missing.some((f) => f.missing?.field === UNSEEN_MISSING) ? 1 : 0) + r.careUnseen.length,
           patientFindings: r.patientFindings.length,
           ...(reviewed !== undefined ? { reviewed: reviewed !== null } : {}),
         };
