@@ -29,7 +29,7 @@ const how = (s: string) => (s === "医師に確認" ? "医師に確認した" : 
 
 /** いまの役割（同じ画面の入力で 1 回だけ取る） */
 let roleOnce: Promise<Role | null> | null = null;
-function useRole(): Role | null {
+export function useRole(): Role | null {
   const [role, setRole] = useState<Role | null>(null);
   useEffect(() => {
     roleOnce ??= fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((me: { role: Role } | null) => me?.role ?? null).catch(() => null);

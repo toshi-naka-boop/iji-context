@@ -4,7 +4,9 @@
 // 見ていません＝どの点検も見ていない行（単位）の数と、見ていないこと（カルテ側の記録で決まる点・介護保険とほかの医療機関との調整）の数／患者情報＝患者情報の指摘（P 系。ユスティの指摘とは別に数える。宛先は医療事務）の件数。読めない・版のないレセプトは、点検していないとして状態だけを出す。
 // 読むだけで、何も記録しない（院内の知識の USED も付けない）。接続先（構造化データ）は読まない
 import type { Finding } from "../../engine/types";
+import { conditionalKeysOf } from "../../uke/premise";
 import type { ClaimReviews } from "./claim-reviews";
+import type { PremiseChecks } from "./premise-checks";
 import type { Uke } from "./uke";
 import type { UkeCheck } from "./uke-check";
 
@@ -30,6 +32,8 @@ export type UkeSummaryRow = {
   state: "checked" | "unreadable" | "noRevision";
   confirmed: number;
   conditional: number;
+  /** 条件つきの指摘のうち、医療事務が前提を確かめたもの（採点 r4 医療事務課長 P1-1）。残りには数えない */
+  conditionalChecked: number;
   /** 情報不足の件数（今までの数え方。カルテ側の記録がない分の 1 件を含む） */
   missing: number;
   /** 情報不足のうち、確かめて入れれば消えるものの件数（カルテ側の記録がない分を除く。一覧の「情報不足」の列） */
@@ -43,7 +47,7 @@ export type UkeSummaryRow = {
   /** 患者情報の指摘（P 系）の件数。確定・条件つきには入れない（ユスティの指摘とは別の系統） */
   patientFindings: number;
   /**
-   * 締めの「まだ手を付ける残り」があるか（採点 r3 医療事務課長 #3）：確定・条件つき・情報不足（入力で消えるもの）・患者情報の指摘・
+   * 締めの「まだ手を付ける残り」があるか（採点 r3 医療事務課長 #3）：確定・条件つき（前提を確かめていないもの。採点 r4 医療事務課長 P1-1）・情報不足（入力で消えるもの）・患者情報の指摘・
    * 聞き取りの答えがない介護保険とほかの医療機関との調整のどれかが残る。読めないレセプト（取り込み直しが要る）も残りに入れる
    */
   open: boolean;
@@ -56,7 +60,7 @@ export type UkeSummaryRow = {
   reviewed?: boolean;
 };
 
-export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claimReviews: ClaimReviews) {
+export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claimReviews: ClaimReviews, premiseChecks: PremiseChecks) {
   /**
    * アップロードしたファイル（クリニックの全員の分）と、本人が取り込んだ見本のレセプトを、ファイルの順・レセプトの並びのまま。
    * アップロードは取り込んだ本人の一覧にしか載らないが、月末の締めは課長・事務長も全件を見るので、ここでは誰が取り込んだかで分けない
@@ -65,7 +69,7 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
     return uke.ukeList(clerkId).filter((u) => u.uploaded || u.imported).flatMap((u) =>
       u.receipts.map((x): UkeSummaryRow => {
         const head = { claimId: x.claimId, label: u.uploaded ? x.claimId : x.claimId.split("-")[0], patient: x.patient, patientNo: x.patientNo };
-        const zero = { confirmed: 0, conditional: 0, missing: 0, missingOpen: 0, unchecked: 0, unseen: 0, patientFindings: 0, fixedUnseen: 0 };
+        const zero = { confirmed: 0, conditional: 0, conditionalChecked: 0, missing: 0, missingOpen: 0, unchecked: 0, unseen: 0, patientFindings: 0, fixedUnseen: 0 };
         // 読めない＝取り込み直せば点検できる（残り）。版がない＝点検できない（仕組み上の残りで、手を付けても消えない）
         if (x.unreadable !== null) return { ...head, state: "unreadable", ...zero, open: true };
         if (x.revisionId === null) return { ...head, state: "noRevision", ...zero, open: false };
@@ -76,6 +80,9 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
         const reviewed = claimReviews.reviewedOf(x.claimId, clerkId);
         const confirmed = hand.filter((f) => f.params?.conditional !== "1").length + generic.filter((f) => f.certainty === "確定").length;
         const conditional = hand.filter((f) => f.params?.conditional === "1").length + generic.filter((f) => f.certainty === "条件つき").length;
+        // 前提を確かめた条件つきの指摘（いま出ている指摘の鍵に当たるものだけ。中身が変わった指摘の前の確かめは数えない）
+        const checkedKeys = new Set(premiseChecks.premiseChecksOf(x.claimId).map((p) => p.key));
+        const conditionalChecked = conditionalKeysOf(r).filter((k) => checkedKeys.has(k)).length;
         const missingOpen = missingCount(r.missing.filter((f) => f.missing?.field !== UNSEEN_MISSING));
         const fixedUnseen = r.missing.some((f) => f.missing?.field === UNSEEN_MISSING) ? 1 : 0;
         return {
@@ -83,12 +90,13 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
           state: "checked",
           confirmed,
           conditional,
+          conditionalChecked,
           missing: missingCount(r.missing),
           missingOpen,
           unchecked: r.rows.filter((row) => row.checkedBy === "none").length,
           unseen: fixedUnseen + r.careUnseen.length,
           patientFindings: r.patientFindings.length,
-          open: confirmed + conditional + missingOpen + r.patientFindings.length + r.careUnseen.length > 0,
+          open: confirmed + conditional - conditionalChecked + missingOpen + r.patientFindings.length + r.careUnseen.length > 0,
           fixedUnseen,
           ...(reviewed !== undefined ? { reviewed: reviewed !== null } : {}),
         };

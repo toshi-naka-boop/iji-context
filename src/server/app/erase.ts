@@ -78,6 +78,7 @@ export function createErase(ctx: AppContext, uke: Uke, patients: Patients) {
           sqlite.prepare(`DELETE FROM chart_comments WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_facts WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM claim_reviews WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
+          sqlite.prepare(`DELETE FROM finding_checks WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           sqlite.prepare(`DELETE FROM doctor_fact_notes WHERE claim_id IN (${marks(claimIds)})`).run(...claimIds);
           // 査定・返戻の突き合わせ（spec FR-202 の I-1）：その請求に当てた明細の判定を消し、当て方を外す（明細そのものは、取り込んだ CSV を消すまで残る。当てられないものに戻る）
           sqlite.prepare(`DELETE FROM review_judgments WHERE item_id IN (SELECT id FROM review_items WHERE claim_id IN (${marks(claimIds)}))`).run(...claimIds);

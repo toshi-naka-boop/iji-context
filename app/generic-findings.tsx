@@ -13,6 +13,8 @@ import type { Polarity } from "../src/lifecycle/types";
 import { groupSameChild } from "../src/generic/overlap";
 import type { GenericView } from "../src/generic/view";
 import { FINDING_LIMIT } from "../src/generic/types";
+import { genericPremiseKey } from "../src/uke/premise";
+import { PremiseCheckInput, type PremiseCheckView } from "./premise-check";
 
 /** 指摘がないときの文。言えるのは動いた点検の、点検した範囲についてだけ（していないことは点検の範囲に並べる。round-32 O-19） */
 const NONE = "動いた点検の、点検した範囲では指摘はありません（点検していないことは、ここに並べたとおり）";
@@ -26,7 +28,7 @@ const rowText = (c: { code: string; name: string | null }) => (c.name ? `${c.cod
  * skippedLines は、コードに直せないので掛けなかった行の数。rowHref は、対象の行からページ内の行へのリンク先（あれば）。
  * full のときだけ：notes は、呼び出し側の断り（折りたたみの中に足す）、laterSheets は、診療年月より後の版で代えているデータの名前（要約に一言添える）
  */
-export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[]; localReturns?: { a: string; b: string; tani: number; ids: string[] }[]; localPairTaken?: { a: string; b: string; tani: number; polarities: Polarity[] }[] } }) {
+export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, notes = [], laterSheets = [], answer }: { generic: GenericView & { overlap?: { duplicate: number; judged: number } }; scope: "full" | "line"; skippedLines?: number; rowHref?: (code: string) => string | undefined; notes?: string[]; laterSheets?: string[]; answer?: { claimId: string; onSaved: () => void; handAsked?: { field: string; date: string | null }[]; localReturns?: { a: string; b: string; tani: number; ids: string[] }[]; localPairTaken?: { a: string; b: string; tani: number; polarities: Polarity[] }[]; premiseChecks?: PremiseCheckView[] } }) {
   const rowLink = (c: { code: string; name: string | null }) => {
     const href = rowHref?.(c.code);
     return href ? <a href={href}>{rowText(c)}</a> : rowText(c);
@@ -72,6 +74,8 @@ export function GenericFindings({ generic, scope, skippedLines = 0, rowHref, not
         {answer && (f.asks ?? []).map((a, n) => <AskInput key={n} claimId={answer.claimId} ask={a} onSaved={answer.onSaved} handAsked={answer.handAsked} />)}
         {/* 施設基準（G10）は、施設の申告の画面への入口を添える（design.md §15-9） */}
         {f.declaration && <DeclarationLink declaration={f.declaration} />}
+        {/* 条件つきの指摘の「前提を確かめた」（採点 r4 医療事務課長 P1-1）。premiseChecks を渡した画面（取り込んだレセプトの点検）でだけ出す */}
+        {answer?.premiseChecks && <PremiseCheckInput claimId={answer.claimId} keys={[f, ...more].filter((x) => x.certainty === "条件つき").map(genericPremiseKey)} checks={answer.premiseChecks} onSaved={answer.onSaved} />}
         {more.length > 0 && (
           <div className="muted">
             同じ行は、ほかに {more.length} 個の行為にも含まれる項目として載っています：

@@ -9,6 +9,8 @@ import { monthRange } from "../demo/period";
 import { createCases } from "./app/cases";
 import { createClaimFacts } from "./app/claim-facts";
 import { createClaimReviews } from "./app/claim-reviews";
+import { createPremiseChecks } from "./app/premise-checks";
+import type { PremiseOutcome } from "../uke/premise";
 import { createClerks } from "./app/clerks";
 import { createClock } from "./app/clock";
 import { openContext, type AppPaths } from "./app/context";
@@ -68,6 +70,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
   const claimReviews = createClaimReviews(ctx, clock, () => new Map(uke.ukeReceipts().map((r) => [r.claimId, uke.sameMonthKey(r)])));
   const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase, claimReviews.countOf);
+  // 条件つきの指摘の「前提を確かめた」（採点 r4 医療事務課長 P1-1）。全件の一覧の残りから外す
+  const premiseChecks = createPremiseChecks(ctx, clock, clerks);
   const peer = createPeer(ctx, clock);
   const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
   const localPairs = createLocalPairs(ctx, questions);
@@ -135,7 +139,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const review = createReview(ctx, uke, ukeCheck.ukeCheck);
   const prevented = createPrevented(questions, doctor, review.reviewReport);
   /** 取り込んだレセプトの全件の一覧（採点 r1 医療事務課長 P1-1）。USED を付けない元の点検で数える */
-  const ukeSummary = createUkeSummary(uke, ukeCheck.ukeCheck, claimReviews);
+  const ukeSummary = createUkeSummary(uke, ukeCheck.ukeCheck, claimReviews, premiseChecks);
   // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
   claimFactsOf.setLocalGuard(localPairOps.admitPress);
   const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
@@ -272,8 +276,10 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
       const reviewed = claimReviews.reviewedOf(claimId, clerkId);
       const pairs = ((r as { generic?: GenericView }).generic?.findings ?? []).flatMap((f) => (f.check === "G05" && f.localPair ? [f.localPair] : []));
       const localPairTaken = pairs.filter((p, i) => pairs.findIndex((q) => samePair(p, q)) === i).map((p) => ({ ...p, polarities: localPairOps.takenPolarities(p) }));
-      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken, ...(reviewed !== undefined ? { reviewed } : {}) };
+      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken, premiseChecks: premiseChecks.premiseChecksOf(claimId), ...(reviewed !== undefined ? { reviewed } : {}) };
     },
+    /** 条件つきの指摘の「前提を確かめた」を残す・取り消す（採点 r4 医療事務課長 P1-1）。鍵は、今の点検で出ている条件つきの指摘のものだけ受け取る */
+    savePremiseCheck: (claimId: string, clerkId: string, key: string, outcome: PremiseOutcome | null) => premiseChecks.savePremiseCheck(claimId, clerkId, key, outcome, ukeCheck.ukeCheck(claimId, clerkId)),
     /** 「この請求の点検を確かめた」（design.md §14-3・段 17g）。点検できたレセプト（行を返したもの）だけを数える。返すのは本人の件数とレベルだけ */
     reviewClaim: (claimId: string, clerkId: string) => {
       const out = claimReviews.review(claimId, clerkId, "rows" in ukeCheck.ukeCheck(claimId, clerkId));
