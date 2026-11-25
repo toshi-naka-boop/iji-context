@@ -123,14 +123,14 @@ mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen/dep
 更新は、手順 3 と同じくコードを送り直して、`start.sh` をもう一度実行します。データはボリュームに残ります。
 
 ```bash
-sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs -f app
+sudo docker logs -f deploy-app-1
 ```
 
 バックアップは、VM のディスクにスナップショットのスケジュールを設定するのが簡単です（データはすべてボリュームの中にあるため）。データベースとファイルは暗号化してあるので、戻すときは同じ鍵が要ります。公開版は、まだ製品ではないのでバックアップを取っていません（2026-11-25 の判断。README「公開版で試す」）。
 
 ## 5. 保存時の暗号化
 
-`start.sh` は Secret Manager の `resemen-data-key` を `RESEMEN_DATA_KEY` として渡します。アプリは起動のときに次を確かめ、通らなければ起動しません（`docker compose logs app` に理由が出ます）。
+`start.sh` は Secret Manager の `resemen-data-key` を `RESEMEN_DATA_KEY` として渡します。アプリは起動のときに次を確かめ、通らなければ起動しません（`sudo docker logs deploy-app-1` に理由が出ます）。
 
 - 鍵がある（本番では鍵がなければ起動しない）
 - 鍵が `auth.db` と合う（合わなければ止め、データベースは変えない）
@@ -141,7 +141,7 @@ sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs -f app
 アプリを止めてから、手で流します。スクリプトは開発用の依存（tsx）で動くので、`tools` のイメージで流します。ボリュームの名前は `docker volume ls` で確かめます（`deploy` のフォルダから起動していれば `deploy_resemen-data`）。
 
 ```bash
-cd ~/resemen && sudo docker build --target tools -t resemen-tools . && sudo docker compose -f deploy/docker-compose.yml stop app
+cd ~/resemen && sudo docker build --target tools -t resemen-tools . && sudo docker stop deploy-app-1
 ```
 
 控えの置き場を作ります。スクリプトはアプリと同じ利用者（`node`。uid 1000）で流すので、その利用者が書ける場所にします（root で流すと、差し替えたファイルをアプリが書けなくなります）。
@@ -183,7 +183,7 @@ export RESEMEN_DATA_KEY="$(gcloud secrets versions access latest --secret=reseme
 ```
 
 ```bash
-sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo --preserve-env=RESEMEN_DATA_KEY,RESEMEN_NEW_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -e RESEMEN_NEW_DATA_KEY -v deploy_resemen-data:/data -v /var/backups/resemen:/backup resemen-tools npx tsx scripts/rotate-key.ts --backup /backup/before-rotate
+sudo docker stop deploy-app-1 && sudo --preserve-env=RESEMEN_DATA_KEY,RESEMEN_NEW_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -e RESEMEN_NEW_DATA_KEY -v deploy_resemen-data:/data -v /var/backups/resemen:/backup resemen-tools npx tsx scripts/rotate-key.ts --backup /backup/before-rotate
 ```
 
 全部のデータベースの鍵を変え、ファイルを包み直します（`--dry-run` で対象の一覧だけを出せます）。`unset RESEMEN_DATA_KEY RESEMEN_NEW_DATA_KEY` のあと、`start.sh` で起動して開けることを確かめます。控え（古い鍵で暗号化したもの）を消すまでは、Secret Manager の古い版を消さないでください。
@@ -191,24 +191,52 @@ sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo --pr
 
 ## 6. 前の版から更新する（公開版の差し替え）
 
-保存時の暗号化より前の版から上げるときの通しの手順です。手順 2b（鍵）を先に済ませておきます。止めてから起動し直すまでのあいだ、公開版は開けません。
+保存時の暗号化より前の版から上げるときの通しの手順です。手順 2b（鍵）を先に済ませておきます。止めてから起動し直すまでのあいだ、公開版は開けません（2026-11-25 にこの手順で公開版を差し替えた）。
 
-**1. 送るコードを作る（手元）**。送るのは、上げたい版を checkout したフォルダの `HEAD` です（別のブランチを checkout したフォルダで流すと、別の版が送られます）。
+- `<プロジェクト ID>`・`<ゾーン>` は `<` `>` ごと置き換えます（そのままだと zsh がファイルの読み書きの記号として読み、止まります）。どちらも `gcloud projects list` と `gcloud compute instances list --project <プロジェクト ID>` で分かります。
+- 「手元」のコマンドは Mac で、「VM」のコマンドは `gcloud compute ssh` で入った VM で打ちます（プロンプトが `…@resemen` なら VM）。
+- 長くかかる段（イメージを作る・起動する）は、ssh が切れても止まらないよう `nohup … &` で裏で動かし、`tail -f` で見ます（`tail -f` は Ctrl+C で抜けても、裏の作業は止まりません）。ssh を入り直したら、鍵は読み込み直します。
+
+**1. 送るコードを作る（手元）**。main を送ります。checkout しなくても `origin/main` から作れます。送ったら、VM でファイルの日付が今日になっているかを確かめます（送り損ねると、前回の古いファイルを展開してしまいます）。
 
 ```bash
-git -C <上げたい版のフォルダ> log --oneline -1 && git -C <上げたい版のフォルダ> archive HEAD | gzip > /tmp/resemen.tar.gz && gcloud compute scp /tmp/resemen.tar.gz resemen:~/ --zone=<VM のゾーン> --project <プロジェクト ID>
+git -C <リポジトリのフォルダ> fetch origin && git -C <リポジトリのフォルダ> log --oneline -1 origin/main
+```
+
+```bash
+git -C <リポジトリのフォルダ> archive origin/main | gzip > /tmp/resemen.tar.gz && gcloud compute scp /tmp/resemen.tar.gz resemen:~/ --zone=<ゾーン> --project <プロジェクト ID>
 ```
 
 **2. 公開マスターを送る（手元）**。手元で作った `masters.db`（[masters.md](masters.md)）を送ります。公開のデータなので暗号化しません。
 
 ```bash
-gcloud compute scp <手元の masters のフォルダ>/masters.db resemen:~/ --zone=<VM のゾーン> --project <プロジェクト ID>
+gcloud compute scp <手元の masters のフォルダ>/masters.db resemen:~/ --zone=<ゾーン> --project <プロジェクト ID>
 ```
 
-**3. VM で展開し、アプリを止め、道具のイメージを作る**。前のコードは名前を変えて残します。
+**3. VM で展開し、アプリを止め、道具のイメージを作る**。送ったファイルが今日のものかを確かめ、前のコードは名前を変えて残します。展開した Dockerfile の 3 行目が `FROM node:22-bookworm-slim AS tools` なら新しい版です。
 
 ```bash
-mv ~/resemen ~/resemen.prev && mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen && sudo docker compose -f ~/resemen.prev/deploy/docker-compose.yml stop app && sudo docker build --target tools -t resemen-tools .
+ls -la ~/resemen.tar.gz ~/masters.db
+```
+
+```bash
+mv ~/resemen ~/resemen.prev && mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && head -3 ~/resemen/Dockerfile
+```
+
+アプリを止めます。compose の設定は、止めるだけでも API キー（新しい版は鍵も）の値を求めて止まるので、止める・ログを見るときはコンテナの名前（`deploy-app-1`。`sudo docker ps -a` で確かめる）を直接使います。
+
+```bash
+sudo docker stop deploy-app-1
+```
+
+道具のイメージを作ります（e2-medium で十数分かかります）。最後に `Successfully tagged resemen-tools:latest` が出れば完成です。
+
+```bash
+cd ~/resemen && nohup sudo docker build --target tools -t resemen-tools . > ~/build.log 2>&1 &
+```
+
+```bash
+tail -f ~/build.log
 ```
 
 **4. 平文のデータを移す**。手順 5「今ある平文のデータを移す」の控えの置き場・鍵・`--dry-run`・本番の流しを、その順に行います。
@@ -233,29 +261,43 @@ sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA
 sudo docker run --rm --user node -v deploy_resemen-data:/data -v ~/masters.db:/in/masters.db:ro resemen-tools sh -c 'mkdir -p /data/masters && cp /in/masters.db /data/masters/masters.db'
 ```
 
-**7. 起動して確かめる**。`unset RESEMEN_DATA_KEY` のあと `start.sh` で起動し、ログを見ます。
+**7. 起動して確かめる**。ディスクの空きが少なければ、送ったファイルとビルドの残りを先に片づけます（前の版のイメージとデータには触りません）。
 
 ```bash
-unset RESEMEN_DATA_KEY && cd ~/resemen/deploy && sudo RESEMEN_DOMAIN=<ドメイン> ./start.sh && sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs --tail 50 app
+rm ~/resemen.tar.gz ~/masters.db && sudo docker builder prune -f && df -h /
 ```
 
-確かめること：
+`unset RESEMEN_DATA_KEY` のあと `start.sh` で起動します（本番のイメージを作るので時間がかかります）。`start.sh` が最後に「起動しました：https://…」と出せば終わりです。`tail -f` はそこで止まったように見えるので、Ctrl+C で抜けてログを見ます。
+
+```bash
+unset RESEMEN_DATA_KEY && cd ~/resemen/deploy && nohup sudo RESEMEN_DOMAIN=<ドメイン> ./start.sh > ~/start.log 2>&1 &
+```
+
+```bash
+tail -f ~/start.log
+```
+
+```bash
+sudo docker logs --tail 50 deploy-app-1
+```
+
+確かめること（ブラウザで）：
 - ログインできる。種類のなかった版から上げたときは、はじめに「デモで試す／実在のデータで使う」を選ぶ画面が全員に出る（選ぶまでほかの画面は開けない）
 - 注意書きの同意を求められる（版 3 に上がったので、全員にもう一度求めます）
-- 事務長の「設定」でマスターが入っている
+- 事務長の「設定」の「マスターの状態」で、マスターが入っていると出る
 - ログに止まった理由が出ていない。アプリを止めたときに出る `npm error`（npx が止められたことを言うだけ）は、起動の失敗ではない
 - 前の版の HOME にあった `/data/home/.npm`（npm のログ。患者の情報は入らない）は平文のまま残る。気になれば消してよい
 
 **8. 片づける**。確かめたら、平文の控え（`/var/backups/resemen/before-encrypt`）・送ったファイル・前のコードを消します。
 
 ```bash
-sudo rm -r /var/backups/resemen/before-encrypt && rm ~/resemen.tar.gz ~/masters.db && rm -r ~/resemen.prev
+sudo rm -r /var/backups/resemen/before-encrypt && rm -r ~/resemen.prev && rm -f ~/resemen.tar.gz ~/masters.db
 ```
 
-**戻すとき**：手順 7 で起動しないときは、`docker compose logs app` の理由を見ます。暗号化を済ませた置き場は前のコードでは開けません（`file is not a database` で止まります）。戻すなら、アプリを止め、置き場を空にして控えを書き戻し、前のコードで起動します。書き戻すときは、アプリと同じ利用者（`node`）で、持ち物と権限をそのまま写します。
+**戻すとき**：手順 7 で起動しないときは、`sudo docker logs deploy-app-1` の理由を見ます。暗号化を済ませた置き場は前のコードでは開けません（`file is not a database` で止まります）。戻すなら、アプリを止め、置き場を空にして控えを書き戻し、前のコードで起動します。書き戻すときは、アプリと同じ利用者（`node`）で、持ち物と権限をそのまま写します。
 
 ```bash
-sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo docker run --rm --user node -v deploy_resemen-data:/data -v /var/backups/resemen:/backup:ro resemen-tools sh -c 'find /data -mindepth 1 -delete && cp -a /backup/before-encrypt/. /data/'
+sudo docker stop deploy-app-1 && sudo docker run --rm --user node -v deploy_resemen-data:/data -v /var/backups/resemen:/backup:ro resemen-tools sh -c 'find /data -mindepth 1 -delete && cp -a /backup/before-encrypt/. /data/'
 ```
 
 ```bash
