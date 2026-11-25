@@ -14,7 +14,7 @@
 
 公開版の運営とサーバーの管理は、中沢俊之（屋号：モモンガインターナショナル）が個人で行っています。サーバーは Google Cloud の仮想マシン 1 台で、構成は [docs/deploy-gcp.md](docs/deploy-gcp.md) のとおりです。サーバーの管理者は、置かれたデータを読める立場にあります（[docs/security.md](docs/security.md) の「残余リスク」）。
 
-背景：一般診療所の常勤事務職員の平均年収は 334 万円です（[第25回医療経済実態調査 令和6年度](https://www.mhlw.go.jp/content/10808000/001599544.pdf)）。請求は各月分を翌月 10 日までに出す決まりで（請求命令 第2条。[支払基金](https://www.hpdx.or.jp/smph/seikyushiharai/iryokikan/rezept_02.html)）、知識はベテランの頭と付箋の中にあります。審査の基準は都道府県ごとにも違い、支払基金に約 33,000 件、国保連に約 18,000 件ありました（2021 年 3 月時点。[厚生労働省](https://www.mhlw.go.jp/content/12401000/000834623.pdf)）。公式に測られている査定率は約 0.40%（[支払基金 審査状況 令和7年度](https://www.hpdx.or.jp/tokeijoho/shinsatokei/shinsajokyo_r07.html)）、返戻率は 0.460% で（[支払基金 統計月報 令和7年度](https://www.hpdx.or.jp/tokeijoho/geppo/geppo_r07.html)）、算定もれの規模を示す公開統計はありません。
+背景：一般診療所の常勤事務職員の平均年収は 334 万円です（[第25回医療経済実態調査 令和6年度](https://www.mhlw.go.jp/content/10808000/001599544.pdf)）。請求は各月分を翌月 10 日までに出す決まりで（療養の給付及び公費負担医療に関する費用の請求に関する命令 第2条第1項。[e-Gov 法令検索](https://laws.e-gov.go.jp/law/351M50000100036)、解説は[支払基金](https://www.hpdx.or.jp/smph/seikyushiharai/iryokikan/rezept_02.html)）、知識はベテランの頭と付箋の中にあります。審査の基準は都道府県ごとにも違い、支払基金に約 33,000 件、国保連に約 18,000 件ありました（2021 年 3 月時点。[厚生労働省](https://www.mhlw.go.jp/content/12401000/000834623.pdf)）。公式に測られている査定率は約 0.40%（[支払基金 審査状況 令和7年度](https://www.hpdx.or.jp/tokeijoho/shinsatokei/shinsajokyo_r07.html)）、返戻率は 0.460% で（[支払基金 統計月報 令和7年度](https://www.hpdx.or.jp/tokeijoho/geppo/geppo_r07.html)）、算定もれの規模を示す公開統計はありません。
 
 ## 月末の点検で何ができるか
 
