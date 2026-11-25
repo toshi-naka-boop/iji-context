@@ -77,7 +77,8 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
     send(`/api/staff/${m.id}/suspend`);
   }
   /** 実在のデータで使うクリニックでは、医師の役割は招待で決まる（変えない・変えさせない） */
-  const choices = (m: Member) => (real ? (m.role === "doctor" ? [] : ROLES.filter((r) => r !== "doctor")) : ROLES);
+  /** 持ち主の役割は、持ち主だけが変えられる（サーバーも断る） */
+  const choices = (m: Member) => (m.owner && !isOwner ? [] : real ? (m.role === "doctor" ? [] : ROLES.filter((r) => r !== "doctor")) : ROLES);
   return (
     <div className="panel" style={{ margin: "16px 0" }}>
       <h3 style={{ marginTop: 0 }}>職員</h3>

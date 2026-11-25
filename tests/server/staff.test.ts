@@ -91,8 +91,11 @@ describe("職員の管理", () => {
     const mc = cookieOf(manager);
     expect((await suspend(mc, manager.id)).status).toBe(409);
     expect((await suspend(mc, owner.id)).status).toBe(409);
+    // 持ち主の役割は、持ち主だけが変えられる（事務長は変えられない。採点 r2 エンジニアの上司 #7）
+    expect((await setRole(mc, owner.id, "clerk")).status).toBe(403);
+    expect(auth().login("st_keep_owner", "password123")!.role).toBe("manager");
     // 事務長が 2 人のうちは、1 人を事務にできる。最後の 1 人は事務にも停止にもできない
-    expect((await setRole(mc, owner.id, "clerk")).status).toBe(200);
+    expect((await setRole(cookieOf(owner), owner.id, "clerk")).status).toBe(200);
     const last = await setRole(mc, manager.id, "clerk");
     expect(last.status).toBe(409);
     expect((await last.json()).error).toContain("事務長がいなくなる");

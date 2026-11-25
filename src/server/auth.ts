@@ -249,13 +249,15 @@ export function openAuth(dbFile: string) {
   }
   /**
    * 職員の役割を変える。実在のデータで使うクリニックでは、医師の役割には変えられず、医師の役割の人をほかの役割にも変えない
-   * （医師は、医師の役割の招待で入った人だけ。医師確認の回答・承認を医師でない人が記録しないように）
+   * （医師は、医師の役割の招待で入った人だけ。医師確認の回答・承認を医師でない人が記録しないように）。
+   * 持ち主の役割は、持ち主だけが変えられる（事務長が持ち主の役割を変えない。採点 r2 エンジニアの上司 #7）
    */
   function setStaffRole(by: User, id: string, role: Role): { id: string; role: Role } {
     if (!canManageStaff(by)) throw forbidden("職員の役割を変えられるのは、事務長とクリニックの持ち主だけです");
     return db
       .transaction(() => {
         const target = staffOf(by, id);
+        if (target.id === ownerOf(by.tenantId) && !isOwner(by)) throw forbidden("持ち主の役割は、持ち主だけが変えられます");
         if (target.role === role) return { id, role };
         if ((role === "doctor" || target.role === "doctor") && tenantKind(by.tenantId) !== "demo") throw forbidden(DOCTOR_BY_INVITE);
         keepManager(by.tenantId, target, { role, disabled: target.disabled_at !== null });
