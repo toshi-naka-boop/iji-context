@@ -1,0 +1,1174 @@
+{
+ "_meta": {
+  "master_r08": "s_20261102.csv（令和8年度版・最終更新 令和8年11月2日・11,837件）",
+  "master_r06": "s_20260501.csv（令和6年度版・最終更新 令和8年5月1日・10,192件）",
+  "source": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/",
+  "generated": "2026-11-19",
+  "note": "status: 一意／複数（1 つに決められない。候補を全部並べた）／なし／旧版（r2026 の点数表にない区分。令和6年度版で探した）"
+ },
+ "mapping": {
+  "C001_1I": {
+   "fictional_code": "990000001",
+   "app_name": "在宅患者訪問診療料(Ⅰ)1イ 同一建物居住者以外",
+   "app_no": "C001 1 イ",
+   "app_points": 890,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114001110",
+     "master_name": "在宅患者訪問診療料（１）１（同一建物居住者以外）",
+     "master_points_r08": 890.0,
+     "master_points_r06": 888.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "名称・区分番号 C001・点数が一致"
+  },
+  "C001_1RO": {
+   "fictional_code": "990000002",
+   "app_name": "在宅患者訪問診療料(Ⅰ)1ロ 同一建物居住者",
+   "app_no": "C001 1 ロ",
+   "app_points": 215,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114030310",
+     "master_name": "在宅患者訪問診療料（１）１（同一建物居住者）",
+     "master_points_r08": 215.0,
+     "master_points_r06": 213.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "名称・区分番号・点数が一致"
+  },
+  "C001_N13_DX": {
+   "fictional_code": "990000003",
+   "app_name": "在宅医療DX情報活用加算1",
+   "app_no": "C001 注13",
+   "app_points": 11,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114746310",
+     "master_name": "在宅医療ＤＸ情報活用加算１（在宅患者訪問診療料（１）（２））",
+     "master_points_r08": 11.0,
+     "master_points_r06": 11.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "加算1。在宅がん医療総合診療料の版（114746410）は別区分 C003"
+  },
+  "C001_N6_TERMINAL": {
+   "fictional_code": "990000004",
+   "app_name": "在宅ターミナルケア加算（在支診 強化型以外）",
+   "app_no": "C001 注6",
+   "app_points": 4500,
+   "status": "複数",
+   "candidates": [
+    {
+     "code": "114018370",
+     "master_name": "在宅ターミナルケア加算（イ）（在支診等）",
+     "master_points_r08": 4500.0,
+     "master_points_r06": 4500.0,
+     "in_r08": true,
+     "in_r06": true
+    },
+    {
+     "code": "114042570",
+     "master_name": "在宅ターミナルケア加算（ロ）（在支診等）",
+     "master_points_r08": 4500.0,
+     "master_points_r06": 4500.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "中",
+   "reason": "在支診等（強化型以外）4,500 点は確定。イ（有料老人ホーム等以外の患者）とロ（有料老人ホーム等の入居患者）でコードが分かれる。往診料の側にも同名の加算（C000。114705010／114705410）があるが、アプリの区分は C001 注6 なので候補に入れない"
+  },
+  "C001_N7_MITORI": {
+   "fictional_code": "990000005",
+   "app_name": "看取り加算",
+   "app_no": "C001 注7",
+   "app_points": 3000,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114018570",
+     "master_name": "看取り加算（在宅患者訪問診療料（１）１・（２）イ・往診料）",
+     "master_points_r08": 3000.0,
+     "master_points_r06": 3000.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "看取り加算（訪問診療料(1)1・(2)イ・往診料）で 1 コード"
+  },
+  "C001_N8_SHIBOU": {
+   "fictional_code": "990000006",
+   "app_name": "死亡診断加算",
+   "app_no": "C001 注8",
+   "app_points": 200,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114018670",
+     "master_name": "死亡診断加算（在宅患者訪問診療料（１）１・（２）イ）",
+     "master_points_r08": 200.0,
+     "master_points_r06": 200.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "アプリの区分は C001 注8。往診料の死亡診断加算は別コード 114007270"
+  },
+  "C000": {
+   "fictional_code": "990000007",
+   "app_name": "往診料",
+   "app_no": "C000",
+   "app_points": 720,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114000110",
+     "master_name": "往診料",
+     "master_points_r08": 720.0,
+     "master_points_r06": 720.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "往診料。特別往診（114001610）は別"
+  },
+  "C000_N1_KINKYU": {
+   "fictional_code": "990000008",
+   "app_name": "緊急往診加算（在支診 強化型以外）",
+   "app_no": "C000 注1",
+   "app_points": 650,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114011570",
+     "master_name": "緊急往診加算（在支診等）",
+     "master_points_r08": 650.0,
+     "master_points_r06": 650.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "緊急往診加算（在支診等）650。特別往診の版（114011870）と「定める患者以外」325（114704470）は別"
+  },
+  "C002_2I1": {
+   "fictional_code": "990000009",
+   "app_name": "在医総管 2イ(1) 重症・月2回以上",
+   "app_no": "C002 2 イ(1)",
+   "app_points": 4585,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114032510",
+     "master_name": "在医総管（在支診等・難病等月２回～１人）",
+     "master_points_r08": 4585.0,
+     "master_points_r06": 4585.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在支診等・難病等月2回〜・1人。区分キーが単一建物 1 人を指すので一意。人数が違えば別コード（2〜9人 114032610 ほか）"
+  },
+  "C002_2RO1": {
+   "fictional_code": "990000010",
+   "app_name": "在医総管 2ロ(1) 月2回以上",
+   "app_no": "C002 2 ロ(1)",
+   "app_points": 3685,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114032810",
+     "master_name": "在医総管（在支診等・月２回～１人）",
+     "master_points_r08": 3685.0,
+     "master_points_r06": 3685.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在支診等・月2回〜・1人"
+  },
+  "C002_2NI1": {
+   "fictional_code": "990000011",
+   "app_name": "在医総管 2ニ(1) 月1回",
+   "app_no": "C002 2 ニ(1)",
+   "app_points": 2285,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114033110",
+     "master_name": "在医総管（在支診等・月１回・１人）",
+     "master_points_r08": 2285.0,
+     "master_points_r06": 2285.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在支診等・月1回・1人"
+  },
+  "C002_N4_IKOU": {
+   "fictional_code": "990000012",
+   "app_name": "在宅移行早期加算",
+   "app_no": "C002 注4",
+   "app_points": 100,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114016070",
+     "master_name": "在宅移行早期加算（在医総管・施医総管）",
+     "master_points_r08": 100.0,
+     "master_points_r06": 100.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在医総管・施医総管 共通"
+  },
+  "C002_N5_HINKAI1": {
+   "fictional_code": "990000013",
+   "app_name": "頻回訪問加算（初回）",
+   "app_no": "C002 注5",
+   "app_points": 800,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114715910",
+     "master_name": "頻回訪問加算（在医総管・施医総管）（初回）",
+     "master_points_r08": 800.0,
+     "master_points_r06": 800.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "初回 800"
+  },
+  "C002_N5_HINKAI2": {
+   "fictional_code": "990000014",
+   "app_name": "頻回訪問加算（2回目以降）",
+   "app_no": "C002 注5",
+   "app_points": 300,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114716010",
+     "master_name": "頻回訪問加算（在医総管・施医総管）（２回目以降）",
+     "master_points_r08": 300.0,
+     "master_points_r06": 300.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "2回目以降 300"
+  },
+  "C002_N10_HOKATSU": {
+   "fictional_code": "990000015",
+   "app_name": "包括的支援加算",
+   "app_no": "C002 注10",
+   "app_points": 150,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114043870",
+     "master_name": "包括的支援加算（在医総管・施医総管）",
+     "master_points_r08": 150.0,
+     "master_points_r06": 150.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在医総管・施医総管 共通"
+  },
+  "C002_N15_RENKEI": {
+   "fictional_code": "990000016",
+   "app_name": "在宅医療情報連携加算",
+   "app_no": "C002 注15",
+   "app_points": 100,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114723810",
+     "master_name": "在宅医療情報連携加算（在医総管・施医総管）",
+     "master_points_r08": 100.0,
+     "master_points_r06": 100.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "在医総管・施医総管 共通"
+  },
+  "C002_N2": {
+   "fictional_code": "990000017",
+   "app_name": "管理料 処方箋を交付しない場合の加算",
+   "app_no": "C002 注2",
+   "app_points": 300,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114034370",
+     "master_name": "処方箋無交付加算（在医総管・施医総管）",
+     "master_points_r08": 300.0,
+     "master_points_r06": 300.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "処方箋無交付加算（在医総管・施医総管）300"
+  },
+  "C101_2I": {
+   "fictional_code": "990000018",
+   "app_name": "在宅自己注射指導管理料 2イ",
+   "app_no": "C101 2 イ",
+   "app_points": 650,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114040610",
+     "master_name": "在宅自己注射指導管理料（１以外）（月２７回以下）",
+     "master_points_r08": 650.0,
+     "master_points_r06": 650.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "（1以外）（月27回以下）650。情報通信機器の版 114062910 は別"
+  },
+  "C153_2": {
+   "fictional_code": "990000019",
+   "app_name": "注入器用注射針加算 2",
+   "app_no": "C153 2",
+   "app_points": 130,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114011070",
+     "master_name": "注入器用注射針加算（その他）",
+     "master_points_r08": 130.0,
+     "master_points_r06": 130.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "（その他）130"
+  },
+  "C103_2": {
+   "fictional_code": "990000020",
+   "app_name": "在宅酸素療法指導管理料 2 その他",
+   "app_no": "C103 2",
+   "app_points": 2400,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114003710",
+     "master_name": "在宅酸素療法指導管理料（その他）",
+     "master_points_r08": 2400.0,
+     "master_points_r06": 2400.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "（その他）2,400"
+  },
+  "C158": {
+   "fictional_code": "990000021",
+   "app_name": "酸素濃縮装置加算",
+   "app_no": "C158",
+   "app_points": 4000,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114006210",
+     "master_name": "酸素濃縮装置加算",
+     "master_points_r08": 4000.0,
+     "master_points_r06": 4000.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "C157_1": {
+   "fictional_code": "990000022",
+   "app_name": "酸素ボンベ加算（携帯用）",
+   "app_no": "C157 1",
+   "app_points": 880,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114006310",
+     "master_name": "酸素ボンベ加算（携帯用酸素ボンベ）",
+     "master_points_r08": 880.0,
+     "master_points_r06": 880.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "携帯用酸素ボンベ 880"
+  },
+  "F400_3": {
+   "fictional_code": "990000023",
+   "app_name": "処方箋料 3 その他",
+   "app_no": "F400 3",
+   "app_points": 60,
+   "status": "複数",
+   "candidates": [
+    {
+     "code": "120002910",
+     "master_name": "処方箋料（リフィル以外・その他）",
+     "master_points_r08": 60.0,
+     "master_points_r06": 60.0,
+     "in_r08": true,
+     "in_r06": true
+    },
+    {
+     "code": "120005010",
+     "master_name": "処方箋料（リフィル処方箋・その他）",
+     "master_points_r08": 60.0,
+     "master_points_r06": 60.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "中",
+   "reason": "「3 その他」60 点は、リフィル処方箋かどうかでコードが分かれる。特定の保険薬局に係る 42 点の版（120006110／120006510）もあるが点数が違うので候補外"
+  },
+  "F400_2": {
+   "fictional_code": "990000024",
+   "app_name": "処方箋料 2 内服7種類以上",
+   "app_no": "F400 2",
+   "app_points": 32,
+   "status": "複数",
+   "candidates": [
+    {
+     "code": "120002710",
+     "master_name": "処方箋料（リフィル以外・７種類以上内服薬）",
+     "master_points_r08": 32.0,
+     "master_points_r06": 32.0,
+     "in_r08": true,
+     "in_r06": true
+    },
+    {
+     "code": "120004810",
+     "master_name": "処方箋料（リフィル処方箋・７種類以上内服薬）",
+     "master_points_r08": 32.0,
+     "master_points_r06": 32.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "中",
+   "reason": "「2」32 点は、リフィル処方箋かどうかで分かれる。同じ「2」に向精神薬長期処方（120004610／120004910）もあるが、アプリの名称は内服7種類以上"
+  },
+  "F400_N4": {
+   "fictional_code": "990000025",
+   "app_name": "特定疾患処方管理加算",
+   "app_no": "F400 注4",
+   "app_points": 56,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "120005710",
+     "master_name": "特定疾患処方管理加算（処方箋料）",
+     "master_points_r08": 56.0,
+     "master_points_r06": 56.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "特定疾患処方管理加算（処方箋料）56"
+  },
+  "F400_N6_1": {
+   "fictional_code": "990000026",
+   "app_name": "一般名処方加算1",
+   "app_no": "F400 注6",
+   "app_points": 8,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "120004270",
+     "master_name": "一般名処方加算１（処方箋料）",
+     "master_points_r08": 8.0,
+     "master_points_r06": 10.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "一般名処方加算1（処方箋料）8"
+  },
+  "D400_1": {
+   "fictional_code": "990000027",
+   "app_name": "血液採取 静脈",
+   "app_no": "D400 1",
+   "app_points": 40,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160095710",
+     "master_name": "Ｂ－Ｖ",
+     "master_points_r08": 40.0,
+     "master_points_r06": 40.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "マスター上の名称は「Ｂ－Ｖ」"
+  },
+  "D005_5": {
+   "fictional_code": "990000028",
+   "app_name": "末梢血液一般検査",
+   "app_no": "D005 5",
+   "app_points": 21,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160008010",
+     "master_name": "末梢血液一般検査",
+     "master_points_r08": 21.0,
+     "master_points_r06": 21.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "D005_9": {
+   "fictional_code": "990000029",
+   "app_name": "HbA1c",
+   "app_no": "D005 9",
+   "app_points": 49,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160010010",
+     "master_name": "ＨｂＡ１ｃ",
+     "master_points_r08": 49.0,
+     "master_points_r06": 49.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "D007_10": {
+   "fictional_code": "990000030",
+   "app_name": "血液化学検査 10項目以上",
+   "app_no": "D007 注 ハ",
+   "app_points": 103,
+   "status": "なし",
+   "candidates": [],
+   "points_match": "比較できない",
+   "confidence": "高",
+   "reason": "マスターに「10項目以上」の行はない。D007 の包括は、個々の検査項目のコード（包括対象検査＝1。各 11 点。ＴＰ 160017410 など）を 10 個以上記録し、点数を 103 にする記録方法。区分 1 つ→コード 1 つの表では表せない"
+  },
+  "D008_18": {
+   "fictional_code": "990000031",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版",
+   "candidates": [
+    {
+     "code": "160162350",
+     "master_name": "ＢＮＰ",
+     "master_points_r08": 130.0,
+     "master_points_r06": 130.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "中",
+   "reason": "r2026 にない区分（令和6年度の BNP＝D008 18）。令和6年度版マスターでは 160162350。D008_19 と同じ実在コードになる"
+  },
+  "D026_3": {
+   "fictional_code": "990000032",
+   "app_name": "血液学的検査判断料",
+   "app_no": "D026 3",
+   "app_points": 125,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160061810",
+     "master_name": "血液学的検査判断料",
+     "master_points_r08": 125.0,
+     "master_points_r06": 125.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "D026_4": {
+   "fictional_code": "990000033",
+   "app_name": "生化学的検査(Ⅰ)判断料",
+   "app_no": "D026 4",
+   "app_points": 144,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160061910",
+     "master_name": "生化学的検査（１）判断料",
+     "master_points_r08": 144.0,
+     "master_points_r06": 144.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "D026_5": {
+   "fictional_code": "990000034",
+   "app_name": "生化学的検査(Ⅱ)判断料",
+   "app_no": "D026 5",
+   "app_points": 144,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160062010",
+     "master_name": "生化学的検査（２）判断料",
+     "master_points_r08": 144.0,
+     "master_points_r06": 144.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "D_GAIRAI_JINSOKU": {
+   "fictional_code": "990000035",
+   "app_name": "外来迅速検体検査加算",
+   "app_no": "第3部第1節第1款 通則3",
+   "app_points": 10,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160177770",
+     "master_name": "外来迅速検体検査加算",
+     "master_points_r08": 10.0,
+     "master_points_r06": 10.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "1 項目 10 点"
+  },
+  "O100_3I": {
+   "fictional_code": "990000036",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版",
+   "candidates": [
+    {
+     "code": "180725910",
+     "master_name": "外来・在宅ベースアップ評価料（１）３（訪問診療時）イ",
+     "master_points_r08": 79.0,
+     "master_points_r06": 28.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "中",
+   "reason": "r2026 にない区分（令和6年度のベースアップ評価料(1) 3イ＝O100）。令和6年度版では 180725910（28 点）。O001_3I と同じ実在コード"
+  },
+  "O100_3RO": {
+   "fictional_code": "990000037",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版",
+   "candidates": [
+    {
+     "code": "180726010",
+     "master_name": "外来・在宅ベースアップ評価料（１）３（訪問診療時）ロ",
+     "master_points_r08": 19.0,
+     "master_points_r06": 7.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "中",
+   "reason": "同上。令和6年度版 7 点。O001_3RO と同じ実在コード"
+  },
+  "O100_SAISHIN": {
+   "fictional_code": "990000038",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版",
+   "candidates": [
+    {
+     "code": "180725810",
+     "master_name": "外来・在宅ベースアップ評価料（１）２（再診時等）",
+     "master_points_r08": 4.0,
+     "master_points_r06": 2.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "中",
+   "reason": "同上。令和6年度版 2 点。O001_2 と同じ実在コード"
+  },
+  "B000": {
+   "fictional_code": "990000039",
+   "app_name": "特定疾患療養管理料",
+   "app_no": "B000 1",
+   "app_points": 225,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "113001810",
+     "master_name": "特定疾患療養管理料（診療所）",
+     "master_points_r08": 225.0,
+     "master_points_r06": 225.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "（診療所）225。情報通信機器の版 113034010 は別"
+  },
+  "A_IRYOJOHO": {
+   "fictional_code": "990000040",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版・複数",
+   "candidates": [
+    {
+     "code": "111703270",
+     "master_name": "医療情報取得加算（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 1.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "112708970",
+     "master_name": "医療情報取得加算（再診）",
+     "master_points_r08": null,
+     "master_points_r06": 1.0,
+     "in_r08": false,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "低",
+   "reason": "r2026 にない区分（医療情報取得加算）。令和6年度版に初診 111703270・再診 112708970（各 1 点）。区分キーは初診・再診を区別していない。令和8年度版マスターには無い"
+  },
+  "A_DXSUISHIN": {
+   "fictional_code": "990000041",
+   "app_name": null,
+   "app_no": null,
+   "app_points": null,
+   "status": "旧版・複数",
+   "candidates": [
+    {
+     "code": "111703670",
+     "master_name": "医療ＤＸ推進体制整備加算１（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 12.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "111703770",
+     "master_name": "医療ＤＸ推進体制整備加算２（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 11.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "111703870",
+     "master_name": "医療ＤＸ推進体制整備加算３（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 10.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "111703470",
+     "master_name": "医療ＤＸ推進体制整備加算４（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 10.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "111703570",
+     "master_name": "医療ＤＸ推進体制整備加算５（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 9.0,
+     "in_r08": false,
+     "in_r06": true
+    },
+    {
+     "code": "111703370",
+     "master_name": "医療ＤＸ推進体制整備加算６（初診）",
+     "master_points_r08": null,
+     "master_points_r06": 8.0,
+     "in_r08": false,
+     "in_r06": true
+    }
+   ],
+   "points_match": "（アプリに点数なし）",
+   "confidence": "低",
+   "reason": "r2026 にない区分（医療DX推進体制整備加算）。令和6年度版に加算1〜6（初診。12／11／10／10／9／8 点）。区分キーは加算の番号を区別していない。令和8年度版マスターには無い"
+  },
+  "D008_19": {
+   "fictional_code": "990000042",
+   "app_name": "BNP",
+   "app_no": "D008 19",
+   "app_points": 130,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "160162350",
+     "master_name": "ＢＮＰ",
+     "master_points_r08": 130.0,
+     "master_points_r06": 130.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "ＢＮＰ。区分番号 D008 19・130 点"
+  },
+  "O001_3I": {
+   "fictional_code": "990000043",
+   "app_name": "外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時イ",
+   "app_no": "O001 3 イ",
+   "app_points": 79,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180725910",
+     "master_name": "外来・在宅ベースアップ評価料（１）３（訪問診療時）イ",
+     "master_points_r08": 79.0,
+     "master_points_r06": 28.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "賃上取組（注5）の版 180854010（107 点）は別コード"
+  },
+  "O001_3RO": {
+   "fictional_code": "990000044",
+   "app_name": "外来・在宅ベースアップ評価料(Ⅰ) 訪問診療時ロ",
+   "app_no": "O001 3 ロ",
+   "app_points": 19,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180726010",
+     "master_name": "外来・在宅ベースアップ評価料（１）３（訪問診療時）ロ",
+     "master_points_r08": 19.0,
+     "master_points_r06": 7.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "注5 の版 180854110（26 点）は別"
+  },
+  "O001_2": {
+   "fictional_code": "990000045",
+   "app_name": "外来・在宅ベースアップ評価料(Ⅰ) 再診時等",
+   "app_no": "O001 2",
+   "app_points": 4,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180725810",
+     "master_name": "外来・在宅ベースアップ評価料（１）２（再診時等）",
+     "master_points_r08": 4.0,
+     "master_points_r06": 2.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "注5 の版 180853910（6 点）は別"
+  },
+  "O001_1": {
+   "fictional_code": "990000046",
+   "app_name": "外来・在宅ベースアップ評価料(Ⅰ) 初診時",
+   "app_no": "O001 1",
+   "app_points": 17,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180725710",
+     "master_name": "外来・在宅ベースアップ評価料（１）１（初診時）",
+     "master_points_r08": 17.0,
+     "master_points_r06": 6.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "注5 の版 180853810（23 点）は別"
+  },
+  "O100_1HA": {
+   "fictional_code": "990000047",
+   "app_name": "外来・在宅物価対応料 訪問診療時",
+   "app_no": "O100 ハ",
+   "app_points": 3,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180820110",
+     "master_name": "物価対応料１（外来・在宅物価対応料）（訪問診療時）ハ",
+     "master_points_r08": 3.0,
+     "master_points_r06": null,
+     "in_r08": true,
+     "in_r06": false
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "O100_1RO": {
+   "fictional_code": "990000048",
+   "app_name": "外来・在宅物価対応料 再診時等",
+   "app_no": "O100 ロ",
+   "app_points": 2,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180820010",
+     "master_name": "物価対応料１（外来・在宅物価対応料）（再診時等）ロ",
+     "master_points_r08": 2.0,
+     "master_points_r06": null,
+     "in_r08": true,
+     "in_r06": false
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "O100_1I": {
+   "fictional_code": "990000049",
+   "app_name": "外来・在宅物価対応料 初診時",
+   "app_no": "O100 イ",
+   "app_points": 2,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "180819910",
+     "master_name": "物価対応料１（外来・在宅物価対応料）（初診時）イ",
+     "master_points_r08": 2.0,
+     "master_points_r06": null,
+     "in_r08": true,
+     "in_r06": false
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": ""
+  },
+  "C001_N13_DX2": {
+   "fictional_code": "990000050",
+   "app_name": "在宅医療DX情報活用加算2",
+   "app_no": "C001 注13",
+   "app_points": 9,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114706510",
+     "master_name": "在宅医療ＤＸ情報活用加算２（在宅患者訪問診療料（１）（２））",
+     "master_points_r08": 9.0,
+     "master_points_r06": 9.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "加算2"
+  },
+  "A_DENSHI_RENKEI": {
+   "fictional_code": "990000051",
+   "app_name": "電子的診療情報連携体制整備加算（再診時）",
+   "app_no": "A001 注19",
+   "app_points": 2,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "112709570",
+     "master_name": "電子的診療情報連携体制整備加算（再診）",
+     "master_points_r08": 2.0,
+     "master_points_r06": null,
+     "in_r08": true,
+     "in_r06": false
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "（再診）2 点。初診の加算1〜3 は 111704070／111704170／111704270"
+  },
+  "C002-2_2I1": {
+   "fictional_code": "990000052",
+   "app_name": "施設入居時等医学総合管理料 2イ(1) 重症・月2回以上",
+   "app_no": "C002-2 2 イ(1)",
+   "app_points": 3285,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114037310",
+     "master_name": "施医総管（在支診等・難病等月２回～１人）",
+     "master_points_r08": 3285.0,
+     "master_points_r06": 3285.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "施医総管 在支診等・難病等月2回〜・1人"
+  },
+  "C002-2_2RO1": {
+   "fictional_code": "990000053",
+   "app_name": "施設入居時等医学総合管理料 2ロ(1) 月2回以上",
+   "app_no": "C002-2 2 ロ(1)",
+   "app_points": 2585,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114037610",
+     "master_name": "施医総管（在支診等・月２回～１人）",
+     "master_points_r08": 2585.0,
+     "master_points_r06": 2585.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "施医総管 在支診等・月2回〜・1人"
+  },
+  "C002-2_2NI1": {
+   "fictional_code": "990000054",
+   "app_name": "施設入居時等医学総合管理料 2ニ(1) 月1回",
+   "app_no": "C002-2 2 ニ(1)",
+   "app_points": 1625,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "114037910",
+     "master_name": "施医総管（在支診等・月１回・１人）",
+     "master_points_r08": 1625.0,
+     "master_points_r06": 1625.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "施医総管 在支診等・月1回・1人"
+  },
+  "A001": {
+   "fictional_code": "990000055",
+   "app_name": "再診料",
+   "app_no": "A001",
+   "app_points": 76,
+   "status": "一意",
+   "candidates": [
+    {
+     "code": "112007410",
+     "master_name": "再診料",
+     "master_points_r08": 76.0,
+     "master_points_r06": 75.0,
+     "in_r08": true,
+     "in_r06": true
+    }
+   ],
+   "points_match": "一致",
+   "confidence": "高",
+   "reason": "再診料 76。同日再診料（112008350）・電話等再診料（112007950）は別コード"
+  }
+ }
+}

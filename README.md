@@ -235,6 +235,8 @@ RESEMEN_MASTER_DIR=<データ置き場>/masters npm test
 | [docs/route-migration.md](docs/route-migration.md) | 新しい API ルートを足すときの手順 |
 
 - 仕様：[design/iji-context/spec.md](design/iji-context/spec.md)
-- 設計（ユスティ・知識の扱い・データで動く点検）：[design/iji-context/design.md](design/iji-context/design.md)
+- 設計（ユスティ・知識の扱い・データで動く点検）：[design/iji-context/design.md](design/iji-context/design.md)。冒頭の「版」の行は起草したときの記録のまま残しています。いまの版と承認は、design.md の変更履歴の表と [design/iji-context/state.json](design/iji-context/state.json) の `approvedDesignVersion`・`requiredApprovalFingerprint`（承認は指紋で取る）で見ます
+- 進み具合（実務の算定 A〜I・FR-211）：[design/iji-context/handoff-opus.md](design/iji-context/handoff-opus.md)
+- 採点（3 つの役）の基準と結果：`design/iji-context/rubric/`（AI の採点で、実際の評価の予測ではない）
 - 反論台帳と批評・反証の記録：[design/iji-context/ledger.md](design/iji-context/ledger.md)、`design/iji-context/reviews/`
 - 採用値と出典（EM）：[design/iji-context/sources/evidence-master-iji-context.md](design/iji-context/sources/evidence-master-iji-context.md)
