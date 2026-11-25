@@ -213,15 +213,19 @@ mv ~/resemen ~/resemen.prev && mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -
 
 **4. 平文のデータを移す**。手順 5「今ある平文のデータを移す」の控えの置き場・鍵・`--dry-run`・本番の流しを、その順に行います。
 
-**5. 古いデモのクリニックを退避する**。データの版の印が今と違うデモのクリニックは、名前を変えて退避します（消しません。次に開いたときに今の版で作り直されます）。実在のデータで使うクリニックは触りません。まず一覧だけを出し、合っていれば `--yes` を付けて流します。
+**5. 古いクリニックを退避する**。データの版の印が今と違うクリニックは、名前を変えて退避します（消しません。次に開いたときに今の版で作り直されます）。実在のデータで使うクリニック（種類が real）は触りません。
+
+「デモ／実在」の種類がなかった版（2026-11-08 の公開版など）から上げるときは、どのクリニックも種類が「未定」です。`--retire-stale` だけでは何も退避されず、あとで利用者が「デモで試す」を選ぶと、古いデータに今の版の種が混ざります（2026-11-25 の予行で確かめた）。そのため `--include-undecided` を付けます。種類のなかった版は合成のデータだけを受け取る作りでしたが、一覧を見て、退避してよいかを決めてから `--yes` を付けてください。
 
 ```bash
-sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale --include-undecided
 ```
 
 ```bash
-sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale --yes
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale --include-undecided --yes
 ```
+
+利用者（ログイン ID とパスワード）は auth.db に残るので、前の版の人はそのままログインできます。
 
 **6. 公開マスターを置き場に入れる**。置き場の `masters/` に入れます（アプリと同じ利用者の持ち物にします）。
 
@@ -235,7 +239,12 @@ sudo docker run --rm --user node -v deploy_resemen-data:/data -v ~/masters.db:/i
 unset RESEMEN_DATA_KEY && cd ~/resemen/deploy && sudo RESEMEN_DOMAIN=<ドメイン> ./start.sh && sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs --tail 50 app
 ```
 
-確かめること：ログインできる／今までのクリニックのデータが見える／事務長の「設定」でマスターが入っている／注意書きの同意を求められる（版 3 に上がったので、全員にもう一度求めます）。
+確かめること：
+- ログインできる。種類のなかった版から上げたときは、はじめに「デモで試す／実在のデータで使う」を選ぶ画面が全員に出る（選ぶまでほかの画面は開けない）
+- 注意書きの同意を求められる（版 3 に上がったので、全員にもう一度求めます）
+- 事務長の「設定」でマスターが入っている
+- ログに止まった理由が出ていない。アプリを止めたときに出る `npm error`（npx が止められたことを言うだけ）は、起動の失敗ではない
+- 前の版の HOME にあった `/data/home/.npm`（npm のログ。患者の情報は入らない）は平文のまま残る。気になれば消してよい
 
 **8. 片づける**。確かめたら、平文の控え（`/var/backups/resemen/before-encrypt`）・送ったファイル・前のコードを消します。
 
@@ -243,7 +252,17 @@ unset RESEMEN_DATA_KEY && cd ~/resemen/deploy && sudo RESEMEN_DOMAIN=<ドメイ�
 sudo rm -r /var/backups/resemen/before-encrypt && rm ~/resemen.tar.gz ~/masters.db && rm -r ~/resemen.prev
 ```
 
-**戻すとき**：手順 7 で起動しないときは、`docker compose logs app` の理由を見ます。暗号化を済ませた置き場は前のコードでは開けません。戻すなら、`/var/backups/resemen/before-encrypt` の控えを置き場に書き戻してから、前のコード（`~/resemen.prev`）で起動します。
+**戻すとき**：手順 7 で起動しないときは、`docker compose logs app` の理由を見ます。暗号化を済ませた置き場は前のコードでは開けません（`file is not a database` で止まります）。戻すなら、アプリを止め、置き場を空にして控えを書き戻し、前のコードで起動します。書き戻すときは、アプリと同じ利用者（`node`）で、持ち物と権限をそのまま写します。
+
+```bash
+sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo docker run --rm --user node -v deploy_resemen-data:/data -v /var/backups/resemen:/backup:ro resemen-tools sh -c 'find /data -mindepth 1 -delete && cp -a /backup/before-encrypt/. /data/'
+```
+
+```bash
+cd ~/resemen.prev/deploy && sudo RESEMEN_DOMAIN=<ドメイン> ./start.sh
+```
+
+書き戻したら、ログインできることと、前のデータが見えることを確かめます（予行では、どちらも確かめた）。
 
 ## 気をつけること
 
