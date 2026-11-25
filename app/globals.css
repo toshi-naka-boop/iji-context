@@ -266,7 +266,8 @@ th { font-size: 13px; color: var(--muted); }
 .soap-grid > :last-child { grid-column: 1 / -1; }
 @media (max-width: 700px) { .soap-grid { grid-template-columns: 1fr; } }
 /* ログイン（2026-11-08 案 C+）：左にレセメンたち、右に入力のカード */
-.login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 440px); gap: 32px; align-items: center; padding: 32px 48px; background: linear-gradient(140deg, #0b0e12 0%, #12213a 55%, #0e5cc6 150%); position: relative; overflow: hidden; }
+/* 上をそろえる：「はじめて使う」で右の欄が伸びても、左の絵が動かない（真ん中にそろえると、全体の高さが変わるたびに絵が上下に動いた。2026-11-26） */
+.login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 440px); gap: 32px; align-items: start; padding: max(32px, 8vh) 48px 32px; background: linear-gradient(140deg, #0b0e12 0%, #12213a 55%, #0e5cc6 150%); position: relative; overflow: hidden; }
 .login-page::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(126, 193, 255, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 193, 255, 0.07) 1px, transparent 1px); background-size: 32px 32px; pointer-events: none; }
 .login-hero { position: relative; color: #f2f5fa; }
 .login-hero h1 { font-family: var(--num); font-size: 64px; letter-spacing: 4px; margin: 4px 0; }
