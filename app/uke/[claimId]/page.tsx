@@ -87,8 +87,13 @@ const pts = (n: number | null | undefined) => (n === null || n === undefined ? "
 const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
 const signed = (n: number) => (n > 0 ? `+${num(n)}` : num(n));
 const days = (dates: string[]) => [...new Set(dates)].map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、");
-/** 入力では消えない情報不足（カルテ側の記録がない・点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
-const SHARED_MISSING = ["chartRecord", "unsupportedLines"];
+/** 入力では消えない情報不足（点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
+const SHARED_MISSING = ["unsupportedLines"];
+/**
+ * カルテ側の記録がない（chartRecord）は、取り込んだレセプトに記録を足す手段がなく、入力で消えない。情報不足には出さず、「見ていません」の帯にルールを並べる
+ * （採点 r2 医療事務課長 P1-2。全件の一覧の「見ていないこと」と同じ扱い。src/server/app/uke-summary.ts）
+ */
+const UNSEEN_MISSING = "chartRecord";
 /** 情報不足を、画面に出す形にまとめる：同じ文になる項目は最初の 1 件に寄せ、ルールと対象の行は合わせて出す。ほかの項目はそのまま */
 function groupMissing(missing: Finding[]): { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] {
   const out: { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] = [];
@@ -151,6 +156,9 @@ export default function UkeClaimCheck() {
   /** 見せる中身：試算していれば試算、していなければ点検（版のないレセプトは、試算が届くまで中身がない） */
   const c = trial ?? (check && check.revisionId !== null ? check : null);
   const findings = c?.findings ?? [];
+  /** 入力で消える情報不足（カルテ側の記録がない分は「見ていません」に回す） */
+  const missing = (c?.missing ?? []).filter((f) => f.missing?.field !== UNSEEN_MISSING);
+  const unseenRules = [...new Set((c?.missing ?? []).filter((f) => f.missing?.field === UNSEEN_MISSING).map((f) => f.ruleId))];
   const lines = c?.lines ?? [];
   const others = c?.others ?? [];
   const rows = c?.rows ?? [];
@@ -265,7 +273,10 @@ export default function UkeClaimCheck() {
                   <div>対応していないコードを含む行は、ユスティの点検（決まった規則）の対象外です。対象外の行に左右される点は「決められません」と出し、下の小計は請求の合計ではありません。</div>
                 </div>
               )}
-              <div className="notice">カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。</div>
+              <div className="notice">
+                <span className="badge">見ていません</span> カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。入力では変わりません。
+                {unseenRules.length > 0 && <div className="muted">記録で決まる点を見ていないルール：{unseenRules.join("・")}</div>}
+              </div>
 
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
@@ -314,8 +325,8 @@ export default function UkeClaimCheck() {
               )}
 
               <h3 style={{ margin: 0 }}>情報不足</h3>
-              {(c.missing ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-              {groupMissing(c.missing ?? []).map(({ finding: f, ruleIds, lineRefs }, i) => (
+              {missing.length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
+              {groupMissing(missing).map(({ finding: f, ruleIds, lineRefs }, i) => (
                 <div key={i} className="notice">
                   {ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)} {findingText(f)}
                   {lineRefs.length > 0 && <div className="muted">対象の行：{lineRefs.map(nameOf).join("、")}</div>}

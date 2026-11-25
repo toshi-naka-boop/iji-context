@@ -78,4 +78,22 @@ describe("取り込んだレセプトの全件の一覧", () => {
     // 見本の K12 は保険者番号の検証番号が合わず、P01 が出る（採点 r2 医療事務課長 P1-1）
     expect(rows.find((x) => x.claimId.startsWith("K12"))?.patientFindings).toBeGreaterThan(0);
   });
+  it("カルテ側の記録がない（chartRecord）は、一覧の情報不足（missingOpen）に数えず「見ていないこと」に 1 つ数える（入力で消えないため）", async () => {
+    const owner = instance.getAuth().register("summary_unseen", "かちょう", "password123");
+    const cookie = cookieOf(owner);
+    const clerkId = instance.clerkIdOf(owner);
+    instance.runAs(owner, () => instance.getApp().importUke(clerkId, "kokuhoren.UKE"));
+    const rows = (await (await summary(cookie)).json()) as { claimId: string; state: string; missingOpen: number; unseen: number }[];
+    const checked = rows.filter((x) => x.state === "checked");
+    expect(checked.length).toBeGreaterThan(0);
+    for (const row of checked) {
+      const c = instance.runAs(owner, () => instance.getApp().ukeCheck(row.claimId, clerkId)) as { missing: { missing?: { field: string } }[] };
+      const chart = c.missing.filter((f) => f.missing?.field === "chartRecord").length;
+      const rest = c.missing.filter((f) => f.missing?.field !== "chartRecord");
+      const shared = new Set(rest.filter((f) => f.missing?.field === "unsupportedLines").map(() => "unsupportedLines")).size;
+      expect([row.claimId, row.missingOpen, row.unseen]).toEqual([row.claimId, rest.filter((f) => f.missing?.field !== "unsupportedLines").length + shared, chart > 0 ? 1 : 0]);
+    }
+    // 記録を読むルールが当たる請求がある（見本の国保連）
+    expect(checked.some((x) => x.unseen === 1)).toBe(true);
+  });
 });
