@@ -292,6 +292,18 @@ CREATE TABLE abbrev_dictionary (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT
 CREATE INDEX abbrev_dictionary_token ON abbrev_dictionary (token);
 `,
   },
+  {
+    // メンターとの会話の記録（spec FR-214）：Agent SDK の sessionStore が写す、会話の記録の 1 行ずつ（JSONL の 1 行を JSON の文字列のまま）。
+    // 暗号化した app.db に置き、続きの会話（resume）はここから読む。SDK が手元に置く写しは、ディスクに残らない場所（tmpfs）に向ける。
+    // uuid のある行は二度入れない（SDK の再送・取り込み直し）。消すのは、取り込んだファイル・クリニックを消すとき（src/llm/outbound.ts の forgetSessions）
+    version: 26,
+    sql: `
+CREATE TABLE sdk_transcripts (id INTEGER PRIMARY KEY AUTOINCREMENT, project_key TEXT NOT NULL, session_id TEXT NOT NULL, subpath TEXT NOT NULL DEFAULT '', uuid TEXT, entry TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX sdk_transcripts_session ON sdk_transcripts (session_id, subpath, id);
+CREATE UNIQUE INDEX sdk_transcripts_uuid ON sdk_transcripts (session_id, subpath, uuid) WHERE uuid IS NOT NULL;
+CREATE INDEX sdk_transcripts_project ON sdk_transcripts (project_key, session_id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

@@ -9,5 +9,5 @@
     "strict": true,
     "incremental": false
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "scripts/**/*.ts", "app/**/*.ts", "app/**/*.tsx", "proxy.ts", "next.config.ts", "vitest.config.ts"]
+  "include": ["next-env.d.ts", "src/**/*.ts", "scripts/**/*.ts", "app/**/*.ts", "app/**/*.tsx", "proxy.ts", "instrumentation.ts", "next.config.ts", "vitest.config.ts"]
 }

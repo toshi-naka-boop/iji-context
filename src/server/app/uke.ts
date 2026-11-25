@@ -2,8 +2,9 @@
 // 見本を請求に並べ、ダウンロードさせるのはデモのクリニックだけ。実在のデータで使うクリニック（real）と未定のクリニックでは、見本を配らず、
 // 同梱の UKE（fixtures/uke/*.UKE）と同じ内容のアップロードも断る（作り物の患者を実在の請求として持たない）
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { readSealed, writeSealed } from "../../db/sealed";
 import type { UkeClaim, UkeFile, UkePatient, UkeReceipt } from "../../uke/types";
 import { parseUke, readStoredUke, readUke, UkeError } from "../../uke/uke";
 import { uploadClaimIdOf } from "../../uke/upload";
@@ -84,7 +85,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     let stored = parsed.get(name);
     if (stored === undefined) {
       try {
-        stored = readStoredUke(readFileSync(path.join(uploadDir(), name)), uploadClaimIdOf(u.seq));
+        stored = readStoredUke(readSealed(path.join(uploadDir(), name)), uploadClaimIdOf(u.seq));
       } catch (e) {
         if (!(e instanceof UkeError)) throw e;
         stored = null;
@@ -116,7 +117,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
       if (!u.file || n < 0) continue;
       const receipt = u.file.receipts[n];
       // 見本は named() の先頭に、sampleFiles() と同じ並びで入っている（デモのクリニックだけ）。レセプトの並びは、ファイルの中の並びのまま
-      const bytes = () => (u.uploaded ? readFileSync(path.join(uploadDir(), u.name)) : sampleBytes()[i]);
+      const bytes = () => (u.uploaded ? readSealed(path.join(uploadDir(), u.name)) : sampleBytes()[i]);
       return { receipt, uploaded: u.uploaded, file: { ...u.file, receipts: [receipt] }, claim: () => parseUke(bytes()).claims[n] };
     }
     throw notFound("UKE にないレセプトです");
@@ -131,7 +132,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     for (const [i, u] of named().entries()) {
       if (!u.file) continue;
       try {
-        out.push(...parseUke(u.uploaded ? readFileSync(path.join(uploadDir(), u.name)) : samples[i]).claims);
+        out.push(...parseUke(u.uploaded ? readSealed(path.join(uploadDir(), u.name)) : samples[i]).claims);
       } catch (e) {
         if (!(e instanceof UkeError)) throw e;
       }
@@ -226,7 +227,8 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
     const dir = uploadDir();
     mkdirSync(dir, { recursive: true });
     const stored = path.join(dir, nameOf(upload));
-    if (!existsSync(stored)) writeFileSync(stored, buf);
+    // 鍵があれば暗号化して置く（spec FR-212。src/db/sealed.ts）
+    if (!existsSync(stored)) writeSealed(stored, buf);
     if (hit >= 0) return importUke(clerkId, path.basename(all[hit]));
     // 連番は、取り込めたときにだけ進める
     setSetting("uke-uploads", JSON.stringify({ next: state.next + 1, files: [...state.files, upload] }));
@@ -255,7 +257,7 @@ export function createUke(ctx: AppContext, clerks: Clerks) {
       const f = u.file;
       let keys = keyCache.get(u.name);
       if (!keys) {
-        const claims = parseUke(readFileSync(u.uploaded ? path.join(uploadDir(), u.name) : path.join(paths.root, samples[i]))).claims;
+        const claims = parseUke(u.uploaded ? readSealed(path.join(uploadDir(), u.name)) : readFileSync(path.join(paths.root, samples[i]))).claims;
         keys = f.receipts.map((r, n) => ({
           claimId: r.claimId,
           payer: f.payer,

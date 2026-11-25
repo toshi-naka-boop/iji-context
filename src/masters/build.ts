@@ -4,7 +4,9 @@
 // 形式の検査：Shift_JIS・項目数・見出しの行・取り込む項目の型と値の区分（src/masters/layout.ts）。1 行でも合わなければ、そのファイルは取り込まず、理由を rejected に残す。件数 0 も取り込まない
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+// アプリと同じ SQLite のライブラリで作る（src/db/open.ts。masters.db は暗号化しない）
+import Sqlite from "better-sqlite3-multiple-ciphers";
 import type { MastersConfig } from "./config";
 import { MasterFormatError, readCsv } from "./csv";
 import { LAYOUTS, type TableLayout } from "./layout";
@@ -147,7 +149,7 @@ export function carryOver(db: Database.Database, oldFile: string, generation: st
   if (!existsSync(oldFile)) return 0;
   let old: Database.Database;
   try {
-    old = new Database(oldFile, { readonly: true, fileMustExist: true });
+    old = new Sqlite(oldFile, { readonly: true, fileMustExist: true }) as unknown as Database.Database;
   } catch {
     return 0;
   }
@@ -185,7 +187,7 @@ export function carryOver(db: Database.Database, oldFile: string, generation: st
     }
     return n;
   } catch (e) {
-    if (e instanceof Database.SqliteError) return 0;
+    if (e instanceof Sqlite.SqliteError) return 0;
     throw e;
   } finally {
     old.close();

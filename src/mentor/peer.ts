@@ -4,7 +4,7 @@
 import { createKnowledge, type StoreOptions } from "../lifecycle/store";
 import type { KnowledgeMeta } from "../lifecycle/types";
 import { modelOptions, type ModelChoice } from "./models";
-import { runOnce, type RunStats, type Sender } from "../llm/outbound";
+import { runOnce, type RunStats, type Sender, type SessionStore } from "../llm/outbound";
 import { skillGuard } from "./workspace";
 
 export const PEER_OUTPUT_SCHEMA = {
@@ -42,6 +42,8 @@ export async function askVeteranMentor(
   sessionId: string | null,
   workspace: { cwd: string; skills: string[] },
   model?: ModelChoice,
+  /** 会話の記録の置き場（クリニックの app.db。spec FR-214） */
+  sessionStore?: SessionStore,
 ): Promise<{ answer: PeerAnswer; sessionId: string; stats: RunStats }> {
   const guard = skillGuard(store);
   const r = await runOnce(by, "veteranMentor", question, {
@@ -55,6 +57,7 @@ export async function askVeteranMentor(
     outputFormat: { type: "json_schema", schema: PEER_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
     maxTurns: 8,
     ...(sessionId ? { resume: sessionId } : {}),
+    ...(sessionStore ? { sessionStore } : {}),
     ...modelOptions(model),
   });
   const a = parsePeerAnswer(r.structured);

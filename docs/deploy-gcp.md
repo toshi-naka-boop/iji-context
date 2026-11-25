@@ -9,11 +9,11 @@
   - **app**：レセメン本体（Next.js）。データはすべて `/data` に置き、Docker のボリュームで残します。
   - **caddy**：https の受け口。Let's Encrypt の証明書を自動で取ります。
 - **API キーは Secret Manager に置きます**。VM は自分のサービスアカウントの権限で、起動のたびに読み出します（`deploy/start.sh`）。キーは git にも Docker のイメージにも VM のファイルにも書きません。
-- データの置き場所（ボリュームの中）は次のとおりです。
+- データの置き場所（ボリュームの中）は次のとおりです。データベース・取り込んだ UKE・医師確認の記録は暗号化して置きます（下の「保存時の暗号化」）。
   - `/data/auth.db`：利用者とセッション
-  - `/data/tenants/<利用者>/`：その人専用のクリニック（DB・知識・医師確認の記録）
+  - `/data/tenants/<利用者>/`：その人専用のクリニック（DB・知識・医師確認の記録。メンターとの会話の記録も DB の中）
   - `/data/workspaces/`：メンターの作業場所
-  - `/data/home/`：Claude Code の会話の記録
+- Claude Code が手元に置く会話の記録の写し（`CLAUDE_CONFIG_DIR=/tmp/claude`）と一時ファイルは、ディスクに残らない tmpfs（`/tmp`）に置きます。前の版は `/data/home/` に置いていました（移す手順で DB に写して消します）。
 
 ## 1. プロジェクトと VM を作る
 
@@ -68,6 +68,28 @@ read -rs K && printf %s "$K" | gcloud secrets versions add resemen-anthropic-api
 
 キーを入れ替えるときは、新しい版を `versions add` で足して、VM で `deploy/start.sh` をもう一度実行します。
 
+## 2b. 保存時の暗号化の鍵を作る（必須）
+
+鍵は 32 バイトの乱数を 16 進 64 文字にしたものです。Secret Manager に、画面に出さない形で作ります。**鍵をなくすと、データは戻せません。** 鍵をデータの置き場（VM のディスク）に置くことはしません。
+
+```bash
+gcloud secrets create resemen-data-key --replication-policy=automatic --project <プロジェクト ID>
+```
+
+```bash
+gcloud secrets add-iam-policy-binding resemen-data-key --member=serviceAccount:<プロジェクト番号>-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor --project <プロジェクト ID>
+```
+
+```bash
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add resemen-data-key --data-file=- --project <プロジェクト ID>
+```
+
+**鍵の控えをサーバーの外に置きます。** Secret Manager の版を消さない（`versions destroy` しない）ことに加え、パスワード管理など、別の場所にも控えます。次のコマンドは鍵を画面に出すので、人のいない場所で、控えたらすぐに画面を消してください。
+
+```bash
+gcloud secrets versions access latest --secret=resemen-data-key --project <プロジェクト ID>
+```
+
 ## 3. コードを置いて起動する
 
 コードは、リポジトリから clone するか、手元から送ります（リポジトリが非公開のときは送るほうが簡単です）。
@@ -104,7 +126,67 @@ mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen/dep
 sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs -f app
 ```
 
-バックアップは、VM のディスクにスナップショットのスケジュールを設定するのが簡単です（データはすべてボリュームの中にあるため）。
+バックアップは、VM のディスクにスナップショットのスケジュールを設定するのが簡単です（データはすべてボリュームの中にあるため）。データベースとファイルは暗号化してあるので、戻すときは同じ鍵が要ります。
+
+## 5. 保存時の暗号化
+
+`start.sh` は Secret Manager の `resemen-data-key` を `RESEMEN_DATA_KEY` として渡します。アプリは起動のときに次を確かめ、通らなければ起動しません（`docker compose logs app` に理由が出ます）。
+
+- 鍵がある（本番では鍵がなければ起動しない）
+- 鍵が `auth.db` と合う（合わなければ止め、データベースは変えない）
+- 暗号化していないデータベース・ファイル・前の版の会話の記録（`/data/home/.claude`）が置き場にない
+
+### 今ある平文のデータを移す（この版より前から動かしていたとき）
+
+アプリを止めてから、手で流します。スクリプトは開発用の依存（tsx）で動くので、`tools` のイメージで流します。ボリュームの名前は `docker volume ls` で確かめます（`deploy` のフォルダから起動していれば `deploy_resemen-data`）。
+
+```bash
+cd ~/resemen && sudo docker build --target tools -t resemen-tools . && sudo docker compose -f deploy/docker-compose.yml stop app
+```
+
+控えの置き場を作ります。スクリプトはアプリと同じ利用者（`node`。uid 1000）で流すので、その利用者が書ける場所にします（root で流すと、差し替えたファイルをアプリが書けなくなります）。
+
+```bash
+sudo mkdir -p /var/backups/resemen && sudo chown 1000:1000 /var/backups/resemen && sudo chmod 700 /var/backups/resemen
+```
+
+鍵は、この端末の環境変数にだけ置きます（コマンドの引数に書かない）。
+
+```bash
+export RESEMEN_DATA_KEY="$(gcloud secrets versions access latest --secret=resemen-data-key)"
+```
+
+まず `--dry-run` で対象の一覧を出します（何も変えません）。
+
+```bash
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data -v /var/backups/resemen:/backup resemen-tools npx tsx scripts/encrypt-at-rest.ts --dry-run
+```
+
+一覧が合っていれば、控えの場所を付けて流します。流す前に、データの置き場を丸ごと `/var/backups/resemen/` の下に控えます。データベースは暗号化した写しを作り、整合性の検査・スキーマの版・表ごとの行数が元と合ってから差し替えます。二度流しても壊れません（済んだものは飛ばします）。
+
+```bash
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data -v /var/backups/resemen:/backup resemen-tools npx tsx scripts/encrypt-at-rest.ts --backup /backup/before-encrypt
+```
+
+`unset RESEMEN_DATA_KEY` のあと、`start.sh` で起動し、ログインして今までのデータが見えることを確かめます。確かめたら、控え（平文のまま）を消します。それまでのスナップショットも平文なので、要らなければ消します。
+
+```bash
+sudo rm -r /var/backups/resemen/before-encrypt
+```
+
+### 鍵の入れ替え
+
+自動の入れ替えはありません。アプリを止めてから、手で流します。新しい鍵を Secret Manager に新しい版として足し、今の鍵と新しい鍵の両方を環境変数に置きます。
+
+```bash
+export RESEMEN_DATA_KEY="$(gcloud secrets versions access latest --secret=resemen-data-key)" && openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add resemen-data-key --data-file=- && export RESEMEN_NEW_DATA_KEY="$(gcloud secrets versions access latest --secret=resemen-data-key)"
+```
+
+```bash
+sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo --preserve-env=RESEMEN_DATA_KEY,RESEMEN_NEW_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -e RESEMEN_NEW_DATA_KEY -v deploy_resemen-data:/data -v /var/backups/resemen:/backup resemen-tools npx tsx scripts/rotate-key.ts --backup /backup/before-rotate
+```
+
+全部のデータベースの鍵を変え、ファイルを包み直します（`--dry-run` で対象の一覧だけを出せます）。`unset RESEMEN_DATA_KEY RESEMEN_NEW_DATA_KEY` のあと、`start.sh` で起動して開けることを確かめます。控え（古い鍵で暗号化したもの）を消すまでは、Secret Manager の古い版を消さないでください。
 
 ## 気をつけること
 

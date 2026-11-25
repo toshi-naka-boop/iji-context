@@ -35,8 +35,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Agent SDK は同梱のネイティブ CLI を実行時に解決するため、バンドルせずに読み込む
-  serverExternalPackages: ["@anthropic-ai/claude-agent-sdk", "better-sqlite3"],
+  // Agent SDK は同梱のネイティブ CLI を、SQLite（暗号化つきのものを含む）はネイティブのアドオンを実行時に解決するため、バンドルせずに読み込む
+  serverExternalPackages: ["@anthropic-ai/claude-agent-sdk", "better-sqlite3", "better-sqlite3-multiple-ciphers"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

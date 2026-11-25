@@ -1,12 +1,12 @@
 // ログイン（spec FR-72）：ログイン ID とパスワード。パスワードは Node 標準の scrypt でハッシュにして保存し、平文は残さない。
 // セッションはランダムなトークンを httpOnly の cookie で渡し、DB にはトークンのハッシュだけを置く。
 // 利用者のデータはクリニック（tenant）ごとに分ける。招待で入った利用者は、招待した側のクリニックに属する（src/server/instance.ts）
-import Database from "better-sqlite3";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
+import { openDatabase } from "../db/open";
 import { badRequest, conflict, forbidden, notFound, UserError } from "./errors";
 import { isRole, type Role } from "./roles";
 import { isTenantKind, type TenantKind, type TenantStatus } from "./tenant-kind";
@@ -79,7 +79,7 @@ const jstDayOf = (now: Date) => new Date(now.getTime() + 9 * 3_600_000).toISOStr
 
 export function openAuth(dbFile: string) {
   mkdirSync(path.dirname(dbFile), { recursive: true });
-  const db = new Database(dbFile);
+  const db = openDatabase(dbFile, "auth");
   db.pragma("journal_mode = WAL");
   migrate(db, AUTH_MIGRATIONS);
   type Row = { id: string; login: string; name: string; tenant_id: string | null; role: string };

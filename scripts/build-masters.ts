@@ -4,7 +4,9 @@
 import { mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+// アプリと同じ SQLite のライブラリで作る（src/db/open.ts。masters.db は暗号化しない）
+import Sqlite from "better-sqlite3-multiple-ciphers";
 import { carryOver, createSchema, ingestAll } from "../src/masters/build";
 import { MASTERS_CONFIG } from "../src/masters/config";
 import { mastersDbPath, mastersDir } from "../src/masters/db";
@@ -20,7 +22,7 @@ const tmp = `${out}.building`;
 mkdirSync(dir, { recursive: true });
 rmSync(tmp, { force: true });
 console.log(`読む場所：${raw}`);
-const db = new Database(tmp);
+const db = new Sqlite(tmp) as unknown as Database.Database;
 // 作りかけのファイルなので、途中で落ちたら捨てる（ジャーナルを書かない）
 db.pragma("journal_mode = OFF");
 db.pragma("synchronous = OFF");

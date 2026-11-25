@@ -1,8 +1,9 @@
 // 医師確認（F1）と ask_missing（F1/F3 の振り分け）。spec FR-30〜37、EM 19-2（AHIMA/ACDIS 2026 年版の 7 要件）
 // 質問の文面はメンター（LLM）が作ってよいが、ここで決まった規則で検証し、通らないものは医師に届けない
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { readSealed, writeSealed } from "../db/sealed";
 import { assertTime, ms } from "../lifecycle/time";
 import type { ClerkTask, ConfirmedDisease, DoctorQuery } from "./types";
 import { badRequest, conflict, notFound } from "../server/errors";
@@ -58,10 +59,9 @@ export function businessDaysElapsed(at: string, now: string, cal: BusinessDays):
 
 export type QueryLog = { dir: string };
 
+/** 書き換えは、いったん別の名前に書いてから置き換える。鍵があれば暗号化して置く（spec FR-212。src/db/sealed.ts） */
 function writeAtomic(file: string, content: string): void {
-  const tmp = `${file}.tmp-${process.pid}`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, file);
+  writeSealed(file, content);
 }
 
 function markdown(q: DoctorQuery): string {
@@ -106,7 +106,7 @@ function save(log: QueryLog, q: DoctorQuery): void {
 export function readQuery(log: QueryLog, id: string): DoctorQuery {
   const file = path.join(log.dir, `${id}.json`);
   if (!existsSync(file)) throw notFound(`医師確認が見つからない: ${id}`);
-  return JSON.parse(readFileSync(file, "utf8")) as DoctorQuery;
+  return JSON.parse(readSealed(file).toString("utf8")) as DoctorQuery;
 }
 
 export function listQueries(log: QueryLog): DoctorQuery[] {
@@ -114,7 +114,7 @@ export function listQueries(log: QueryLog): DoctorQuery[] {
   return readdirSync(log.dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => JSON.parse(readFileSync(path.join(log.dir, f), "utf8")) as DoctorQuery);
+    .map((f) => JSON.parse(readSealed(path.join(log.dir, f)).toString("utf8")) as DoctorQuery);
 }
 
 // ---------------------------------------------------------------------------

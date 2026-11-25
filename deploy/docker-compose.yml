@@ -7,6 +7,8 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?start.sh から起動してください}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      # 保存時の暗号化の鍵（32 バイトを 16 進 64 文字で）。start.sh が Secret Manager から読み出して渡す。なければ起動しない
+      - RESEMEN_DATA_KEY=${RESEMEN_DATA_KEY:?start.sh から起動してください}
       # Caddy の後ろで動く（アプリの口は外に出していない）ので、Caddy が付ける X-Real-IP を接続元として信用する
       - RESEMEN_TRUST_PROXY=1
       # 画面を開く Origin（https://ドメイン）。GET 以外の API は、この Origin か同じ Host からだけ受ける
@@ -15,6 +17,9 @@ services:
       - RESEMEN_OPEN_SIGNUP=${RESEMEN_OPEN_SIGNUP:-}
     volumes:
       - resemen-data:/data
+    # メンターの会話の記録の手元の写し（CLAUDE_CONFIG_DIR=/tmp/claude）と一時ファイルは、ディスクに残さない（spec FR-214）
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     expose:
       - "3000"
   caddy:

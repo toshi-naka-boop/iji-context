@@ -1,9 +1,9 @@
 // 分割した処理が共有するもの：SQLite・知識と記録の置き場所・config/ の設定・app_settings の読み書き
-import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_MIGRATIONS, migrate } from "../../db/migrate";
+import { appPurposeOf, openDatabase } from "../../db/open";
 import { applyKind } from "../../facility/seed";
 import { ruleKubun } from "../../engine";
 import { isKnownKubun } from "../../engine/revisions";
@@ -69,7 +69,7 @@ export const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8"
 export function openContext(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?: string | null } = {}) {
   const kind: TenantStatus = opts.kind ?? "demo";
   const fresh = !existsSync(paths.dbFile);
-  const sqlite = new Database(paths.dbFile);
+  const sqlite = openDatabase(paths.dbFile, appPurposeOf(paths.dbFile));
   const migratedAt = new Date().toISOString();
   migrate(sqlite, APP_MIGRATIONS, { kind, at: migratedAt });
   // 未定のクリニックで種類を選んだあと（開き直したとき）、申告をその種類に合わせる（一度だけ。design.md §15-2 の chooseKind の経路）
