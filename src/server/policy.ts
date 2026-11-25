@@ -52,6 +52,8 @@ export const POLICY = {
   "POST /api/staff/[id]/role": row(ALL, "none", false),
   "POST /api/staff/[id]/suspend": row(ALL, "none", false),
   "POST /api/staff/[id]/resume": row(ALL, "none", false),
+  // 持ち主をほかの事務長に引き継ぐ（採点 r2 事務長 #3）。持ち主だけ（src/server/auth.ts の transferOwner が照合する）。パスワードを入れ直す
+  "POST /api/staff/[id]/owner": row(ALL, "none", false),
   // マスターの状態（design.md §12-5）：入っている公開データと点検の準備。事務長だけ。患者の情報は返さない
   "GET /api/masters": row(["manager"], "none", false),
   // 施設の設定（FR-148）：三値の項目を、クリニックごとに残す・読む。事務長だけ。監査ログには項目の名前だけ（値は入れない）

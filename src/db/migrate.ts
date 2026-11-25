@@ -377,6 +377,13 @@ ALTER TABLE tenants_v6 RENAME TO tenants;
 ALTER TABLE users ADD COLUMN disabled_at TEXT;
 `,
   },
+  {
+    // 持ち主の引き継ぎ（採点 r2 事務長 #3）：クリニックの持ち主の利用者 id。空なら、クリニックを始めた人（tenant id と同じ id の人）が持ち主
+    version: 8,
+    sql: `
+ALTER TABLE tenants ADD COLUMN owner_id TEXT;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

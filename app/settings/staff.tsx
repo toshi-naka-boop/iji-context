@@ -1,13 +1,17 @@
 "use client";
 // 職員（採点 r1 事務長 #2）：事務長とクリニックの持ち主にだけ、設定の画面が出す欄。2 人以上で使っているクリニックで出す（1 人のあいだは「役割」の欄で切り替える）。
-// 役割を変える・停止する・再開する。停止した人はログインできず、いまのセッションも切れる。事務長がいなくなる操作はサーバーが断る
+// 役割を変える・停止する・再開する・持ち主を引き継ぐ（持ち主だけ。パスワードを入れ直す）。停止した人はログインできず、いまのセッションも切れる。事務長がいなくなる操作はサーバーが断る
 import { useEffect, useState } from "react";
 import { ROLES, ROLE_LABELS, type Role } from "../../src/server/roles";
 
 type Member = { id: string; login: string; name: string; role: Role; owner: boolean; self: boolean; disabled: boolean };
 
-export function Staff({ real }: { real: boolean }) {
+/** isOwner は、自分がクリニックの持ち主か（持ち主だけが、持ち主をほかの事務長に引き継げる） */
+export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwner: boolean; onOwnerChanged: () => void }) {
   const [list, setList] = useState<Member[]>([]);
+  /** 持ち主を引き継ぐ相手と、確かめに入れ直す自分のパスワード */
+  const [handTo, setHandTo] = useState<Member | null>(null);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const load = () =>
@@ -28,6 +32,24 @@ export function Staff({ real }: { real: boolean }) {
     } catch {
       setErr("通信できませんでした。もう一度試してください");
     } finally {
+      setBusy(false);
+      load();
+    }
+  }
+  async function transfer() {
+    if (!handTo) return;
+    setErr("");
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/staff/${handTo.id}/owner`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return setErr(d.error ?? "引き継げませんでした");
+      setHandTo(null);
+      onOwnerChanged();
+    } catch {
+      setErr("通信できませんでした。もう一度試してください");
+    } finally {
+      setPassword("");
       setBusy(false);
       load();
     }
@@ -72,12 +94,30 @@ export function Staff({ real }: { real: boolean }) {
                   ) : (
                     !m.self && !m.owner && <button onClick={() => suspend(m)} disabled={busy}>停止する</button>
                   )}
+                  {isOwner && !m.self && !m.disabled && m.role === "manager" && (
+                    <button onClick={() => { setHandTo(m); setPassword(""); setErr(""); }} disabled={busy} style={{ marginLeft: 4 }}>持ち主を引き継ぐ</button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {isOwner && handTo && (
+        <div className="notice warn" style={{ marginTop: 8 }}>
+          <p style={{ marginTop: 0 }}>
+            持ち主を {handTo.name}（{handTo.login}）に引き継ぎます。引き継ぐと、クリニックを消す操作と持ち主の引き継ぎは {handTo.name} だけができるようになり、あなたは職員の 1 人になります（役割は今のまま。停止もできるようになります）。自分では元に戻せません。
+          </p>
+          <label>
+            確かめのため、あなたのパスワードを入れてください：
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="確かめのパスワード" autoComplete="current-password" style={{ marginLeft: 4 }} />
+          </label>
+          <div className="chips" style={{ marginTop: 8 }}>
+            <button className="primary" disabled={busy || password === ""} onClick={transfer}>持ち主を引き継ぐ</button>
+            <button onClick={() => { setHandTo(null); setPassword(""); }} disabled={busy}>やめる</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

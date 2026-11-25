@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import NOTICE from "../../config/notice.json";
 import { AUTH_MIGRATIONS, migrate } from "../db/migrate";
-import { badRequest, conflict, forbidden, notFound } from "./errors";
+import { badRequest, conflict, forbidden, notFound, UserError } from "./errors";
 import { isRole, type Role } from "./roles";
 import { isTenantKind, type TenantKind, type TenantStatus } from "./tenant-kind";
 
@@ -218,8 +218,10 @@ export function openAuth(dbFile: string) {
     return { ...user, role };
   }
 
-  /** クリニックの持ち主（そのクリニックを始めた人。tenant id が自分の id） */
-  const isOwner = (user: User) => user.tenantId === user.id;
+  /** クリニックの持ち主の id。引き継いでいなければ、そのクリニックを始めた人（tenant id が自分の id の人） */
+  const ownerOf = (tenantId: string): string => (db.prepare("SELECT owner_id FROM tenants WHERE id = ?").get(tenantId) as { owner_id: string | null } | undefined)?.owner_id ?? tenantId;
+  /** クリニックの持ち主か */
+  const isOwner = (user: User) => ownerOf(user.tenantId) === user.id;
   /** 職員の一覧・停止・再開・役割の変更ができるのは、事務長とクリニックの持ち主（採点 r1 事務長 #2） */
   const canManageStaff = (user: User) => user.role === "manager" || isOwner(user);
   /** 停止していない事務長の人数 */
@@ -229,7 +231,8 @@ export function openAuth(dbFile: string) {
   /** 自分のクリニックの職員の一覧（登録の順）。パスワードのハッシュや同意の記録は返さない */
   function listStaff(by: User): { id: string; login: string; name: string; role: Role; owner: boolean; self: boolean; disabled: boolean }[] {
     if (!canManageStaff(by)) throw forbidden("職員の一覧を見られるのは、事務長とクリニックの持ち主だけです");
-    return staffRowsOf(by.tenantId).map((r) => ({ id: r.id, login: r.login, name: r.name, role: isRole(r.role) ? r.role : "clerk", owner: r.id === by.tenantId, self: r.id === by.id, disabled: r.disabled_at !== null }));
+    const owner = ownerOf(by.tenantId);
+    return staffRowsOf(by.tenantId).map((r) => ({ id: r.id, login: r.login, name: r.name, role: isRole(r.role) ? r.role : "clerk", owner: r.id === owner, self: r.id === by.id, disabled: r.disabled_at !== null }));
   }
   /** 操作の相手（同じクリニックの人だけ。ほかのクリニックの人は「いない」として扱う） */
   function staffOf(by: User, id: string): StaffRow {
@@ -268,11 +271,46 @@ export function openAuth(dbFile: string) {
       .transaction(() => {
         const target = staffOf(by, id);
         if (disabled && target.id === by.id) throw conflict("自分は停止できません");
-        if (disabled && target.id === by.tenantId) throw conflict("クリニックの持ち主は停止できません");
+        if (disabled && target.id === ownerOf(by.tenantId)) throw conflict("クリニックの持ち主は停止できません。先に、持ち主をほかの事務長に引き継いでください");
         keepManager(by.tenantId, target, { role: target.role, disabled });
         db.prepare("UPDATE users SET disabled_at = ? WHERE id = ?").run(disabled ? now.toISOString() : null, id);
         if (disabled) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
         return { id, disabled };
+      })
+      .immediate();
+  }
+
+  /** パスワードの入れ直しの失敗（本人ごと）。続いたらしばらく受け付けない（セッションを奪われたときの総当たりを遅らせる） */
+  const reauthFailures = new Throttle(5, 600_000);
+  /**
+   * 本人のパスワードを入れ直してもらって確かめる（持ち主の引き継ぎ・クリニックの削除・パスワードの変更の前）。
+   * 違えば 400（欄は password）。失敗が続いたら 429
+   */
+  function confirmPassword(user: User, password: string): void {
+    if (reauthFailures.blocked(user.id)) throw new UserError(429, "パスワードの確かめの失敗が続いたため、10 分ほど待ってからもう一度試してください");
+    const r = db.prepare("SELECT password_hash FROM users WHERE id = ? AND disabled_at IS NULL").get(user.id) as { password_hash: string } | undefined;
+    if (!r || !verifyPassword(password, r.password_hash)) {
+      reauthFailures.hit(user.id);
+      throw badRequest("パスワードが違います", ["password"]);
+    }
+    reauthFailures.clear(user.id);
+  }
+  /**
+   * 持ち主を、同じクリニックのほかの事務長に引き継ぐ（採点 r2 事務長 #3）。持ち主だけ。パスワードを入れ直して確かめる。
+   * 相手は停止していない事務長だけ。引き継いだあと、前の持ち主は職員の 1 人になる（役割は変えない。停止もできるようになる）
+   */
+  function transferOwner(by: User, id: string, password: string): { owner: string } {
+    if (!isOwner(by)) throw forbidden("持ち主を引き継げるのは、クリニックの持ち主だけです");
+    confirmPassword(by, password);
+    return db
+      .transaction(() => {
+        if (!isOwner(by)) throw forbidden("持ち主を引き継げるのは、クリニックの持ち主だけです");
+        const target = staffOf(by, id);
+        if (target.id === by.id) throw conflict("自分には引き継げません");
+        if (target.role !== "manager" || target.disabled_at !== null) throw conflict("持ち主を引き継げるのは、停止していない事務長だけです。先に、その人の役割を事務長にしてください");
+        const r = db.prepare("UPDATE tenants SET owner_id = ? WHERE id = ?").run(target.id, by.tenantId);
+        if (r.changes === 0) throw conflict("このクリニックの使い方が決まっていないので、持ち主を引き継げません");
+        return { owner: target.id };
       })
       .immediate();
   }
@@ -364,6 +402,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { confirmPassword, transferOwner, ownerOf, assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

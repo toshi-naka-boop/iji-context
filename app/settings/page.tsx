@@ -19,8 +19,9 @@ export default function Settings() {
   const [saved, setSaved] = useState("");
   // 役割（1 人で使っているクリニックだけ、自分で切り替えられる）
   const [me, setMe] = useState<{ role: Role; canSwitchRole: boolean; canInvite: boolean; canManageStaff: boolean; hasManager: boolean; isOwner: boolean; login: string; tenantKind: string } | null>(null);
+  const loadMe = () => fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
   useEffect(() => {
-    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
+    loadMe();
   }, []);
   async function switchRole(role: Role) {
     setErr("");
@@ -57,7 +58,7 @@ export default function Settings() {
           )}
         </div>
       )}
-      {me?.canManageStaff && !me.canSwitchRole && <Staff real={me.tenantKind !== "demo"} />}
+      {me?.canManageStaff && !me.canSwitchRole && <Staff real={me.tenantKind !== "demo"} isOwner={me.isOwner} onOwnerChanged={loadMe} />}
       {me?.canInvite && <Invites noManager={!me.hasManager} />}
       {me && <Facility canEdit={me.role === "manager" || me.role === "veteran"} />}
       {me?.role === "manager" && <Masters />}

@@ -31,6 +31,7 @@ const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const list = async (cookie: string) => (await import("../../app/api/staff/route")).GET(new Request("http://localhost/api/staff", { headers: { cookie } }));
 const setRole = async (cookie: string, id: string, role: Role) => (await import("../../app/api/staff/[id]/role/route")).POST(post(`/api/staff/${id}/role`, cookie, { role }), params(id));
 const suspend = async (cookie: string, id: string) => (await import("../../app/api/staff/[id]/suspend/route")).POST(post(`/api/staff/${id}/suspend`, cookie), params(id));
+const handOver = async (cookie: string, id: string, password: string) => (await import("../../app/api/staff/[id]/owner/route")).POST(post(`/api/staff/${id}/owner`, cookie, { password }), params(id));
 const resume = async (cookie: string, id: string) => (await import("../../app/api/staff/[id]/resume/route")).POST(post(`/api/staff/${id}/resume`, cookie), params(id));
 
 /** 持ち主（事務長）と、招待で入った人たち */
@@ -118,5 +119,38 @@ describe("職員の管理", () => {
     const demo = clinic("st_demo");
     const c = demo.join("clerk", "clerk");
     expect((await setRole(cookieOf(demo.owner), c.id, "doctor")).status).toBe(200);
+  });
+
+  it("持ち主は、パスワードを入れ直して、ほかの事務長に持ち主を引き継げる。記録にはパスワードを残さない（採点 r2 事務長 #3）", async () => {
+    const { owner, join } = clinic("st_owner");
+    const mgr = join("mgr", "manager");
+    const clerk = join("clerk", "clerk");
+    const oc = cookieOf(owner);
+    // 持ち主でない人は引き継げない。相手は停止していない事務長だけ。パスワードが違えば 400
+    expect((await handOver(cookieOf(mgr), mgr.id, "password123")).status).toBe(403);
+    expect((await handOver(oc, clerk.id, "password123")).status).toBe(409);
+    expect((await handOver(oc, owner.id, "password123")).status).toBe(409);
+    const wrong = await handOver(oc, mgr.id, "wrong-password");
+    expect([wrong.status, (await wrong.json()).fields]).toEqual([400, ["password"]]);
+    expect(auth().isOwner(owner)).toBe(true);
+    // 引き継ぐと、新しい持ち主だけがクリニックを消せる・引き継げる。前の持ち主は停止できるようになる
+    expect((await handOver(oc, mgr.id, "password123")).status).toBe(200);
+    expect([auth().isOwner(owner), auth().isOwner(mgr), auth().ownerOf(owner.tenantId)]).toEqual([false, true, mgr.id]);
+    expect(((await (await list(cookieOf(mgr))).json()) as { id: string; owner: boolean }[]).filter((x) => x.owner).map((x) => x.id)).toEqual([mgr.id]);
+    expect((await handOver(oc, mgr.id, "password123")).status).toBe(403);
+    expect((await suspend(cookieOf(mgr), owner.id)).status).toBe(200);
+    // 監査ログの対象は相手の id だけ。auth_events には操作の名前と結果だけ。どちらにもパスワードは入らない
+    const rows = instance.runAs(mgr, () => instance.getApp().audit.list()).reverse().filter((r) => r.action === "POST /api/staff/[id]/owner");
+    expect(rows.map((r) => [r.target, r.result])).toEqual([
+      [mgr.id, "denied"],
+      [clerk.id, "rejected"],
+      [owner.id, "rejected"],
+      [mgr.id, "invalid"],
+      [mgr.id, "ok"],
+      [mgr.id, "denied"],
+    ]);
+    const events = auth().eventsOf(owner.tenantId).filter((e) => e.event === "tenant.owner");
+    expect(events.map((e) => e.result).reverse()).toEqual(["fail", "fail", "fail", "fail", "ok", "fail"]);
+    expect(JSON.stringify([rows, events])).not.toMatch(/password|wrong-password/);
   });
 });
