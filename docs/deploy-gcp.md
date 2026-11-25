@@ -126,7 +126,7 @@ mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen/dep
 sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs -f app
 ```
 
-バックアップは、VM のディスクにスナップショットのスケジュールを設定するのが簡単です（データはすべてボリュームの中にあるため）。データベースとファイルは暗号化してあるので、戻すときは同じ鍵が要ります。
+バックアップは、VM のディスクにスナップショットのスケジュールを設定するのが簡単です（データはすべてボリュームの中にあるため）。データベースとファイルは暗号化してあるので、戻すときは同じ鍵が要ります。公開版は、まだ製品ではないのでバックアップを取っていません（2026-11-25 の判断。README「公開版で試す」）。
 
 ## 5. 保存時の暗号化
 
@@ -188,9 +188,66 @@ sudo docker compose -f ~/resemen/deploy/docker-compose.yml stop app && sudo --pr
 
 全部のデータベースの鍵を変え、ファイルを包み直します（`--dry-run` で対象の一覧だけを出せます）。`unset RESEMEN_DATA_KEY RESEMEN_NEW_DATA_KEY` のあと、`start.sh` で起動して開けることを確かめます。控え（古い鍵で暗号化したもの）を消すまでは、Secret Manager の古い版を消さないでください。
 
+
+## 6. 前の版から更新する（公開版の差し替え）
+
+保存時の暗号化より前の版から上げるときの通しの手順です。手順 2b（鍵）を先に済ませておきます。止めてから起動し直すまでのあいだ、公開版は開けません。
+
+**1. 送るコードを作る（手元）**。送るのは、上げたい版を checkout したフォルダの `HEAD` です（別のブランチを checkout したフォルダで流すと、別の版が送られます）。
+
+```bash
+git -C <上げたい版のフォルダ> log --oneline -1 && git -C <上げたい版のフォルダ> archive HEAD | gzip > /tmp/resemen.tar.gz && gcloud compute scp /tmp/resemen.tar.gz resemen:~/ --zone=<VM のゾーン> --project <プロジェクト ID>
+```
+
+**2. 公開マスターを送る（手元）**。手元で作った `masters.db`（[masters.md](masters.md)）を送ります。公開のデータなので暗号化しません。
+
+```bash
+gcloud compute scp <手元の masters のフォルダ>/masters.db resemen:~/ --zone=<VM のゾーン> --project <プロジェクト ID>
+```
+
+**3. VM で展開し、アプリを止め、道具のイメージを作る**。前のコードは名前を変えて残します。
+
+```bash
+mv ~/resemen ~/resemen.prev && mkdir -p ~/resemen && tar -xzf ~/resemen.tar.gz -C ~/resemen && cd ~/resemen && sudo docker compose -f ~/resemen.prev/deploy/docker-compose.yml stop app && sudo docker build --target tools -t resemen-tools .
+```
+
+**4. 平文のデータを移す**。手順 5「今ある平文のデータを移す」の控えの置き場・鍵・`--dry-run`・本番の流しを、その順に行います。
+
+**5. 古いデモのクリニックを退避する**。データの版の印が今と違うデモのクリニックは、名前を変えて退避します（消しません。次に開いたときに今の版で作り直されます）。実在のデータで使うクリニックは触りません。まず一覧だけを出し、合っていれば `--yes` を付けて流します。
+
+```bash
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale
+```
+
+```bash
+sudo --preserve-env=RESEMEN_DATA_KEY docker run --rm --user node -e RESEMEN_DATA=/data -e RESEMEN_DATA_KEY -v deploy_resemen-data:/data resemen-tools npx tsx scripts/reset-demo.ts --retire-stale --yes
+```
+
+**6. 公開マスターを置き場に入れる**。置き場の `masters/` に入れます（アプリと同じ利用者の持ち物にします）。
+
+```bash
+sudo docker run --rm --user node -v deploy_resemen-data:/data -v ~/masters.db:/in/masters.db:ro resemen-tools sh -c 'mkdir -p /data/masters && cp /in/masters.db /data/masters/masters.db'
+```
+
+**7. 起動して確かめる**。`unset RESEMEN_DATA_KEY` のあと `start.sh` で起動し、ログを見ます。
+
+```bash
+unset RESEMEN_DATA_KEY && cd ~/resemen/deploy && sudo RESEMEN_DOMAIN=<ドメイン> ./start.sh && sudo docker compose -f ~/resemen/deploy/docker-compose.yml logs --tail 50 app
+```
+
+確かめること：ログインできる／今までのクリニックのデータが見える／事務長の「設定」でマスターが入っている／注意書きの同意を求められる（版 3 に上がったので、全員にもう一度求めます）。
+
+**8. 片づける**。確かめたら、平文の控え（`/var/backups/resemen/before-encrypt`）・送ったファイル・前のコードを消します。
+
+```bash
+sudo rm -r /var/backups/resemen/before-encrypt && rm ~/resemen.tar.gz ~/masters.db && rm -r ~/resemen.prev
+```
+
+**戻すとき**：手順 7 で起動しないときは、`docker compose logs app` の理由を見ます。暗号化を済ませた置き場は前のコードでは開けません。戻すなら、`/var/backups/resemen/before-encrypt` の控えを置き場に書き戻してから、前のコード（`~/resemen.prev`）で起動します。
+
 ## 気をつけること
 
 - **登録は招待制**：`RESEMEN_OPEN_SIGNUP=1` を付けているあいだは、URL を知った人が誰でも登録して AI を呼べます。その利用料は API キーの持ち主にかかります。AI の呼び出しの上限は、利用者ごとの上限と、サーバー全体の 1 日の上限（`perDayAll`。AI は 1,000 回、音声は 500 回のたたき台）があります（`config/limits.json`）。回数の上限なので金額は縛れません。Anthropic のコンソールで、利用額の上限も設定しておいてください。
-- **パスワードの再発行はない**：忘れた人には、招待コードを出し直して、別のログイン ID で登録してもらいます。
-- **実在の患者の情報を入れない**：レセメンは合成データで動きます。登録画面にもその旨を出しています。
+- **パスワードを忘れた人**：事務長か持ち主が、設定の「職員」で仮のパスワードを出します（次のログインで本人が変えます）。実在のデータで使うクリニックの医師には出せないので、アカウントを停止し、医師の招待で登録し直してもらいます。
+- **実在の患者の情報**：公開版も、注意書きへの同意を取ったうえで受け取ります。入れるかは、データを入れる医療機関が決めます（README・docs/security.md）。
 - **データ**：止めてもボリュームは残ります。`docker compose down -v` はボリュームごと消すので使わないでください。
