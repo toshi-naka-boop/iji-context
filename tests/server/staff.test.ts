@@ -127,6 +127,25 @@ describe("職員の管理", () => {
     expect((await setRole(cookieOf(demo.owner), c.id, "doctor")).status).toBe(200);
   });
 
+  it("実在のデータで使うクリニックでは、医師の職員に仮のパスワードを発行しない（持ち主も事務長も）。デモでは発行できる（採点 r3 エンジニアの上司 #1）", async () => {
+    const { owner, join } = clinic("st_pwdoc", "real");
+    const mgr = join("mgr", "manager");
+    const doctor = join("doc", "doctor");
+    const docCookie = cookieOf(doctor);
+    for (const by of [owner, mgr]) {
+      const r = await issue(cookieOf(by), doctor.id);
+      expect(r.status).toBe(403);
+      expect((await r.json()).error).toContain("医師の仮のパスワードは発行できません");
+    }
+    // 医師のパスワードもセッションも変わらない
+    expect(auth().login("st_pwdoc_doc", "password123")?.id).toBe(doctor.id);
+    expect((await me(docCookie)).status).toBe(200);
+    expect(auth().mustChangePassword(doctor.id)).toBe(false);
+    const demo = clinic("st_pwdoc_demo");
+    const d = demo.join("doc", "doctor");
+    expect((await issue(cookieOf(demo.owner), d.id)).status).toBe(200);
+  });
+
   it("持ち主は、パスワードを入れ直して、ほかの事務長に持ち主を引き継げる。記録にはパスワードを残さない（採点 r2 事務長 #3）", async () => {
     const { owner, join } = clinic("st_owner");
     const mgr = join("mgr", "manager");

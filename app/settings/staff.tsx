@@ -84,7 +84,7 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
       <h3 style={{ marginTop: 0 }}>職員</h3>
       <p className="muted">
         このクリニックで使っている人の一覧です。辞めた人は停止してください（ログインできなくなり、いまのセッションも切れます）。役割の変更・停止・再開は記録に残ります。
-        事務長がいなくなる操作はできません。{real ? "実在のデータで使うクリニックでは、医師の役割は医師の招待で入った人だけで、ここでは変えられません。" : ""}
+        事務長がいなくなる操作はできません。{real ? "実在のデータで使うクリニックでは、医師の役割は医師の招待で入った人だけで、ここでは変えられず、仮のパスワードも発行できません（医師がパスワードを忘れたときは、今のアカウントを停止し、医師の招待で登録し直してもらってください）。" : ""}
       </p>
       {err && <div className="notice warn">{err}</div>}
       <div style={{ overflowX: "auto" }}>
@@ -113,7 +113,8 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
                   ) : (
                     !m.self && !m.owner && <button onClick={() => suspend(m)} disabled={busy}>停止する</button>
                   )}
-                  {!m.self && (isOwner || !m.owner) && (
+                  {/* 実在のデータで使うクリニックでは、医師の仮のパスワードは出さない（サーバーも断る） */}
+                  {!m.self && (isOwner || !m.owner) && !(real && m.role === "doctor") && (
                     <button onClick={() => issue(m)} disabled={busy} style={{ marginLeft: 4 }}>仮のパスワードを発行</button>
                   )}
                   {isOwner && !m.self && !m.disabled && m.role === "manager" && (

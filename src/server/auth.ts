@@ -17,6 +17,8 @@ const SESSION_DAYS = 30;
 const UNDECIDED_WAIT = "事務長がこのクリニックの使い方を選ぶまでお待ちください";
 /** 実在のデータで使うクリニックで、医師の役割に変えようとしたときの文言 */
 const DOCTOR_BY_INVITE = "実在のデータで使うクリニックでは、医師の役割に切り替えられません。医師には、医師の役割の招待コードで登録してもらってください";
+/** 実在のデータで使うクリニックで、医師の職員に仮のパスワードを出さない理由（出せば、発行した人が医師としてログインし、医師確認の回答・承認を記録できる。採点 r3 エンジニアの上司 #1） */
+const DOCTOR_PASSWORD_BY_INVITE = "実在のデータで使うクリニックでは、医師の仮のパスワードは発行できません。医師がパスワードを忘れたときは、今のアカウントを停止し、医師の役割の招待コードで登録し直してもらってください";
 /** 事務長がいないクリニックで、事務長以外を招こうとしたときの文言 */
 export const NO_MANAGER_INVITE = "このクリニックには事務長がいません。このまま事務長以外の人を招くと、招待と監査ログを扱える人がいなくなります。先に役割を事務長に切り替えるか、事務長の招待コードを発行してください";
 /** 招待コードの期限（日） */
@@ -302,6 +304,7 @@ export function openAuth(dbFile: string) {
   /**
    * 職員の仮のパスワードを発行する（採点 r2 事務長 #4）。事務長と持ち主だけ。同じクリニックの人だけ。自分には発行しない（自分は changePassword で変える）。
    * 持ち主のパスワードは、持ち主でない人には発行させない（持ち主の乗っ取りを防ぐ）。
+   * 実在のデータで使うクリニックでは、医師の役割の人には発行しない（医師は医師の招待で入った人だけ、を回り込ませない。採点 r3 エンジニアの上司 #1）。
    * 保存するのは scrypt のハッシュだけで、値は戻り値で 1 回だけ返す。相手のいまのセッションは消し、次のログインで変更を求める
    */
   function issueTempPassword(by: User, id: string): { id: string; password: string } {
@@ -311,6 +314,7 @@ export function openAuth(dbFile: string) {
         const target = staffOf(by, id);
         if (target.id === by.id) throw conflict("自分のパスワードは、「自分のパスワードを変える」で変えてください");
         if (target.id === ownerOf(by.tenantId) && !isOwner(by)) throw forbidden("持ち主の仮のパスワードは発行できません");
+        if (target.role === "doctor" && tenantKind(by.tenantId) !== "demo") throw forbidden(DOCTOR_PASSWORD_BY_INVITE);
         const password = randomBytes(9).toString("base64url");
         db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?").run(hashPassword(password), id);
         db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
