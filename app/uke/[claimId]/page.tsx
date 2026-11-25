@@ -12,7 +12,8 @@ import type { RowNames } from "../../../src/generic/lookup";
 import type { GenericView } from "../../../src/generic/view";
 import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
-import { CheckedFacts, FactInput } from "../../fact-input";
+import { CheckedFacts, FactInput, useRole } from "../../fact-input";
+import { CoverageCheck } from "../../work/patient-panel";
 import { GenericFindings } from "../../generic-findings";
 import { FindingLevels } from "../../finding-levels";
 import { ConfirmedFixes } from "../../chart/confirmed-fixes";
@@ -120,6 +121,7 @@ const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘
 
 export default function UkeClaimCheck() {
   const { clerk: user, ready } = useClerk();
+  const role = useRole();
   const { claimId } = useParams<{ claimId: string }>();
   const [check, setCheck] = useState<Check | null>(null);
   const [err, setErr] = useState("");
@@ -429,11 +431,18 @@ export default function UkeClaimCheck() {
 
               {!trial && (
                 <>
-                  <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
-                  {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-                  {(c.patientFindings ?? []).map((f, i) => (
-                    <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
-                  ))}
+                  <h3 id="patient-findings" style={{ margin: 0 }}>患者情報の指摘</h3>
+                  {/* 医療事務（事務・ベテラン）には、算定画面の患者情報の欄と同じ入力（有効期限・負担割合など）をその場に出す（採点 r4 医療事務課長 P1-2）。ほかの役割には指摘だけ */}
+                  {role === "clerk" || role === "veteran" ? (
+                    <CoverageCheck claimId={c.claimId} editable tick={tick} onSaved={() => setTick((t) => t + 1)} />
+                  ) : (
+                    <>
+                      {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
+                      {(c.patientFindings ?? []).map((f, i) => (
+                        <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
+                      ))}
+                    </>
+                  )}
                   {check?.reviewed !== undefined && (
                     <div className="notice">
                       {check.reviewed ? (
