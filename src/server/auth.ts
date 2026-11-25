@@ -350,11 +350,13 @@ export function openAuth(dbFile: string) {
   }
 
   /**
-   * クリニックをまるごと消す前の確かめ（採点 r1 事務長 #8）：持ち主だけ。確かめの入力は持ち主のログイン ID（クリニックの名前は持っていないので、打ち間違えにくい自分の ID で確かめる）
+   * クリニックをまるごと消す前の確かめ（採点 r1 事務長 #8）：持ち主だけ。確かめの入力は持ち主のログイン ID（クリニックの名前は持っていないので、打ち間違えにくい自分の ID で確かめる）。
+   * 加えて、持ち主のパスワードを入れ直してもらう（セッションを奪われただけでは消せないように。採点 r2 エンジニアの上司 #6）
    */
-  function assertCanEraseTenant(by: User, confirm: string): void {
+  function assertCanEraseTenant(by: User, confirm: string, password: string): void {
     if (!isOwner(by)) throw forbidden("クリニックを消せるのは、クリニックの持ち主だけです");
     if (confirm !== by.login) throw badRequest("確かめの欄に、あなたのログイン ID をそのまま入れてください", ["login"]);
+    confirmPassword(by, password);
   }
   /**
    * クリニックの利用者・セッション・招待・クリニックの行を消す（1 つのトランザクション）。ログインまわりの記録（auth_events）は id だけなので残す。

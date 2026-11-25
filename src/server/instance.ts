@@ -238,9 +238,9 @@ export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string
  * 残るもの：ログインまわりの記録（auth.db の auth_events。id だけ）と、AI のサービス側に送った内容（こちらからは消せない）。
  * ほかの呼び出しが実行中なら断る（DB を閉じられないため）。消したあとは、このクリニックの誰もログインできない
  */
-export async function eraseTenant(user: User, confirm: string): Promise<{ erased: true }> {
+export async function eraseTenant(user: User, confirm: string, password: string): Promise<{ erased: true }> {
   const auth = getAuth();
-  auth.assertCanEraseTenant(user, confirm);
+  auth.assertCanEraseTenant(user, confirm, password);
   const id = user.tenantId;
   if ((active.get(id) ?? 0) > 1) throw conflict("ほかの操作が終わっていません。少し待ってから、もう一度消してください");
   const a = getApp();

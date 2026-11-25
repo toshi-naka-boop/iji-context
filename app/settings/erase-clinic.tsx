@@ -1,25 +1,27 @@
 "use client";
 // クリニックをまるごと消す（採点 r1 事務長 #8）：クリニックの持ち主にだけ、設定の画面が出す欄。デモでも実在のデータでも使う。
-// 2 段で確かめる：①消すもの・消せないものを読んで「AI のサービスに送った内容は消せない」に印を付ける → ②自分のログイン ID を打ち込んで消す（サーバーでも照合する）
+// 2 段で確かめる：①消すもの・消せないものを読んで「AI のサービスに送った内容は消せない」に印を付ける → ②自分のログイン ID とパスワードを打ち込んで消す（サーバーでも照合する）
 import { useState } from "react";
 
 export function EraseClinic({ login }: { login: string }) {
   const [open, setOpen] = useState(false);
   const [understood, setUnderstood] = useState(false);
   const [typed, setTyped] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   async function erase() {
     setErr("");
     setBusy(true);
     try {
-      const r = await fetch("/api/tenant/erase", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: typed }) });
+      const r = await fetch("/api/tenant/erase", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: typed, password }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return setErr(d.error ?? "消せませんでした");
       window.location.href = "/";
     } catch {
       setErr("通信できませんでした。もう一度試してください");
     } finally {
+      setPassword("");
       setBusy(false);
     }
   }
@@ -52,12 +54,17 @@ export function EraseClinic({ login }: { login: string }) {
                 確かめのため、あなたのログイン ID（{login}）を入れてください：
                 <input value={typed} onChange={(e) => setTyped(e.target.value)} aria-label="確かめのログイン ID" autoComplete="off" style={{ marginLeft: 4 }} />
               </label>
+              <br />
+              <label>
+                あなたのパスワード：
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="確かめのパスワード" autoComplete="current-password" style={{ marginLeft: 4 }} />
+              </label>
             </div>
           )}
           {err && <div className="notice warn">{err}</div>}
           <div className="chips">
-            <button className="primary" disabled={!understood || typed !== login || busy} onClick={erase}>{busy ? "消しています…" : "このクリニックをまるごと消す"}</button>
-            <button onClick={() => { setOpen(false); setUnderstood(false); setTyped(""); setErr(""); }} disabled={busy}>やめる</button>
+            <button className="primary" disabled={!understood || typed !== login || password === "" || busy} onClick={erase}>{busy ? "消しています…" : "このクリニックをまるごと消す"}</button>
+            <button onClick={() => { setOpen(false); setUnderstood(false); setTyped(""); setPassword(""); setErr(""); }} disabled={busy}>やめる</button>
           </div>
         </div>
       )}
