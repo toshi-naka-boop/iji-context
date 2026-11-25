@@ -209,10 +209,10 @@ export const POLICY = {
   "POST /api/knowledge/[id]/official-check/not-applies": row(["veteran"], "none", false),
   "GET /api/peer": row(ALL, "none", true),
   "POST /api/peer/[id]/answer": row(["veteran"], "none", true),
-  // レセメン会議：回答はベテラン。議題は事務長も見られる
+  // レセメン会議：議題を見る・整理を回す・回答するのは、ベテランと事務長（2026-11-25 事務長にも開く。利用者の判断。採点 r2 事務長 #1）
   "GET /api/meeting": row(["veteran", "manager"], "none", true),
-  "POST /api/meeting": row(["veteran"], "none", true),
-  "POST /api/meeting/answer": row(["veteran"], "none", true),
+  "POST /api/meeting": row(["veteran", "manager"], "none", true),
+  "POST /api/meeting/answer": row(["veteran", "manager"], "none", true),
   "POST /api/notice": row(["veteran"], "ai", true),
   "POST /api/notice/register": row(["veteran"], "none", true),
 

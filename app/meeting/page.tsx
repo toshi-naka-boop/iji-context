@@ -1,10 +1,12 @@
 "use client";
-// レセメン会議の議題（F5・design.md §4-4）。責任者の回答で知識を更新する。点数・金額は出さない
+// レセメン会議の議題（F5・design.md §4-4）。責任者（ベテラン・事務長）の回答で知識を更新する。点数・金額は出さない
 import { useEffect, useState } from "react";
 import type { DigestEntry } from "../../src/lifecycle/review";
 import type { Notice, ResolvedItem } from "../../src/notice/notice";
 import { CHOOSABLE } from "../../src/notice/problems";
 import { eventText, fillLocal, LOCAL_PAIR_TEXT, payerLabel } from "../../src/messages";
+import { permits, POLICY } from "../../src/server/policy";
+import type { Role } from "../../src/server/roles";
 import { Notice as NoticeText } from "../consent";
 import { TopBar } from "../nav";
 
@@ -43,6 +45,9 @@ function MeetingRoom() {
     </section>
   );
 }
+
+/** いまの役割で押せるか。押しても断られるボタンは出さない。権限表（src/server/policy.ts）の行で決める（サーバーも同じ行で確かめる） */
+const mayDo = (key: "POST /api/meeting" | "POST /api/meeting/answer" | "POST /api/notice", role: Role | null): boolean => role !== null && permits(POLICY[key].rule, { role }, () => false);
 
 const KIND: Record<string, string> = { miss: "外れの確認", recheck: "確かめ直し", ignored: "新人が外した理由", disposal: "廃棄提案" };
 
@@ -190,8 +195,14 @@ export default function Meeting() {
   /** 背反の組の知識を「直す必要がある」と答えるときの、修正版の扱いと条件の文（design.md §14-1。項目ごと。既定は今の値） */
   const [fix, setFix] = useState<Record<string, { polarity: "allow" | "avoid"; conditionNote: string }>>({});
   const [msg, setMsg] = useState("");
+  const [role, setRole] = useState<Role | null>(null);
   const load = () => fetch("/api/meeting").then((r) => r.json()).then((d) => setItems(d.items ?? []));
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((u: { role?: Role } | null) => setRole(u?.role ?? null)).catch(() => {});
+  }, []);
+  const canRun = mayDo("POST /api/meeting", role);
+  const canAnswer = mayDo("POST /api/meeting/answer", role);
 
   async function answer(e: DigestEntry, answer: number) {
     const itemId = e.itemId;
@@ -211,14 +222,15 @@ export default function Meeting() {
     <main className="shell">
       <TopBar />
       <MeetingRoom />
-      <NoticeReader onRegistered={load} />
+      {mayDo("POST /api/notice", role) && <NoticeReader onRegistered={load} />}
       <div className="board-head">
         <h2>今週の議題</h2>
         <span className="num" style={{ fontSize: 18, color: "var(--muted)" }}>{items.length} 件</span>
-        <button onClick={run}>今すぐ整理を回す</button>
+        {canRun && <button onClick={run}>今すぐ整理を回す</button>}
         <span className="muted">{msg}</span>
       </div>
-      {items.length === 0 && <div className="panel muted">今週の議題はありません。「今すぐ整理を回す」を押すと、長く使われていないルールなどが議題に上がります。</div>}
+      {items.length === 0 && <div className="panel muted">今週の議題はありません。{canRun && "「今すぐ整理を回す」を押すと、長く使われていないルールなどが議題に上がります。"}</div>}
+      {role !== null && !canAnswer && <div className="panel muted">議題に答えるのは、ベテランと事務長です。</div>}
       <div className="card-list">
       {items.map((e) => (
         <article key={e.itemId} className="card">
@@ -228,7 +240,7 @@ export default function Meeting() {
           <p><strong>{e.summary}</strong></p>
           <div className="bubble">{reasonText(e)}</div>
           <OfficialDocs e={e} />
-          {e.pair && e.kind !== "disposal" && (
+          {canAnswer && e.pair && e.kind !== "disposal" && (
             <div className="muted" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span>「直す必要がある」と答えるときの、修正版の扱いと条件（{LOCAL_PAIR_TEXT.createNote}）</span>
               <select value={(fix[e.itemId] ?? e.pair).polarity} onChange={(ev) => setFix({ ...fix, [e.itemId]: { conditionNote: (fix[e.itemId] ?? e.pair!).conditionNote, polarity: ev.target.value as "allow" | "avoid" } })}>
@@ -238,12 +250,16 @@ export default function Meeting() {
               <input maxLength={200} value={(fix[e.itemId] ?? e.pair).conditionNote} onChange={(ev) => setFix({ ...fix, [e.itemId]: { polarity: (fix[e.itemId] ?? e.pair!).polarity, conditionNote: ev.target.value } })} style={{ width: "100%" }} />
             </div>
           )}
-          <p>
-            <input placeholder="自由記述（足りない条件など）" value={free[e.itemId] ?? ""} onChange={(ev) => setFree({ ...free, [e.itemId]: ev.target.value })} style={{ width: "100%" }} />
-          </p>
-          <div className="chips">
-            {e.choices.map((c) => <button key={c.no} onClick={() => answer(e, c.no)}>{c.label}</button>)}
-          </div>
+          {canAnswer && (
+            <>
+              <p>
+                <input placeholder="自由記述（足りない条件など）" value={free[e.itemId] ?? ""} onChange={(ev) => setFree({ ...free, [e.itemId]: ev.target.value })} style={{ width: "100%" }} />
+              </p>
+              <div className="chips">
+                {e.choices.map((c) => <button key={c.no} onClick={() => answer(e, c.no)}>{c.label}</button>)}
+              </div>
+            </>
+          )}
           </div>
         </article>
       ))}
