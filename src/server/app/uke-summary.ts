@@ -42,6 +42,16 @@ export type UkeSummaryRow = {
   unseen: number;
   /** 患者情報の指摘（P 系）の件数。確定・条件つきには入れない（ユスティの指摘とは別の系統） */
   patientFindings: number;
+  /**
+   * 締めの「まだ手を付ける残り」があるか（採点 r3 医療事務課長 #3）：確定・条件つき・情報不足（入力で消えるもの）・患者情報の指摘・
+   * 聞き取りの答えがない介護保険とほかの医療機関との調整のどれかが残る。読めないレセプト（取り込み直しが要る）も残りに入れる
+   */
+  open: boolean;
+  /**
+   * 仕組み上いつも残る「見ていないこと」の数（入力で消えない）：カルテ側の記録で決まる点を見ていなければ 1。
+   * unseen からこれを引いた残りは、聞き取りに答えれば消える分。どの点検も見ていない行（unchecked）も入力では消えない
+   */
+  fixedUnseen: number;
   /** 本人がこの請求の点検を確かめたか（実在のデータで使うクリニックだけ。ほかは持たない） */
   reviewed?: boolean;
 };
@@ -55,24 +65,31 @@ export function createUkeSummary(uke: Uke, ukeCheck: UkeCheck["ukeCheck"], claim
     return uke.ukeList(clerkId).filter((u) => u.uploaded || u.imported).flatMap((u) =>
       u.receipts.map((x): UkeSummaryRow => {
         const head = { claimId: x.claimId, label: u.uploaded ? x.claimId : x.claimId.split("-")[0], patient: x.patient, patientNo: x.patientNo };
-        const zero = { confirmed: 0, conditional: 0, missing: 0, missingOpen: 0, unchecked: 0, unseen: 0, patientFindings: 0 };
-        if (x.unreadable !== null) return { ...head, state: "unreadable", ...zero };
-        if (x.revisionId === null) return { ...head, state: "noRevision", ...zero };
+        const zero = { confirmed: 0, conditional: 0, missing: 0, missingOpen: 0, unchecked: 0, unseen: 0, patientFindings: 0, fixedUnseen: 0 };
+        // 読めない＝取り込み直せば点検できる（残り）。版がない＝点検できない（仕組み上の残りで、手を付けても消えない）
+        if (x.unreadable !== null) return { ...head, state: "unreadable", ...zero, open: true };
+        if (x.revisionId === null) return { ...head, state: "noRevision", ...zero, open: false };
         const r = ukeCheck(x.claimId, clerkId);
-        if (!("rows" in r)) return { ...head, state: r.unreadable ? "unreadable" : "noRevision", ...zero };
+        if (!("rows" in r)) return { ...head, state: r.unreadable ? "unreadable" : "noRevision", ...zero, open: Boolean(r.unreadable) };
         const hand = r.findings;
         const generic = r.generic?.findings ?? [];
         const reviewed = claimReviews.reviewedOf(x.claimId, clerkId);
+        const confirmed = hand.filter((f) => f.params?.conditional !== "1").length + generic.filter((f) => f.certainty === "確定").length;
+        const conditional = hand.filter((f) => f.params?.conditional === "1").length + generic.filter((f) => f.certainty === "条件つき").length;
+        const missingOpen = missingCount(r.missing.filter((f) => f.missing?.field !== UNSEEN_MISSING));
+        const fixedUnseen = r.missing.some((f) => f.missing?.field === UNSEEN_MISSING) ? 1 : 0;
         return {
           ...head,
           state: "checked",
-          confirmed: hand.filter((f) => f.params?.conditional !== "1").length + generic.filter((f) => f.certainty === "確定").length,
-          conditional: hand.filter((f) => f.params?.conditional === "1").length + generic.filter((f) => f.certainty === "条件つき").length,
+          confirmed,
+          conditional,
           missing: missingCount(r.missing),
-          missingOpen: missingCount(r.missing.filter((f) => f.missing?.field !== UNSEEN_MISSING)),
+          missingOpen,
           unchecked: r.rows.filter((row) => row.checkedBy === "none").length,
-          unseen: (r.missing.some((f) => f.missing?.field === UNSEEN_MISSING) ? 1 : 0) + r.careUnseen.length,
+          unseen: fixedUnseen + r.careUnseen.length,
           patientFindings: r.patientFindings.length,
+          open: confirmed + conditional + missingOpen + r.patientFindings.length + r.careUnseen.length > 0,
+          fixedUnseen,
           ...(reviewed !== undefined ? { reviewed: reviewed !== null } : {}),
         };
       }),

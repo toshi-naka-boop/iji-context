@@ -2,13 +2,16 @@
 // 一覧は、いまある請求（同梱の症例と、取り込んだレセプト）を決まった規則で判定し、宛先の表（src/engine/index.ts の targetOfNeed）が医師とした情報不足を集めたもの。何も推し量らない。
 // 決まった答え（はい・いいえ、看取りの場所、主病）は、事実の入口（請求ごと：src/server/app/claim-facts.ts、患者ごと：src/server/app/patients.ts）に医師の役割で残す。
 // 「その他」「判定不能」は事実にしない（不明のまま）。答えたことと、その他の自由記述だけを、ここに残す。
-// 医師確認の決まり（CLAUDE.md）：問いと選択肢は点数・金額に触れない。選択肢に必ず「その他」「判定不能」を含める。患者の氏名は返さない（医師確認の画面と同じく、請求の番号だけ）
+// 医師確認の決まり（CLAUDE.md）：問いと選択肢は点数・金額に触れない。選択肢に必ず「その他」「判定不能」を含める。
+// 医師が誰の話かを判断できるように、患者を特定する表示（氏名・性別・生年月日・カルテ番号等）と UKE の傷病名を返す（採点 r3 医療事務課長 #1）。
+// これは医師の役割の画面にだけ出す表示で、AI には送らない（FR-167 の文脈の作り方は変えない）。保険者番号・記号番号・公費の番号は返さない
 import { DEATH_PLACES, inputKindOf, isClaimFactKey } from "../../claim/facts";
 import type { Finding } from "../../engine/types";
 import { FACT_LABEL } from "../../messages";
 import { PATIENT_FACT_KEYS } from "../../patient/facts";
 import { MONEY, OTHER, UNDETERMINABLE } from "../../query/doctor-query";
 import type { Chart } from "../../uke/crosscheck";
+import type { UkePatient } from "../../uke/types";
 import { MASK } from "./doctor-abbrevs";
 import { badRequest, notFound } from "../errors";
 import type { Cases } from "./cases";
@@ -26,8 +29,15 @@ export const WRITE_IN = "主病を記入する";
  * evidence は、カルテの記載の引用（医師確認の 7 要件の ①臨床指標。採点 r2 医療事務課長 P1）：その日の問いはその日の記載（なければその月の全部）、
  * 月の問いはその月の記載を、同じ文どうしは日をまとめて並べる。点数・金額の語は伏せる。カルテの記録がない請求は空で、noRecord が真
  */
+/**
+ * patient は、患者を特定する表示（医師の画面の中だけ。AI に送らない）。patientNo は UKE の「カルテ番号等」（空なら null）。
+ * diseases は、請求（UKE）の傷病名（主病の印つき。名称のないコードはコードのまま）。stateSummary は、問いの状態の一覧の要旨と告示へのリンク（別表第七・別表第八の二だけ）
+ */
 export type DoctorFactItem = {
   claimId: string;
+  patient: { name: string; sex: "男" | "女"; birth: string; patientNo: string | null } | null;
+  diseases: string[];
+  stateSummary: { text: string; href: string } | null;
   yearMonth: string;
   field: string;
   date: string | null;
@@ -64,10 +74,28 @@ export function evidenceOf(chart: EvidenceChart | null, date: string | null): Do
   return out.length > 0 ? out : null;
 }
 
+/** 特掲診療料の施設基準等（令和8年厚生労働省告示第71号。EM §1 の特掲告示） */
+const TOKKEI_URL = "https://www.mhlw.go.jp/content/12400000/001675855.pdf";
+/** 状態の一覧の要旨（EM の補足「重症区分に当たる状態」「週3回の制限から外れる疾病等」の文のまま。全部は告示で見る） */
+export const STATE_SUMMARY: Partial<Record<string, { text: string; href: string }>> = {
+  table8_2: { text: "別表第八の二の状態（要旨）：末期の悪性腫瘍、スモン、指定難病、後天性免疫不全症候群、脊髄損傷、真皮を越える褥瘡、在宅酸素療法を行っている状態 ほか", href: TOKKEI_URL },
+  table7: { text: "別表第七の疾病等（要旨）：末期の悪性腫瘍、パーキンソン病（ホーエン・ヤール3以上かつ生活機能障害度Ⅱ度又はⅢ度） ほか", href: TOKKEI_URL },
+};
+
+/** 患者を特定する表示に使う、請求の患者（UKE の患者欄とカルテ番号等）。ない請求は null */
+export type FactPatient = { patient: UkePatient; patientNo: string | null };
+const patientView = (p: FactPatient | null): DoctorFactItem["patient"] =>
+  p ? { name: p.patient.name, sex: p.patient.sex === 1 ? "男" : "女", birth: p.patient.birth, patientNo: p.patientNo } : null;
+const diseasesOf = (p: FactPatient | null): string[] =>
+  (p?.patient.diseases ?? []).map((d) => `${d.name || `傷病名コード ${d.code ?? ""}`}${d.main ? "（主病）" : ""}`);
+
 const isPatientKey = (field: string) => (PATIENT_FACT_KEYS as readonly string[]).includes(field);
 
-/** chartOf は、引用に使うカルテ（合成カルテと、取り込んだ請求に貼って確かめたカルテ。src/server/app.ts が渡す） */
-export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks, casesOf: Cases, chartOf: (claimId: string) => EvidenceChart | null = () => null) {
+/**
+ * chartOf は、引用に使うカルテ（合成カルテと、取り込んだ請求に貼って確かめたカルテ。src/server/app.ts が渡す）。
+ * patientOf は、患者を特定する表示に使う請求の患者（src/server/app.ts が UKE から渡す）
+ */
+export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks, casesOf: Cases, chartOf: (claimId: string) => EvidenceChart | null = () => null, patientOf: (claimId: string) => FactPatient | null = () => null) {
   const { sqlite } = ctx;
 
   type NoteRow = { option: string; free_text: string | null; answered_at: string };
@@ -87,7 +115,8 @@ export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks,
     const label = (FACT_LABEL as Record<string, string>)[m.field] ?? m.field;
     const clinical = input === "boolean" ? ["はい", "いいえ"] : input === "deathPlace" ? [...DEATH_PLACES] : [WRITE_IN];
     const evidence = evidenceOf(chartOf(claimId), date);
-    return { claimId, yearMonth, field: m.field, date, scope, input, question: `${label}${day}`, options: [...clinical, OTHER, UNDETERMINABLE], note: noteOf(claimId, m.field, date), evidence: evidence ?? [], noRecord: evidence === null };
+    const p = patientOf(claimId);
+    return { claimId, patient: patientView(p), diseases: diseasesOf(p), stateSummary: STATE_SUMMARY[m.field] ?? null, yearMonth, field: m.field, date, scope, input, question: `${label}${day}`, options: [...clinical, OTHER, UNDETERMINABLE], note: noteOf(claimId, m.field, date), evidence: evidence ?? [], noRecord: evidence === null };
   }
 
   /** 確かめてほしい項目の一覧。同じ請求・同じ項目・同じ日は 1 件（いくつものルールが同じことを聞いても、聞くのは 1 回） */

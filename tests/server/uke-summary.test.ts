@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { User } from "../../src/server/auth";
 import { autoConsent } from "../helpers/consent";
+import { dateIn } from "../helpers/period";
 
 const repo = path.join(__dirname, "..", "..");
 let tmp: string;
@@ -98,5 +99,37 @@ describe("取り込んだレセプトの全件の一覧", () => {
     const careOfK1 = instance.runAs(owner, () => instance.getApp().careCheck(undefined, k1.claimId)).targets.find((t) => t.claimId === k1.claimId);
     expect(careOfK1?.notDone).toBe(true);
     expect(k1.unseen).toBe(1 + careOfK1!.notes.length);
+  });
+  it("締めの数：まだ手を付ける残り（open）と、仕組み上いつも残るもの（fixedUnseen。入力で消えない）を分けて数える。有効期限（P06）は確かめて入れると消え、次に読んでも戻らない（採点 r3 医療事務課長 #3）", async () => {
+    const owner = instance.getAuth().register("summary_open", "かちょう", "password123");
+    const cookie = cookieOf(owner);
+    const clerkId = instance.clerkIdOf(owner);
+    instance.runAs(owner, () => instance.getApp().uploadUke(clerkId, readFileSync(path.join(repo, "fixtures", "uke", "kisaimore.UKE"))));
+    type Row = { claimId: string; state: string; confirmed: number; conditional: number; missingOpen: number; patientFindings: number; unseen: number; open: boolean; fixedUnseen: number };
+    const rowsOf = async () => (await (await summary(cookie)).json()) as Row[];
+    for (const row of (await rowsOf()).filter((x) => x.state === "checked")) {
+      const c = instance.runAs(owner, () => instance.getApp().ukeCheck(row.claimId, clerkId)) as { missing: { missing?: { field: string } }[]; careUnseen: string[] };
+      const fixed = c.missing.some((f) => f.missing?.field === "chartRecord") ? 1 : 0;
+      expect([row.claimId, row.fixedUnseen, row.unseen - row.fixedUnseen, row.open]).toEqual([row.claimId, fixed, c.careUnseen.length, row.confirmed + row.conditional + row.missingOpen + row.patientFindings + c.careUnseen.length > 0]);
+    }
+    // カルテのない請求の「見ていないこと」は、入力では消えないほうに数える
+    const before = (await rowsOf()).find((x) => x.claimId === "U1-1")!;
+    expect(before.fixedUnseen).toBe(1);
+    // P06（有効期限が入っていない）は規則のとおり（FR-122）に出る。確かめて入れると消え、一覧を読み直しても（UKE を読み直しても）戻らない
+    const profile = await import("../../app/api/patients/[claimId]/profile/route");
+    const params = { params: Promise.resolve({ claimId: "U1-1" }) };
+    const p = (await (await profile.GET(new Request("http://localhost/api/patients/U1-1/profile", { headers: { cookie } }), params)).json()) as { coverages: { coverageId: string; kind: string }[]; findings: { checkId: string }[] };
+    expect(p.findings.some((f) => f.checkId === "P06")).toBe(true);
+    const med = p.coverages.find((c) => c.kind === "医保")!;
+    const coverages = await import("../../app/api/patients/[claimId]/coverages/route");
+    const res = await coverages.POST(new Request("http://localhost/api/patients/U1-1/coverages", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ coverage: { coverageId: med.coverageId, source: "オンライン資格確認", validFrom: null, validUntil: dateIn(9, 30) } }) }), params);
+    expect(res.status).toBe(200);
+    for (let i = 0; i < 2; i++) {
+      const after = (await rowsOf()).find((x) => x.claimId === "U1-1")!;
+      const c = instance.runAs(owner, () => instance.getApp().ukeCheck("U1-1", clerkId)) as { patientFindings: { checkId: string }[] };
+      expect(c.patientFindings.some((f) => f.checkId === "P06")).toBe(false);
+      expect(after.patientFindings).toBeLessThan(before.patientFindings);
+      expect(after.fixedUnseen).toBe(1);
+    }
   });
 });

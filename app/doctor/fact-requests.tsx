@@ -4,7 +4,9 @@
 // 「その他」（自由記述つき）と「判定不能」は、事実を不明のまま残す（POST /api/doctor/facts）。
 // 略語の問い（FR-211）は、同じ欄の上にカードで並べる（app/doctor/abbrev-requests.tsx）。
 // 問いには、カルテの記載の引用を添える（記録がない請求は「カルテの記録がない請求です」）。
-// 医師確認の決まり：点数・金額は出さない。選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない。患者の氏名は出さない（下の確認の依頼と同じく、番号だけ）
+// 医師確認の決まり：点数・金額は出さない。選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない。
+// 誰の話かを判断できるように、患者の氏名・性別・生年月日・カルテ番号等と、請求の傷病名を出す（採点 r3 医療事務課長 #1）。この表示は AI に送らない。
+// カルテの記録がない請求でも、傷病名と、問いの状態の一覧の要旨（別表第七・別表第八の二）とリンクを添える
 import { useEffect, useState } from "react";
 import type { DoctorFactItem } from "../../src/server/app/doctor-facts";
 import type { Role } from "../../src/server/roles";
@@ -15,6 +17,7 @@ const OTHER = "その他";
 const UNDETERMINABLE = "判定不能";
 const keyOf = (i: DoctorFactItem) => `${i.claimId}|${i.field}|${i.date ?? ""}`;
 const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
+const birthLabel = (b: string) => (/^\d{8}$/.test(b) ? `${b.slice(0, 4)}年${Number(b.slice(4, 6))}月${Number(b.slice(6, 8))}日生` : b);
 
 export function FactRequests() {
   const [role, setRole] = useState<Role | null>(null);
@@ -68,13 +71,24 @@ export function FactRequests() {
                 <div className="card-body">
                   <div className="chips" style={{ alignItems: "center" }}>
                     <span className="badge">{i.claimId}</span>
-                    <span className="badge">{monthLabel(i.yearMonth)}</span>
+                    <span className="badge">{monthLabel(i.yearMonth)}の請求</span>
                     {i.scope === "patient" && <span className="badge sky">患者ごとに残る</span>}
                   </div>
+                  {i.patient && (
+                    <p style={{ margin: "8px 0 0" }}>
+                      {i.patient.name}（{i.patient.sex}・{birthLabel(i.patient.birth)}{i.patient.patientNo ? `・カルテ番号等 ${i.patient.patientNo}` : ""}）
+                    </p>
+                  )}
+                  {i.diseases.length > 0 && <p className="muted" style={{ margin: "4px 0 0" }}>請求の傷病名：{i.diseases.join("、")}</p>}
                   <p style={{ fontSize: 17, fontWeight: 700, margin: "12px 0" }}>{i.question}</p>
+                  {i.stateSummary && (
+                    <p className="muted" style={{ margin: "0 0 8px" }}>
+                      {i.stateSummary.text}（全部は<a href={i.stateSummary.href} target="_blank" rel="noreferrer">告示</a>を見てください）
+                    </p>
+                  )}
                   {/* カルテの記載の引用（医師確認の 7 要件の ①臨床指標。採点 r2 医療事務課長 P1） */}
                   {i.noRecord ? (
-                    <p className="muted">カルテの記録がない請求です。</p>
+                    <p className="muted">カルテの記録がない請求です（上の傷病名は、取り込んだ請求に書いてあるものです）。</p>
                   ) : (
                     <div>
                       <div className="muted">カルテの記載</div>

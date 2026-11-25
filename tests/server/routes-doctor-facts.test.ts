@@ -119,7 +119,11 @@ describe("医師に確かめてほしい項目", () => {
       expect([i.field, errors.filter((e) => !(i.input === "text" && e.startsWith("②臨床的な選択肢")))]).toEqual([i.field, []]);
       expect(i.question).not.toMatch(/点|円/);
     }
-    expect(text).not.toMatch(/架空|桃子|06139991|701"/);
+    // 誰の話かを医師が判断できる表示（採点 r3 医療事務課長 #1）：氏名・性別・生年月日・請求の傷病名と、状態の一覧の要旨。保険者番号・記号番号は返さない
+    expect(items[0].patient).toMatchObject({ name: "架空 桃子", birth: "19480808" });
+    expect(items[0].stateSummary?.text).toContain("別表第七");
+    expect(items[0].stateSummary?.href).toMatch(/^https:\/\/www\.mhlw\.go\.jp\//);
+    expect(text).not.toMatch(/06139991|701"/);
   });
 
   it("「判定不能」「その他」は事実を不明のまま残す（その他は自由記述つき）。判定は変わらない。一覧にない項目・形の違う入力は残せない", async () => {
