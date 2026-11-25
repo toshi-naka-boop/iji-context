@@ -384,6 +384,13 @@ ALTER TABLE users ADD COLUMN disabled_at TEXT;
 ALTER TABLE tenants ADD COLUMN owner_id TEXT;
 `,
   },
+  {
+    // 仮のパスワード（採点 r2 事務長 #4）：事務長か持ち主が発行したら 1。本人が自分のパスワードに変えるまで、ほかの操作を断る。値は保存しない（ハッシュだけ）
+    version: 9,
+    sql: `
+ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];
 
 const versionOf = (sqlite: Database.Database) => sqlite.pragma("user_version", { simple: true }) as number;

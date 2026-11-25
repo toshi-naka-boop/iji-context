@@ -32,6 +32,9 @@ const list = async (cookie: string) => (await import("../../app/api/staff/route"
 const setRole = async (cookie: string, id: string, role: Role) => (await import("../../app/api/staff/[id]/role/route")).POST(post(`/api/staff/${id}/role`, cookie, { role }), params(id));
 const suspend = async (cookie: string, id: string) => (await import("../../app/api/staff/[id]/suspend/route")).POST(post(`/api/staff/${id}/suspend`, cookie), params(id));
 const handOver = async (cookie: string, id: string, password: string) => (await import("../../app/api/staff/[id]/owner/route")).POST(post(`/api/staff/${id}/owner`, cookie, { password }), params(id));
+const issue = async (cookie: string, id: string) => (await import("../../app/api/staff/[id]/password/route")).POST(post(`/api/staff/${id}/password`, cookie), params(id));
+const changeOwn = async (cookie: string, current: string, next: string) => (await import("../../app/api/auth/password/route")).POST(post("/api/auth/password", cookie, { current, next }));
+const me = async (cookie: string) => (await import("../../app/api/auth/me/route")).GET(new Request("http://localhost/api/auth/me", { headers: { cookie } }));
 const resume = async (cookie: string, id: string) => (await import("../../app/api/staff/[id]/resume/route")).POST(post(`/api/staff/${id}/resume`, cookie), params(id));
 
 /** 持ち主（事務長）と、招待で入った人たち */
@@ -152,5 +155,59 @@ describe("職員の管理", () => {
     const events = auth().eventsOf(owner.tenantId).filter((e) => e.event === "tenant.owner");
     expect(events.map((e) => e.result).reverse()).toEqual(["fail", "fail", "fail", "fail", "ok", "fail"]);
     expect(JSON.stringify([rows, events])).not.toMatch(/password|wrong-password/);
+  });
+
+  it("事務長と持ち主は職員の仮のパスワードを発行でき、職員は次のログインで自分のパスワードに変えるまでほかの操作ができない（採点 r2 事務長 #4）", async () => {
+    const { owner, join } = clinic("st_pw");
+    const mgr = join("mgr", "manager");
+    const clerk = join("clerk", "clerk");
+    const old = cookieOf(clerk);
+    // 事務は発行できない。持ち主でない事務長は、持ち主の分を発行できない。自分の分は発行しない
+    expect((await issue(cookieOf(clerk), mgr.id)).status).toBe(403);
+    expect((await issue(cookieOf(mgr), owner.id)).status).toBe(403);
+    expect((await issue(cookieOf(mgr), mgr.id)).status).toBe(409);
+    // 発行：値は応答で 1 回だけ。DB にはハッシュだけ。いまのセッションは切れ、前のパスワードではログインできない
+    const r = await issue(cookieOf(mgr), clerk.id);
+    expect(r.status).toBe(200);
+    const temp = ((await r.json()) as { password: string }).password;
+    expect(temp.length).toBeGreaterThanOrEqual(8);
+    expect((await list(old)).status).toBe(401);
+    expect(auth().login("st_pw_clerk", "password123")).toBeNull();
+    const user = auth().login("st_pw_clerk", temp)!;
+    expect(user.id).toBe(clerk.id);
+    // 仮のパスワードのあいだは、自分のことを読むのと、パスワードを変える操作だけ
+    const tc = cookieOf(user);
+    const other = cookieOf(user);
+    expect(((await (await me(tc)).json()) as { mustChangePassword: boolean }).mustChangePassword).toBe(true);
+    const blocked = await (await import("../../app/api/character/route")).GET(new Request("http://localhost/api/character", { headers: { cookie: tc } }));
+    expect([blocked.status, ((await blocked.json()) as { password?: string }).password]).toEqual([403, "change"]);
+    // 今のパスワードが違う・短い・同じは断る
+    expect((await (await changeOwn(tc, "wrong-password", "newpassword1")).json()).fields).toEqual(["password"]);
+    expect((await (await changeOwn(tc, temp, "short")).json()).fields).toEqual(["next"]);
+    expect((await (await changeOwn(tc, temp, temp)).json()).fields).toEqual(["next"]);
+    expect((await changeOwn(tc, temp, "newpassword1")).status).toBe(200);
+    // 変えたら、いまのセッションは続き、ほかのセッションは切れる。仮のパスワードではもうログインできない
+    expect(((await (await me(tc)).json()) as { mustChangePassword: boolean }).mustChangePassword).toBe(false);
+    expect((await me(other)).status).toBe(401);
+    expect(auth().login("st_pw_clerk", temp)).toBeNull();
+    expect(auth().login("st_pw_clerk", "newpassword1")?.id).toBe(clerk.id);
+    // 持ち主は、事務長の分も発行できる。自分のパスワードも変えられる
+    expect((await issue(cookieOf(owner), mgr.id)).status).toBe(200);
+    expect((await changeOwn(cookieOf(owner), "password123", "ownerpass99")).status).toBe(200);
+    // どの記録にも、パスワードの値は残らない
+    const rows = instance.runAs(owner, () => instance.getApp().audit.list()).filter((x) => x.action === "POST /api/staff/[id]/password" || x.action === "POST /api/auth/password");
+    expect(rows.length).toBeGreaterThan(0);
+    const events = auth().eventsOf(owner.tenantId).filter((e) => e.event === "staff.password" || e.event === "password.change");
+    expect(events.map((e) => [e.event, e.result]).reverse()).toEqual([
+      ["staff.password", "ok"],
+      ["password.change", "fail"],
+      ["password.change", "fail"],
+      ["password.change", "fail"],
+      ["password.change", "ok"],
+      ["staff.password", "ok"],
+      ["password.change", "ok"],
+    ]);
+    expect(JSON.stringify([rows, events])).not.toContain(temp);
+    expect(JSON.stringify([rows, events])).not.toContain("newpassword1");
   });
 });

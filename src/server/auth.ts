@@ -295,6 +295,40 @@ export function openAuth(dbFile: string) {
     }
     reauthFailures.clear(user.id);
   }
+  /** 仮のパスワードのままか（事務長か持ち主が発行し、本人がまだ変えていない）。呼ぶたびに DB を読む */
+  const mustChangePassword = (userId: string): boolean => (db.prepare("SELECT must_change_password AS m FROM users WHERE id = ?").get(userId) as { m: number } | undefined)?.m === 1;
+  /**
+   * 職員の仮のパスワードを発行する（採点 r2 事務長 #4）。事務長と持ち主だけ。同じクリニックの人だけ。自分には発行しない（自分は changePassword で変える）。
+   * 持ち主のパスワードは、持ち主でない人には発行させない（持ち主の乗っ取りを防ぐ）。
+   * 保存するのは scrypt のハッシュだけで、値は戻り値で 1 回だけ返す。相手のいまのセッションは消し、次のログインで変更を求める
+   */
+  function issueTempPassword(by: User, id: string): { id: string; password: string } {
+    if (!canManageStaff(by)) throw forbidden("仮のパスワードを発行できるのは、事務長とクリニックの持ち主だけです");
+    return db
+      .transaction(() => {
+        const target = staffOf(by, id);
+        if (target.id === by.id) throw conflict("自分のパスワードは、「自分のパスワードを変える」で変えてください");
+        if (target.id === ownerOf(by.tenantId) && !isOwner(by)) throw forbidden("持ち主の仮のパスワードは発行できません");
+        const password = randomBytes(9).toString("base64url");
+        db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?").run(hashPassword(password), id);
+        db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+        return { id, password };
+      })
+      .immediate();
+  }
+  /**
+   * 自分のパスワードを変える（採点 r2 事務長 #4）。今のパスワード（仮のパスワードを含む）を入れ直して確かめる。
+   * 変えたら仮のパスワードの印を消し、keepToken（いまのセッション）以外のセッションを消す
+   */
+  function changePassword(user: User, current: string, next: string, keepToken?: string): void {
+    confirmPassword(user, current);
+    if (next.length < 8 || next.length > 128) throw badRequest("新しいパスワードは 8 文字以上にしてください", ["next"]);
+    if (next === current) throw badRequest("新しいパスワードは、今のパスワードと違うものにしてください", ["next"]);
+    db.transaction(() => {
+      db.prepare("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?").run(hashPassword(next), user.id);
+      db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?").run(user.id, keepToken ? sha256(keepToken) : "");
+    })();
+  }
   /**
    * 持ち主を、同じクリニックのほかの事務長に引き継ぐ（採点 r2 事務長 #3）。持ち主だけ。パスワードを入れ直して確かめる。
    * 相手は停止していない事務長だけ。引き継いだあと、前の持ち主は職員の 1 人になる（役割は変えない。停止もできるようになる）
@@ -402,6 +436,6 @@ export function openAuth(dbFile: string) {
     count: (bucket: string, userId: string, now = new Date()): number =>
       (db.prepare("SELECT count FROM rate_daily WHERE day = ? AND bucket = ? AND user_id = ?").get(jstDayOf(now), bucket, userId) as { count: number } | undefined)?.count ?? 0,
   };
-  return { confirmPassword, transferOwner, ownerOf, assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
+  return { mustChangePassword, issueTempPassword, changePassword, confirmPassword, transferOwner, ownerOf, assertCanEraseTenant, forgetTenant, assertInviteKeepsManager, isOwner, canManageStaff, activeManagers, listStaff, setStaffRole, setStaffDisabled, dailyAll, acceptNotice, acceptedNotice, register, tenantKind, tenantDecidedAt, canChooseKind, chooseKind, registerWithInvite, createInvite, listInvites, revokeInvite, canInvite, isSolo, tenantSize, switchRole, recordEvent, eventsOf, idOfLogin, login, createSession, userOfSession, endSession, close: () => db.close() };
 }
 export type Auth = ReturnType<typeof openAuth>;

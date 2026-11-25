@@ -12,6 +12,8 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
   /** 持ち主を引き継ぐ相手と、確かめに入れ直す自分のパスワード */
   const [handTo, setHandTo] = useState<Member | null>(null);
   const [password, setPassword] = useState("");
+  /** 発行した仮のパスワード（この画面に 1 回だけ出す。閉じたら消す） */
+  const [issued, setIssued] = useState<{ member: Member; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const load = () =>
@@ -54,6 +56,22 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
       load();
     }
   }
+  async function issue(m: Member) {
+    if (!window.confirm(`${m.name}（${m.login}）の仮のパスワードを発行します。今のパスワードは使えなくなり、いま開いている画面も使えなくなります。次にログインしたとき、自分のパスワードに変えてもらいます。発行しますか？`)) return;
+    setErr("");
+    setIssued(null);
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/staff/${m.id}/password`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return setErr(d.error ?? "発行できませんでした");
+      setIssued({ member: m, password: d.password });
+    } catch {
+      setErr("通信できませんでした。もう一度試してください");
+    } finally {
+      setBusy(false);
+    }
+  }
   function suspend(m: Member) {
     if (!window.confirm(`${m.name}（${m.login}）を停止します。この人はログインできなくなり、いま開いている画面も使えなくなります。再開すると、また使えます。停止しますか？`)) return;
     send(`/api/staff/${m.id}/suspend`);
@@ -94,6 +112,9 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
                   ) : (
                     !m.self && !m.owner && <button onClick={() => suspend(m)} disabled={busy}>停止する</button>
                   )}
+                  {!m.self && (isOwner || !m.owner) && (
+                    <button onClick={() => issue(m)} disabled={busy} style={{ marginLeft: 4 }}>仮のパスワードを発行</button>
+                  )}
                   {isOwner && !m.self && !m.disabled && m.role === "manager" && (
                     <button onClick={() => { setHandTo(m); setPassword(""); setErr(""); }} disabled={busy} style={{ marginLeft: 4 }}>持ち主を引き継ぐ</button>
                   )}
@@ -103,6 +124,15 @@ export function Staff({ real, isOwner, onOwnerChanged }: { real: boolean; isOwne
           </tbody>
         </table>
       </div>
+      {issued && (
+        <div className="notice ok" style={{ marginTop: 8 }}>
+          <p style={{ marginTop: 0 }}>
+            {issued.member.name}（{issued.member.login}）の仮のパスワード：<code style={{ fontSize: 16, userSelect: "all" }}>{issued.password}</code>
+          </p>
+          <p className="muted">この値はここに 1 回だけ出します（保存していません）。本人に直接伝えてください。次にログインしたとき、自分のパスワードに変えてもらいます。</p>
+          <button onClick={() => setIssued(null)}>伝えた。閉じる</button>
+        </div>
+      )}
       {isOwner && handTo && (
         <div className="notice warn" style={{ marginTop: 8 }}>
           <p style={{ marginTop: 0 }}>

@@ -23,3 +23,5 @@ export const staffRoleBody = z.strictObject({ role: z.enum(ROLES) });
 export const eraseTenantBody = z.strictObject({ login: z.string().max(64) });
 /** 持ち主を引き継ぐ（POST /api/staff/[id]/owner）。本人のパスワードを入れ直す */
 export const ownerTransferBody = z.strictObject({ password: z.string().max(256) });
+/** 自分のパスワードを変える（POST /api/auth/password）。今のパスワード（仮のパスワードを含む）と新しいパスワード */
+export const passwordChangeBody = z.strictObject({ current: z.string().max(256), next: z.string().max(256) });

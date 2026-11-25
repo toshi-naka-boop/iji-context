@@ -19,6 +19,8 @@ export const GET = route({ roles: allow("GET /api/auth/me") }, ({ user, clerkId 
   // クリニックの使い方（demo／real／undecided）と、未定のときにこの人が選べるか
   tenantKind: getAuth().tenantKind(user.tenantId),
   canChooseKind: getAuth().canChooseKind(user),
+  // 仮のパスワードのままか（画面は、自分のパスワードに変える欄だけを出す）
+  mustChangePassword: getAuth().mustChangePassword(user.id),
 }));
 
 export const runtime = "nodejs";
