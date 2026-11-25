@@ -81,6 +81,10 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const records = notes.recordEntries(claimId);
     if (!base && records.length === 0) return null;
     return { entries: [...(base?.entries ?? []), ...records].sort((a, b) => (a.date < b.date ? -1 : 1)), prescriptions: base?.prescriptions ?? [] };
+  }, (claimId) => {
+    // 医師の画面に出す患者の表示（採点 r3 医療事務課長 #1）。AI には送らない
+    const r = uke.ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
+    return r ? { patient: r.patient, patientNo: r.patientNo || null } : null;
   });
   const facility = createFacility(ctx, clock, uke);
   const note14 = createNote14(ctx, clock, uke, patientFactsOf);
