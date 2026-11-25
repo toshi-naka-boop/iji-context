@@ -4,6 +4,7 @@
 // ログインした人ごとのクリニックは、データの置き場所（RESEMEN_DATA。なければ data/）の tenants/ のうち、デモのクリニック（その置き場所の auth.db で種類が demo）だけを消す。
 // 種類を確かめられないもの（auth.db がない、行がない、未定）と、実在のデータで使うクリニック（real）の置き場と作業場所は、消さない・退避しない
 // `--retire-stale`：データの版の印（config/demo.json の dataset）が今と違う、デモのクリニックの置き場を、改名して退避する（消さない）。
+// `--include-undecided` を足すと、未定のクリニック（種類を選ぶ前の版から使っているものを含む）も退避する（real は退避しない）。
 // 一覧だけ出し、`--yes` を付けたときだけ改名する。退避したクリニックは、次に開いたときに今の印で作り直される（design.md §10 段 2）
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -26,7 +27,7 @@ const defaultDataDir = () => path.resolve(process.env.RESEMEN_DATA ?? path.join(
  * dataDir の auth.db で種類が demo のクリニックの id。auth.db がなければ null（種類を確かめられないので、どのクリニックも消さない・退避しない）。
  * 行のないクリニック・未定のクリニックは demo に入らない（src/server/auth.ts の tenantKind）
  */
-export function demoTenants(dataDir: string, ws?: string): Set<string> | null {
+export function demoTenants(dataDir: string, ws?: string, kinds: readonly string[] = ["demo"]): Set<string> | null {
   const authFile = path.join(dataDir, "auth.db");
   if (!existsSync(authFile)) return null;
   const namesIn = (dir: string) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [tenantIdOf(e.name)] : [])) : []);
@@ -34,7 +35,7 @@ export function demoTenants(dataDir: string, ws?: string): Set<string> | null {
   const ids = [...namesIn(path.join(dataDir, "tenants")), ...(ws ? namesIn(ws) : [])].filter((id): id is string => id !== null);
   const auth = openAuth(authFile);
   try {
-    return new Set(ids.filter((id) => auth.tenantKind(id) === "demo"));
+    return new Set(ids.filter((id) => kinds.includes(auth.tenantKind(id))));
   } finally {
     auth.close();
   }
@@ -72,16 +73,20 @@ export function targets(dataDir = defaultDataDir(), ws = workspaceRoot()): strin
   return out;
 }
 
-/** 退避する候補：印が違う置き場のうち、dataDir の auth.db で demo のクリニックだけ（targets と同じ判定。real・未定・確かめられないものは退避しない） */
-export function retireCandidates(dataDir: string): { dir: string; stamp: string | null }[] {
-  const demo = demoTenants(dataDir);
+/**
+ * 退避する候補：印が違う置き場のうち、dataDir の auth.db で demo のクリニックだけ（targets と同じ判定。real・未定・確かめられないものは退避しない）。
+ * includeUndecided（`--include-undecided`）：未定のクリニック（種類を選ぶ前の版から使っていて、行がないものを含む）も候補に入れる。
+ * 種類のなかった前の版（合成データだけを受け取った版）から上げるとき、運用する側が一覧を見て選ぶ（docs/deploy-gcp.md 6。予行 2026-11-25）。real は入れない
+ */
+export function retireCandidates(dataDir: string, includeUndecided = false): { dir: string; stamp: string | null }[] {
+  const demo = demoTenants(dataDir, undefined, includeUndecided ? ["demo", "undecided"] : ["demo"]);
   if (!demo) return [];
   return staleTenants(path.join(dataDir, "tenants")).filter((t) => demo.has(path.basename(t.dir)));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) && process.argv.includes("--retire-stale")) {
   const dataDir = defaultDataDir();
-  const stale = retireCandidates(dataDir);
+  const stale = retireCandidates(dataDir, process.argv.includes("--include-undecided"));
   console.log(stale.length ? `印が違う置き場（${stale.length} 件）：\n${stale.map((t) => `  ${t.dir}（印：${t.stamp ?? "なし"}）`).join("\n")}` : "印が違う置き場はない");
   if (!process.argv.includes("--yes")) console.log("\n確認だけ（--yes を付けると、改名して退避する。消さない）");
   else for (const t of stale) console.log(`退避: ${retireDir(t.dir)}`);
