@@ -65,4 +65,8 @@ describe("reset-demo の消すもの", () => {
     expect(retireCandidates(data).map((c) => path.basename(c.dir))).toEqual([demo]);
     expect(retireCandidates(path.join(tmp, "nowhere"))).toEqual([]);
   });
+  it("--include-undecided では、未定（行のないもの）も候補に入る。real は入らない", () => {
+    const { data, demo, undecided } = setup();
+    expect(retireCandidates(data, true).map((c) => path.basename(c.dir)).sort()).toEqual([demo, undecided].sort());
+  });
 });
