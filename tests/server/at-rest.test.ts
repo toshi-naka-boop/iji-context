@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { DataKeyError } from "../../src/db/key";
 import { openDatabase, PlaintextFoundError } from "../../src/db/open";
-import { assertAtRest } from "../../src/server/at-rest";
+import { assertAtRest, atRestTargets } from "../../src/server/at-rest";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "iji-at-rest-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -75,5 +75,15 @@ describe("起動時の確かめ", () => {
     expect(() => assertAtRest({ NODE_ENV: "production", RESEMEN_DATA_KEY: key }, p)).toThrow(/CLAUDE_CONFIG_DIR/);
     expect(() => assertAtRest({ NODE_ENV: "production", RESEMEN_DATA_KEY: key, CLAUDE_CONFIG_DIR: path.join(p.data, "home", ".claude") }, p)).toThrow(/置き場の中/);
     expect(assertAtRest(prodEnv(key), p)).toEqual({ encrypted: true });
+  });
+
+  it("ログインなしの既定の置き場（<root>/data/resemen.db・<root>/query-log）は、置き場が <root>/data のときだけ対象にする", () => {
+    const p = place();
+    const other = place();
+    openDatabase(path.join(p.root, "data", "resemen.db"), "app:default", {}, null).close();
+    mkdirSync(path.join(p.root, "query-log"));
+    expect(atRestTargets(p.data, p.root).dbs.map((d) => path.basename(d.file))).toEqual(["resemen.db"]);
+    expect(atRestTargets(p.data, p.root).outside).toEqual([path.join(p.root, "query-log")]);
+    expect(atRestTargets(other.data, p.root)).toMatchObject({ dbs: [], outside: [] });
   });
 });
