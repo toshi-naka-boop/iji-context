@@ -140,7 +140,7 @@ flowchart LR
 | 層 | 使っているもの |
 |---|---|
 | 言語・画面 | TypeScript だけ。Next.js（App Router・API Route） |
-| DB | SQLite（better-sqlite3）と Drizzle。クリニックごとに DB を分け、表の変更は連番のマイグレーション（`src/db/migrate.ts`） |
+| DB | SQLite（better-sqlite3-multiple-ciphers。鍵があれば SQLCipher 互換の形式で暗号化して保存）と Drizzle。クリニックごとに DB を分け、表の変更は連番のマイグレーション（`src/db/migrate.ts`） |
 | AI | Claude Agent SDK。役割ごとにモデルと考える深さを変える（`config/models.json`：メンターは Sonnet、ベテランのメンターは Opus、整文は Haiku など） |
 | 知識の読み方 | 承認済みの知識だけを Skill として `.claude/skills/` に同期し、読む直前に Hooks で状態を確かめる |
 | 音声 | ElevenLabs（読み上げと聞き取り） |
