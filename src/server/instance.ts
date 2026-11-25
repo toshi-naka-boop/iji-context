@@ -8,7 +8,10 @@ import path from "node:path";
 import { nextSmalltalkStreak, nextVentStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
 import { claimForAi, forgetSessions } from "../llm/outbound";
-import type { Character } from "../mentor/prompt";
+import { ukeScreenNote, type Character, type ScreenItem } from "../mentor/prompt";
+import { findingText, patientFindingText } from "../messages";
+import type { Finding } from "../engine/types";
+import type { PatientFinding } from "../patient/checks";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
 import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceSkillNames } from "../mentor/workspace";
@@ -306,10 +309,25 @@ async function askVeteran(a: App, by: User, question: string, alive: () => boole
 }
 
 /**
+ * 取り込んだレセプトの点検の画面に出ている指摘（ユスティの指摘と情報不足・データで動く点検・患者情報チェック）を、画面と同じ定型文で並べる（採点 r3 医療事務課長 #2）。
+ * 点検できなかったレセプト（読めない・版がない）は空
+ */
+function ukeScreenItems(r: unknown): ScreenItem[] {
+  const c = r as { rows?: unknown; findings?: Finding[]; missing?: Finding[]; generic?: { findings: { check: string; kind: string; certainty?: string; text: string }[] }; patientFindings?: PatientFinding[] };
+  if (!c.rows) return [];
+  return [
+    ...[...(c.findings ?? []), ...(c.missing ?? [])].map((f) => ({ id: f.ruleId, kind: f.kind, conditional: f.params?.conditional === "1", text: findingText(f) })),
+    ...(c.generic?.findings ?? []).map((f) => ({ id: f.check, kind: f.kind, conditional: f.certainty === "条件つき", text: f.text })),
+    ...(c.patientFindings ?? []).map((f) => ({ id: f.checkId, kind: f.kind, text: patientFindingText(f) })),
+  ];
+}
+
+/**
+ * メンターに話しかける（1 人 1 セッション。/**
  * メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す）。user は操作した本人（外部へ送る前に、同意を確かめるために渡す）。
  * skipCrosscheck：本人が「照合の不一致とは別のことを医師に聞きたい」と選んだとき。この 1 回だけ照合の不一致を渡さない
  */
-export async function talkToMentor(input: { user: User; clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
+export async function talkToMentor(input: { user: User; clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean; screen?: "uke" }) {
   const a = getApp();
   const clerk = a.clerk(input.clerkId);
   const q = a.question(input.questionId);
@@ -372,7 +390,8 @@ export async function talkToMentor(input: { user: User; clerkId: string; questio
         workspace: p.workspace,
         // 確定する前（ヒントの段階）は判定の中身を渡さない
         reveal: q.confirmed !== null,
-        note: a.outlookOf(q) ?? undefined,
+        // 取り込んだレセプトの点検の画面から聞かれたときは、その画面の指摘を添える（採点 r3 医療事務課長 #2）
+        note: [a.outlookOf(q), input.screen === "uke" ? ukeScreenNote(ukeScreenItems(a.ukeCheck(q.claimId, clerk.id))) : null].filter((x) => x).join("\n") || undefined,
         smalltalkStreak: Number(a.setting(`smalltalk:${q.id}`) ?? "0"),
         ventStreak: Number(a.setting(`vent:${q.id}`) ?? "0"),
       },

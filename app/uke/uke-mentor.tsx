@@ -1,7 +1,8 @@
 "use client";
 // 取り込んだレセプトの点検の画面のメンター（採点 r2 医療事務課長 P1）：算定画面と同じメンター（POST /api/mentor）に、指摘の理由を聞く。
 // 新しい AI の使い方は足さない：はじめて聞くときに、この請求の問題を算定画面と同じ入口（POST /api/questions。通常モード）で 1 つ作り、その問題について話す。
-// メンターは答えを言わず理由を示す（算定画面と同じ指示。src/mentor/prompt.ts）。メンターが見る判定は、問題の明細（UKE の行）を手書きのルールで判定したもので、摘要欄の記載は見ない。
+// メンターは答えを言わず理由を示す（算定画面と同じ指示。src/mentor/prompt.ts）。メンターが見る判定は、問題の明細（UKE の行）を手書きのルールで判定したものに、
+// この画面に出ている指摘（摘要欄の R17・データで動く点検・患者情報チェックを含む）を添えたもの（screen: "uke"。採点 r3 医療事務課長 #2）。画面の指摘をメンターが打ち消さない。
 // 話せるのは算定の仕事をする人（事務・ベテラン）だけ。キャラを選んでいなければ、算定画面へ案内する
 import { useEffect, useState } from "react";
 import type { MentorOutput } from "../../src/mentor/output";
@@ -49,7 +50,7 @@ export function UkeMentor({ claimId, doctorMissing }: { claimId: string; doctorM
       const id = questionId ?? (await post<{ id: string }>("/api/questions", { claimId, mode: "通常" })).id;
       setQuestionId(id);
       const situation = doctorMissing ? "カルテ不足" : "通常";
-      const r = await post<{ output: MentorOutput }>("/api/mentor", { questionId: id, message, situation, skipCrosscheck: true });
+      const r = await post<{ output: MentorOutput }>("/api/mentor", { questionId: id, message, situation, skipCrosscheck: true, screen: "uke" });
       setChat((c) => [...c, { from: "mentor", text: r.output.body, face: faceFor(situation, r.output.topic) }]);
     } catch (e) {
       setErr((e as Error).message);
@@ -63,7 +64,7 @@ export function UkeMentor({ claimId, doctorMissing }: { claimId: string; doctorM
       {me?.image && <img src={faceImage(me.image, last?.face ?? "通常")} alt="" style={{ width: 72, height: 96, objectFit: "contain", objectPosition: "bottom", flex: "none" }} />}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
         <strong>{name}に聞く</strong>
-        <div className="muted">指摘の理由や、どこを見ればよいかを聞けます。{name}は答えを言わず、理由と見る場所を示します（算定画面と同じメンターです。{name}が見るのは UKE の行の判定で、摘要欄の記載は見ません）。</div>
+        <div className="muted">指摘の理由や、どこを見ればよいかを聞けます。{name}は答えを言わず、理由と見る場所を示します（算定画面と同じメンターです。{name}は、この画面に出ている指摘を見て答えます）。</div>
         {chat.map((b, i) => (
           <div key={i} style={{ whiteSpace: "pre-wrap" }}><span className="muted">{b.from === "me" ? "あなた" : name}：</span>{b.text}</div>
         ))}
