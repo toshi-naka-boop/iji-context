@@ -94,6 +94,13 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
       acts: JSON.parse(r.acts) as StoredActs,
     }));
   }
+  /** 取り込んだ請求に貼って確かめたカルテの記載（書いた人によらない。医師に確かめてほしい項目の引用に使う。src/server/app/doctor-facts.ts） */
+  function recordEntries(claimId: string): { date: string; s: string; o: string; a: string; p: string }[] {
+    return (sqlite.prepare("SELECT date, note FROM chart_notes WHERE claim_id = ? AND kind = '記録' AND acts IS NOT NULL ORDER BY date, id").all(claimId) as { date: string; note: string }[]).map((r) => {
+      const n = JSON.parse(r.note) as ChartNote;
+      return { date: r.date, s: n.s, o: n.o, a: n.a, p: n.p };
+    });
+  }
   /** 貼って確かめたカルテのある請求と、請求ごとの貼った回数（段の報告：1 人あたりの貼った回数。L-122） */
   function recordCounts(): Map<string, number> {
     const rows = sqlite.prepare("SELECT claim_id, COUNT(*) AS n FROM chart_notes WHERE kind = '記録' AND acts IS NOT NULL GROUP BY claim_id").all() as { claim_id: string; n: number }[];
@@ -777,7 +784,7 @@ export function createNotes(ctx: AppContext, clock: Clock, clerks: Clerks, uke: 
     if (r.kind !== "記録" && r.clerk_id !== clerkId) throw forbidden("この訪問カルテの略語を見られるのは、書いた本人だけです");
     return abbrevSummaryOf(noteId, clerkId);
   }
-  return { abbrevs, setLevelOf, selectAbbrev, abbrevSummaryOf, readAbbrevSummary, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
+  return { abbrevs, setLevelOf, selectAbbrev, abbrevSummaryOf, readAbbrevSummary, markExtracted, abbrevMarksOf, claimIdOfNote, confirmedFixes, saveNote, saveRecord, recordNotes, recordEntries, recordCounts, actsDays, textsOf, torikawasure: tori, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, deleteNote, listNotes, confirmedNotes, monthOf, claimOfNote, saveNoteComment, patients, visits, chartOf };
 }
 
 export type Notes = ReturnType<typeof createNotes>;

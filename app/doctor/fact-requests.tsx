@@ -3,6 +3,7 @@
 // 決まった答えは事実として残り（請求ごと：POST /api/claims/[claimId]/facts、患者ごと：POST /api/patients/[claimId]/facts）、点検の判定が変わる。
 // 「その他」（自由記述つき）と「判定不能」は、事実を不明のまま残す（POST /api/doctor/facts）。
 // 略語の問い（FR-211）は、同じ欄の上にカードで並べる（app/doctor/abbrev-requests.tsx）。
+// 問いには、カルテの記載の引用を添える（記録がない請求は「カルテの記録がない請求です」）。
 // 医師確認の決まり：点数・金額は出さない。選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない。患者の氏名は出さない（下の確認の依頼と同じく、番号だけ）
 import { useEffect, useState } from "react";
 import type { DoctorFactItem } from "../../src/server/app/doctor-facts";
@@ -71,6 +72,15 @@ export function FactRequests() {
                     {i.scope === "patient" && <span className="badge sky">患者ごとに残る</span>}
                   </div>
                   <p style={{ fontSize: 17, fontWeight: 700, margin: "12px 0" }}>{i.question}</p>
+                  {/* カルテの記載の引用（医師確認の 7 要件の ①臨床指標。採点 r2 医療事務課長 P1） */}
+                  {i.noRecord ? (
+                    <p className="muted">カルテの記録がない請求です。</p>
+                  ) : (
+                    <div>
+                      <div className="muted">カルテの記載</div>
+                      {i.evidence.map((e, n) => <div key={n}>{e.source}：「{e.text}」</div>)}
+                    </div>
+                  )}
                   {i.note && <p className="muted">前の回答：{i.note.option}{i.note.freeText ? `（${i.note.freeText}）` : ""}　{i.note.at.slice(0, 10)}。事実は不明のままです。</p>}
                   <div className="options" role="radiogroup" aria-label={i.question}>
                     {i.options.map((o) => (
