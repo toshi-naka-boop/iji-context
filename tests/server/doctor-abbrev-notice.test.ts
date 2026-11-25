@@ -11,7 +11,7 @@ import { BANNED_WORDS } from "../../scripts/check-banned-words";
 import { ABBREV_OPTIONS, abbrevQuestion, abbrevQueryErrors } from "../../src/server/app/doctor-abbrevs";
 import { claimId, day, YM } from "../helpers/period";
 
-const NOTICE = "カルテは、医療事務が読んで同じ意味にたどり着ける書き方だと、確認のお願いが減ります。意味が重なる略語（たとえば AF と Af）は避け、正式な名称で書いていただけると助かります。わかりやすいカルテが、クリニックの健全な経営への第一歩です。";
+const NOTICE = "健全な経営は健全なカルテから（多数解釈のできる略語などは控えましょう）";
 
 describe("医師確認の画面の文言", () => {
   it("config に計画の文がそのまま 1 か所にあり、禁止語を含まない", () => {
