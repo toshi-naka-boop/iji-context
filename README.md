@@ -199,16 +199,21 @@ RESEMEN_OPEN_SIGNUP=1 npm run dev
 | `src/masters/` | 公開マスターの取り込みと確かめ、`masters.db` の読み取り |
 | `src/uke/` | UKE の読み書きとカルテとの照合 |
 | `src/facility/` | 施設の申告・施設基準・注14・酸素の単価 |
+| `src/note14/` | 注14 の計算の道具（UKE から月ごとの回数を数える・2 段目の下書き・読みの組み合わせごとの判定） |
 | `src/care/`・`src/claim/`・`src/patient/` | 聞き取りの申告、請求ごとの事実、患者マスタと患者情報チェック（P01〜P08） |
 | `src/structured/` | 電子カルテの構造化データの当て方と、規則で出す算定 |
 | `src/chart/`・`src/visit/` | カルテ（書き写し・SOAP への振り分け・事実の取り出し）、訪問の時点の点検 |
 | `src/query/` | 医師確認（7 要件の検証・記録・承認・リマインド） |
+| `src/practice/` | 処理体験（1 件＝1 問：ヒント → 本人の確定 → ユスティの判定 → 解説）・選択モード・練習問題・レベル |
+| `src/prevented/` | 防いだ額（提出前に指摘して確定までに直した件数と推定の円。本人の画面と事務長レポート） |
 | `src/review/` | 査定・返戻の突き合わせ |
 | `src/mentor/`・`src/voice/` | メンター・作業場所（CLAUDE.md・Skill・Hooks）、声 |
 | `src/lifecycle/`・`src/official/` | 知識の状態と見直し・レセメン会議、公的文書の要旨とリンク |
 | `src/notice/` | 査定・返戻の通知（PDF）の読み取りと対応づけ |
 | `src/llm/` | 外部の AI への唯一の出口（同意の確かめ） |
 | `src/server/`・`src/db/` | ログイン・役割・監査ログ・回数の制限、表とマイグレーション |
+| `src/demo/` | デモの日付（基準の診療年月は `config/demo.json` の 1 か所で持ち、ここから読む） |
+| `src/messages.ts` | 指摘を画面に出す文言（決まった文。判定の中身はエンジンが決める） |
 | `src/connect/` | 連携の境界とコネクタ（既定で無効） |
 | `config/` | 設定（モデル・施設・診療年月・言い切りにする指摘の一覧など） |
 | `knowledge/`・`official/` | 知識の本文、公的文書の要旨 |
