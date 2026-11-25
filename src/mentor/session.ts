@@ -47,7 +47,9 @@ export function mentorServer(deps: MentorDeps, ctx: AiClaim, now: () => string, 
         note: "カルテとの照合で見つかった不一致があります。医師確認はまだ作っていません。どれのことかは本人が画面のボタンで選びます。質問は書かずに、選んでもらうよう短く伝えてください",
       };
     }
-    return askMissingTool(deps, { target: "doctor", claimId: ctx.claimId, createdBy: "mentor", ...a }, now());
+    // メンターが書いた医師確認は、医療事務が中身を確かめて送るまで医師に届けない（採点 r2 エンジニアの上司 #4）
+    const r = askMissingTool(deps, { target: "doctor", claimId: ctx.claimId, createdBy: "mentor", ...a, hold: true }, now());
+    return { ...r, note: "医師確認の下書きを作りました。まだ医師には届いていません。本人が医師確認の画面で中身を確かめてから送るよう、短く伝えてください" };
   };
   return createSdkMcpServer({
     name: SERVER,

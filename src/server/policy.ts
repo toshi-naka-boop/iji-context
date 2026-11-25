@@ -81,6 +81,8 @@ export const POLICY = {
 
   // 医師確認（FR-134）：回答と承認は医師だけ。一覧は、送った側（事務・ベテラン）も状態を見られる
   "GET /api/doctor": row(["clerk", "veteran", "doctor"], "none", true),
+  // メンターが書いた送る前の医師確認を、医療事務（事務・ベテラン）が中身を確かめて医師に送る（採点 r2 エンジニアの上司 #4）
+  "POST /api/doctor/[id]/send": row(WORK, "none", true),
   "POST /api/doctor/[id]/answer": row(["doctor"], "none", true),
   "POST /api/doctor/[id]/approve": row(["doctor"], "none", true),
   // 医師に確かめてほしい項目（医師あての情報不足）の一覧と、決められなかった答え（その他・判定不能）の記録。医師の役割だけ

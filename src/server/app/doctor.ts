@@ -1,6 +1,6 @@
 // 医師確認：回答と承認、F3 の代行入力、F4 の照合（病名と処方の不一致）
 import { proxyConfirmDraft, type ScribeResult } from "../../mentor/scribe";
-import { answerQuery, approveQuery, askMissing, listQueries, validateQuery } from "../../query/doctor-query";
+import { answerQuery, approveQuery, askMissing, listQueries, sendQuery, validateQuery } from "../../query/doctor-query";
 import { crosscheck } from "../../uke/crosscheck";
 import type { Cases } from "./cases";
 import type { Clock } from "./clock";
@@ -17,7 +17,10 @@ export function createDoctor(ctx: AppContext, clock: Clock, uke: Uke, cases: Cas
   const { chartOf } = notes;
 
   // 見本の請求を指す医師確認は、demo 以外のクリニックでは出さない（記録は残す）
-  const doctorQueries = () => listQueries(queryLog).filter((q) => !hiddenClaim(q.claimId));
+  // forDoctor なら、医療事務がまだ送っていない（送る前の）質問を外す（医師には届けない）
+  const doctorQueries = (forDoctor = false) => listQueries(queryLog).filter((q) => !hiddenClaim(q.claimId) && !(forDoctor && q.status === "送る前"));
+  /** メンターが書いた送る前の質問を、医療事務が中身を確かめて医師に送る */
+  const sendDoctor = (id: string) => sendQuery(queryLog, id, now());
   const answerDoctor = (id: string, a: { option: string; freeText?: string; answeredBy: string; answeredById?: string }) => answerQuery(queryLog, id, a, now());
   const approveDoctor = (id: string, approver: string, approverId?: string) => approveQuery(queryLog, id, approver, now(), approverId);
 
@@ -77,7 +80,7 @@ export function createDoctor(ctx: AppContext, clock: Clock, uke: Uke, cases: Cas
       .map((q) => q.field.replace(/^fact:/, ""));
   }
 
-  return { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck, resolvedFields };
+  return { doctorQueries, sendDoctor, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck, resolvedFields };
 }
 
 export type Doctor = ReturnType<typeof createDoctor>;

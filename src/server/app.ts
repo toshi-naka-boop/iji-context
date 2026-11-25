@@ -135,7 +135,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
     return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
   };
-  const { doctorQueries, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
+  const { doctorQueries, sendDoctor, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
   const { caseFor, judgeFor, outlookOf } = questionCase;
   const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
 
@@ -232,6 +232,7 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     saveNote14Worksheet: note14.saveWorksheet,
     note14Draft: note14.draftOf,
     doctorQueries,
+    sendDoctor,
     answerDoctor,
     approveDoctor,
     crosscheckOf,
