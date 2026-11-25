@@ -1,21 +1,44 @@
-// R11 検査判断料は区分ごとに月 1 回。BNP は生化学的検査(Ⅱ)判断料。外来迅速検体検査加算は訪問診療では立てない
-import type { Finding, Rule } from "../types";
-import { finding, has, lineOf } from "./util";
+// R11 検査判断料は区分ごとに月 1 回。BNP は生化学的検査(Ⅱ)判断料。
+// 訪問診療料・往診料の日の外来迅速検体検査加算は、当日中の結果説明と文書提供の記録を確かめる（算定できないとは断定しない。EM #7-9・#7-10）
+import { billedOushinDays, billedVisitDays } from "../predicates";
+import type { RevisionConsts } from "../revisions/types";
+import type { ClaimContext, Finding, Rule } from "../types";
+import { fact, finding, has, lineOf } from "./util";
+import { withVisit2Kubun } from "../visit2";
 
-const D026 = ["D026_3", "D026_4", "D026_5"];
-
-export const r11: Rule = {
-  id: "R11",
-  kubun: [...D026, "D008_18", "D_GAIRAI_JINSOKU"],
-  reference: "D026 検体検査判断料・外来迅速検体検査加算",
-  appliesTo: (ctx) => [...D026, "D008_18", "D_GAIRAI_JINSOKU"].some((k) => has(ctx, k)),
-  needs: () => [],
-  check(ctx) {
-    const out: Finding[] = [];
-    const over = D026.filter((k) => (lineOf(ctx, k)?.count ?? 0) > 1);
-    if (over.length) out.push(finding(this, "背反", over, "judgement_once_a_month"));
-    if (has(ctx, "D008_18") && !has(ctx, "D026_5")) out.push(finding(this, "区分誤り", ["D008_18"], "bnp_is_biochem2"));
-    if (has(ctx, "D_GAIRAI_JINSOKU")) out.push(finding(this, "区分誤り", ["D_GAIRAI_JINSOKU"], "no_rapid_in_home"));
-    return out;
-  },
-};
+export function makeR11(c: RevisionConsts): Rule {
+  const { judgement: D026, bnp: BNP, bnpJudgement: BNP_JUDGEMENT, rapid: RAPID } = c.tests;
+  /** 訪問診療料または往診料を算定した日に、外来迅速検体検査加算の行があるか */
+  function rapidAtHome(ctx: ClaimContext, cc: RevisionConsts = c): boolean {
+    const home = new Set([...billedVisitDays(ctx, cc), ...billedOushinDays(ctx, cc)]);
+    return (lineOf(ctx, RAPID)?.dates ?? []).some((d) => home.has(d));
+  }
+  /** 訪問診療料(Ⅰ)2 の日も訪問診療の日として数える見方（EM §2-14 W-125。確度 中。U-70：採るが指摘は条件つき） */
+  const cv = withVisit2Kubun(c);
+  return {
+    id: "R11",
+    kubun: [...D026, BNP, RAPID],
+    reference: "D026 検体検査判断料・外来迅速検体検査加算（第3部第1節第1款 通則3）",
+    recordFindings: [],
+    soundWhenPartial: [],
+    // 外来迅速検体検査加算の日が、訪問診療料・往診料の日か（rapidAtHome）
+    reads() {
+      return [...new Set([...this.kubun, ...c.visitKubun, c.oushin.kubun])];
+    },
+    // 判断料は区分ごとに月 1 回（電子点数表では算定回数の月 1 回）。BNP の判断料の区分・外来迅速検体検査加算は、表に載らないので申告しない
+    covers: () => ({ kind: "回数", finding: "judgement_once_a_month", kubun: D026.map((k) => [k]) }),
+    appliesTo: (ctx) => [...D026, BNP, RAPID].some((k) => has(ctx, k)),
+    needs: (ctx) => (rapidAtHome(ctx, cv) ? ["rapidSameDayDocumented"] : []),
+    check(ctx) {
+      const out: Finding[] = [];
+      const over = D026.filter((k) => (lineOf(ctx, k)?.count ?? 0) > 1);
+      if (over.length) out.push(finding(this, "背反", over, "judgement_once_a_month"));
+      if (has(ctx, BNP) && !has(ctx, BNP_JUDGEMENT)) out.push(finding(this, "区分誤り", [BNP], "bnp_is_biochem2"));
+      if (rapidAtHome(ctx) && !fact(ctx, "rapidSameDayDocumented")) out.push(finding(this, "要件不足", [RAPID], "rapid_needs_same_day_doc"));
+      // (Ⅰ)2 の日だけに当たるときは条件つき（U-70）
+      else if (rapidAtHome(ctx, cv) && !fact(ctx, "rapidSameDayDocumented"))
+        out.push({ ...finding(this, "要件不足", [RAPID], "rapid_needs_same_day_doc_visit2"), params: { premise: "訪問診療料(Ⅰ)2 の日も訪問診療の日と同じに扱う読みなら", conditional: "1" } });
+      return out;
+    },
+  };
+}

@@ -3,7 +3,8 @@
 /** 臨床指標の引用（①）。カルテ・検査・処方のどこから取ったか */
 export type ClinicalIndicator = { source: string; text: string };
 
-export type QueryStatus = "未回答" | "回答済み" | "承認済み" | "保留";
+/** 送る前＝メンター（AI）が書いた医師確認で、医療事務が中身を確かめて送るまで医師に届けない（採点 r2 エンジニアの上司 #4） */
+export type QueryStatus = "送る前" | "未回答" | "回答済み" | "承認済み" | "保留";
 
 export type DoctorQuery = {
   id: string;
@@ -20,9 +21,12 @@ export type DoctorQuery = {
   createdBy: "mentor" | "clerk";
   createdAt: string;
   status: QueryStatus;
-  answer: { option: string; freeText: string | null; answeredBy: string; at: string } | null;
+  /** answeredBy は表示名、answeredById はログインした本人の利用者 id（FR-134。ロールを入れる前の記録にはない） */
+  answer: { option: string; freeText: string | null; answeredBy: string; answeredById?: string; at: string } | null;
   /** 医師の承認（確認ボタン）。承認者名と日時（FR-33） */
-  approval: { approver: string; at: string } | null;
+  approval: { approver: string; approverId?: string; at: string } | null;
+  /** 医療事務が中身を確かめて医師に送った日時（送る前を経たものだけ。リマインドと保留はこの日から数える） */
+  sentAt?: string;
   /** 翌営業日のリマインド（⑦） */
   remindedAt: string | null;
   /** 3 営業日で保留（算定しない） */

@@ -1,0 +1,144 @@
+{
+  "claimId": "K9-2026-10",
+  "yearMonth": "2026-10",
+  "payer": "国保連",
+  "prefecture": "東京都",
+  "facts": {
+    "age": {
+      "known": false
+    },
+    "insurance": {
+      "known": true,
+      "value": "後期高齢者"
+    },
+    "burdenRatio": {
+      "known": true,
+      "value": 0.1
+    },
+    "careLevel": {
+      "known": false
+    },
+    "table7": {
+      "known": true,
+      "value": false
+    },
+    "table8_2": {
+      "known": true,
+      "value": true
+    },
+    "disabilitySupportLevel": {
+      "known": false
+    },
+    "table8_3Other": {
+      "known": false
+    },
+    "mainDisease": {
+      "known": false
+    },
+    "homeOxygen": {
+      "known": true,
+      "value": false
+    },
+    "deathPlace": {
+      "known": true,
+      "value": null
+    },
+    "visitsComplete": {
+      "known": true,
+      "value": true
+    },
+    "acuteExacerbation": {
+      "known": true,
+      "value": false
+    },
+    "emergencyEligible": {
+      "known": true,
+      "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "居宅"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": true
+    }
+  },
+  "events": [
+    {
+      "type": "visit",
+      "date": "2026-10-14",
+      "sameBuildingCount": 1
+    },
+    {
+      "type": "visit",
+      "date": "2026-10-28",
+      "sameBuildingCount": 1
+    }
+  ],
+  "recordsKnown": true,
+  "commentsKnown": false,
+  "lines": [
+    {
+      "kubun": "C001_1I",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "O001_3I",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "O100_1HA",
+      "count": 2,
+      "dates": [
+        "2026-10-14",
+        "2026-10-28"
+      ]
+    },
+    {
+      "kubun": "C001_N13_DX",
+      "count": 1,
+      "dates": [
+        "2026-10-14"
+      ]
+    },
+    {
+      "kubun": "C002_2I1",
+      "count": 1,
+      "dates": [
+        "2026-10-28"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "system/r21",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R21：ほかの医療機関の申告のとおりなら算定できない行を、条件つきで指摘する。在宅時医学総合管理料・施設入居時等医学総合管理料は、主として診療を行う 1 つの医療機関だけが算定する。他の医療機関の求めによる訪問診療料(Ⅰ)2 は月 1 回で、求めた日を含む月から 6 月まで（超えるときは、新たな求めか別に定める疾病等の場合に限り、摘要欄に理由を書く）。特別の関係にある医療機関が同じ月に在宅患者訪問看護・指導料などを算定しているときは、訪問看護指示料を算定しない",
+  "rev": "0210f1ceab9c",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R21",
+    "at": "2026-10-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2026-10-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2026-10-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "official_seen": [],
+  "match": {
+    "ruleId": "R21"
+  },
+  "history": [
+    {
+      "at": "2026-10-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

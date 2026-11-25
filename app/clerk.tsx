@@ -2,9 +2,6 @@
 // ログインしている本人（spec FR-72）。サーバーはセッションで本人を決めるので、画面から送る利用者 id は使われない
 import { useEffect, useState } from "react";
 
-/** tenant の中の本人の医療事務 id（サーバーの ME と同じ。画面の表示とキーにだけ使う） */
-const ME = "new1";
-
 /** いまログインしている人。していなければログイン画面へ移る */
 export function useClerk() {
   const [clerk, setClerk] = useState<{ id: string; name: string; login: string } | null>(null);
@@ -13,7 +10,8 @@ export function useClerk() {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((u) => {
-        if (u) setClerk({ id: ME, name: u.name, login: u.login });
+        // id は tenant の中の本人の医療事務 id（画面の表示とキーにだけ使う）
+        if (u) setClerk({ id: u.clerkId, name: u.name, login: u.login });
         else window.location.href = "/login";
       })
       .catch(() => (window.location.href = "/login"))

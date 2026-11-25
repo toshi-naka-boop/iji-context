@@ -2,32 +2,33 @@
   "id": "system/r08",
   "layer": "制度",
   "status": "承認済み",
-  "summary": "R08：外来・在宅ベースアップ評価料(Ⅰ)は、訪問診療の日は訪問診療時の区分、往診だけの日は再診時等の区分を使う",
-  "rev": "cd0254016196",
+  "summary": "R08：外来・在宅ベースアップ評価料(Ⅰ)は、訪問診療料を算定した日は訪問診療時の区分、往診料だけの日は再診時等の区分を使う。訪問診療料と往診料の両方を算定した日に再診時等を重ねられるかは、施設で確かめた設定による",
+  "rev": "586bba602190",
   "polarity": "allow",
   "matchApprox": false,
   "conditionNote": null,
   "source_event": {
     "type": "初期投入",
     "ref": "design.md §2-3 R08",
-    "at": "2025-03-01T00:00:00+09:00"
+    "at": "2026-10-01T00:00:00+09:00"
   },
   "relates_to": null,
-  "valid_from": "2025-03-01T00:00:00+09:00",
+  "valid_from": "2026-10-01T00:00:00+09:00",
   "review_by": null,
   "hits": 0,
   "misses": 0,
   "last_hit_at": null,
   "last_used_at": null,
-  "status_since": "2025-03-01T00:00:00+09:00",
+  "status_since": "2026-10-01T00:00:00+09:00",
   "retired_reason": null,
   "empathy": 0,
+  "official_seen": [],
   "match": {
     "ruleId": "R08"
   },
   "history": [
     {
-      "at": "2025-03-01T00:00:00+09:00",
+      "at": "2026-10-01T00:00:00+09:00",
       "from": "",
       "to": "承認済み",
       "event": "CREATE",

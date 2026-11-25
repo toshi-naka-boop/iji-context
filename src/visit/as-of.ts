@@ -1,14 +1,16 @@
 // 訪問の時点（レセコンに入れる前）の点検（spec FR-68。2026-11-07 ユーザー判断）
 // その日までの実施と記録だけで判定する。月末までに結論が変わり得るルールは指摘にせず、見込みとして出す
-import { countOf, C001_VISIT } from "../engine/rules/util";
+import { visitCount } from "../engine/predicates";
+import { resolveRevision } from "../engine/revisions";
 import type { ClaimContext, EngineResult } from "../engine/types";
 
 /**
  * 月の途中では指摘にしないルール。
- * R01：在医総管の区分は月の訪問回数で決まる（月の途中の回数では誤りと言えない）。
+ * R01：管理料の区分は月の訪問回数で決まる（月の途中の回数では誤りと言えない）。
+ * R03：包括的支援加算の要否は、月の訪問回数で決まる管理料の区分に依る（design.md §2-3-3）。
  * R09：ターミナルケア加算は死亡日前 14 日以内の訪問回数で決まる（亡くなるまで分からない）
  */
-export const DEFERRED_RULES = ["R01", "R09"];
+export const DEFERRED_RULES = ["R01", "R03", "R09"];
 
 /** 訪問診療と往診の日（その月の分） */
 export function visitDays(ctx: ClaimContext): { date: string; type: "visit" | "oushin" }[] {
@@ -33,12 +35,12 @@ export function contextAsOf(ctx: ClaimContext, date: string): ClaimContext {
 }
 
 /** 月の途中の判定：月末まで決まらないルールの指摘を外す */
-export function deferAtMidMonth(r: EngineResult): EngineResult {
+export function deferAtMidMonth<T extends Pick<EngineResult, "findings">>(r: T): T {
   return { ...r, findings: r.findings.filter((f) => !DEFERRED_RULES.includes(f.ruleId)) };
 }
 
-/** 見込み（指摘ではない）。在医総管の区分は月末の訪問回数で決まる */
+/** 見込み（指摘ではない）。管理料の区分は月末の訪問回数で決まる */
 export function outlook(ctx: ClaimContext, date: string): string {
-  const n = countOf(contextAsOf(ctx, date), C001_VISIT);
-  return `今月の訪問診療はここまで ${n} 回。在医総管の区分は月末の回数で決まるので、まだ決めない`;
+  const n = visitCount(contextAsOf(ctx, date), resolveRevision(ctx.yearMonth).consts);
+  return `今月の訪問診療はここまで ${n} 回。管理料の区分は月末の回数で決まるので、まだ決めない`;
 }

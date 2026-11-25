@@ -1,20 +1,67 @@
 // ルールエンジンの入出力の型（design.md §2-1・§2-2）
+import type { CareFacts, OtherFacts, ResidenceType } from "./care";
+import type { Revision } from "./revisions/types";
 
 /** 三値の事実。known=false は「わからない」（C-4） */
 export type Fact<T> = { known: true; value: T } | { known: false };
 
 export type Payer = "支払基金" | "国保連";
 
+/** 施設の種別（design.md §15-2）：1B＝機能強化型・病床あり／1N＝機能強化型・病床なし／2＝在支診（(2)イ・(3)）／3＝在支診以外 */
+export type FacilityGrade = "1B" | "1N" | "2" | "3";
+
+/** 単一建物診療患者の人数の区分（EM §2-2 R8-94 の 5 区分：1 人／2〜9 人／10〜19 人／20〜49 人／50 人以上。design.md §15-4） */
+export type BuildingBand = "1" | "2-9" | "10-19" | "20-49" | "50+";
+export const BUILDING_BANDS = ["1", "2-9", "10-19", "20-49", "50+"] as const satisfies readonly BuildingBand[];
+/** 10 人以上の人数の区分（注14 の減算の対象。EM R8-191） */
+export const NOTE14_BANDS: readonly BuildingBand[] = ["10-19", "20-49", "50+"];
+
 export type Facility = {
-  /** 在宅療養支援診療所か */
-  zaishishin: boolean;
-  /** 機能強化型か */
-  kyokagata: boolean;
-  hasBeds: boolean;
+  /** 施設の種別（施設の申告から決める。管理料・在宅ターミナルケア加算・緊急往診加算の区分と R18 が読む。design.md §15-4） */
+  grade: Fact<FacilityGrade>;
+  /**
+   * 種別の申告で選んだ選択肢の id（src/facility/codes.ts の GRADE_CHOICES。申告から来たときだけ持つ）。
+   * 連携型（(2)ア・(2)イ）の申告で R18 の指摘に経過措置の断りを添えるのに使う（design.md §15-2。docs M-8）
+   */
+  gradeChoice?: string | null;
+  /** 在宅療養支援診療所か。null は施設の種別が分からない（申告がない・確かめ直す日を過ぎたなど。design.md §15-2） */
+  zaishishin: boolean | null;
+  /** 機能強化型か（null は種別が分からない） */
+  kyokagata: boolean | null;
+  /** 病床があるか（null は種別が分からない） */
+  hasBeds: boolean | null;
   prefecture: string;
   /** 届出の有無（区分番号→届出済みか） */
   notifications: Record<string, boolean>;
+  /** 在宅医療DX情報活用加算の届出区分 */
+  dxTier: Fact<"1" | "2" | "なし">;
+  /** 外来・在宅ベースアップ評価料(Ⅰ)の届出区分 */
+  baseUp: Fact<"通常" | "注5" | "なし">;
+  /** 物価対応料を算定するか */
+  priceResponse: Fact<boolean>;
+  /** 管理料の注16 の基準を満たすか（施設に 1 つ。在医総管と施設総管の両方に効く） */
+  note16Met: Fact<boolean>;
+  /**
+   * 同じ建物で同じ月に 2 人以上を診ている建物があるか（施設の申告 building。design.md §15-2。C-242）。none なら、どの患者も単一建物 1 人の区分。
+   * some・分からないなら、患者ごとの事実 buildingBand を使う。判定のルールと導出には直接渡さず、人数の区分の決め方（buildingBandOf）にだけ使う
+   */
+  building: Fact<"none" | "some">;
+  /** 注14（10 人以上の区分の減算。EM R8-191）：通常の点数で算定している（基準に当たる）／減算の点数で算定している（施設の申告 note14。design.md §15-2。段 17h） */
+  note14: Fact<"通常" | "減算">;
+  /** 訪問診療料と往診料の両方を算定した日に、ベースアップ評価料(Ⅰ)の「再診時等」を重ねて算定できると確かめたか（R08 だけが読む） */
+  revisitBaseUpSameDay: Fact<boolean>;
+  /** 同じことを物価対応料について確かめたか（R15 だけが読む） */
+  revisitPriceSameDay: Fact<boolean>;
 };
+
+/** 施設の設定の値の出どころ（ClaimContext.facilityBasis） */
+export type FacilityBasis = "declaration" | "case" | "config";
+
+/** 三値で持つ施設の設定のキー（不明なら、それに依存するルールは情報不足になる。design.md §2-7） */
+export type FacilityFactKey = "grade" | "dxTier" | "baseUp" | "priceResponse" | "note16Met" | "building" | "note14" | "revisitBaseUpSameDay" | "revisitPriceSameDay";
+
+/** 患者の居住の場所。管理料の族（在医総管／施設総管）を決める */
+export type Residence = "居宅" | "施設入居等";
 
 export type Facts = {
   age: Fact<number>;
@@ -27,6 +74,14 @@ export type Facts = {
   table7: Fact<boolean>;
   /** 別表第八の二に該当（重症区分） */
   table8_2: Fact<boolean>;
+  /** 障害支援区分（0＝認定なし、1〜6）。R03・D04 が読む。医療事務が受給者証・カルテで確かめる（design.md §11-4） */
+  disabilitySupportLevel: Fact<number>;
+  /**
+   * 要介護度と障害支援区分のほかに、別表第八の三（包括的支援加算の対象）のどれかの状態に当たるか。R03・D04 が読む。
+   * 認知症高齢者の日常生活自立度 Ⅲ 以上、週 1 回以上の訪問看護、訪問診療・訪問看護での処置、
+   * 看護職員が配置された施設での処置、麻薬の投薬、その他（EM R8-15a の (2)〜(7)）。要介護 3 以上は careLevel、障害支援区分 2 以上は disabilitySupportLevel で見る
+   */
+  table8_3Other: Fact<boolean>;
   mainDisease: Fact<string>;
   homeOxygen: Fact<boolean>;
   /** 看取りの場所（"在宅" など。死亡がない月は null） */
@@ -37,21 +92,83 @@ export type Facts = {
   acuteExacerbation: Fact<boolean>;
   /** 緊急往診加算の対象患者か（自院で訪問診療中の患者等） */
   emergencyEligible: Fact<boolean>;
+  /** 居住の場所（R16）。医療事務が確かめる */
+  residence: Fact<Residence>;
+  /** 24 時間対応の体制の連絡担当者・往診担当医などを、文書でその患者に提供しているか（R10） */
+  contactDocProvided: Fact<boolean>;
+  /**
+   * 同じ日の訪問診療と往診が、別々の診療かを確かめた答え（日付 → 真偽）。載っていない日は不明。
+   * 役目は、実施の回数を数える（R09）ことと、1 回の診療かを見る（R10 の same_encounter）ことだけ。往診料を立てる条件は sameDayOushinAfterVisit で見る（design.md §11-5）
+   */
+  sameDaySeparate: Fact<Record<string, boolean>>;
+  /** その日、訪問診療のあとに、病状の急変などで往診したか（日付 → 真偽）。載っていない日は不明。同じ日の往診料を立てる条件（R10・D02。EM #7-8 改） */
+  sameDayOushinAfterVisit: Fact<Record<string, boolean>>;
+  /** 退院時共同指導料1 を算定したか。在宅ターミナルケア加算の別の経路（R09・D12。EM #7-11）。医療事務が確かめる */
+  dischargeJointGuidance: Fact<boolean>;
+  /** その日の処方が、向精神薬（不安・不眠の薬）の 1 年以上の継続処方に当たるか（処方の日付 → 真偽）。載っていない日は不明（R07・D10。EM #7-15）。医師が確かめる */
+  rxLongPsychotropic: Fact<Record<string, boolean>>;
+  /** 外来迅速検体検査加算について、当日中に結果を説明し文書で提供した記録があるか（R11） */
+  rapidSameDayDocumented: Fact<boolean>;
+  /** 管理料（在医総管・施設総管）を算定する患者か（計画的な医学管理を行っているか）。導出の D03 だけが読む。医療事務が確かめる（design.md §2-8・L-17） */
+  comprehensiveCare: Fact<boolean>;
+  /**
+   * 単一建物診療患者の人数の区分（その診療年月で効く、患者ごとの値。design.md §15-4）。医療事務が入れる「みなしを当てたあとの、請求に使う区分」（V-3）。
+   * 施設の申告 building が none のときは使わない（どの患者も 1 人の区分）。持たない請求（同梱の症例・練習問題）は「分からない」
+   */
+  buildingBand?: Fact<BuildingBand>;
+  /**
+   * 住まいの種別（design.md §18-2。判断 B）。医療事務が確かめた申告（追記だけの表）の、その診療年月に効く値。申告がない請求は持たない。
+   * 2 値の residence はここから導く（自宅→居宅、有料・サ高住・特定施設・GH・特養など→施設入居等、老健・介護医療院・養護〔それ以外〕→2 値に当たらない）
+   */
+  residenceType?: Fact<ResidenceType>;
+  /**
+   * 月の途中で要介護度が変わり、区間で値が違う月か（design.md §18-12 の 4）。真なら careLevel は R03 の境が同じときの月の終わりの値で、
+   * R17 の包括的支援加算の状態の記載は比べない。持たない請求は偽
+   */
+  careLevelMixed?: Fact<boolean>;
+  /** 末期の悪性腫瘍か（医師に確かめる事実。患者ごとに続く。期限なし。design.md §18-4。判断 H）。持たない請求は「分からない」 */
+  terminalCancer?: Fact<boolean>;
 };
 
 export type FactKey = keyof Facts;
+/** ルールが要る入力：患者の事実か、施設の設定（"facility.<key>"） */
+export type NeedKey = FactKey | `facility.${FacilityFactKey}`;
 
 export type ClaimEvent =
   | { type: "visit"; date: string; sameBuildingCount: number }
   | { type: "oushin"; date: string; kind: "normal" | "emergency" }
   | { type: "test"; date: string; items: string[] }
-  | { type: "prescription"; date: string; oralKinds: number; days: number }
+  /**
+   * oralKinds：F200 注3 の数え方で数えた、常態として投与する内服薬の種類数（EM #7-14）。数えるのは入力する側で、エンジンは数え方（薬価・臨時の投薬）を適用しない。
+   * psychotropic：その処方に、処方箋料の区分 2 の対象になる不安・不眠の薬が含まれるか（EM #7-15）。null は「分からない」で、「含まれない」とはみなさない
+   */
+  | { type: "prescription"; date: string; oralKinds: number; days: number; psychotropic: boolean | null }
   | { type: "death"; date: string }
   | { type: "discharge"; date: string }
-  /** 在医総管の算定開始月（"YYYY-MM"） */
+  /** 管理料（在医総管・施設総管）の算定開始月（"YYYY-MM"） */
   | { type: "kanriStart"; month: string };
 
 export type ClaimLine = { kubun: string; count: number; dates: string[] };
+
+/** 摘要欄のコメント（design.md §11-13） */
+export type Comment = {
+  /** 9 桁のコメントコード */
+  code: string;
+  /** 文字データ。全角の数字・記号を半角に寄せたもの */
+  text: string;
+  /** 文字データの原文 */
+  raw: string;
+  /**
+   * 同じ点数・回数の算定単位にある行の区分。埋めるのは、帰属が記録の形式から決まるコメントだけ（診療行為のレコードのコメント欄と、単位の途中にある診療識別が空の CO）。
+   * レセプト全体へのコメントと、単位の前後に置かれたコメント（どの単位に掛かるかが形式から決まらない）は空
+   */
+  on: string[];
+  /**
+   * コメントの通し番号（取り込んだレセプトの UkeClaim.comments の添字。取り込んだレセプトのコメントだけ）。R17 の指摘がどのコメントについてかを示し、
+   * データで動く点検の記載の形の指摘とコメント 1 つの単位で重ねる（design.md §17-3。X-321・X-330：SI のコメント枠 3 つは同じ行番号を持つので、行番号では分けられない）
+   */
+  seq?: number;
+};
 
 export type ClaimContext = {
   claimId: string;
@@ -61,27 +178,84 @@ export type ClaimContext = {
   prefecture: string;
   facts: Facts;
   events: ClaimEvent[];
+  /**
+   * カルテ側の記録（出来事）があるか。偽の請求（見本以外の UKE）では、空の出来事を「なかった」と読まない：
+   * 出来事を読んで決める指摘（Rule.recordFindings）は出さず、情報不足（chartRecord）を返す（design.md §11-6）
+   */
+  recordsKnown: boolean;
   lines: ClaimLine[];
-  /** 摘要コメント（UKE の CO レコードから F4 が作る。コードは架空）。載っていないものは「なかった」 */
-  comments?: { kubun: string; code: string }[];
+  /** 摘要欄のコメント（UKE のコメント欄と CO レコードから作る）。commentsKnown が真なら、載っていないものは「なかった」 */
+  comments?: Comment[];
+  /**
+   * コメントを持つ作り方の請求か（design.md §11-13）。UKE から作った請求は真。
+   * コメントを持たない作り方（練習問題・選択モード・同梱の症例の JSON・カルテからの下書き・コメントの載らない連携）は偽で、空のコメントを「なかった」と読まない
+   */
+  commentsKnown: boolean;
+  /**
+   * 点検の対象外の単位（引けないコードを含む算定単位）が 1 つ以上ある請求か（design.md §11-11）。真の請求では、lines は請求の一部でしかない：
+   * ほかの行の有無や回数で決まる指摘は当てにならないので、evaluate は Rule.soundWhenPartial に申告のある種類の指摘だけを出し、合計を出さない。省くと偽
+   */
+  partial?: boolean;
+  /**
+   * 対象外の単位のコードを、基本マスターで引いたもの（design.md §12-4）。基本マスターがある請求だけが持つ（引くのは呼び出し側。エンジンは DB を開かない）。
+   * 持つ請求では、止めるかどうかをルールごとに決める（src/engine/index.ts の partialBy）。持たない請求は、対象外の単位が 1 つでもあれば、どのルールも止める（v23 のまま）
+   */
+  outside?: Outside;
+  /**
+   * 施設の設定の値ごとの出どころ（design.md §15-4。round-51 C-251）：declaration＝施設の申告／case＝症例ごとの上書き／config＝設定ファイル・設定の画面。
+   * 載っていない値は declaration でないとして扱う（エンジンの単体テストで facility を直接渡すときは省く）。
+   * 「申告だけを根拠に点数の高い区分へ直さない」決まりは、出どころが declaration の値にだけ掛ける
+   */
+  facilityBasis?: Partial<Record<FacilityFactKey, FacilityBasis>>;
+  /**
+   * 前の月の当院の請求に訪問診療料(Ⅰ)1 の行があったか（R09 の (Ⅰ)2 だけの月の加算。EM §2-14 W-120・U-72）。前の月の請求を取り込んでいなければ null。持たない請求も null として扱う
+   */
+  prevMonthVisit1?: boolean | null;
+  /** 介護保険との調整の申告（診療年月に効く申告から作る。design.md §18-3）。ない請求は申告なし（R20 の場面は「見ていません」） */
+  care?: CareFacts;
+  /** ほかの機関の申告（design.md §18-4）。ない請求は申告なし（R21 の場面は「見ていません」） */
+  others?: OtherFacts;
   /** 過去月の算定（設定ファイルの固定値。spec 決定62）。載っていない月は「算定なし」 */
   history?: { yearMonth: string; kubun: string[] }[];
 };
 
-export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "情報不足";
+/**
+ * 対象外の単位にあるコード 1 つ。known は、診療年月に使う 1 枚のマスター（医科診療行為・医薬品・特定器材のどれか）にあるか。
+ * no は区分番号の鍵（医科診療行為マスターのコード表用番号の「章/部/区分番号」。枝番・項番は入れない）。医薬品・特定器材と、マスターにないコードは null
+ */
+export type OutsideCode = { code: string; known: boolean; no: string | null };
+
+/** codes は対象外の単位のコード（重複は除く）。noOf は、版の区分 → その区分のコード（primary。包括の検査は項目）の区分番号の鍵。マスターで引けなかった区分は載らない */
+export type Outside = { codes: OutsideCode[]; noOf: Record<string, string[]> };
+
+/** 「記載もれ」は摘要欄の記載（R17）。宛先は医療事務で、点数は付かない（design.md §11-13） */
+export type FindingKind = "不一致" | "背反" | "取り忘れ" | "区分誤り" | "要件不足" | "記載もれ" | "情報不足";
 
 export type Finding = {
   ruleId: string;
   kind: FindingKind;
   lineRefs: string[];
-  missing?: { target: "doctor" | "clerk"; field: string };
+  /** 情報不足のとき。施設の設定は field が "facility.<key>"。"rxRecord" は、その日の処方の記録と行の対応がとれないこと、"chartRecord" は、カルテ側の記録がない請求であること、"unsupportedLines" は、点検の対象外の行がある請求（partial）で決められない指摘があること（どれも事実のキーではなく、入力では消えない）。date は日付ごとの事実（sameDaySeparate など）と rxRecord の対象の日 */
+  missing?: { target: "doctor" | "clerk"; field: string; date?: string };
   messageKey: string;
+  /** 文言に埋める値（R17：何の記載か、足りない日・多い日） */
+  params?: Record<string, string>;
   reference: string;
+  /**
+   * その指摘が関わる算定日（内部の欄で、文には出さない。design.md §15-8。round-52 C-260・round-53 C-272）。
+   * 日・週で決まる指摘を出す R10・R13 だけが入れる。G11 が添え書きを関わる日の候補だけに付けるのに使う
+   */
+  days?: string[];
 };
 
 export type EngineResult = {
   claimId: string;
+  /** 判定に使った版 */
+  revisionId: string;
+  /** 点数未収載の行、点検の対象外の単位（partial）があれば null */
   total: number | null;
+  /** 点検の対象外の単位がある請求（partial）でだけ持つ：点検した行の小計（請求の合計ではない。点数未収載の行があれば null） */
+  subtotal?: number | null;
   byLine: { kubun: string; points: number | null }[];
   findings: Finding[];
   /** appliesTo が真だったルール ID（違反の有無によらない。X-3） */
@@ -93,8 +267,33 @@ export type Rule = {
   /** 対象区分（§4-4 で「関係あり」の判定に使う。C-6） */
   kubun: string[];
   reference: string;
+  /**
+   * このルールの指摘の種類（messageKey の「ルール id.」より後ろ）のうち、出来事を読んで決めるもの。
+   * カルテ側の記録がない請求（recordsKnown が偽）では、evaluate がこの種類の指摘を捨て、情報不足（chartRecord）を 1 件返す（design.md §11-6）
+   */
+  recordFindings: string[];
+  /**
+   * このルールの指摘の種類のうち、いまある行と確かめた事実だけから言えるもの（許可の一覧。design.md §11-11）。
+   * 点検の対象外の単位がある請求（partial）では、evaluate がここにない種類の指摘を捨て、情報不足（unsupportedLines）を 1 件返す。
+   * 申告のない種類は出ない（申告漏れは見逃しに倒れ、誤った指摘には倒れない）。申告が正しいことは tests/engine/partial.test.ts が縛る
+   */
+  soundWhenPartial: string[];
+  /**
+   * このルールが「あるか・ないか・何回か・どの日か」を見る区分（design.md §12-4）。kubun を含み、述語を通して読む区分（訪問診療料の回数・往診料の日など）も全部挙げる。
+   * 基本マスターがある請求では、対象外の単位に、ここの区分と同じ区分番号のコード（か、マスターにないコード）があるときだけ、このルールを partial として扱う。
+   * 申告のないルールは、対象外の単位が 1 つでもあれば止める（v23 のまま）。申告が足りていることは tests/engine/reads.test.ts が縛る
+   */
+  reads?(rev: Revision): string[];
+  /**
+   * このルールが「判定する」と申告する組（design.md §12-2。データで動く点検との重なりを、src/generic/overlap.ts が決めるのに使う）。
+   * kind は、データで動く点検の種類（包括・背反・回数・記載もれ・傷病名）。finding は、その組が当たるときにこのルールが出す指摘の種類（messageKey の「ルール id.」より後ろ）。
+   * kubun は組の一覧：包括・背反は 2 つの区分の組、回数・記載もれ・傷病名は 1 つの区分。判定そのものは変えない（申告だけ）。申告と電子点数表の行の対応は tests/generic/overlap-real.test.ts が確かめる
+   */
+  covers?(rev: Revision): { kind: "包括" | "背反" | "回数" | "記載もれ" | "傷病名"; finding: string; kubun: string[][] };
   appliesTo(ctx: ClaimContext): boolean;
   /** 判定に必要な事実。known=false があれば check を呼ばず「情報不足」 */
-  needs(ctx: ClaimContext): FactKey[];
+  needs(ctx: ClaimContext): NeedKey[];
+  /** needs の情報不足が関わる算定日（R13：上限を超えた週の訪問診療料の算定日。design.md §15-8 C-272）。持たないルールは日を持たない */
+  needDays?(ctx: ClaimContext): string[];
   check(ctx: ClaimContext): Finding[];
 };

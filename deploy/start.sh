@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # レセメンを起動する（VM の上で実行する。spec FR-74）。
-# API キーは Secret Manager から読み出し、この起動のあいだだけ環境変数で渡す。キーをファイルに書かない。
+# API キーと保存時の暗号化の鍵は Secret Manager から読み出し、この起動のあいだだけ環境変数で渡す。キーをファイルに書かない。
 # VM のサービスアカウントに、各シークレットの「Secret Manager のシークレット アクセサー」権限が要る（docs/deploy-gcp.md）
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -18,7 +18,13 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
 fi
 # 音声（ElevenLabs）は任意。シークレットがなければ空のまま
 ELEVENLABS_API_KEY="$(secret resemen-elevenlabs-api-key)"
+# 保存時の暗号化の鍵（spec FR-215。必須）。なければ起動しない（作り方と控え方は docs/deploy-gcp.md「保存時の暗号化」）
+RESEMEN_DATA_KEY="$(secret resemen-data-key)"
+if [ -z "$RESEMEN_DATA_KEY" ]; then
+  echo "Secret Manager の resemen-data-key を読めません（docs/deploy-gcp.md「保存時の暗号化」の手順で作ってください）" >&2
+  exit 1
+fi
 
-export RESEMEN_DOMAIN ANTHROPIC_API_KEY ELEVENLABS_API_KEY
+export RESEMEN_DOMAIN ANTHROPIC_API_KEY ELEVENLABS_API_KEY RESEMEN_DATA_KEY
 docker compose up -d --build "$@"
 echo "起動しました：https://${RESEMEN_DOMAIN}"

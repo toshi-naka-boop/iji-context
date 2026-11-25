@@ -1,10 +1,12 @@
-// API Route：ベテラン本人の回答（知識候補になる）
-import { body, authed } from "../../../../../src/server/http";
+// API Route：ベテラン本人の回答（知識候補になる）。答えるのはベテランロールの本人。監査ログの対象は問いの id（回答の本文は入れない）
+import { route } from "../../../../../src/server/http";
 import { getApp } from "../../../../../src/server/instance";
+import { allow } from "../../../../../src/server/policy";
+import { peerAnswerBody, peerParams } from "../../../../../src/server/schemas/peer";
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  return authed(req, async () => getApp().peerAnswerByHuman((await ctx.params).id, (await body<{ answer: string }>(req)).answer));
-}
+export const POST = route({ roles: allow("POST /api/peer/[id]/answer"), params: peerParams, body: peerAnswerBody }, ({ params, body }) =>
+  getApp().peerAnswerByHuman(params.id, body.answer),
+);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

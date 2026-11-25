@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import levels from "../../config/levels.json";
 import { checkDraft, confirm, finish, levelOf, myStatus, score, startQuestion, toExplanation, type Question } from "../../src/practice/practice";
 import { loadCase, without } from "../engine/helpers";
+import { claimId, YM } from "../helpers/period";
 
-const T = (d: string, h = "09") => `2025-03-${d}T${h}:00:00+09:00`;
+const T = (d: string, h = "09") => `${YM}-${d}T${h}:00:00+09:00`;
 const th = levels.thresholds;
 
 /** 1 問を最後まで進める */
@@ -43,7 +44,7 @@ describe("1 問の流れ（FR-28）", () => {
   });
 
   it("別の請求で確定・下書きはできない", () => {
-    const q = startQuestion("q", "c1", "K1-2025-03", T("10"));
+    const q = startQuestion("q", "c1", claimId("K1"), T("10"));
     expect(() => confirm(q, loadCase("K2"), T("10"))).toThrow(/別の請求/);
   });
 });

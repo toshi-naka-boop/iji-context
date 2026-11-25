@@ -2,32 +2,33 @@
   "id": "system/r01",
   "layer": "制度",
   "status": "承認済み",
-  "summary": "R01：在医総管の区分は同月の訪問診療の算定回数で決まる。訪問診療のない月の在医総管は算定できない",
-  "rev": "274bb7d52ee8",
+  "summary": "R01：管理料（在宅時医学総合管理料・施設入居時等医学総合管理料）の区分は、同じ月に算定した訪問診療料の回数で決まる。訪問診療料のない月は算定できない。注16 の基準を満たさない施設は、月 2 回以上でも月 1 回の区分（2ニ）で算定する（重症区分は除く）",
+  "rev": "b0d6e1690889",
   "polarity": "allow",
   "matchApprox": false,
   "conditionNote": null,
   "source_event": {
     "type": "初期投入",
     "ref": "design.md §2-3 R01",
-    "at": "2025-03-01T00:00:00+09:00"
+    "at": "2026-10-01T00:00:00+09:00"
   },
   "relates_to": null,
-  "valid_from": "2025-03-01T00:00:00+09:00",
+  "valid_from": "2026-10-01T00:00:00+09:00",
   "review_by": null,
   "hits": 0,
   "misses": 0,
   "last_hit_at": null,
   "last_used_at": null,
-  "status_since": "2025-03-01T00:00:00+09:00",
+  "status_since": "2026-10-01T00:00:00+09:00",
   "retired_reason": null,
   "empathy": 0,
+  "official_seen": [],
   "match": {
     "ruleId": "R01"
   },
   "history": [
     {
-      "at": "2025-03-01T00:00:00+09:00",
+      "at": "2026-10-01T00:00:00+09:00",
       "from": "",
       "to": "承認済み",
       "event": "CREATE",

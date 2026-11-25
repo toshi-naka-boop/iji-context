@@ -7,6 +7,8 @@ import { applyEvent, createKnowledge, listKnowledge, readKnowledge, type CreateI
 import { evaluateTriggers } from "../../src/lifecycle/triggers";
 import type { Calendar } from "../../src/lifecycle/calendar";
 import type { Layer, SourceType } from "../../src/lifecycle/types";
+import { isKnownKubun } from "../../src/engine/revisions";
+import { openApp, storeOptionsOf } from "../../src/server/app";
 
 /** 改選日が来ない設定（idle だけを見る） */
 const CAL: Calendar = { revision: { parity: "even", monthDay: "06-01" }, shiharaiKikin: { parity: "odd", monthDay: "06-01" }, kokuhoren: { 東京都: null } };
@@ -77,12 +79,12 @@ describe("層×生成元（§4-1）", () => {
     expect(defaultPolarity("院内", "手動")).toBe("allow");
   });
 
-  it("層ごとに効くトリガー（FR-66）", () => {
+  it("層ごとに効くトリガー（FR-66）。official（④ 公的文書）は v22 で足した列で、既存の 3 列の値は変えない", () => {
     expect(LAYER_TRIGGERS).toEqual({
-      制度: { revision: true, reappointment: false, idle: false },
-      地域: { revision: false, reappointment: true, idle: true },
-      ベテラン: { revision: false, reappointment: false, idle: true },
-      院内: { revision: false, reappointment: false, idle: true },
+      制度: { revision: true, reappointment: false, idle: false, official: false, localRevision: false, localReturn: false },
+      地域: { revision: false, reappointment: true, idle: true, official: true, localRevision: false, localReturn: false },
+      ベテラン: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
+      院内: { revision: false, reappointment: false, idle: true, official: true, localRevision: false, localReturn: false },
     });
   });
 });
@@ -191,5 +193,35 @@ describe("§7 #6：USED と idle（round-5 C-23・round-6 C-32）", () => {
     const b = createKnowledge(opts, regional({ slug: "p2", polarity: "allow" }), NOW);
     const c = createKnowledge(opts, regional({ slug: "p3", matchApprox: true, conditionNote: "条件" }), NOW);
     expect(new Set([a.rev, b.rev, c.rev]).size).toBe(3);
+  });
+});
+
+// design.md §3・§7 #6：区分のキーの検査（任意の knownKubun）。渡さない store は、表にない区分名でも拒否しない
+describe("区分のキーの検査（knownKubun）", () => {
+  const checked = (): StoreOptions => ({ ...opts, knownKubun: isKnownKubun });
+  it("渡さない store は、表にない区分名（C001 など）でも作れる", () => {
+    expect(createKnowledge(opts, regional(), NOW).match.kubunAll).toEqual(["C001"]);
+  });
+  it("渡した store は、kubunAll・commentOn・consecutiveMonths に表にない区分を持つ知識を拒否する", () => {
+    const ok = { kubunAll: ["C001_1I"], payer: "支払基金" as const, prefecture: "東京都" };
+    expect(() => createKnowledge(checked(), regional({ match: { ...ok, kubunAll: ["XXXX"] } }), NOW)).toThrow(/区分の表にない: XXXX/);
+    expect(() => createKnowledge(checked(), regional({ match: { ...ok, commentOn: [{ kubun: "XXXX", present: true }] } }), NOW)).toThrow(/区分の表にない: XXXX/);
+    expect(() => createKnowledge(checked(), regional({ match: { ...ok, consecutiveMonths: { kubun: "XXXX", min: 2 } } }), NOW)).toThrow(/区分の表にない: XXXX/);
+    expect(listKnowledge(opts)).toEqual([]);
+    const made = createKnowledge(checked(), regional({ match: { ...ok, commentOn: [{ kubun: "D008_19", present: false }], consecutiveMonths: { kubun: "D008_19", min: 2 } } }), NOW);
+    expect(made.match.kubunAll).toEqual(["C001_1I"]);
+  });
+  it("本番の配線が作る StoreOptions は knownKubun を持つ（アプリ層と、クリニックを開く処理の両方）", () => {
+    const paths = { root: path.join(__dirname, "..", ".."), dbFile: path.join(root, "app.db"), knowledgeDir: path.join(root, "knowledge"), skillsDir: path.join(root, "skills"), queryLogDir: path.join(root, "query-log") };
+    const wired = storeOptionsOf(paths);
+    expect(wired.knownKubun?.("D008_19")).toBe(true);
+    expect(wired.knownKubun?.("XXXX")).toBe(false);
+    const app = openApp(paths);
+    expect(app.store.knownKubun).toBe(isKnownKubun);
+    app.close();
+    // クリニックを開く処理（src/server/instance.ts）も、同じ関数で StoreOptions を作る
+    const src = readFileSync(path.join(__dirname, "..", "..", "src", "server", "instance.ts"), "utf8");
+    expect(src).toContain("const store = storeOptionsOf(paths, kind);");
+    expect(src).not.toMatch(/const store = \{ knowledgeDir/);
   });
 });

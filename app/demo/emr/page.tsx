@@ -4,8 +4,9 @@ import PATIENTS from "../../../fixtures/uke/patients.json";
 import CASE from "../../../fixtures/cases/K4.json";
 import CHART from "../../../fixtures/charts/K4.json";
 import SAMPLES from "../../../fixtures/charts/samples.json";
+import { claimIdOf } from "../../../src/demo/period";
 
-const ID = "K4-2025-03";
+const ID = claimIdOf("K4");
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
 
 export default function DemoEmr() {
@@ -13,9 +14,10 @@ export default function DemoEmr() {
   const age = CASE.facts.age.known ? CASE.facts.age.value : null;
   const ins = CASE.facts.insurance.known ? CASE.facts.insurance.value : "";
   const ratio = CASE.facts.burdenRatio.known ? `${Math.round(Number(CASE.facts.burdenRatio.value) * 10)}割` : "";
-  const today = "2025-03-25";
+  // 今日は、合成カルテの最後の訪問日
+  const today = CHART.entries[CHART.entries.length - 1].date;
   const past = CHART.entries.filter((e) => e.date < today);
-  const record = SAMPLES[ID].complete.split("。").filter(Boolean).map((x) => `${x}。`);
+  const record = (SAMPLES as unknown as Record<string, { complete: string }>)[ID].complete.split("。").filter(Boolean).map((x) => `${x}。`);
   return (
     <main className="emr">
       <div className="emr-banner">架空の電子カルテ（デモ用）・合成データ</div>

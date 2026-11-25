@@ -1,711 +1,241 @@
 // 画面から呼ぶ処理をまとめた層（API Route はここを薄く呼ぶだけ）。データは SQLite と、knowledge/・query-log/ のファイル
 // 決定的な処理（エンジン・ライフサイクル・医師確認・処理体験）を組み合わせるだけで、ここで新しい判定はしない
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { CREATE_SQL } from "../db/schema";
-import { evaluate, ruleKubun } from "../engine";
-import type { ClaimContext, ClaimLine, Facility } from "../engine/types";
-import { importResult, type SubmissionResult } from "../lifecycle/applications";
-import type { Calendar } from "../lifecycle/calendar";
-import { answerItem, buildDigest, dueMeeting, meetingReview, submit, type ReviewDeps } from "../lifecycle/review";
-import { assertTime } from "../lifecycle/time";
-import { answerQuery, approveQuery, listQueries, tickQueries, type BusinessDays, type QueryLog } from "../query/doctor-query";
-import { checkDraft, confirm, finish, myStatus, startQuestion, toExplanation, type Mode, type Question } from "../practice/practice";
-import { choiceItems, judgePick, type ChoiceGroup } from "../practice/choice";
-import { managerReport, personalView, preventedOf } from "../prevented/prevented";
-import { toClaimContext, type UkeSources } from "../uke/cases";
-import { candidateOf, resolveNotice, type Notice } from "../notice/notice";
-import { crosscheck, type Chart } from "../uke/crosscheck";
-import { escalationCandidate } from "../mentor/peer";
-import { proxyConfirmDraft, type ScribeResult } from "../mentor/scribe";
-import { verificationQueue } from "../lifecycle/queue";
-import { matchState } from "../lifecycle/match";
-import { seedLocalRules as seedInHouse } from "../lifecycle/seed-local";
-import { IDLE_DAYS } from "../lifecycle/layers";
-import { applyEvent, createKnowledge, listKnowledge, readBody } from "../lifecycle/store";
-import type { UkePatient } from "../uke/types";
-import { askMissing } from "../query/doctor-query";
-import { existsSync } from "node:fs";
-import { parseUke } from "../uke/uke";
-import { validateStyle, type Style } from "../mentor/style";
-import { drillList, drillOf } from "../practice/drills";
-import { answerValue, askField, doctorDrillList, doctorDrillOf, factQueryDraft, FACT_QUESTIONS, isDoctorDrill, withAnswer } from "../practice/doctor-drills";
-import { contextAsOf, deferAtMidMonth, outlook, visitDays } from "../visit/as-of";
-import { validateFacts, type ChartNote, type ExtractedFact } from "../chart/extract";
-import { chartWithNotes, withNotes, type ConfirmedNote, type VisitKind } from "../chart/notes";
-import { applyPatientFacts, isExpired, patientKeyOf, validatePatientFact, type PatientFact, type PatientFactInput } from "../patient/facts";
+// 中身は src/server/app/ に領域ごとに分けてある。ここは組み立てと再 export だけ
+import { askShortStay, createCare, type CareHomeInput, type CareInput, type OtherInput } from "./app/care";
+import { careScopeNotes, hasCareScene, hasOthersScene } from "../engine/care-judge";
+import { kanriLines } from "../engine/predicates";
+import { careStateOf, certifiedOf } from "../patient/facts";
+import { monthRange } from "../demo/period";
+import { createCases } from "./app/cases";
+import { createClaimFacts } from "./app/claim-facts";
+import { createClaimReviews } from "./app/claim-reviews";
+import { createPremiseChecks } from "./app/premise-checks";
+import type { PremiseOutcome } from "../uke/premise";
+import { createClerks } from "./app/clerks";
+import { createClock } from "./app/clock";
+import { openContext, type AppPaths } from "./app/context";
+import type { TenantStatus } from "./tenant-kind";
+import { createDoctor } from "./app/doctor";
+import { createDoctorFacts } from "./app/doctor-facts";
+import { createErase } from "./app/erase";
+import { createFacility, declarationViewOf } from "./app/facility";
+import { createNote14 } from "./app/note14";
+import { createOxygenPrices, readOxygenPrices, type OxygenPriceInput } from "./app/oxygen";
+import { HOME_OXYGEN_KANRI } from "../generic/g12";
+import type { GenericAboutMore } from "../generic/types";
+import { createKnowledgeOps } from "./app/knowledge";
+import { createLocalPairOps, createLocalPairs } from "./app/local-pairs";
+import { samePair } from "../generic/local-pair";
+import type { GenericView } from "../generic/view";
+import { createMeeting } from "./app/meeting";
+import { createNotes } from "./app/notes";
+import { createPatients, type CoverageInput } from "./app/patients";
+import { createPeer } from "./app/peer";
+import { createPrevented } from "./app/prevented";
+import { createQuestionCase } from "./app/question-case";
+import { createQuestions } from "./app/questions";
+import { createReview } from "./app/review";
+import { createRevision } from "./app/revision";
+import { createStructured } from "./app/structured";
+import { createUke } from "./app/uke";
+import { createUkeCheck, type TorikawasureOf } from "./app/uke-check";
+import { createUkeSummary } from "./app/uke-summary";
+import { claimOfLines } from "../generic/overlap";
+import { resolveRevision } from "../engine/revisions";
+import { createAudit } from "./audit";
+import { createDailyCounter } from "./rate-limit";
+import { sqliteSessionStore } from "../llm/session-store";
 
-export type AppPaths = { root: string; dbFile: string; knowledgeDir: string; skillsDir: string; queryLogDir: string };
+export { cleanName } from "./app/clerks";
+export { DEFAULT_NOW } from "./app/clock";
+export { defaultPaths, reviewDepsOf, storeOptionsOf, type AppPaths } from "./app/context";
 
-export function defaultPaths(root = process.cwd()): AppPaths {
-  return {
-    root,
-    dbFile: path.join(root, "data", "resemen.db"),
-    knowledgeDir: path.join(root, "knowledge"),
-    skillsDir: path.join(root, ".claude", "skills"),
-    queryLogDir: path.join(root, "query-log"),
-  };
-}
+export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?: string | null } = {}) {
+  const ctx = openContext(paths, opts);
+  const { sqlite, deps, store, queryLog, dataset, setting, setSetting } = ctx;
+  const clock = createClock(ctx);
+  const clerks = createClerks(ctx);
+  const uke = createUke(ctx, clerks);
+  const patientFactsOf = createPatients(ctx, clock, clerks, uke);
+  const claimFactsOf = createClaimFacts(ctx, clock, clerks, uke);
+  // 介護保険・ほかの医療機関との調整の申告（design.md §18-2。v37）
+  const care = createCare(ctx, clock, clerks);
+  // 届け出た酸素の単価（design.md §19-3。v44）
+  const oxygen = createOxygenPrices(ctx, clock, clerks);
+  const casesOf = createCases(ctx, clock, uke, patientFactsOf, claimFactsOf, care);
+  const structured = createStructured(ctx, clock, uke, patientFactsOf, clerks);
+  const notes = createNotes(ctx, clock, clerks, uke, casesOf, structured);
+  const doctor = createDoctor(ctx, clock, uke, casesOf, notes);
+  const questionCase = createQuestionCase(casesOf, notes, doctor);
+  // 実在用のクリニックでは、取り込んだレセプトの点検で確かめた請求も F10 の処理件数に数える（design.md §14-3・段 17g）
+  const claimReviews = createClaimReviews(ctx, clock, () => new Map(uke.ukeReceipts().map((r) => [r.claimId, uke.sameMonthKey(r)])));
+  const questions = createQuestions(ctx, clock, clerks, casesOf, notes, doctor, questionCase, claimReviews.countOf);
+  // 条件つきの指摘の「前提を確かめた」（採点 r4 医療事務課長 P1-1）。全件の一覧の残りから外す
+  const premiseChecks = createPremiseChecks(ctx, clock, clerks);
+  const peer = createPeer(ctx, clock);
+  const knowledge = createKnowledgeOps(ctx, clock, uke, questionCase, questions);
+  const localPairs = createLocalPairs(ctx, questions);
+  // 略語を必ず医師確認に回すかは、事務のレベルで決める（FR-211 辞書方式の決め 3。今のレベルの仕組み）
+  notes.setLevelOf(localPairs.levelOf);
+  const meeting = createMeeting(ctx, clock);
+  const erase = createErase(ctx, uke, patientFactsOf);
+  const revision = createRevision(uke, casesOf, notes);
+  // 医師への問いに添える引用（採点 r2 医療事務課長 P1）：合成カルテと、取り込んだ請求に貼って確かめたカルテ（書いた人によらない）
+  const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf, (claimId) => {
+    const base = notes.chartOf(claimId);
+    const records = notes.recordEntries(claimId);
+    if (!base && records.length === 0) return null;
+    return { entries: [...(base?.entries ?? []), ...records].sort((a, b) => (a.date < b.date ? -1 : 1)), prescriptions: base?.prescriptions ?? [] };
+  }, (claimId) => {
+    // 医師の画面に出す患者の表示（採点 r3 医療事務課長 #1）。AI には送らない
+    const r = uke.ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
+    return r ? { patient: r.patient, patientNo: r.patientNo || null } : null;
+  });
+  const facility = createFacility(ctx, clock, uke);
+  const note14 = createNote14(ctx, clock, uke, patientFactsOf);
 
-const APP_SQL = `
-CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS clerks (id TEXT PRIMARY KEY, name TEXT NOT NULL, call_name TEXT NOT NULL, character_id TEXT NOT NULL, role TEXT NOT NULL, session_id TEXT);
-CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, clerk_id TEXT NOT NULL, claim_id TEXT NOT NULL, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS chart_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL, note TEXT NOT NULL, facts TEXT, clerk_id TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS patient_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_key TEXT NOT NULL, fact_key TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, valid_until TEXT, checked_at TEXT NOT NULL, checked_by TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS peer_questions (id TEXT PRIMARY KEY, from_clerk TEXT NOT NULL, question TEXT NOT NULL, status TEXT NOT NULL, answer TEXT, answered_by TEXT, knowledge_id TEXT, created_at TEXT NOT NULL, answered_at TEXT);
-`;
-
-/** デモの時計の初期値（合成レセプトの診療年月の中） */
-export const DEFAULT_NOW = "2025-03-10T09:00:00+09:00";
-
-const json = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
-
-/** 本人が決めた名前を検査する（1〜20 文字。改行・制御文字と、指示の書式に使われる記号は受け付けない） */
-export function cleanName(raw: string): string {
-  const n = raw.trim();
-  if (n.length < 1 || n.length > 20) throw new Error("名前は 1〜20 文字で入れてください");
-  if (/[\u0000-\u001f\u007f#`<>{}[\]|\\*_]/.test(n)) throw new Error("名前に使えない文字があります");
-  return n;
-}
-
-export function openApp(paths: AppPaths) {
-  const sqlite = new Database(paths.dbFile);
-  sqlite.exec(CREATE_SQL);
-  sqlite.exec(APP_SQL);
-  const db = drizzle(sqlite);
-  const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
-  const queryLog: QueryLog = { dir: paths.queryLogDir };
-  const cfg = (f: string) => path.join(paths.root, "config", f);
-  const calendar = json<Calendar>(cfg("calendar.json"));
-  const businessDays = json<BusinessDays>(cfg("business-days.json"));
-  const levelCfg = json<{ thresholds: number[]; choiceWeight?: number }>(cfg("levels.json"));
-  const levels = levelCfg.thresholds;
-  const choiceGroups = json<{ groups: ChoiceGroup[] }>(cfg("choice-groups.json")).groups;
-  const reviewCfg = json<{ meetingWeekday: number }>(cfg("review.json"));
-  const facility = json<Facility>(cfg("facility.json"));
-  const deps: ReviewDeps = { db, store, calendar, ruleKubun };
-
-  const setting = (key: string): string | null =>
-    (sqlite.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
-  const setSetting = (key: string, value: string) =>
-    sqlite.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
-
-  // -------------------------------------------------------------------------
-  // 症例（合成 UKE ＋ 合成カルテ側の事実）
-
-  const UKE_FILES = ["fixtures/uke/kokuhoren.UKE", "fixtures/uke/shiharaikikin.UKE"];
-  const ukeFiles = () => UKE_FILES.map((f) => parseUke(readFileSync(path.join(paths.root, f))));
-  /** UKE の取り込み（利用者ごとに記録。今回はデモ用の 2 本を選んで取り込むだけ） */
-  const importedUke = (clerkId: string): string[] => JSON.parse(setting(`uke:${clerkId}`) ?? "[]") as string[];
-  function ukeList(clerkId: string) {
-    const done = importedUke(clerkId);
-    return UKE_FILES.map((f, i) => {
-      const u = ukeFiles()[i];
-      const name = path.basename(f);
-      return { name, payer: u.payer, prefecture: u.prefecture, billingMonth: u.billingMonth, receipts: u.receipts.map((x) => ({ claimId: x.claimId, patient: x.patient.name })), imported: done.includes(name) };
-    });
-  }
-  function importUke(clerkId: string, name: string) {
-    clerk(clerkId);
-    if (!UKE_FILES.some((f) => path.basename(f) === name)) throw new Error(`取り込める UKE ではない: ${name}`);
-    const done = importedUke(clerkId);
-    if (!done.includes(name)) setSetting(`uke:${clerkId}`, JSON.stringify([...done, name]));
-    return ukeList(clerkId);
-  }
-  /** 取り込んだ UKE に入っているレセプト（月末の点検の対象） */
-  const importedClaims = (clerkId: string): string[] => ukeList(clerkId).filter((u) => u.imported).flatMap((u) => u.receipts.map((x) => x.claimId));
-  function patientOf(claimId: string): UkePatient {
-    const r = ukeFiles().flatMap((f) => f.receipts).find((x) => x.claimId === claimId);
-    if (!r) throw new Error(`UKE にないレセプト: ${claimId}`);
-    return r.patient;
-  }
-  function cases(): ClaimContext[] {
-    const files = ukeFiles();
-    const out: ClaimContext[] = [];
-    for (const file of files) {
-      for (const r of file.receipts) {
-        const k = r.claimId.split("-")[0];
-        const c = json<ClaimContext>(path.join(paths.root, "fixtures", "cases", `${k}.json`));
-        const facts = applyPatientFacts(c.facts, latestPatientFacts(patientKeyOf(r.patient)), now());
-        out.push(toClaimContext(file, r.claimId, { facility, facts, events: c.events, history: c.history }));
-      }
-    }
-    return out;
-  }
-
-  // -------------------------------------------------------------------------
-  // 患者ごとに確かめた情報（履歴を残し、項目ごとに最新の 1 件を使う）
-
-  function latestPatientFacts(patientKey: string): PatientFact[] {
-    const rows = sqlite
-      .prepare("SELECT * FROM patient_facts WHERE id IN (SELECT MAX(id) FROM patient_facts WHERE patient_key = ? GROUP BY fact_key) ORDER BY id")
-      .all(patientKey) as { patient_key: string; fact_key: string; value: string; source: string; valid_until: string | null; checked_at: string; checked_by: string }[];
-    return rows.map((r) => ({
-      patientKey: r.patient_key,
-      key: r.fact_key as PatientFact["key"],
-      value: JSON.parse(r.value) as PatientFact["value"],
-      source: r.source as PatientFact["source"],
-      validUntil: r.valid_until,
-      checkedAt: r.checked_at,
-      checkedBy: r.checked_by,
-    }));
-  }
-  function patientFacts(claimId: string) {
-    const patientKey = patientKeyOf(patientOf(claimId));
-    return { patientKey, facts: latestPatientFacts(patientKey).map((f) => ({ ...f, expired: isExpired(f, now()) })) };
-  }
-  function savePatientFact(claimId: string, clerkId: string, f: PatientFactInput) {
-    clerk(clerkId);
-    validatePatientFact(f, now());
-    const patientKey = patientKeyOf(patientOf(claimId));
-    sqlite
-      .prepare("INSERT INTO patient_facts (patient_key, fact_key, value, source, valid_until, checked_at, checked_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(patientKey, f.key, JSON.stringify(f.value), f.source, f.validUntil, now(), clerkId);
-    return patientFacts(claimId);
-  }
-  const caseOf = (claimId: string): ClaimContext => {
-    const c = cases().find((x) => x.claimId === claimId);
-    if (!c) throw new Error(`症例がない: ${claimId}`);
-    return c;
-  };
-  /** 問題の請求：訪問の時点の問題なら、その日までの実施と記録だけにする（FR-68） */
-  const caseAt = (claimId: string, asOf?: string, clerkId?: string): ClaimContext => (asOf ? contextAsOf(monthOf(claimId, clerkId), asOf) : caseOf(claimId));
-  /** 練習問題は、よくある間違いを入れた明細と、そのときの状況で始める（FR-75） */
-  const caseFor = (q: Question): ClaimContext => {
-    if (q.drill && isDoctorDrill(q.drill)) {
-      // 医師確認の練習問題：承認された回答だけを、この問題の事実に戻す（本物の患者情報は変えない。FR-76）
-      const d = doctorDrillOf(q.drill);
-      const base = d.make(caseOf(q.claimId));
-      const a = d.ask ? drillQuery(q) : null;
-      return d.ask && a?.status === "承認済み" && a.answer ? withAnswer(base, d.ask, answerValue(d.ask, a.answer.option)) : base;
-    }
-    return q.drill ? drillOf(q.drill).make(caseOf(q.claimId)) : caseAt(q.claimId, q.asOf, q.clerkId);
-  };
-  /** 医師確認の練習問題で、この問題から送った医師確認 */
-  const drillQuery = (q: Question) => {
-    const d = q.drill && isDoctorDrill(q.drill) ? doctorDrillOf(q.drill) : null;
-    return d?.ask ? (doctorQueries().find((x) => x.field === askField(d.ask!, q.id)) ?? null) : null;
-  };
-  /** 医師確認の練習問題で、医師に聞く（推測で算定しない）。同じ問題から 2 回は送らない */
-  function askDoctorForDrill(questionId: string) {
-    const q = loadQ(questionId);
-    const d = q.drill && isDoctorDrill(q.drill) ? doctorDrillOf(q.drill) : null;
-    if (!d?.ask) throw new Error("この問題では、ここから医師確認は送らない");
-    if (q.phase !== "ヒント") throw new Error(`医師確認を送れない段階: ${q.phase}`);
-    const existing = drillQuery(q);
-    if (existing) return existing;
-    const r = askMissing(queryLog, { target: "doctor", ...factQueryDraft(d.ask, caseFor(q), q.id) }, now());
-    if (r.route !== "F1") throw new Error("医師確認にならなかった");
-    return r.query;
-  }
-  /** 練習問題の今の状態（画面用）：医師確認の状態、照合の不一致が残っているか */
-  function drillState(questionId: string) {
-    const q = loadQ(questionId);
-    if (!q.drill) return null;
-    if (!isDoctorDrill(q.drill)) return { kind: "明細" as const };
-    const d = doctorDrillOf(q.drill);
-    const a = drillQuery(q);
-    return {
-      kind: "医師確認" as const,
-      ask: d.ask ? FACT_QUESTIONS[d.ask].label : null,
-      query: a ? { id: a.id, status: a.status, answer: a.answer?.option ?? null } : null,
-      crosscheckOpen: d.crosscheck ? crosscheckOf(q.claimId).mismatches.some((m) => m.ruleId === d.crosscheck) : false,
-    };
-  }
-  /** 訪問の時点では、月末まで決まらないルールを指摘にしない */
-  const judgeFor = (q: Question) => (q.asOf ? (c: ClaimContext) => deferAtMidMonth(evaluate(c)) : evaluate);
-  const withLines = (claimId: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>, asOf?: string, clerkId?: string): ClaimContext => {
-    const c = caseAt(claimId, asOf, clerkId);
-    return { ...c, lines, facts: { ...c.facts, ...(facts ?? {}) } };
-  };
-
-  // -------------------------------------------------------------------------
-  // 本人が書く訪問カルテ（FR-69）：書く → AI が事実を取り出す → 本人が確かめる → その月の請求に重ねる
-
-  function saveNote(claimId: string, clerkId: string, kind: VisitKind, note: ChartNote): { id: number; date: string } {
-    clerk(clerkId);
-    const c = caseOf(claimId);
-    if (kind !== "訪問診療" && kind !== "往診") throw new Error(`訪問の種類が不正: ${kind}`);
-    const date = now().slice(0, 10);
-    if (!date.startsWith(c.yearMonth)) throw new Error(`今日（${date}）は診療月 ${c.yearMonth} の外。時計を診療月に戻してください`);
-    const r = sqlite
-      .prepare("INSERT INTO chart_notes (claim_id, date, kind, note, facts, clerk_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
-      .run(claimId, date, kind, JSON.stringify(note), clerkId, now());
-    return { id: Number(r.lastInsertRowid), date };
-  }
-  type NoteRow = { id: number; claim_id: string; date: string; kind: string; note: string; facts: string | null };
-  function noteRow(id: number): NoteRow {
-    const r = sqlite.prepare("SELECT * FROM chart_notes WHERE id = ?").get(id) as NoteRow | undefined;
-    if (!r) throw new Error(`カルテがない: ${id}`);
-    return r;
-  }
-  const noteOf = (id: number) => JSON.parse(noteRow(id).note) as ChartNote;
-  /** 本人が確かめた事実で確定する。どの事実も、カルテに書かれた言葉（quote）を持っていなければならない */
-  function confirmNote(id: number, facts: ExtractedFact[]) {
-    const r = noteRow(id);
-    if (r.facts !== null) throw new Error(`もう確かめてある: ${id}`);
-    const v = validateFacts({ facts }, JSON.parse(r.note) as ChartNote);
-    if (v.dropped.length) throw new Error(`カルテにない言葉の事実がある: ${v.dropped.map((d) => d.why).join("、")}`);
-    sqlite.prepare("UPDATE chart_notes SET facts = ? WHERE id = ?").run(JSON.stringify(v.facts), id);
-    return { claimId: r.claim_id, date: r.date };
-  }
-  /** 本人が書いて確かめた訪問カルテ（利用者ごと。ほかの人が書いたカルテは重ねない） */
-  function confirmedNotes(claimId: string, clerkId?: string): ConfirmedNote[] {
-    if (!clerkId) return [];
-    return (sqlite.prepare("SELECT * FROM chart_notes WHERE claim_id = ? AND clerk_id = ? AND facts IS NOT NULL ORDER BY id").all(claimId, clerkId) as NoteRow[]).map((r) => ({
-      date: r.date,
-      kind: r.kind as VisitKind,
-      note: JSON.parse(r.note) as ChartNote,
-      facts: JSON.parse(r.facts!) as ExtractedFact[],
-    }));
-  }
-  /** その月の請求：UKE の症例に、本人が書いた訪問を重ねる（訪問の時点の問題で使う。月末の UKE の問題は UKE のまま） */
-  const monthOf = (claimId: string, clerkId?: string): ClaimContext => withNotes(caseOf(claimId), confirmedNotes(claimId, clerkId));
-  /** カルテを書く患者の一覧（訪問のある患者。氏名などは合成データ） */
-  function patients() {
-    return cases()
-      .filter((c) => visitDays(c).length > 0)
-      .map((c) => {
-        const p = patientOf(c.claimId);
-        const f = c.facts;
-        const v = <T,>(x: { known: boolean; value?: T }) => (x.known ? (x as { value: T }).value : null);
-        return {
-          claimId: c.claimId,
-          name: p.name,
-          sex: p.sex === 1 ? "男" : "女",
-          age: v(f.age),
-          insurance: v(f.insurance),
-          mainDisease: v(f.mainDisease),
-          diseases: p.diseases.map((d) => d.name),
-          careLevel: v(f.careLevel),
-          table7: v(f.table7),
-          table8_2: v(f.table8_2),
-          homeOxygen: v(f.homeOxygen),
-        };
-      });
-  }
-
-  /** 訪問の記録（レセコンに入れる前）：その月の訪問日と、その日のカルテ。デモデータとして、時計に関係なく全部の訪問で練習できる（2026-11-07 ユーザー判断） */
-  function visits(clerkId?: string) {
-    return cases().map((c) => monthOf(c.claimId, clerkId)).flatMap((c) =>
-      visitDays(c).map((d) => ({
-        claimId: c.claimId,
-        date: d.date,
-        type: d.type,
-        mainDisease: c.facts.mainDisease.known ? c.facts.mainDisease.value : null,
-        chart: chartOf(c.claimId, clerkId)?.entries.find((e) => e.date === d.date) ?? null,
-        /** その日までの実施（レセコンに入れる前の下書きの元） */
-        lines: contextAsOf(c, d.date).lines,
-        outlook: outlook(c, d.date),
-        /** 本人が書いた訪問か */
-        written: confirmedNotes(c.claimId, clerkId).some((n) => n.date === d.date),
-      })),
-    ).sort((a, b) => (a.date === b.date ? (a.claimId < b.claimId ? -1 : 1) : a.date < b.date ? -1 : 1));
-  }
-  /** 訪問の時点の問題に添える見込み（指摘ではない） */
-  const outlookOf = (q: Question) =>
-    q.drill && isDoctorDrill(q.drill)
-      ? `これは医師確認の練習問題。カルテに書かれていない事実を推測で埋めず、医師確認を送ってから確定する。メンターは医師への質問を自分で書かず、本人が画面の「医師確認を送る」で送るよう促す。状況：${doctorDrillOf(q.drill).situation.join("。")}`
-      : q.drill
-      ? `これは練習問題（よくある間違いを入れた明細）。本人が直して確定する。状況：${drillOf(q.drill).situation.join("。") || "特になし"}`
-      : q.asOf
-        ? `これは訪問の記録をレセコンに入れる前の確認（月の途中）。判定はその日までの実施と記録だけで、月末に決まるルール（在医総管の区分など）は入っていない。見込み：${outlook(monthOf(q.claimId, q.clerkId), q.asOf)}`
-        : null;
-
-  // -------------------------------------------------------------------------
-  // 時計（デモでは「時計を進める」で動く）
-
-  function now(): string {
-    return setting("now") ?? DEFAULT_NOW;
-  }
-
-  /** 時計を進める。医師確認のリマインド・保留と、会議の日を過ぎていればレセメン会議の整理を回す */
-  function advanceClock(to: string) {
-    assertTime(to, "now");
-    setSetting("now", to);
-    const queries = tickQueries(queryLog, to, businessDays);
-    const last = (sqlite.prepare("SELECT ran_at FROM reviews ORDER BY ran_at DESC LIMIT 1").get() as { ran_at: string } | undefined)?.ran_at ?? null;
-    const meeting = dueMeeting(last, to, reviewCfg.meetingWeekday) ? meetingReview(deps, to) : null;
-    return { now: to, queries, meeting };
-  }
-
-  // -------------------------------------------------------------------------
-  // 医療事務
-
-  function upsertClerk(c: { id: string; name: string; callName: string; characterId: string; role: "clerk" | "veteran" }) {
-    sqlite
-      .prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, call_name = excluded.call_name, role = excluded.role")
-      .run(c.id, c.name, c.callName, c.characterId, c.role);
-  }
-  /** 審査員などが自分の利用者を作る（名前は呼び方に使う）。キャラは選ぶまで仮の a */
-  function createClerk(name: string) {
-    const n = name.trim();
-    if (n.length < 1 || n.length > 20) throw new Error("名前は 1〜20 文字");
-    const count = (sqlite.prepare("SELECT COUNT(*) AS n FROM clerks WHERE id LIKE 'u%'").get() as { n: number }).n;
-    const id = `u${String(count + 1).padStart(4, "0")}`;
-    upsertClerk({ id, name: n, callName: "さん", characterId: "a", role: "clerk" });
-    return clerk(id);
-  }
-  function clerk(id: string) {
-    const r = sqlite.prepare("SELECT * FROM clerks WHERE id = ?").get(id) as { id: string; name: string; call_name: string; character_id: string; role: string; session_id: string | null } | undefined;
-    if (!r) throw new Error(`医療事務が登録されていない: ${id}`);
-    return r;
-  }
-  const setSession = (id: string, sessionId: string) => sqlite.prepare("UPDATE clerks SET session_id = ? WHERE id = ?").run(sessionId, id);
-  /** 本人がメンターを選ぶ（FR-19）。指示はセッションの初めに渡すので、キャラを変えたらセッションを作り直す */
-  function chooseCharacter(id: string, characterId: string) {
-    clerk(id);
-    sqlite.prepare("UPDATE clerks SET character_id = ?, session_id = NULL WHERE id = ?").run(characterId, id);
-    setSetting(`character_chosen:${id}`, "1");
-  }
-  const characterChosen = (id: string) => setting(`character_chosen:${id}`) === "1";
+  const { ukeList, importUke, sampleUke, uploadUke, importedClaims } = uke;
+  const { patientFacts, savePatientFact, checkConnectorPatient } = patientFactsOf;
+  const { claimFacts, saveClaimFact } = claimFactsOf;
+  const { cases, caseOf, caseBurdenRatioOf } = casesOf;
+  // 患者情報チェックには、症例側が持つ負担割合を添える（患者マスタに入っていないときだけ使う）
+  const patientProfile = (claimId: string) => patientFactsOf.patientProfile(claimId, caseBurdenRatioOf(claimId));
+  /** 取り込んだレセプトを、UKE に書いてあるとおりのまま点検した結果（design.md §11-11。何も記録しない）。背反の組の院内の知識は、見ている本人のレベルで出し方を分ける（§14-3） */
   /**
-   * 初回のあいさつ（FR-27）で本人が決めた名前を保存する。名前は CLAUDE.md の呼び方に入るので、
-   * 決まった規則で文字を絞る。呼び方は会話のはじめに作るので、会話を切って次から新しい名前で呼ぶ
+   * 取り込んだ請求の B の欄（G11。design.md §15-8）：貼って確かめたカルテのある請求だけを見る。同じ診療年月の取り込んだ請求のうち、貼った患者・貼っていない患者の数を 1 行で出す（L-122）。
+   * 貼っていない請求は、取り忘れを見ず、その理由を返す（指摘がないことを「取り忘れなし」に見せない）
    */
-  function setClerkName(id: string, name: string) {
-    clerk(id);
-    const n = cleanName(name);
-    sqlite.prepare("UPDATE clerks SET name = ?, session_id = NULL WHERE id = ?").run(n, id);
-    setSetting(`welcomed:${id}`, "1");
-    return clerk(id);
-  }
-  /** 初回のあいさつ（名前を決めるまで）が済んだか */
-  const welcomed = (id: string) => setting(`welcomed:${id}`) === "1";
-  /** 伝え方のタイプ（FR-20。本人の申告、任意）。指示はセッションの初めに渡すので、変えたらセッションを作り直す */
-  function setStyle(id: string, style: Style) {
-    clerk(id);
-    setSetting(`style:${id}`, JSON.stringify(validateStyle(style)));
-    sqlite.prepare("UPDATE clerks SET session_id = NULL WHERE id = ?").run(id);
-  }
-  const styleOf = (id: string): Style => JSON.parse(setting(`style:${id}`) ?? "{}") as Style;
-
-  // -------------------------------------------------------------------------
-  // 処理体験（1 件＝1 問）
-
-  const saveQ = (q: Question) =>
-    sqlite.prepare("INSERT INTO questions (id, clerk_id, claim_id, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data").run(q.id, q.clerkId, q.claimId, JSON.stringify(q));
-  const loadQ = (id: string): Question => {
-    const r = sqlite.prepare("SELECT data FROM questions WHERE id = ?").get(id) as { data: string } | undefined;
-    if (!r) throw new Error(`問題がない: ${id}`);
-    return JSON.parse(r.data) as Question;
+  const torikawasureOf: TorikawasureOf = (claimId, clerkId, input) => {
+    const ym = input.base.yearMonth;
+    const same = [...new Set([claimId, ...(clerkId ? uke.importedClaims(clerkId) : [])])].filter((id) => uke.receiptOf(id).receipt.yearMonth === ym);
+    const counts = notes.recordCounts();
+    const pasted = same.filter((id) => counts.has(id)).length;
+    const coverage = `カルテを貼った患者だけを見ています（貼った ${pasted} 人・貼っていない ${same.length - pasted} 人）`;
+    if (!counts.has(claimId)) return { skip: "カルテが貼られていないので、取り忘れは見ていません", coverage };
+    // 前の月の管理料の三値は、G12・G05 と同じ事実（design.md §19-13 の 3。G11 の背反の判定で HX-25 に使う）
+    return { ...notes.torikawasure.run({ ...input, path: "uke", days: notes.actsDays(claimId), ...notes.textsOf(claimId), oxygen: { prevHomeOxygen: oxygenOf(claimId).prevHomeOxygen } }), coverage };
   };
-  const allQ = (): Question[] => (sqlite.prepare("SELECT data FROM questions").all() as { data: string }[]).map((r) => JSON.parse(r.data) as Question);
-
-  /** 練習問題を始める（FR-75。答えのルールは本人に見せない） */
-  function startDrill(clerkId: string, drillId: string): Question {
-    clerk(clerkId);
-    const d = isDoctorDrill(drillId) ? doctorDrillOf(drillId) : drillOf(drillId);
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, d.claimId, now(), "通常", undefined, d.id);
-    saveQ(q);
-    return q;
-  }
-  function start(clerkId: string, claimId: string, mode: Mode = "通常", asOf?: string): Question {
-    clerk(clerkId);
-    const c = monthOf(claimId, clerkId);
-    if (asOf) {
-      if (mode !== "通常") throw new Error("訪問の時点の問題は通常モードだけ");
-      if (!visitDays(c).some((d) => d.date === asOf)) throw new Error(`この日の訪問はない: ${claimId} ${asOf}`);
-    }
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM questions").get() as { n: number }).n;
-    const q = startQuestion(`q${String(n + 1).padStart(4, "0")}`, clerkId, claimId, now(), mode, asOf);
-    saveQ(q);
-    return q;
-  }
-  function draft(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
-    const q = loadQ(id);
-    const r = checkDraft(q, { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } }, now(), judgeFor(q));
-    saveQ(r.question);
-    return r;
-  }
-  /** 確定：エンジンが判定し、提出として適用記録を書く（ライフサイクルの submit） */
-  function confirmQ(id: string, lines: ClaimLine[], facts?: Partial<ClaimContext["facts"]>) {
-    const q = loadQ(id);
-    const ctx = { ...caseFor(q), lines, facts: { ...caseFor(q).facts, ...(facts ?? {}) } };
-    let next = confirm(q, ctx, now(), judgeFor(q));
-    // 医師確認の練習問題は、情報不足が残っている（医師に聞かずに確定した）ときや、照合の不一致が残っているときは不正解（FR-76）
-    if (q.drill && isDoctorDrill(q.drill)) {
-      const d = doctorDrillOf(q.drill);
-      const open = d.crosscheck ? crosscheckOf(q.claimId).mismatches.some((m) => m.ruleId === d.crosscheck) : false;
-      next = { ...next, correct: next.confirmed!.result.findings.length === 0 && !open };
-    }
-    // 訪問の時点の確定と練習問題は提出ではない。適用記録は月末の UKE の問題でだけ書く
-    if (q.asOf || q.drill) {
-      saveQ(next);
-      return next;
-    }
-    submit(deps, {
-      submissionId: id,
-      final: { ctx, applied: next.confirmed!.result.applied },
-      earlier: q.drafts.map((d) => ({ ctx: withLines(q.claimId, d.lines, facts), applied: [] })),
-      now: now(),
-    });
-    saveQ(next);
-    return next;
-  }
-  function explain(id: string) {
-    const q = toExplanation(loadQ(id));
-    saveQ(q);
-    return q;
-  }
-  function done(id: string) {
-    const q = finish(loadQ(id), now());
-    saveQ(q);
-    return q;
-  }
-  // 選択モード：問題は UKE の原案（医療事務が入力した明細）から作り、正誤はユスティだけで決める
-  function choiceQ(id: string) {
-    const q = loadQ(id);
-    if (q.mode !== "選択") throw new Error(`選択モードの問題ではない: ${id}`);
-    if (q.phase !== "ヒント") throw new Error(`選べない段階: ${q.phase}`);
-    return q;
-  }
-  const choices = (id: string) => choiceItems(caseOf(choiceQ(id).claimId), choiceGroups);
-  function pick(id: string, lineIndex: number, option: string) {
-    const q = choiceQ(id);
-    const r = judgePick(caseOf(q.claimId), choiceGroups, lineIndex, option);
-    saveQ({ ...q, picks: [...(q.picks ?? []), { lineIndex, option, correct: r.correct, at: now() }] });
-    return r;
-  }
-  // 件数・レベル・防いだ額は月末の UKE の問題（提出）だけで数える。訪問の時点の問題は数えない（FR-68）
-  const submitted = () => allQ().filter((q) => !q.asOf);
-  const status = (clerkId: string) => myStatus(submitted(), clerkId, levels, levelCfg.choiceWeight ?? 1);
-  const questionsOf = (clerkId: string) => allQ().filter((q) => q.clerkId === clerkId);
-
-  // -------------------------------------------------------------------------
-  // 提出結果・医師確認・会議・防いだ額
-
-  const importClaimResult = (r: SubmissionResult) => importResult(db, r, now());
-  const doctorQueries = () => listQueries(queryLog);
-  const answerDoctor = (id: string, a: { option: string; freeText?: string; answeredBy: string }) => answerQuery(queryLog, id, a, now());
-  const approveDoctor = (id: string, approver: string) => approveQuery(queryLog, id, approver, now());
-  const agenda = () => buildDigest(deps);
-  const answerAgenda = (itemId: string, answer: 1 | 2 | 3 | 4, freeText?: string) => answerItem(deps, { itemId, answer, freeText }, now());
-  const runMeeting = () => meetingReview(deps, now());
-
-  // -------------------------------------------------------------------------
-  // F6 メンター同士：ベテランのメンター → ベテラン本人。解決した問いは知識候補（FR-14・FR-15）
-
-  type PeerRow = { id: string; from_clerk: string; question: string; status: "回答待ち" | "解決"; answer: string | null; answered_by: string | null; knowledge_id: string | null; created_at: string; answered_at: string | null };
-  const peerList = (): PeerRow[] => sqlite.prepare("SELECT * FROM peer_questions ORDER BY created_at, id").all() as PeerRow[];
-  function newPeerId(): string {
-    const n = (sqlite.prepare("SELECT COUNT(*) AS n FROM peer_questions").get() as { n: number }).n;
-    return `P${String(n + 1).padStart(4, "0")}`;
-  }
-  /** ベテランのメンターが答えた問いを記録し、知識候補にする */
-  function peerResolvedByMentor(fromClerk: string, question: string, answer: string) {
-    const id = newPeerId();
-    const k = escalationCandidate(store, { id, question, answer, answeredBy: "veteran_mentor" }, now());
-    sqlite.prepare("INSERT INTO peer_questions VALUES (?, ?, ?, '解決', ?, 'veteran_mentor', ?, ?, ?)").run(id, fromClerk, question, answer, k.id, now(), now());
-    return { id, knowledgeId: k.id };
-  }
-  /** ベテラン本人に届ける（ベテランのメンター経由） */
-  function peerToHuman(fromClerk: string, question: string) {
-    const id = newPeerId();
-    sqlite.prepare("INSERT INTO peer_questions (id, from_clerk, question, status, created_at) VALUES (?, ?, ?, '回答待ち', ?)").run(id, fromClerk, question, now());
-    return { queued: id };
-  }
-  /** ベテラン本人の回答。知識候補（未検証）を作る */
-  function peerAnswerByHuman(id: string, answer: string) {
-    const row = peerList().find((r) => r.id === id);
-    if (!row) throw new Error(`問いがない: ${id}`);
-    if (row.status !== "回答待ち") throw new Error(`回答済み: ${id}`);
-    if (!answer.trim()) throw new Error("回答が空");
-    const k = escalationCandidate(store, { id, question: row.question, answer, answeredBy: "veteran" }, now());
-    sqlite.prepare("UPDATE peer_questions SET status = '解決', answer = ?, answered_by = 'veteran', knowledge_id = ?, answered_at = ? WHERE id = ?").run(answer, k.id, now(), id);
-    return { id, knowledgeId: k.id };
-  }
-
-  // -------------------------------------------------------------------------
-  // 知識：検証キュー（FR-41・FR-65）と F11 提案・共感（FR-51）
-
-  /** 検証キュー：未検証の知識を共感数の多い順（同数は古い順）。状態は変えない */
-  const queue = () => verificationQueue(listKnowledge(store)).map((m) => ({ ...m, body: readBody(store, m.id) }));
-  /** ベテランの検証（承認で承認済み、却下で保管） */
-  function verify(id: string, approve: boolean, reason?: string) {
-    return applyEvent(store, id, approve ? { type: "VERIFY_APPROVE" } : { type: "VERIFY_REJECT", reason: reason?.trim() || "ベテランの検証で却下" }, now()).meta;
-  }
-  /** 共感（候補の並び順だけに効く。状態は変えない） */
-  const empathize = (id: string) => applyEvent(store, id, { type: "EMPATHY" }, now()).meta;
-  /** 誰でも投稿できる改善提案（院内層の候補。既存の知識を直す案なら relates_to に対象を入れる） */
-  function propose(input: { summary: string; body: string; relatesTo?: string | null }) {
-    if (!input.summary.trim() || !input.body.trim()) throw new Error("要約と本文が必要");
-    const n = listKnowledge(store).filter((m) => m.layer === "院内").length;
-    return createKnowledge(
-      store,
-      { layer: "院内", slug: `proposal-${String(n + 1).padStart(4, "0")}`, summary: input.summary.trim().slice(0, 200), body: input.body.trim(), source: { type: "提案", ref: `proposal-${n + 1}` }, relates_to: input.relatesTo ?? null, match: {} },
-      now(),
-    );
-  }
-  // 査定・返戻の通知（FR-42・FR-43）：対応づけは決まった規則。知識の候補にするのは本人が確かめた項目だけ
-  const resolveNoticeItems = (notice: Notice) => resolveNotice(notice, json<UkeSources>(path.join(paths.root, "fixtures", "uke", "patients.json")), cases());
-  function registerNotice(notice: Notice, index: number, opts: { reexamFiled: boolean; fileName: string }) {
-    const item = resolveNoticeItems(notice)[index];
-    if (!item) throw new Error(`通知に ${index + 1} 件目の項目がない`);
-    return createKnowledge(store, candidateOf(item, opts), now());
-  }
-  /** 新しいクリニックに、根拠のある地域ルールを最初から入れる（K6 の合成の査定通知から。FR-79）。すでにあれば何もしない */
-  function seedLocalRules() {
-    // 院内ルールの種（中身は伏せ、何の区分に関するものかだけ出す。何年も積み上がった様子を見せる。FR-80）
-    const inHouse = seedInHouse(store);
-    const n = json<Notice>(path.join(paths.root, "fixtures", "notices", "K6-2025-02-satei.json"));
-    const items = resolveNoticeItems(n);
-    return [...inHouse.map((id) => ({ id })), ...items.flatMap((item, i) => {
-      const cand = candidateOf(item, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" });
-      if (listKnowledge(store).some((m) => m.id.endsWith(`/${cand.slug}`))) return [];
-      return [registerNotice(n, i, { reexamFiled: false, fileName: "K6-2025-02-satei.pdf" })];
-    })];
-  }
+  /** 取り込んだ請求の B の欄（月末の点検から。取り込んだレセプトの点検と同じ請求・文脈・手書きのルールの結果で掛ける） */
+  const ukeTorikawasure = (claimId: string, clerkId: string) => {
+    const base = { ...casesOf.caseOf(claimId), events: [], recordsKnown: false };
+    return torikawasureOf(claimId, clerkId, { claim: uke.receiptOf(claimId).claim(), base, rev: resolveRevision(base.yearMonth), hand: casesOf.judge(base).findings });
+  };
   /**
-   * ローカルルール（地域・ベテランの判断・院内）のうち、この請求に当てはまるもの（FR-78）。
-   * ユスティ（全国共通の決まり）とは別に見せる。保管・停止したものは出さない。院内のものはメンターの助言には使わない（FR-12）
+   * 酸素（G12・G02。design.md §19-3・§19-5）：届け出た単価と、前の診療年月の同じ患者（患者マスタの id）の取り込んだ請求に在宅酸素療法指導管理料があるか（三値）。
+   * 前の月の請求がなければ「取り込んでいない」（請求のない月と区別できない。U-79 のとおり条件つきのまま）
    */
-  function localRulesFor(ctx: ClaimContext) {
-    const applied = evaluate(ctx).applied;
-    return listKnowledge(store)
-      .filter((m) => m.layer !== "制度" && m.status !== "保管" && m.status !== "停止")
-      .map((m) => ({ m, state: matchState(m, ctx, applied) }))
-      .filter((x) => x.state !== "nomatch")
-      .map(({ m, state }) => ({
-        id: m.id,
-        layer: m.layer,
-        status: m.status,
-        summary: m.summary.replace("（中身は伏せています）", ""), // 2026-11-07 より前に入れた種の名前から外す（ユーザー判断）
-        source: m.source_event.type,
-        since: m.valid_from.slice(0, 10),
-        hits: m.hits,
-        /** 最後に当たった・使われた日（なければ null） */
-        lastUsed: m.last_hit_at?.slice(0, 10) ?? null,
-        /** 承認済みのまま、使われない期間（180 日）を超えている。レセメン会議で要再検証に回る */
-        stale: m.status === "承認済み" && Date.parse(now()) - Date.parse(m.last_hit_at ?? m.status_since) >= IDLE_DAYS * 86_400_000,
-        unknown: state === "unknown",
-        usedByMentor: m.status === "承認済み" && m.layer !== "院内",
-      }));
-  }
-  const localRulesOf = (questionId: string, lines?: ClaimLine[]) => {
-    const q = loadQ(questionId);
-    const c = caseFor(q);
-    return localRulesFor(lines ? { ...c, lines } : c);
+  const oxygenOf = (claimId: string): Pick<GenericAboutMore, "oxygenPrices" | "prevHomeOxygen"> => {
+    const r = uke.receiptOf(claimId).receipt;
+    const [y, m] = r.yearMonth.split("-").map(Number);
+    const prevYm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+    const me = patientFactsOf.existingIdOf(r.patient);
+    const prev = me === null ? [] : uke.ukeReceipts().filter((x) => x.yearMonth === prevYm && x.claimId !== claimId && patientFactsOf.existingIdOf(x.patient) === me);
+    const hasKanri = (id: string) => uke.receiptOf(id).claim().units.some((u) => (u.days ?? []).some((n) => n > 0) && u.items.some((it) => it.kind === "SI" && HOME_OXYGEN_KANRI.includes(it.code)));
+    return { oxygenPrices: readOxygenPrices(ctx), prevHomeOxygen: prev.length === 0 ? "取り込んでいない" : prev.some((x) => hasKanri(x.claimId)) ? "ある" : "ない" };
   };
-  /** 知識の一覧（状態ごとの数を見せる用） */
-  const knowledgeList = () => listKnowledge(store).map((m) => ({ id: m.id, layer: m.layer, status: m.status, summary: m.summary, empathy: m.empathy, hits: m.hits, misses: m.misses }));
-
-  // -------------------------------------------------------------------------
-  // F3 代行入力：整えた文を必ず医師確認に回す（FR-37）。足りない項目は推定せず聞く（FR-36）
-
-  function proxySubmit(claimId: string, original: string, scribed: ScribeResult) {
-    caseOf(claimId);
-    const draft = proxyConfirmDraft(claimId, original, scribed.text);
-    const doctorMissing = scribed.missing.filter((m) => m.target === "doctor");
-    if (doctorMissing.length) draft.indicators.push({ source: "記載が足りない項目", text: doctorMissing.map((m) => `${m.field}（${m.why}）`).join("、") });
-    const r = askMissing(queryLog, { target: "doctor", ...draft }, now());
-    const clerkTasks = scribed.missing
-      .filter((m) => m.target === "clerk")
-      .map((m) => askMissing(queryLog, { target: "clerk", claimId, field: m.field, why: m.why }, now()))
-      .map((x) => (x.route === "F3" ? x.task : null))
-      .filter((t) => t !== null);
-    return { query: r.route === "F1" ? r.query : null, clerkTasks };
-  }
-
-  // -------------------------------------------------------------------------
-  // F4 の照合（病名と処方の不一致）→ 医師確認
-
-  /** 医師の回答と承認で確定した傷病名（FR-32） */
-  function confirmedDiseases(claimId: string): string[] {
-    return doctorQueries()
-      .filter((q) => q.claimId === claimId && q.status === "承認済み" && q.field.startsWith("SY:") && q.answer)
-      .map((q) => (q.answer!.option === "その他" ? q.answer!.freeText ?? "" : q.answer!.option))
-      .filter((n) => n && n !== "判定不能");
-  }
-  /** 照合用のカルテ：合成カルテに、本人が書いて確かめた訪問カルテを重ねる（FR-69） */
-  function chartOf(claimId: string, clerkId?: string): Chart | null {
-    const f = path.join(paths.root, "fixtures", "charts", `${claimId.split("-")[0]}.json`);
-    return chartWithNotes(existsSync(f) ? json<Chart>(f) : null, claimId, confirmedNotes(claimId, clerkId));
-  }
-  /** 確認してほしい点（照合）。同じ項目の医師確認がすでにあれば、その状態も返す */
-  function crosscheckOf(claimId: string, asOf?: string, clerkId?: string) {
-    const whole = chartOf(claimId, clerkId);
-    // 訪問の時点では、その日までのカルテと処方だけで照合する
-    const chart = whole && asOf ? { ...whole, entries: whole.entries.filter((e) => e.date <= asOf), prescriptions: whole.prescriptions.filter((p) => p.date <= asOf) } : whole;
-    if (!chart) return { mismatches: [], confirmed: confirmedDiseases(claimId) };
-    const qs = doctorQueries().filter((q) => q.claimId === claimId);
-    return {
-      mismatches: crosscheck(patientOf(claimId), chart, confirmedDiseases(claimId)).map((m) => ({ ...m, query: qs.find((q) => q.field === m.draft.field && q.status !== "承認済み") ?? null })),
-      confirmed: confirmedDiseases(claimId),
-    };
-  }
-  /** 照合の不一致から医師確認を送る（ask_missing の宛先＝医師） */
-  function sendCrosscheck(claimId: string, ruleId: string, asOf?: string, clerkId?: string) {
-    const m = crosscheckOf(claimId, asOf, clerkId).mismatches.find((x) => x.ruleId === ruleId);
-    if (!m) throw new Error(`不一致がない: ${claimId} ${ruleId}`);
-    if (m.query) throw new Error(`医師確認はもう送ってある: ${m.query.id}`);
-    return askMissing(queryLog, { target: "doctor", ...m.draft }, now());
-  }
-
-  function resolvedFields(claimId: string): string[] {
-    return doctorQueries()
-      .filter((q) => q.claimId === claimId && q.status === "承認済み")
-      .map((q) => q.field.replace(/^fact:/, ""));
-  }
-  // 防いだ額は実際の請求（月末の UKE の問題）だけで数える。練習問題は数えない
-  const preventedItems = (clerkId?: string) =>
-    submitted().filter((q) => !q.drill)
-      .filter((q) => !clerkId || q.clerkId === clerkId)
-      .flatMap((q) => preventedOf(q, resolvedFields(q.claimId)));
-  const personal = (clerkId: string, optIn: boolean) => personalView(preventedItems(clerkId), optIn);
-  const manager = () => managerReport(preventedItems(), []);
+  const ukeCheck = createUkeCheck(uke, casesOf, patientProfile, claimFactsOf.answersOf, (claimId, clerkId) => ({ ...localPairs.aboutFor(clerkId), pressed: claimFactsOf.pressedOf(claimId) }), () => declarationViewOf(ctx, clock), torikawasureOf, oxygenOf);
+  const localPairOps = createLocalPairOps(ctx, clock, ukeCheck.ukeCheck, localPairs.levelOf);
+  // 査定・返戻の突き合わせ（spec FR-202 の I-1）。当てた請求は、取り込んだレセプトの点検と同じ点検で点検し直す（何も記録しない側の点検。USED は出さない）
+  const review = createReview(ctx, uke, ukeCheck.ukeCheck);
+  const prevented = createPrevented(questions, doctor, review.reviewReport);
+  /** 取り込んだレセプトの全件の一覧（採点 r1 医療事務課長 P1-1）。USED を付けない元の点検で数える */
+  const ukeSummary = createUkeSummary(uke, ukeCheck.ukeCheck, claimReviews, premiseChecks);
+  // 院内の知識で押した事実は、書く前にサーバーが照らす（design.md §14-3。書くのは saveClaimFact の 1 か所）
+  claimFactsOf.setLocalGuard(localPairOps.admitPress);
+  const confirmCoverage = (claimId: string, clerkId: string, input: CoverageInput) => patientFactsOf.confirmCoverage(claimId, clerkId, input, caseBurdenRatioOf(claimId));
+  const { saveNote, saveRecord, noteOf, confirmNote, confirmActs, actsReviewOf, actCandidates, searchMasters, savedActs, pickAct, foldAct, confirmRx, confirmedFixes, deleteNote, listNotes, saveNoteComment, patients, visits } = notes;
+  /** カルテの画面の算定プレビュー（FR-101）。患者情報の指摘（P 系）は、ユスティの指摘とは別の欄として添える */
+  const chartClaim = (noteId: number, choices: Record<string, string>, revId?: string, clerkId?: string) => {
+    // 背反の組の院内の知識（design.md §14-3）は、見ている本人のレベルで出し方を分ける（試算には渡さない）
+    const claim = notes.claimOfNote(noteId, choices, revId, revId === undefined ? localPairs.aboutFor(clerkId) : undefined);
+    return { ...claim, patientFindings: patientProfile(claim.claimId).findings };
+  };
+  const { doctorQueries, sendDoctor, answerDoctor, approveDoctor, proxySubmit, confirmedDiseases, crosscheckOf, sendCrosscheck } = doctor;
+  const { caseFor, judgeFor, outlookOf } = questionCase;
+  const { loadQ, startDrill, start, draft, confirmQ, genericOf, explain, done, choices, pick, status, questionsOf, askDoctorForDrill, drillState, drills } = questions;
 
   return {
+    /** クリニックの種類（demo／real／未定）。開いている間は変わらない（未定から選んだときは、開き直す。src/server/instance.ts） */
+    kind: ctx.kind,
     paths,
     deps,
     store,
     queryLog,
+    dataset,
     close: () => sqlite.close(),
+    /** メンターとの会話の記録の置き場（spec FR-214。このクリニックの app.db） */
+    sessionStore: sqliteSessionStore(sqlite),
+    audit: createAudit(sqlite),
+    dailyCounter: createDailyCounter(sqlite),
     cases,
     caseOf,
     caseFor,
     judgeFor,
     visits,
     startDrill,
-    /** 練習問題の一覧。cleared は本人がその練習を正解で終えたか（画面のカードの状態に使う。2026-11-08） */
-    drills: (clerkId?: string) => {
-      const done = new Set(clerkId ? questionsOf(clerkId).filter((q) => q.drill && q.correct === true).map((q) => q.drill) : []);
-      const mark = <T extends { id: string }>(xs: T[]) => xs.map((d) => ({ ...d, cleared: done.has(d.id) }));
-      return { fix: mark(drillList()), doctor: mark(doctorDrillList()) };
-    },
+    drills,
     askDoctorForDrill,
     drillState,
     saveNote,
+    saveRecord,
+    /** 貼って確かめたカルテのある請求と、請求ごとの貼った回数（段 18c の報告。L-122） */
+    recordCounts: notes.recordCounts,
     noteOf,
     confirmNote,
+    confirmActs,
+    actsReviewOf,
+    /** 略語（FR-211。辞書方式）：取り出した直後のまとめ・自由記述の印の語・事務が選ぶ扱い・医師確認の問いと答え */
+    markExtracted: notes.markExtracted,
+    abbrevMarksOf: notes.abbrevMarksOf,
+    selectAbbrev: notes.selectAbbrev,
+    readAbbrevSummary: notes.readAbbrevSummary,
+    doctorAbbrevs: notes.abbrevs.doctorAbbrevs,
+    answerDoctorAbbrev: notes.abbrevs.answerDoctorAbbrev,
+    actCandidates,
+    searchMasters,
+    savedActs,
+    pickAct,
+    foldAct,
+    confirmRx,
+    confirmedFixes,
+    deleteNote,
+    listNotes,
+    chartClaim,
+    saveNoteComment,
     patients,
     outlookOf,
     patientFacts,
     savePatientFact,
-    now,
-    advanceClock,
-    upsertClerk,
-    createClerk,
+    claimFacts,
+    saveClaimFact,
+    patientProfile,
+    confirmCoverage,
+    checkConnectorPatient,
     ukeList,
     importUke,
+    sampleUke,
+    uploadUke,
     importedClaims,
-    clerk,
-    setSession,
-    chooseCharacter,
-    characterChosen,
-    setClerkName,
-    welcomed,
-    setStyle,
-    styleOf,
     start,
     choices,
     pick,
     draft,
     confirm: confirmQ,
+    /** 月末の点検のデータで動く点検。背反の組の院内の知識は、問題の本人（自分の問題だけを開ける）のレベルで出し方を分ける（design.md §14-3） */
+    questionGeneric: (q: Parameters<typeof genericOf>[0]) => {
+      const { localUsed, ...generic } = genericOf(q, localPairs.aboutFor(q.clerkId));
+      // 指摘に添えた承認済みの院内の知識に USED を出す（月末の点検。1 日 1 回）
+      localPairOps.markUsed(q.claimId, localUsed);
+      if (!q.confirmed) return generic;
+      // B の欄（G11。design.md §15-9）：合成の症例は確定した明細の行と突き合わせる（preview）。取り込んだ請求は、取り込んだレセプトの点検と同じに
+      // UKE の単位と、UKE に書いてあることだけの文脈（recordsKnown は偽）で突き合わせる（uke。design.md §15-8。反証 round-55 C-290）
+      const base = { ...caseFor(q), lines: q.confirmed.lines };
+      const rev = resolveRevision(base.yearMonth);
+      const torikawasure = casesOf.isUploaded(q.claimId)
+        ? ukeTorikawasure(q.claimId, q.clerkId)
+        : notes.torikawasure.run({ claim: claimOfLines(q.confirmed.lines, rev).claim, base, rev, path: "preview", days: notes.actsDays(q.claimId, q.clerkId), ...notes.textsOf(q.claimId, q.clerkId), hand: q.confirmed.result.findings });
+      return { ...generic, torikawasure };
+    },
     explain,
     done,
     question: loadQ,
@@ -713,32 +243,152 @@ export function openApp(paths: AppPaths) {
     questionsOf,
     setting,
     setSetting,
-    importClaimResult,
+    ...facility,
+    /** 注14 の計算の道具（design.md §15-13） */
+    note14Tool: note14.tool,
+    saveNote14Worksheet: note14.saveWorksheet,
+    note14Draft: note14.draftOf,
     doctorQueries,
+    sendDoctor,
     answerDoctor,
     approveDoctor,
-    agenda,
-    answerAgenda,
-    runMeeting,
     crosscheckOf,
-    peerList,
     proxySubmit,
-    queue,
-    verify,
-    empathize,
-    propose,
-    knowledgeList,
-    resolveNoticeItems,
-    registerNotice,
-    seedLocalRules,
-    localRulesOf,
-    peerResolvedByMentor,
-    peerToHuman,
-    peerAnswerByHuman,
     sendCrosscheck,
     confirmedDiseases,
-    personal,
-    manager,
+    // 領域の関数をそのまま全部出すもの（領域の側に足した関数は、ここを直さずに出る）
+    ...clock,
+    ...clerks,
+    ...ukeCheck,
+    ...ukeSummary,
+    /** カルテの構造化データ（design.md §16-1。段 19a） */
+    ...structured,
+    /** 画面の操作の前に、カルテの請求の構造化データを接続先から読んで残す（C-440） */
+    ensureStructuredOfNote: (noteId: number) => structured.ensureStructured(notes.claimIdOfNote(noteId)),
+    /** 取り込んだレセプトの点検。指摘に添えた承認済みの院内の知識に USED を出す（design.md §14-3。1 日 1 回） */
+    ukeCheck: (claimId: string, clerkId?: string) => {
+      const r = ukeCheck.ukeCheck(claimId, clerkId);
+      localPairOps.markUsed(claimId, (r as { localUsed?: string[] }).localUsed ?? []);
+      // 「この請求のこの組が返戻・査定された」を出す組（design.md §14-4）。点検できたレセプト（行を返したもの）にだけ足す（読めない・版のないレセプトの形は変えない）
+      // 作る入口のフォームが選ばせない向き（design.md §14-2）。作る入口を出す G05 の指摘の組ごと
+      if (!("rows" in r)) return r;
+      // 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。本人の分だけ。design.md §14-3・段 17g）
+      const reviewed = claimReviews.reviewedOf(claimId, clerkId);
+      const pairs = ((r as { generic?: GenericView }).generic?.findings ?? []).flatMap((f) => (f.check === "G05" && f.localPair ? [f.localPair] : []));
+      const localPairTaken = pairs.filter((p, i) => pairs.findIndex((q) => samePair(p, q)) === i).map((p) => ({ ...p, polarities: localPairOps.takenPolarities(p) }));
+      return { ...r, localReturns: localPairOps.returnsOf(claimId, r), localPairTaken, premiseChecks: premiseChecks.premiseChecksOf(claimId), ...(reviewed !== undefined ? { reviewed } : {}) };
+    },
+    /** 条件つきの指摘の「前提を確かめた」を残す・取り消す（採点 r4 医療事務課長 P1-1）。鍵は、今の点検で出ている条件つきの指摘のものだけ受け取る */
+    savePremiseCheck: (claimId: string, clerkId: string, key: string, outcome: PremiseOutcome | null) => premiseChecks.savePremiseCheck(claimId, clerkId, key, outcome, ukeCheck.ukeCheck(claimId, clerkId)),
+    /** 「この請求の点検を確かめた」（design.md §14-3・段 17g）。点検できたレセプト（行を返したもの）だけを数える。返すのは本人の件数とレベルだけ */
+    reviewClaim: (claimId: string, clerkId: string) => {
+      const out = claimReviews.review(claimId, clerkId, "rows" in ukeCheck.ukeCheck(claimId, clerkId));
+      const s = questions.status(clerkId);
+      return { ...out, count: s.count, level: s.level };
+    },
+    /** 「この請求のこの組が返戻・査定された」（design.md §14-4）。written は、取り消した押した事実の key（監査ログに足す） */
+    localReturn: (claimId: string, clerkId: string, pair: { a: string; b: string; tani: 1 | 2 | 3 }) => localPairOps.localReturn(claimId, clerkId, pair, claimFactsOf.clearPressed),
+    createPair: localPairOps.createPair,
+    // 介護保険・ほかの医療機関との調整の申告（design.md §18-2・§18-5）。答えの月は、開いた請求の診療年月（C-513）
+    /** 届け出た酸素の単価（任意。design.md §19-3・§19-8） */
+    oxygenPrices: oxygen.oxygenPrices,
+    oxygenPriceKindOf: oxygen.oxygenPriceKindOf,
+    saveOxygenPrice: (clerkId: string, input: OxygenPriceInput) => oxygen.saveOxygenPrice(clerkId, input),
+    careHomes: care.careHomes,
+    saveCareHome: (clerkId: string, input: CareHomeInput) => care.saveCareHome(clerkId, input),
+    careView: (claimId: string) => {
+      const { receipt } = uke.receiptOf(claimId);
+      const patientId = patientFactsOf.ingest(receipt.patient);
+      const eff = care.effectiveCare(patientId, receipt.yearMonth);
+      const others = care.effectiveOthers(patientId, receipt.yearMonth);
+      // 今までに残した 2 値の居住の場所（住まいの種別の申告がない月だけ判定に使う。画面には「古い入力です」）
+      const legacy = eff.residenceType ? null : (patientFactsOf.latestPatientFacts(patientId).find((f) => f.key === "residence")?.value ?? null);
+      return { claimId, yearMonth: receipt.yearMonth, care: eff, legacyResidence: legacy, others: others.rows, none: others.none, homes: care.careHomes() };
+    },
+    /**
+     * 聞き取りの画面（design.md §18-5）：その診療年月の取り込んだ請求のうち、R20・R21 の場面の区分の行があり、使う申告が効いていない・分からない・
+     * 認定の期限が診療年月の中か前・確かめ直す日を過ぎた患者（1 患者 1 枚。聞く問いだけ）と、点検の範囲に「見ていません」がある患者の数。
+     * month を省くと、月ごとの数だけを返す（月の一覧の入口）
+     */
+    careCheck: (monthIn?: string, claimId?: string) => {
+      // ?claim= で開いたときは、その請求の診療年月を開く（C-513。round-82 C-543）
+      const month = monthIn ?? (claimId ? uke.receiptOf(claimId).receipt.yearMonth : undefined);
+      const all = casesOf.cases().filter((c) => !month || c.yearMonth === month);
+      const rows = all.flatMap((c) => {
+        const rev = resolveRevision(c.yearMonth);
+        const careScene = hasCareScene(c, rev.consts);
+        const othersScene = hasOthersScene(c, rev.consts);
+        if (!careScene && !othersScene) return [];
+        const { receipt } = uke.receiptOf(c.claimId);
+        const patientId = patientFactsOf.ingest(receipt.patient);
+        const eff = care.effectiveCare(patientId, c.yearMonth);
+        const certState = careStateOf(patientFactsOf.careRows(patientId), c.yearMonth);
+        const cert = certifiedOf(certState);
+        // 申請中が残る月も聞き取りの対象（認定の結果を聞く。EM U-71 の v40・v41 の書き足し）
+        const applying = certState.known && certState.segments.some((g) => g.kind === "申請中");
+        const residence = eff.residenceType?.value as { type: string; careHomeId?: string } | undefined;
+        const home = residence?.careHomeId ? care.careHomes().find((h) => h.homeId === residence.careHomeId) : undefined;
+        // 聞く問い（design.md §18-5）：申告がない・分からないのほか、判定に要る項目に「分からない」「欠け」が残るもの（round-82 C-541・X-391）
+        const asks: ("careCert" | "residenceType" | "shortStay" | "others")[] = [];
+        if (careScene) {
+          // 認定：診療年月に効かない（期限が月の中か前・分からない・申請中のあとの月）患者だけ。期限が近いだけの患者は聞かない（P07。design.md §18-12 の 5）
+          if (!cert.known || applying) asks.push("careCert");
+          // 住まいの種別：申告がない・分からない・入所先の施設を付けていない（特養）・施設の値が分からない（確かめ直す日を過ぎたを含む）
+          const facility = residence && residence.type !== "自宅" && residence.type !== "分からない";
+          const h = c.care?.residence?.home ?? null;
+          const homeOpen = residence?.type === "特養（地域密着型を含む）" ? !h || h.mitoriFacility === "分からない" : !!h && (h.placedPhysician === "分からない" || h.mitoriFacility === "分からない");
+          if (!residence || residence.type === "分からない" || (facility && homeOpen) || (home && home.recheckOn < monthRange(c.yearMonth).end)) asks.push("residenceType");
+          // 短期入所：申告がない・分からない・使ったが日付や退院日からかが欠けている
+          const stay = eff.shortStay?.value as { status: string } | undefined;
+          const uses = c.care?.shortStay?.status === "使った" ? c.care.shortStay.uses : [];
+          const stayOpen = uses.some((u) => u.start === null || u.end === null || u.fromDischarge === "分からない");
+          if (((!stay || stay.status === "分からない") && askShortStay(c.care ?? {})) || stayOpen) asks.push("shortStay");
+        }
+        if (othersScene) {
+          // ほかの機関：申告がない・在医総管を取る側が分からない・(Ⅰ)2 の月に求めた機関の行がない・特別の関係やしていることが分からない
+          const rows = c.others?.rows ?? [];
+          const v2 = c.lines.some((l) => l.count > 0 && (rev.consts.visit2Kubun ?? []).includes(l.kubun));
+          // その請求の場面で読む項目の「分からない」だけを見る（§18-2 C-514。round-83 X-403）：⑤ 管理料の行→在医総管を取る側、⑥ (Ⅰ)2 の行→求めた機関と求めた日、
+          // ⑦ 訪問看護指示料の行→医療機関の特別の関係と、医療機関が行う訪問看護
+          const kanri = kanriLines(c, rev.consts).length > 0;
+          const shiji = c.lines.some((l) => l.count > 0 && l.kubun === rev.consts.care?.shiji);
+          const med = rows.filter((r) => r.kind === "医療機関");
+          const open =
+            !c.others ||
+            (kanri && rows.some((r) => r.kanriSide === "分からない")) ||
+            (v2 && !rows.some((r) => r.activities["求めによる訪問診療の求めた側"] === "はい" && r.referredOn !== null)) ||
+            (shiji && med.some((r) => r.specialRelation === "分からない" || (r.specialRelation === "はい" && (r.activities["医療機関が行う訪問看護"] ?? "分からない") === "分からない")));
+          if (open) asks.push("others");
+        }
+        // 「見ていません」の文（最初の行の「見ている場面」は除く）。答えても消えないもの（月の途中の変化・読みが割れるなど）もカードに出す
+        const notes = careScopeNotes(c, rev.consts).slice(1);
+        return [{ claimId: c.claimId, yearMonth: c.yearMonth, patient: receipt.patient.name, asks, notDone: notes.length > 0, notes }];
+      });
+      // 画面に出すのは、聞く問いがあるか「見ていません」がある患者（月の帯の「見ていない」の人数は、画面に出る人数に入る）
+      const shown = (r: (typeof rows)[number]) => r.asks.length > 0 || r.notDone;
+      const months = [...new Set(rows.map((r) => r.yearMonth))].sort().map((m) => ({ month: m, targets: rows.filter((r) => r.yearMonth === m && shown(r)).length, notDone: rows.filter((r) => r.yearMonth === m && r.notDone).length }));
+      return { month: month ?? null, months, targets: month ? rows.filter(shown) : [], notDoneCount: rows.filter((r) => r.notDone).length, homes: care.careHomes() };
+    },
+    saveCare: (claimId: string, clerkId: string, input: CareInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveCare(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOther: (claimId: string, clerkId: string, input: OtherInput) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOther(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    saveOtherNone: (claimId: string, clerkId: string, input: Parameters<typeof care.saveOtherNone>[3]) => {
+      const { receipt } = uke.receiptOf(claimId);
+      return care.saveOtherNone(patientFactsOf.ingest(receipt.patient), receipt.yearMonth, clerkId, input);
+    },
+    ...erase,
+    ...review,
+    ...revision,
+    ...doctorFacts,
+    ...peer,
+    ...knowledge,
+    ...meeting,
+    ...prevented,
   };
 }
 

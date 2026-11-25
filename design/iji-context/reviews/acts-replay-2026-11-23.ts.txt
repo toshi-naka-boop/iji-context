@@ -1,0 +1,38 @@
+import { readFileSync } from "node:fs";
+import { matchItem, rowsFor } from "/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/src/chart/match";
+import { tableKeyOfAct, tableKeyOfChild } from "/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/src/chart/acts";
+import { normName } from "/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/src/notice/notice";
+import { withMasters } from "/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/src/masters/db";
+type R = { tbl: string; code: string; name: string; norm: string };
+function proposed(rows: R[], written: string, lookup: string[]) {
+  const w = normName(written); const out: R[] = []; const seen = new Set<string>();
+  const add = (r: R) => { const k = r.tbl + r.code; if (out.length < 20 && !seen.has(k)) { seen.add(k); out.push(r); } };
+  const byCode = (a: R, b: R) => a.code.localeCompare(b.code);
+  rows.filter((r) => r.norm === w).sort(byCode).forEach(add);
+  const terms = lookup.map(normName).filter(Boolean);
+  for (const t of terms) rows.filter((r) => r.norm === t).sort(byCode).forEach(add);
+  const ring = [...terms, ...(w ? [w] : [])].map((t) => [...rows.filter((r) => r.norm.startsWith(t) && r.norm !== t).sort(byCode), ...rows.filter((r) => !r.norm.startsWith(t) && r.norm.includes(t)).sort(byCode)]);
+  for (let i = 0; out.length < 20 && ring.some((l) => i < l.length); i++) for (const l of ring) if (i < l.length) add(l[i]);
+  return out;
+}
+const res = readFileSync("/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/eval/runs/2026-11-23T07-35-47-886Z/results.jsonl", "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+withMasters((db) => {
+  const tot = { n: 0, cur20: 0, cur5: 0, new20: 0, new5: 0, lost: [] as string[], gained: [] as string[] };
+  for (const r of res) {
+    const [, k, n] = r.id.split("-"); const chart = JSON.parse(readFileSync("/Users/toshixa/Documents/iji-context/.claude/worktrees/integration/fixtures/charts/" + k + "-abbrev.json", "utf8"));
+    const e = chart.entries.filter((x: any) => x.acts).sort((a: any, b: any) => a.date.localeCompare(b.date))[Number(n) - 1];
+    const ym = e.date.slice(0, 7); const got = r.output.misses[0].got as any[];
+    const items = got.flatMap((a) => [{ key: tableKeyOfAct(a.c), w: a.w, l: a.l }, ...a.with.map((x: any) => ({ key: tableKeyOfChild(x[0]), w: x[1], l: x[2] }))]);
+    const cur = items.map((it) => { const m = matchItem(rowsFor(db!, it.key, ym) as any, it.key, it.w, it.l, null); return { init: m.initial, c: m.candidates }; });
+    const nw = items.map((it) => { const rows = rowsFor(db!, it.key, ym) as any as R[]; const ex = rows.filter((x) => x.norm === normName(it.w)); return { init: ex.length === 1 ? ex[0] : null, c: proposed(rows, it.w, it.l) }; });
+    const want = e.acts.flatMap((a: any) => [a.match, ...(a.with ?? []).map((x: any) => x.match)]);
+    for (const wt of want) {
+      tot.n++;
+      const rank = (L: any[]) => { const rs = L.map((g) => (g.init && g.init.code === wt.code ? 0 : g.c.findIndex((x: any) => x.tbl === wt.tbl && x.code === wt.code))).filter((i) => i >= 0); return rs.length ? Math.min(...rs) : -1; };
+      const a = rank(cur), b = rank(nw);
+      if (a >= 0) tot.cur20++; if (a >= 0 && a < 5) tot.cur5++; if (b >= 0) tot.new20++; if (b >= 0 && b < 5) tot.new5++;
+      if (a >= 0 && b < 0) tot.lost.push(r.id + ":" + wt.code); if (a < 0 && b >= 0) tot.gained.push(r.id + ":" + wt.code + "@" + b);
+    }
+  }
+  console.log(JSON.stringify(tot));
+});

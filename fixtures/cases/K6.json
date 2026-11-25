@@ -1,6 +1,6 @@
 {
-  "claimId": "K6-2025-03",
-  "yearMonth": "2025-03",
+  "claimId": "K6-2026-10",
+  "yearMonth": "2026-10",
   "payer": "支払基金",
   "prefecture": "東京都",
   "facts": {
@@ -27,9 +27,15 @@
       "known": true,
       "value": false
     },
+    "disabilitySupportLevel": {
+      "known": false
+    },
+    "table8_3Other": {
+      "known": false
+    },
     "mainDisease": {
       "known": true,
-      "value": "慢性心不全"
+      "value": "心不全の疑い"
     },
     "homeOxygen": {
       "known": true,
@@ -50,46 +56,79 @@
     "emergencyEligible": {
       "known": true,
       "value": true
+    },
+    "residence": {
+      "known": true,
+      "value": "居宅"
+    },
+    "contactDocProvided": {
+      "known": true,
+      "value": true
+    },
+    "sameDaySeparate": {
+      "known": true,
+      "value": {}
+    },
+    "sameDayOushinAfterVisit": {
+      "known": true,
+      "value": {}
+    },
+    "dischargeJointGuidance": {
+      "known": false
+    },
+    "rxLongPsychotropic": {
+      "known": true,
+      "value": {}
+    },
+    "rapidSameDayDocumented": {
+      "known": true,
+      "value": false
+    },
+    "comprehensiveCare": {
+      "known": true,
+      "value": false
     }
   },
   "events": [
     {
       "type": "test",
-      "date": "2025-03-12",
+      "date": "2026-10-14",
       "items": [
         "BNP"
       ]
     }
   ],
+  "recordsKnown": true,
+  "commentsKnown": false,
   "lines": [
     {
-      "kubun": "D008_18",
+      "kubun": "D008_19",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     },
     {
       "kubun": "D026_5",
       "count": 1,
       "dates": [
-        "2025-03-12"
+        "2026-10-14"
       ]
     }
   ],
   "comments": [],
   "history": [
     {
-      "yearMonth": "2025-01",
+      "yearMonth": "2026-08",
       "kubun": [
-        "D008_18",
+        "D008_19",
         "D026_5"
       ]
     },
     {
-      "yearMonth": "2025-02",
+      "yearMonth": "2026-09",
       "kubun": [
-        "D008_18",
+        "D008_19",
         "D026_5"
       ]
     }

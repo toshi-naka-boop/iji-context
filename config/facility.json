@@ -1,7 +1,32 @@
 {
+  "grade": "2",
   "zaishishin": true,
   "kyokagata": false,
   "hasBeds": false,
   "prefecture": "東京都",
-  "notifications": {}
+  "notifications": {},
+  "dxTier": "1",
+  "baseUp": "通常",
+  "priceResponse": true,
+  "note16Met": true,
+  "building": "none",
+  "note14": null,
+  "revisitBaseUpSameDay": null,
+  "revisitPriceSameDay": null,
+  "demoDeclaration": {
+    "grade": "zaishishin3",
+    "note16": "met",
+    "dispensing": "inside",
+    "building": "none",
+    "codes": {
+      "721": "yes",
+      "4100": "1",
+      "4102": "yes",
+      "4307": "yes",
+      "4303": "no"
+    }
+  },
+  "recheckNoticeDays": 30,
+  "recheckDefaultMonths": { "note16": 3, "default": 12 },
+  "recheckNote14": "next_check_month_end"
 }

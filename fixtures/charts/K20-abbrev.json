@@ -1,0 +1,106 @@
+{
+  "_note": "評価の合否だけの組の記載（K20。設計 §16-9・§16-10 の E-14。split: gate）。書き方・正解・日は EM §5-1-2 の「K14〜K24 の記載」の表のまま（作成手引きの記録例の事例文・表示の書き方。薬・器材の名前はマスターの名称）。臨床の文は足さない（S・A は空）。acts は正解（本人が確かめたあとの形。match のコードは EM §2-8 の症例のコード）。lookup は空（評価では AI が挙げる語を使う）。合否の組の束（acts-exclude.json・gate の記載・この記載の entry の全体）は eval/acts-count.ts の GATE_SHA256 で固定してある。直すときは設計の版を上げる",
+  "claimId": "K20-2026-10",
+  "entries": [
+    {
+      "date": "2026-10-30",
+      "s": "",
+      "o": "在宅患者訪問診療。大角１枚を使用して胸部の単純撮影をし、写真診断。四ツ切１枚を使用して右膝の単純撮影２方向をし、写真診断。",
+      "a": "",
+      "p": "",
+      "rx": "",
+      "acts": [
+        {
+          "category": "診療行為",
+          "written": "在宅患者訪問診療",
+          "lookup": [],
+          "quote": "在宅患者訪問診療",
+          "match": {
+            "tbl": "shinryo",
+            "code": "114001110",
+            "name": "在宅患者訪問診療料（１）１（同一建物居住者以外）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "写真診断",
+          "lookup": [],
+          "quote": "写真診断",
+          "match": {
+            "tbl": "shinryo",
+            "code": "170000410",
+            "name": "単純撮影（イ）の写真診断",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "単純撮影",
+          "lookup": [],
+          "quote": "単純撮影",
+          "with": [
+            {
+              "kind": "器材",
+              "written": "大角",
+              "lookup": [],
+              "quote": "大角",
+              "match": {
+                "tbl": "tokutei",
+                "code": "700030000",
+                "name": "大角",
+                "by": "name"
+              }
+            }
+          ],
+          "match": {
+            "tbl": "shinryo",
+            "code": "170001910",
+            "name": "単純撮影（アナログ撮影）",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "写真診断",
+          "lookup": [],
+          "quote": "写真診断",
+          "match": {
+            "tbl": "shinryo",
+            "code": "170000510",
+            "name": "単純撮影（ロ）の写真診断",
+            "by": "candidate"
+          }
+        },
+        {
+          "category": "検査",
+          "written": "単純撮影",
+          "lookup": [],
+          "quote": "単純撮影",
+          "with": [
+            {
+              "kind": "器材",
+              "written": "四ツ切",
+              "lookup": [],
+              "quote": "四ツ切",
+              "match": {
+                "tbl": "tokutei",
+                "code": "700090000",
+                "name": "四ツ切（２分割）",
+                "by": "candidate"
+              }
+            }
+          ],
+          "match": {
+            "tbl": "shinryo",
+            "code": "170001910",
+            "name": "単純撮影（アナログ撮影）",
+            "by": "candidate"
+          }
+        }
+      ],
+      "rxNotes": [],
+      "rxChoice": null
+    }
+  ]
+}

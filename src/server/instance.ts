@@ -1,82 +1,167 @@
-// API Route から使うアプリの実体。ログインした人ごとに 1 クリニック（tenant）を持つ（spec FR-73）。
-// tenant のデータは <RESEMEN_DATA>/tenants/<利用者 id>/ に置く（DB・知識・同期した Skill・医師確認の記録）。
+// API Route から使うアプリの実体。利用者はクリニック（tenant）に属する（spec FR-73・FR-132）。
+// tenant のデータは <RESEMEN_DATA>/tenants/<tenant id>/ に置く（DB・知識・同期した Skill・医師確認の記録）。
+// tenant id は、そのクリニックを 1 人で始めた利用者の id（招待で入った利用者は、招待した側の tenant に属する）。
 // ログインしていない呼び出し（テスト・スクリプト・開発用の確認）は従来どおり data/resemen.db の 1 つを使う
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { nextSmalltalkStreak, nextVentStreak, type Situation } from "../mentor/output";
 import { modelFor } from "../mentor/models";
-import type { Character } from "../mentor/prompt";
+import { claimForAi, forgetSessions } from "../llm/outbound";
+import { ukeScreenNote, type Character, type ScreenItem } from "../mentor/prompt";
+import { findingText, patientFindingText } from "../messages";
+import type { Finding } from "../engine/types";
+import type { PatientFinding } from "../patient/checks";
 import { askVeteranMentor } from "../mentor/peer";
 import { askMentor } from "../mentor/session";
 import { clerkMemo, ensureWorkspace, skillsGeneration, workspaceRoot, workspaceSkillNames } from "../mentor/workspace";
 import { crosscheckSkills } from "../uke/crosscheck";
 import { extractFacts, type ChartNote } from "../chart/extract";
-import { formatSoap } from "../chart/soap";
+import { formatSoap, lostAbbrevs } from "../chart/soap";
 import { readChartImage } from "../chart/image";
 import type { VisitKind } from "../chart/notes";
 import type { Style } from "../mentor/style";
-import { defaultPaths, openApp, type App, type AppPaths } from "./app";
-import { openAuth, type Auth, type User } from "./auth";
+import { defaultPaths, openApp, storeOptionsOf, type App, type AppPaths } from "./app";
+import { VETERAN_CLERK } from "./app/clerks";
+import type { User } from "./auth";
+import { dataDir, getAuth } from "./auth-db";
 import { seed } from "../../scripts/seed-knowledge";
 import { syncSkills } from "../../scripts/sync-skills";
+import { UserError, conflict, notFound } from "./errors";
 
 let app: App | null = null;
 
-/** データの置き場所（本番はディスクを付けた場所を RESEMEN_DATA で渡す） */
-export const dataDir = () => path.resolve(process.env.RESEMEN_DATA ?? path.join(process.cwd(), "data"));
-
-let auth: Auth | null = null;
-export function getAuth(): Auth {
-  auth ??= openAuth(path.join(dataDir(), "auth.db"));
-  return auth;
-}
+export { dataDir, getAuth };
 
 /** いまの呼び出しが、どの利用者（tenant）のものか */
 const current = new AsyncLocalStorage<User>();
-export const runAs = <T>(user: User, fn: () => T): T => current.run(user, fn);
+/** その利用者として fn を動かす。fn が Promise を返すときは、終わるまでを「実行中」と数える（その間はクリニックの DB を閉じない） */
+export function runAs<T>(user: User, fn: () => T): T {
+  const id = user.tenantId;
+  const leave = () => {
+    const n = (active.get(id) ?? 1) - 1;
+    if (n > 0) active.set(id, n);
+    else active.delete(id);
+  };
+  active.set(id, (active.get(id) ?? 0) + 1);
+  let out: T;
+  try {
+    out = current.run(user, fn);
+  } catch (e) {
+    leave();
+    throw e;
+  }
+  if (out instanceof Promise) return out.finally(leave) as T;
+  leave();
+  return out;
+}
 export const currentUser = (): User | null => current.getStore() ?? null;
-/** tenant の中で、ログインした本人の医療事務 id（ベテラン役は vet1） */
-export const ME = "new1";
+/** 1 人で始めたクリニックの持ち主（と、ログインなしの呼び出し）の医療事務 id。ベテラン役は VETERAN_CLERK（src/server/app/clerks.ts） */
+const OWNER_CLERK = "new1";
+/**
+ * tenant の中での、その利用者の医療事務 id（clerks の行）。
+ * 持ち主は、ロールを入れる前からある new1 の行をそのまま使う（既存のクリニックの問題・記録・メンターの会話を引き継ぐ）。
+ * 招待で入った利用者は、自分の利用者 id の行を持つ
+ */
+export const clerkIdOf = (user: User): string => (user.id === user.tenantId ? OWNER_CLERK : user.id);
 
+/**
+ * 開いているクリニックの DB ハンドル。開いたままにする数に上限を置き、使われていない順に閉じる（LRU）。
+ * Map は入れた順に並ぶので、使うたびに入れ直して、先頭を「いちばん長く使われていないもの」にする。
+ * 処理は呼び出しのたびに getApp() で取り直すので、閉じたものは次に使うときに開き直る。
+ * LLM の応答を待つ間ハンドルを持ち続ける処理（talkToMentor）があるので、実行中の呼び出しがあるクリニックは閉じない
+ */
+let maxOpenTenants = 50;
+/** テスト用：開いたままにする数の上限を変える */
+export const setMaxOpenTenants = (n: number) => {
+  maxOpenTenants = n;
+};
 const tenants = new Map<string, App>();
+/** クリニックごとの、実行中の呼び出しの数（runAs の中にいる間） */
+const active = new Map<string, number>();
+function touchTenant(id: string, a: App) {
+  tenants.delete(id);
+  tenants.set(id, a);
+  if (tenants.size <= maxOpenTenants) return;
+  for (const [old, t] of tenants) {
+    if (tenants.size <= maxOpenTenants) break;
+    if (old === id || (active.get(old) ?? 0) > 0) continue;
+    tenants.delete(old);
+    t.close();
+  }
+}
+/**
+ * クリニックを開き直す（未定のクリニックの使い方を選んだあと。種類で作り物・時計の振る舞いが変わるので、今の種類で開き直す）。
+ * 次に getApp() を呼んだときに開く。ほかに実行中の呼び出しがあれば、そのハンドルは閉じずに手放す（使い終わったら捨てられる）
+ */
+export function reopenTenant(id: string) {
+  const t = tenants.get(id);
+  if (!t) return;
+  tenants.delete(id);
+  if ((active.get(id) ?? 0) <= 1) t.close();
+}
+/** 開いているクリニックの数（テスト用） */
+export const openTenantCount = () => tenants.size;
 export function tenantPaths(id: string): AppPaths {
   if (!/^t[0-9a-f]{12}$/.test(id)) throw new Error(`利用者 id が不正: ${id}`);
   const dir = path.join(dataDir(), "tenants", id);
   return { root: process.cwd(), dbFile: path.join(dir, "app.db"), knowledgeDir: path.join(dir, "knowledge"), skillsDir: path.join(dir, "skills"), queryLogDir: path.join(dir, "query-log") };
 }
-/** 利用者のクリニックを開く。はじめての利用者には、制度層の知識を入れて Skill を同期してから開く */
-function openTenant(user: User): App {
-  const paths = tenantPaths(user.id);
+/**
+ * クリニックを開く。はじめてのクリニックには、制度層の知識を入れて Skill を同期してから開く。
+ * 種類（demo／real／未定）は auth.db のクリニックの行で決まる。demo のクリニックにだけ、作り物の種（院内ルール・K6 の地域ルール）を入れる
+ */
+function openTenant(tenantId: string): App {
+  const paths = tenantPaths(tenantId);
+  const kind = getAuth().tenantKind(tenantId);
   mkdirSync(path.dirname(paths.dbFile), { recursive: true });
-  const store = { knowledgeDir: paths.knowledgeDir, skillsDir: paths.skillsDir };
+  const store = storeOptionsOf(paths, kind);
   const fresh = !existsSync(paths.knowledgeDir);
-  if (fresh) {
-    seed(store);
-    syncSkills(store);
-  }
-  const a = openApp(paths);
-  // 根拠のある地域ルール（K6 の査定通知から）を 1 つ入れておく（FR-79）。すでにあれば（保管済みでも）入れ直さない
-  a.seedLocalRules();
-  a.upsertClerk({ id: ME, name: user.name, callName: "さん", characterId: "a", role: "clerk" });
+  if (fresh) seed(store);
+  // demo 以外は、開くたびに同期し直す（demo のときに Skill になった作り物の知識を外す。内容が変わらなければ世代も変わらない）
+  if (fresh || kind !== "demo") syncSkills(store);
+  const a = openApp(paths, { kind, decidedAt: getAuth().tenantDecidedAt(tenantId) });
+  // デモのクリニックだけ：院内ルールの種と、根拠のある地域ルール（K6 の合成の査定通知から）を入れておく（FR-79・FR-80）。すでにあれば（保管済みでも）入れ直さない
+  if (kind === "demo") a.seedLocalRules();
   a.upsertClerk(DEMO_CLERKS[1]);
   return a;
+}
+/** 利用者の医療事務の行を用意する（プロセスの中で、利用者ごとに 1 回） */
+const ensured = new Set<string>();
+function ensureClerk(a: App, user: User) {
+  if (ensured.has(user.id)) return;
+  a.upsertClerk({ id: clerkIdOf(user), name: user.name, callName: "さん", characterId: "a", role: user.id !== user.tenantId && user.role === "veteran" ? "veteran" : "clerk" });
+  ensured.add(user.id);
+}
+
+/** 役割が変わった利用者の医療事務の行を、次の呼び出しで用意し直す（行の役割を今の役割にそろえる） */
+export const refreshClerk = (userId: string) => ensured.delete(userId);
+
+/**
+ * 実在のクリニックで、日付が変わっていれば医師確認のリマインド・保留と会議の整理を回す（src/server/app/clock.ts の catchUp。同じ日のうちは何もしない）。
+ * 失敗しても、呼び出し（画面の操作）は止めない。サーバーログに残し、次のリクエストで回し直す（続けて失敗するときは間隔を空ける。clock.ts）
+ */
+function catchUp(a: App) {
+  try {
+    a.catchUp();
+  } catch (e) {
+    console.error(`[clock] 日付が変わったときの処理に失敗: ${e instanceof Error ? `${e.name}: ${e.message.slice(0, 300)}` : "error"}`);
+  }
 }
 
 /** デモ用の医療事務（新人とベテラン）。キャラはユーザーが決めるまで仮 */
 const DEMO_CLERKS = [
   { id: "new1", name: "新人", callName: "さん", characterId: "a", role: "clerk" as const },
-  { id: "vet1", name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
+  { id: VETERAN_CLERK, name: "ベテラン", callName: "さん", characterId: "b", role: "veteran" as const },
 ];
 
 export function getApp(): App {
   const u = currentUser();
   if (u) {
-    let t = tenants.get(u.id);
-    if (!t) {
-      t = openTenant(u);
-      tenants.set(u.id, t);
-    }
+    const t = tenants.get(u.tenantId) ?? openTenant(u.tenantId);
+    touchTenant(u.tenantId, t);
+    ensureClerk(t, u);
+    catchUp(t);
     return t;
   }
   if (app) return app;
@@ -93,7 +178,7 @@ export function characters(): Character[] {
 
 export function characterOf(id: string): Character {
   const c = characters().find((x) => x.id === id);
-  if (!c) throw new Error(`キャラがない: ${id}`);
+  if (!c) throw notFound(`キャラがない: ${id}`);
   return c;
 }
 
@@ -127,11 +212,54 @@ function prepare(a: App, clerkId: string): { workspace: { cwd: string; skills: s
   const c = a.clerk(clerkId);
   const s = a.status(clerkId);
   const memo = clerkMemo({ name: c.name, callName: c.call_name, role: c.role, level: s.level, count: s.count, streak: s.streak }, a.questionsOf(clerkId));
-  // 作業場所も利用者（tenant）ごとに分ける（医療事務の id は tenant ごとに同じ new1 になるため）
-  const cwd = ensureWorkspace(path.join(workspaceRoot(), currentUser()?.id ?? "default"), clerkId, a.store.skillsDir, memo, crosscheckSkills());
+  // 作業場所も tenant ごとに分ける（持ち主の医療事務の id は tenant ごとに同じ new1 になるため）
+  const cwd = ensureWorkspace(path.join(workspaceRoot(), currentUser()?.tenantId ?? "default"), clerkId, a.store.skillsDir, memo, crosscheckSkills());
   const generation = skillsGeneration(a.store.skillsDir);
   const same = a.setting(`session_gen:${clerkId}`) === generation;
   return { workspace: { cwd, skills: workspaceSkillNames(cwd) }, sessionId: same ? c.session_id : null, generation };
+}
+
+/**
+ * 取り込んだファイルを消す（design.md §11-11）。DB とファイルは app.deleteUpload が 1 つのトランザクションで消す。
+ * ここでは、その請求を相談した人のメンターのやり取り（セッションの記録。前に使って捨てたセッションの分も）と作業場所を消す（作業場所は、次に話しかけたときに作り直される）
+ */
+export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string; claims: number }> {
+  const r = getApp().deleteUpload(sha256);
+  const root = path.join(workspaceRoot(), currentUser()?.tenantId ?? "default");
+  for (const c of r.clerks) {
+    if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
+    const cwd = path.join(root, c.id);
+    await forgetSessions(cwd, c.sessionIds, getApp().sessionStore);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+  return { deleted: sha256, claims: r.claimIds.length };
+}
+
+/**
+ * クリニックをまるごと消す（採点 r1 事務長 #8。持ち主だけ。demo でも real でも）。消すもの：クリニックの DB（取り込んだ請求・患者・カルテ・医師確認・監査ログを含む全部の表）、
+ * 取り込んだファイル、知識・同期した Skill・医師確認の記録、メンターのやり取り（これまでに使ったセッションの記録）と作業場所、ログインの利用者・セッション・招待。
+ * 残るもの：ログインまわりの記録（auth.db の auth_events。id だけ）と、AI のサービス側に送った内容（こちらからは消せない）。
+ * ほかの呼び出しが実行中なら断る（DB を閉じられないため）。消したあとは、このクリニックの誰もログインできない
+ */
+export async function eraseTenant(user: User, confirm: string, password: string): Promise<{ erased: true }> {
+  const auth = getAuth();
+  auth.assertCanEraseTenant(user, confirm, password);
+  const id = user.tenantId;
+  if ((active.get(id) ?? 0) > 1) throw conflict("ほかの操作が終わっていません。少し待ってから、もう一度消してください");
+  const a = getApp();
+  // メンターのやり取り：取り込んだファイルを消すとき（deleteUkeUpload）と同じく、セッションの記録を消す
+  const root = path.join(workspaceRoot(), id);
+  for (const c of a.allSessions()) {
+    if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
+    await forgetSessions(path.join(root, c.id), c.sessionIds, a.sessionStore);
+  }
+  // DB を閉じてから、ファイルごと消す。ログインの行は最後に消す（途中で失敗しても、持ち主がもう一度消せるように）
+  tenants.delete(id);
+  a.close();
+  rmSync(path.dirname(tenantPaths(id).dbFile), { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+  for (const u of auth.forgetTenant(id).users) ensured.delete(u);
+  return { erased: true };
 }
 
 /** 続きのセッションで失敗したら（作業場所が変わって履歴が見つからないなど）、新しいセッションで一度だけやり直す */
@@ -145,21 +273,60 @@ async function withSession<T>(sessionId: string | null, run: (sid: string | null
   }
 }
 
-/** ベテランのメンターに問う（ベテラン本人の作業場所・セッションで） */
-async function askVeteran(a: App, question: string) {
-  const vet = a.clerk("vet1");
+/** 問題がまだあるか。メンターの応答を待つ間に、その請求のファイルが消されると、問題も消えている */
+function questionExists(a: App, questionId: string): boolean {
+  try {
+    a.question(questionId);
+    return true;
+  } catch (e) {
+    if (e instanceof UserError && e.status === 404) return false;
+    throw e;
+  }
+}
+const ERASED = "この請求のファイルは消されました。やり取りは残していません";
+
+/**
+ * ベテランのメンターに問う（ベテラン本人の作業場所・セッションで）。
+ * alive は、問いの元の請求がまだあるか。応答を待つ間に消されていたら、何も書かず、この作業場所のセッションの記録を消して断る（消した請求の問いを残さない）
+ */
+async function askVeteran(a: App, by: User, question: string, alive: () => boolean) {
+  const vet = a.clerk(VETERAN_CLERK);
   const p = prepare(a, vet.id);
-  const r = await withSession(p.sessionId, (sid) => askVeteranMentor(a.store, question, sid, p.workspace, modelFor("veteranMentor")));
+  let r: Awaited<ReturnType<typeof askVeteranMentor>>;
+  try {
+    r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor"), a.sessionStore));
+  } catch (e) {
+    if (!alive()) await forgetSessions(p.workspace.cwd, [], a.sessionStore);
+    throw e;
+  }
+  if (!alive()) {
+    await forgetSessions(p.workspace.cwd, [r.sessionId], a.sessionStore);
+    throw notFound(ERASED);
+  }
   a.setSession(vet.id, r.sessionId);
   a.setSetting(`session_gen:${vet.id}`, p.generation);
   return r;
 }
 
-/** メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す） */
 /**
+ * 取り込んだレセプトの点検の画面に出ている指摘（ユスティの指摘と情報不足・データで動く点検・患者情報チェック）を、画面と同じ定型文で並べる（採点 r3 医療事務課長 #2）。
+ * 点検できなかったレセプト（読めない・版がない）は空
+ */
+function ukeScreenItems(r: unknown): ScreenItem[] {
+  const c = r as { rows?: unknown; findings?: Finding[]; missing?: Finding[]; generic?: { findings: { check: string; kind: string; certainty?: string; text: string }[] }; patientFindings?: PatientFinding[] };
+  if (!c.rows) return [];
+  return [
+    ...[...(c.findings ?? []), ...(c.missing ?? [])].map((f) => ({ id: f.ruleId, kind: f.kind, conditional: f.params?.conditional === "1", text: findingText(f) })),
+    ...(c.generic?.findings ?? []).map((f) => ({ id: f.check, kind: f.kind, conditional: f.certainty === "条件つき", text: f.text })),
+    ...(c.patientFindings ?? []).map((f) => ({ id: f.checkId, kind: f.kind, text: patientFindingText(f) })),
+  ];
+}
+
+/**
+ * メンターに話しかける（1 人 1 セッション。セッション id は clerks に残す）。user は操作した本人（外部へ送る前に、同意を確かめるために渡す）。
  * skipCrosscheck：本人が「照合の不一致とは別のことを医師に聞きたい」と選んだとき。この 1 回だけ照合の不一致を渡さない
  */
-export async function talkToMentor(input: { clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean }) {
+export async function talkToMentor(input: { user: User; clerkId: string; questionId: string; message: string; situation: Situation; skipCrosscheck?: boolean; screen?: "uke" }) {
   const a = getApp();
   const clerk = a.clerk(input.clerkId);
   const q = a.question(input.questionId);
@@ -171,18 +338,32 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
   const engine = latest ?? a.judgeFor(q)({ ...ctx, lines });
   const p = prepare(a, clerk.id);
   const level = a.status(clerk.id).level;
-  const r = await withSession(p.sessionId, (sid) =>
+  // 応答を待つ間に、この請求のファイルが消されることがある（design.md §11-11「消す」）。待ったあとの書き込みは、どれも直前に問題がまだあるかを確かめる
+  const alive = () => questionExists(a, q.id);
+  /** 消されていたとき：待つ間にできた記録（この人のセッションの記録、メンターが作った医師確認）を消す。DB には何も書かない */
+  const cleanUp = async (sessionIds: string[]) => {
+    await forgetSessions(p.workspace.cwd, sessionIds, a.sessionStore);
+    a.forgetQueries([q.claimId]);
+  };
+  let r: Awaited<ReturnType<typeof askMentor>>;
+  try {
+    r = await withSession(p.sessionId, (sid) =>
     askMentor(
       {
         store: a.store,
         queryLog: a.queryLog,
+        sessionStore: a.sessionStore,
         askPeerMentor: async (question) => {
-          const v = await askVeteran(a, question);
+          const v = await askVeteran(a, input.user, question, alive);
           if (!v.answer.answerable) return null;
-          a.peerResolvedByMentor(clerk.id, question, v.answer.body);
+          if (!alive()) throw notFound(ERASED);
+          a.peerResolvedByMentor(clerk.id, question, v.answer.body, q.claimId);
           return v.answer.body;
         },
-        askHuman: async (question) => a.peerToHuman(clerk.id, question),
+        askHuman: async (question) => {
+          if (!alive()) throw notFound(ERASED);
+          return a.peerToHuman(clerk.id, question, q.claimId);
+        },
         crosscheck: () =>
           input.skipCrosscheck ? [] : a.crosscheckOf(q.claimId, q.asOf, q.clerkId).mismatches.map((m) => ({
             ruleId: m.ruleId,
@@ -193,12 +374,14 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
           })),
       },
       {
+        by: input.user,
         clerkId: clerk.id,
         sessionId: sid,
         character: characterOf(clerk.character_id),
         style: a.styleOf(clerk.id),
         level,
-        ctx: { ...ctx, lines },
+        // メンターに渡す請求は、識別子を外した形だけ
+        ctx: claimForAi(ctx),
         engine,
         situation: input.situation,
         message: input.message,
@@ -207,12 +390,21 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
         workspace: p.workspace,
         // 確定する前（ヒントの段階）は判定の中身を渡さない
         reveal: q.confirmed !== null,
-        note: a.outlookOf(q) ?? undefined,
+        // 取り込んだレセプトの点検の画面から聞かれたときは、その画面の指摘を添える（採点 r3 医療事務課長 #2）
+        note: [a.outlookOf(q), input.screen === "uke" ? ukeScreenNote(ukeScreenItems(a.ukeCheck(q.claimId, clerk.id))) : null].filter((x) => x).join("\n") || undefined,
         smalltalkStreak: Number(a.setting(`smalltalk:${q.id}`) ?? "0"),
         ventStreak: Number(a.setting(`vent:${q.id}`) ?? "0"),
       },
     ),
-  );
+    );
+  } catch (e) {
+    if (!alive()) await cleanUp([]);
+    throw e;
+  }
+  if (!alive()) {
+    await cleanUp([r.sessionId]);
+    throw notFound(ERASED);
+  }
   a.setSession(clerk.id, r.sessionId);
   a.setSetting(`session_gen:${clerk.id}`, p.generation);
   // 数えるのは回数だけ。愚痴の中身はどこにも集計しない（事務長のレポートにも出さない）
@@ -221,14 +413,43 @@ export async function talkToMentor(input: { clerkId: string; questionId: string;
   return r;
 }
 
-/** 訪問カルテを残し、AI が算定に要る事実を取り出す（FR-69）。取り出した事実は本人が確かめてから使う */
-export async function writeChart(input: { claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
+/**
+ * 訪問カルテを残し、AI が算定に要る事実と行ったこと・処方の記載を取り出す（FR-69・FR-192。1 回の呼び出し）。取り出したものは本人が確かめてから使う。
+ * 行ったことは手元でマスターに当て（AI に送らない。design.md §15-7）、確かめる画面の当て方（review）を添えて返す
+ */
+export async function writeChart(input: { user: User; claimId: string; clerkId: string; kind: VisitKind; note: ChartNote }) {
   const a = getApp();
   const saved = a.saveNote(input.claimId, input.clerkId, input.kind, input.note);
-  const r = await extractFacts(input.note, modelFor("chartExtract"));
-  return { ...saved, ...r };
+  const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 略語のまとめ（FR-211）：略語のあるカルテは LLM の lookup を空にし、辞書の候補を添える
+  const m = a.markExtracted(saved.id, input.clerkId, r.acts, r.facts);
+  // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
+  await a.ensureStructured(input.claimId);
+  return { ...saved, ...r, ...m, review: a.actsReviewOf(saved.id, m.acts, r.rx) };
 }
 
-/** 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す */
-export const formatChart = (text: string) => formatSoap(text, modelFor("chartSoap"));
-export const readChartFromImage = (image: Buffer) => readChartImage(image, modelFor("chartImage"));
+/**
+ * 取り込んだ請求にカルテの文を貼る（design.md §15-8・§15-9。段 18c）：日付つきで残し（kind「記録」）、AI が行ったことを取り出す。
+ * 確かめは今のカルテと同じ入口（POST /api/chart/acts）。事実は取り出しても使わない（出来事を作らない）
+ */
+export async function pasteRecord(input: { user: User; claimId: string; clerkId: string; date: string; note: ChartNote }) {
+  const a = getApp();
+  const saved = a.saveRecord(input.claimId, input.clerkId, input.date, input.note);
+  const r = await extractFacts(input.user, input.note, modelFor("chartExtract"));
+  // 略語のまとめ（FR-211）：略語のあるカルテは LLM の lookup を空にし、辞書の候補を添える（貼ったカルテは事実を使わない）
+  const m = a.markExtracted(saved.id, input.clerkId, r.acts, []);
+  // 確かめる画面の構造化データの欄のため、接続先から読んで残す（C-440）
+  await a.ensureStructured(input.claimId);
+  return { ...saved, acts: m.acts, rx: r.rx, actsDropped: r.actsDropped, abbrev: m.abbrev, review: a.actsReviewOf(saved.id, m.acts, r.rx) };
+}
+
+/**
+ * 自由に書いたカルテを SOAP の欄に整える（Haiku）。保存はしない。本人が欄を確かめてから writeChart で残す。
+ * 請求を渡すと、その診療年月のマスターで原文の略語の印を見て、整えた欄から消えた印の語（lostAbbrevs。FR-211）も返す（マスターがなければ空）
+ */
+export async function formatChart(user: User, text: string, claimId?: string) {
+  const r = await formatSoap(user, text, modelFor("chartSoap"));
+  // 請求を渡さないときは見ない（応答の形も今までのまま）
+  return claimId ? { ...r, lostAbbrevs: lostAbbrevs(r.note, getApp().abbrevMarksOf(claimId, text)) } : r;
+}
+export const readChartFromImage = (user: User, image: Buffer) => readChartImage(user, image, modelFor("chartImage"));

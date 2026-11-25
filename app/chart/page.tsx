@@ -1,20 +1,28 @@
 "use client";
-// 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → レセメン（訪問の記録）へ
+// 訪問カルテを書く（FR-69）：患者を選ぶ → 訪問したていでカルテを書く → AI が算定に要る事実を取り出す → 本人が確かめる → 同じ画面に算定行・合計・指摘（FR-101）→ レセメン（訪問の記録）へ
 // 自由に書いて Haiku に SOAP の欄へ振り分けさせることも、見本（足りないカルテ・ちゃんとしたカルテ）を入れることもできる（2026-11-07 ユーザー判断）
 // 見た目は PC・タブレットで書く一般的な訪問カルテ（2026-11-08 にスマホの枠をやめた）。特定の製品に似せない
 // 電子カルテの画面を撮った画像を渡すと、AI が病名・診療記録・処方を書き写して自由記述の欄に入れる（2026-11-08 ユーザー判断。画像は保存しない）
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartNote, ExtractedFact } from "../../src/chart/extract";
+import type { AbbrevSummary, ChartAct, RxChoice, RxNote } from "../../src/chart/acts";
+import { MAX_CHART_TEXT } from "../../src/chart/limits";
 import type { VisitKind } from "../../src/chart/notes";
 import { TopBar } from "../nav";
 import { SignIn, useClerk } from "../clerk";
+import { Notice } from "../consent";
+import { getJson, postJson } from "../get-json";
 import SAMPLES from "../../fixtures/charts/samples.json";
 import { PageGuide } from "../page-guide";
 import { colorOf } from "../work/board";
+import { ClaimPreview } from "./claim-preview";
+import { NoteList } from "./note-list";
+import { ConfirmedFixes } from "./confirmed-fixes";
+import { AbbrevSummaryNote, ActsReviewPanel, actsToSave, rowsOf, type ActRow, type ActsReview } from "./acts-review";
 
 type Patient = { claimId: string; name: string; sex: string; age: number | null; insurance: string | null; mainDisease: string | null; diseases: string[]; careLevel: number | null; table7: boolean | null; table8_2: boolean | null; homeOxygen: boolean | null };
-type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[] };
+type Extracted = { id: number; date: string; facts: ExtractedFact[]; dropped: { fact: unknown; why: string }[]; acts: ChartAct[]; rx: RxNote[]; actsDropped: { fact: unknown; why: string }[]; review: ActsReview; abbrev?: AbbrevSummary };
 type Row = ExtractedFact & { keep: boolean };
 
 type Sample = { lacking: string; complete: string };
@@ -23,30 +31,38 @@ const sampleOf = (claimId: string) => (SAMPLES as unknown as Record<string, Samp
 const EMPTY: ChartNote = { s: "", o: "", a: "", p: "", rx: "" };
 const yesNo = (b: boolean | null, yes: string, no: string) => (b === null ? "分からない" : b ? yes : no);
 
-async function api<T>(url: string, body?: unknown): Promise<T> {
-  const r = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error ?? "エラー");
-  return d as T;
-}
-
 export default function Chart() {
   const router = useRouter();
   const { clerk: user, ready } = useClerk();
-  const CLERK = user?.id ?? "";
   const [patients, setPatients] = useState<Patient[]>([]);
   const [p, setP] = useState<Patient | null>(null);
   const [kind, setKind] = useState<VisitKind>("訪問診療");
   const [note, setNote] = useState<ChartNote>(EMPTY);
   const [ex, setEx] = useState<Extracted | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  /** 行ったこと（design.md §15-6）と、その日の院内・院外 */
+  const [actRows, setActRows] = useState<ActRow[]>([]);
+  const [rxChoice, setRxChoice] = useState<RxChoice | null>(null);
+  const [rxConfirmed, setRxConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 自由記述（SOAP に整える前） */
   const [free, setFree] = useState("");
   const [unmatched, setUnmatched] = useState<string[]>([]);
+  /** SOAP に整えたときに消えた略語（FR-211。原文の印の語） */
+  const [lost, setLost] = useState<string[]>([]);
   const [err, setErr] = useState("");
+  /** 確定したカルテ（確定したら、同じ画面に算定行と指摘を出す） */
+  const [confirmed, setConfirmed] = useState<{ claimId: string; date: string } | null>(null);
   useEffect(() => {
-    api<Patient[]>("/api/patients").then(setPatients).catch((e) => setErr(e.message));
+    getJson<Patient[]>("/api/patients")
+      .then((list) => {
+        setPatients(list);
+        // G11 の結果の案内から来たとき（/chart?claimId=…#chart-fixes）は、その患者を選んだ状態で開く（C-441）
+        const want = new URLSearchParams(window.location.search).get("claimId");
+        const hit = want ? list.find((x) => x.claimId === want) : undefined;
+        if (hit) setP(hit);
+      })
+      .catch((e) => setErr(e.message));
   }, []);
 
   async function read() {
@@ -54,9 +70,12 @@ export default function Chart() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api<Extracted>("/api/chart", { claimId: p.claimId, clerkId: CLERK, kind, note });
+      const r = await postJson<Extracted>("/api/chart", { claimId: p.claimId, kind, note });
       setEx(r);
       setRows(r.facts.map((f) => ({ ...f, keep: true })));
+      setActRows(rowsOf(r.acts, r.review));
+      setRxChoice(r.review.rxDefault);
+      setRxConfirmed(false);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -67,9 +86,10 @@ export default function Chart() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api<{ note: ChartNote; unmatched: string[] }>("/api/chart/soap", { text: free });
+      const r = await postJson<{ note: ChartNote; unmatched: string[]; lostAbbrevs?: string[] }>("/api/chart/soap", { text: free, ...(p ? { claimId: p.claimId } : {}) });
       setNote(r.note);
       setUnmatched(r.unmatched);
+      setLost(r.lostAbbrevs ?? []);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -88,10 +108,11 @@ export default function Chart() {
         fr.onerror = () => ng(new Error("画像を読み込めませんでした"));
         fr.readAsDataURL(file);
       });
-      const r = await api<{ text: string }>("/api/chart/image", { imageBase64: b64 });
+      const r = await postJson<{ text: string }>("/api/chart/image", { imageBase64: b64 });
       setFree(r.text);
       setNote(EMPTY);
       setUnmatched([]);
+      setLost([]);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -102,11 +123,33 @@ export default function Chart() {
     if (!ex || !p) return;
     setErr("");
     try {
-      const r = await api<{ claimId: string; date: string }>(`/api/chart/${ex.id}`, { facts: rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f) });
-      router.push(`/work?visit=${encodeURIComponent(`${r.claimId}|${r.date}`)}`);
+      const kept = rows.filter((x) => x.keep).map(({ keep: _k, ...f }) => f);
+      // 事実と行ったことを、1 回の確かめで保存する（design.md §15-6）
+      const r = await postJson<{ claimId: string; date: string }>("/api/chart/acts", {
+        noteId: String(ex.id),
+        facts: kept,
+        acts: actsToSave(actRows),
+        rx: ex.rx,
+        rxChoice,
+        rxConfirmed,
+      });
+      setConfirmed(r);
     } catch (e) {
       setErr((e as Error).message);
     }
+  }
+  /** いま書いたカルテを消す（確かめてから）。本文と、そこから確かめた事実が消える。算定の見込みは、残りのカルテから計算し直される */
+  async function remove() {
+    if (!ex) return;
+    if (!window.confirm("このカルテを消します。カルテの本文と、そこから確かめた事実が消え、元に戻せません。AI のサービスに送った内容は、こちらからは消せません。よろしいですか")) return;
+    setErr("");
+    const r = await fetch(`/api/chart/${ex.id}`, { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return setErr(d.error ?? "消せませんでした");
+    setEx(null);
+    setRows([]);
+    setConfirmed(null);
+    setNote(EMPTY);
   }
   if (!ready) return <main className="shell"><TopBar /></main>;
   if (!user) return <main className="shell"><TopBar /><SignIn /></main>;
@@ -114,7 +157,7 @@ export default function Chart() {
   const field = (k: keyof ChartNote, label: string, rows = 2) => (
     <label className="chart-field">
       <span>{label}</span>
-      <textarea rows={rows} value={note[k]} disabled={!!ex} onChange={(e) => setNote({ ...note, [k]: e.target.value })} />
+      <textarea rows={rows} value={note[k]} maxLength={MAX_CHART_TEXT} disabled={!!ex} onChange={(e) => setNote({ ...note, [k]: e.target.value })} />
     </label>
   );
 
@@ -122,14 +165,14 @@ export default function Chart() {
     <main className="shell">
       <TopBar />
       <PageGuide who="black-hair" title="カルテを書く">
-        訪問したていで、デモ用のカルテを書けます。自由に書けば AI が SOAP の欄に振り分けます。書くのが初めてなら、見本のカルテを入れてみてください。保存すると、算定に要る事実を読み取ってレセメンに渡します。
+        訪問したていで、デモ用のカルテを書けます。自由に書けば AI が SOAP の欄に振り分けます。書くのが初めてなら、見本のカルテを入れてみてください。保存すると、算定に要る事実を読み取ります。確かめて確定すると、この画面に算定行と指摘が出ます。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
       <div className="two-col">
         <aside aria-label="訪問する患者" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>訪問する患者</h2>
           {patients.map((x) => (
-            <button key={x.claimId} className={`patient-card${p?.claimId === x.claimId ? " on" : ""}`} disabled={!!ex && p?.claimId !== x.claimId} onClick={() => { setP(x); setNote(EMPTY); setEx(null); setFree(""); setUnmatched([]); }}>
+            <button key={x.claimId} className={`patient-card${p?.claimId === x.claimId ? " on" : ""}`} disabled={!!ex && p?.claimId !== x.claimId} onClick={() => { setP(x); setNote(EMPTY); setEx(null); setConfirmed(null); setFree(""); setUnmatched([]); setLost([]); }}>
               <span className="patient-band" style={{ background: colorOf(x.claimId).bg }} />
               <span style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
                 <strong>{x.name}</strong>
@@ -157,6 +200,7 @@ export default function Chart() {
                 <button key={k} className={kind === k ? "primary" : ""} disabled={!!ex} onClick={() => setKind(k)}>{k}</button>
               ))}
             </div>
+            <Notice />
             <label className="chart-field">
               <span>自由に書く（AI が SOAP の欄に振り分けます）</span>
               <textarea rows={4} value={free} disabled={!!ex} onChange={(e) => setFree(e.target.value)} />
@@ -182,6 +226,7 @@ export default function Chart() {
               <button disabled={busy || !free.trim()} onClick={toSoap}>{busy ? "整えています…" : "SOAP に整える"}</button>
             )}
             {unmatched.length > 0 && <div className="notice warn">元の文にない言い回しがあります。確かめて直してください：{unmatched.join("、")}</div>}
+            {lost.length > 0 && <div className="notice warn">整形で消えた略語があります。元の文のとおりに直してください：{lost.join("、")}</div>}
             <div className="soap-grid">
               {field("s", "S（主訴）")}
               {field("o", "O（所見）")}
@@ -194,10 +239,25 @@ export default function Chart() {
                 {busy ? "読み取っています…" : "保存して、算定に要る事実を読み取る"}
               </button>
             )}
-            {ex && (
+            {ex && confirmed && (
+              <>
+                <div className="notice ok">{confirmed.date} の訪問のカルテを確定しました。</div>
+                <ClaimPreview noteId={ex.id} />
+                <div className="chips">
+                  <button className="primary" onClick={() => router.push(`/work?visit=${encodeURIComponent(`${confirmed.claimId}|${confirmed.date}`)}`)}>レセメンで訪問の記録を確かめる</button>
+                  <button onClick={remove}>このカルテを消す</button>
+                </div>
+              </>
+            )}
+            {/* 前に書いたカルテ（保存のみ・確定済み）を、あとからでも消せる。一覧から今のカルテを消したら、入力を最初に戻す */}
+            <NoteList claimId={p.claimId} tick={`${ex?.id ?? ""}-${confirmed ? 1 : 0}`} onDeleted={(id) => { if (ex?.id === id) { setEx(null); setRows([]); setConfirmed(null); setNote(EMPTY); } }} />
+            {/* 確かめたあとで処方の日の印・「同じ／違う」を付け直す（design.md §16-7。C-441） */}
+            <ConfirmedFixes claimId={p.claimId} tick={confirmed ? 1 : 0} />
+            {ex && !confirmed && (
               <div>
                 <h3>読み取った事実（確かめてください）</h3>
-                <p className="muted">AI が読み取ったものです。違うものは外し、分類は直せます。どれもカルテに書かれた言葉から取っています。判定はこのあとユスティが行います。</p>
+                <p className="muted">AI が読み取ったものです。違うものは外し、分類は直せます。どれもカルテに書かれた言葉から取っています。「不安・不眠の薬」は、その日の処方に含まれるかを「あり」「なし」で確かめます。判定はこのあとユスティが行います。</p>
+                <AbbrevSummaryNote abbrev={ex.abbrev} noteId={ex.id} />
                 {rows.length === 0 && <div className="muted">算定に要る事実は見つかりませんでした（訪問の記録としては残ります）。</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="notice">
@@ -211,7 +271,14 @@ export default function Chart() {
                 {ex.dropped.length > 0 && (
                   <div className="notice warn">カルテに書かれていない言葉から取ったものなど {ex.dropped.length} 件は、使わずに捨てました。</div>
                 )}
-                <button className="primary" onClick={hand}>これでレセメンに渡す（{ex.date} の訪問）</button>
+                <ActsReviewPanel ym={ex.date.slice(0, 7)} review={ex.review} rows={actRows} setRows={setActRows} rx={ex.rx} rxChoice={rxChoice} setRxChoice={setRxChoice} rxConfirmed={rxConfirmed} setRxConfirmed={setRxConfirmed} claimId={p.claimId} date={ex.date} noteId={ex.id} />
+                {ex.actsDropped.length > 0 && (
+                  <div className="notice warn">行ったことのうち、カルテに書かれていない言葉から取ったものなど {ex.actsDropped.length} 件は、使わずに捨てました（量だけを捨てたものを含みます）。</div>
+                )}
+                <div className="chips">
+                  <button className="primary" onClick={hand}>これで確定する（{ex.date} の訪問）</button>
+                  <button onClick={remove}>このカルテを消す</button>
+                </div>
               </div>
             )}
           </>

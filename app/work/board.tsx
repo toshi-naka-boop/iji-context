@@ -1,6 +1,6 @@
 "use client";
 // 算定画面の一覧（2026-11-08 ユーザー判断で案 C+「クエストボード」）：訪問は月のタイムライン、練習問題は患者の色のカード。
-// 見た目だけを受け持ち、開く処理は呼ぶ側（page.tsx）の begin に任せる。データは合成データ・架空コード
+// 見た目だけを受け持ち、開く処理は呼ぶ側（page.tsx）の begin に任せる。データは合成データ
 import { useEffect, useState } from "react";
 import type { ClaimContext } from "../../src/engine/types";
 
@@ -34,8 +34,9 @@ export function Board(props: {
 }) {
   const { visits, cases, drills } = props;
   const [today, setToday] = useState("");
+  const [kind, setKind] = useState<"demo" | "real" | null>(null);
   useEffect(() => {
-    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => d && setToday(String(d.now).slice(0, 10))).catch(() => {});
+    fetch("/api/clock").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setToday(String(d.now).slice(0, 10)); setKind(d.kind === "demo" ? "demo" : "real"); } }).catch(() => {});
   }, []);
   const disease = (claimId: string) => {
     const c = cases.find((x) => x.claimId === claimId);
@@ -53,6 +54,10 @@ export function Board(props: {
   const docDone = drills.doctor.filter((d) => d.cleared).length;
   // 次にやる練習：まだ正解していない最初の 1 問
   const next = drills.fix.find((d) => !d.cleared)?.id;
+
+  // 実在のデータで使うクリニックには、作り物の訪問記録と練習問題を出さない（2026-11-22 利用者の判断）
+  if (kind === "real") return <p className="muted">このクリニックは実在のデータで使う設定です。作り物の訪問記録と練習問題は出しません。月末の点検は <a href="/uke">UKE 取り込みの全件の一覧</a>で行います。</p>;
+  if (kind === null) return null;
 
   return (
     <>

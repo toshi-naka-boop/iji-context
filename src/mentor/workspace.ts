@@ -5,7 +5,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { HookCallbackMatcher, HookEvent } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallbackMatcher, HookEvent } from "../llm/outbound";
 import { listKnowledge, type StoreOptions } from "../lifecycle/store";
 import type { Question } from "../practice/practice";
 import { MISMATCH_RULES } from "../uke/crosscheck";
@@ -103,7 +103,7 @@ export function knowledgeIdOf(store: StoreOptions, name: string): string | null 
 }
 
 /**
- * Skill を読む前後の Hooks。読む直前に知識の状態を確かめ、承認済み・院内以外でなければ読ませない
+ * Skill を読む前後の Hooks。読む直前に知識の状態を確かめ、承認済み・院内以外・背反の組の知識（match.codePair。design.md §14-1）以外でなければ読ませない
  * （同期の遅れで古い知識が残っていても、読む瞬間に止める）。読めたものは reads に知識 id で残す
  */
 export function skillGuard(store: StoreOptions): { hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>>; reads: string[] } {
@@ -117,7 +117,7 @@ export function skillGuard(store: StoreOptions): { hooks: Partial<Record<HookEve
     const cross = /^crosscheck-([a-z0-9]+)$/.exec(name);
     if (cross && MISMATCH_RULES.some((r) => r.id.toLowerCase() === cross[1])) return `crosscheck/${cross[1]}`;
     const m = listKnowledge(store).find((x) => `iji-${x.id.replace("/", "-")}` === name);
-    return m && m.status === "承認済み" && m.layer !== "院内" ? m.id : null;
+    return m && m.status === "承認済み" && m.layer !== "院内" && m.match.codePair === undefined ? m.id : null;
   };
   return {
     reads,
@@ -159,7 +159,7 @@ export function clerkMemo(p: ClerkProfile, questions: Question[]): string {
     .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
     .slice(0, 20);
   const miss = new Map<string, number>();
-  for (const q of recent) for (const f of q.confirmed!.result.findings) if (f.kind !== "情報不足") miss.set(f.ruleId, (miss.get(f.ruleId) ?? 0) + 1);
+  for (const q of recent) for (const f of q.confirmed!.result.findings) if (f.kind !== "情報不足" && f.params?.conditional !== "1") miss.set(f.ruleId, (miss.get(f.ruleId) ?? 0) + 1);
   const missText = [...miss.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([r, n]) => `${r} ${n} 回`).join("、") || "なし";
   return [
     `# ${p.name}${p.callName}について`,

@@ -11,6 +11,8 @@ export type SyncOptions = {
   knowledgeDir: string;
   /** .claude/skills/ のパス（テストでは一時ディレクトリ） */
   skillsDir: string;
+  /** このクリニックでは使わない知識（任意。src/lifecycle/store.ts の StoreOptions.excluded）。Skill にしない */
+  excluded?: (meta: KnowledgeMeta) => boolean;
 };
 
 export type SyncResult = {
@@ -23,8 +25,11 @@ export type SyncResult = {
 const NAME_RE = /^[a-z0-9-]+$/;
 const GENERATION_FILE = ".iji-generation";
 
-/** 同期対象を集める。承認済みかつ院内以外（FR-12）。走査順に依存しないよう name 昇順で返す */
-function collect(knowledgeDir: string): { name: string; content: string }[] {
+/**
+ * 同期対象を集める。承認済みかつ院内以外（FR-12）で、背反の組の知識（match.codePair。ベテラン層の会議の修正版も）でないもの（design.md §14-1：メンターには渡さない）。
+ * excluded の知識（このクリニックでは使わない作り物）も外す。走査順に依存しないよう name 昇順で返す
+ */
+function collect(knowledgeDir: string, excluded?: (meta: KnowledgeMeta) => boolean): { name: string; content: string }[] {
   const out: { name: string; content: string }[] = [];
   if (!existsSync(knowledgeDir)) return out;
   for (const layerSlug of readdirSync(knowledgeDir).sort()) {
@@ -34,7 +39,7 @@ function collect(knowledgeDir: string): { name: string; content: string }[] {
       const metaPath = path.join(dir, "meta.json");
       if (!existsSync(metaPath)) continue;
       const meta = JSON.parse(readFileSync(metaPath, "utf8")) as KnowledgeMeta;
-      if (meta.status !== "承認済み" || meta.layer === "院内") continue;
+      if (meta.status !== "承認済み" || meta.layer === "院内" || meta.match?.codePair !== undefined || excluded?.(meta)) continue;
       if (meta.id !== `${layerSlug}/${slug}` || LAYER_SLUG[meta.layer] !== layerSlug) {
         throw new Error(`meta.json の id・layer が置き場所と一致しない: ${layerSlug}/${slug}`);
       }
@@ -56,7 +61,7 @@ function collect(knowledgeDir: string): { name: string; content: string }[] {
 
 /** .claude/skills/iji-* を全削除してから書き出す。検証は削除の前にすべて済ませる */
 export function syncSkills(opts: SyncOptions): SyncResult {
-  const skills = collect(opts.knowledgeDir);
+  const skills = collect(opts.knowledgeDir, opts.excluded);
   mkdirSync(opts.skillsDir, { recursive: true });
   for (const entry of readdirSync(opts.skillsDir)) {
     if (entry.startsWith("iji-")) rmSync(path.join(opts.skillsDir, entry), { recursive: true, force: true });

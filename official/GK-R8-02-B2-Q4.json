@@ -1,0 +1,25 @@
+{
+  "id": "GK-R8-02-B2-Q4",
+  "kind": "疑義解釈",
+  "issuer": "厚生労働省保険局医療課",
+  "number": "その2 別添2 問4",
+  "issuedOn": "2026-04-01",
+  "url": "https://www.mhlw.go.jp/content/12400000/001689076.pdf",
+  "scope": {
+    "kubun": [
+      "O001_1",
+      "O001_2",
+      "O001_3I",
+      "O001_3RO"
+    ],
+    "payer": null,
+    "prefecture": null,
+    "conditionNote": "同じ日に別の診療科を受診した、2つ目の診療科の場合"
+  },
+  "stance": "認める",
+  "summary": "「1日につき」の文言を削った趣旨。同じ日に別の診療科を受診した2つ目の診療科でもベースアップ評価料を算定できる",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

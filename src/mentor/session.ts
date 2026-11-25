@@ -1,13 +1,12 @@
 // メンターのセッション（spec FR-10・FR-13、impl-plan F2）。医療事務 1 人に 1 セッション（Agent SDK）
 // ツールは Skill（承認済みの知識を読む）と自前の 5 つだけを渡し、Claude Code の組み込みツール（ファイル操作・シェルなど）は使わせない
-import { createSdkMcpServer, tool, type HookCallbackMatcher } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import type { ClaimContext, EngineResult } from "../engine/types";
+import type { EngineResult } from "../engine/types";
+import { createSdkMcpServer, runOnce, tool, type AiClaim, type HookCallbackMatcher, type RunStats, type Sender } from "../llm/outbound";
 import { ANSWER_FALLBACK, leakedTerms, MENTOR_OUTPUT_SCHEMA, parseMentorOutput, type MentorOutput, type Situation } from "./output";
 import { modelOptions, type ModelChoice } from "./models";
 import { buildSystemPrompt, turnContext, type Character } from "./prompt";
 import type { Style } from "./style";
-import { runOnce, type RunStats } from "./run";
 import { askMissingTool, askPeerThenHuman, markCited, queryHistory, type CrossItem, type MentorDeps } from "./tools";
 import { skillGuard } from "./workspace";
 
@@ -19,8 +18,8 @@ const text = (v: unknown) => ({ content: [{ type: "text" as const, text: typeof 
 
 const indicator = z.object({ source: z.string(), text: z.string() });
 
-/** 自前の 5 つのツールを持つ MCP サーバー（知識は Skill で読む）。ctx は今の 1 問の請求、now は時刻（決定的な処理に渡す） */
-export function mentorServer(deps: MentorDeps, ctx: ClaimContext, now: () => string, onChoice?: (items: CrossItem[]) => void) {
+/** 自前の 5 つのツールを持つ MCP サーバー（知識は Skill で読む）。ctx は今の 1 問の請求（識別子を外した形）、now は時刻（決定的な処理に渡す） */
+export function mentorServer(deps: MentorDeps, ctx: AiClaim, now: () => string, onChoice?: (items: CrossItem[]) => void) {
   const doctor = {
     field: z.string().describe("何が足りないか"),
     why: z.string().describe("なぜ聞くか（医療事務向けの記録）"),
@@ -48,7 +47,9 @@ export function mentorServer(deps: MentorDeps, ctx: ClaimContext, now: () => str
         note: "カルテとの照合で見つかった不一致があります。医師確認はまだ作っていません。どれのことかは本人が画面のボタンで選びます。質問は書かずに、選んでもらうよう短く伝えてください",
       };
     }
-    return askMissingTool(deps, { target: "doctor", claimId: ctx.claimId, createdBy: "mentor", ...a }, now());
+    // メンターが書いた医師確認は、医療事務が中身を確かめて送るまで医師に届けない（採点 r2 エンジニアの上司 #4）
+    const r = askMissingTool(deps, { target: "doctor", claimId: ctx.claimId, createdBy: "mentor", ...a, hold: true }, now());
+    return { ...r, note: "医師確認の下書きを作りました。まだ医師には届いていません。本人が医師確認の画面で中身を確かめてから送るよう、短く伝えてください" };
   };
   return createSdkMcpServer({
     name: SERVER,
@@ -106,6 +107,8 @@ export function relevantRules(applied: string[], cross: CrossItem[]): string[] {
 }
 
 export type MentorTurn = {
+  /** 誰の操作か（セッションの利用者。送る前に、注意書きへの同意を確かめる） */
+  by: Sender;
   /** 医療事務本人の id。1 人に 1 セッション（前回のセッション id があれば続ける） */
   clerkId: string;
   sessionId: string | null;
@@ -113,7 +116,8 @@ export type MentorTurn = {
   /** 本人が申告した伝え方のタイプ（FR-20。任意） */
   style?: Style;
   level: number;
-  ctx: ClaimContext;
+  /** 今の 1 問の請求。識別子を外した形（src/llm/outbound.ts の claimForAi）だけを受け取る */
+  ctx: AiClaim;
   engine: EngineResult;
   situation: Situation;
   message: string;
@@ -152,9 +156,10 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
     hooks: { ...guard.hooks, PreToolUse: [...(guard.hooks.PreToolUse ?? []), doctorReadGuard(guard.reads, () => relevantRules(t.engine.applied, cross()))] },
     outputFormat: { type: "json_schema" as const, schema: MENTOR_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
     maxTurns: 8,
+    ...(deps.sessionStore ? { sessionStore: deps.sessionStore } : {}),
     ...modelOptions(t.model),
   };
-  const r = await runOnce("mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0, t.note)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
+  const r = await runOnce(t.by, "mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0, t.note)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
   const stats = [r.stats];
   let sessionId = r.sessionId || (t.sessionId ?? "");
   let output = parseMentorOutput(r.structured, t.situation);
@@ -162,6 +167,7 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
     const leaks = leakedTerms(output.body, t.engine);
     if (leaks.length > 0) {
       const again = await runOnce(
+        t.by,
         "mentor-retry",
         `さっきの返事は答え（${leaks.join("、")}）に触れていました。答えを言わずに、見るとよい場所を一つだけ示す形で書き直してください。さっきの返事は本人には見せていないので、書き直したことには触れないでください。`,
         { ...options, resume: sessionId },

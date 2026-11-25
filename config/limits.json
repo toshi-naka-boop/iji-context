@@ -1,0 +1,7 @@
+{
+  "_note": "API の上限（spec FR-135・FR-139）。llm は LLM を呼ぶルート、voice は音声のルート、upload は UKE のアップロード（ファイルの大きさ・行数の上限は src/uke/limits.ts）。perMinute は利用者ごとの 1 分あたりの回数（プロセスの中で数える）、perDay は利用者ごとの 1 日（日本時間）の回数（tenant の DB に数を持ち、再起動で消えない）。jsonBytes は JSON の本文の上限（ルートごとに上書きできる）。perDayAll はサーバー全体（全部のクリニック・全部の利用者）の 1 日の回数（auth.db に数を持つ。spec U-W。社内のテストで 10 人ほどが使う想定のたたき台で、人数に合わせて変える）。値はたたき台",
+  "llm": { "perMinute": 12, "perDay": 300, "perDayAll": 1000 },
+  "voice": { "perMinute": 20, "perDay": 100, "perDayAll": 500 },
+  "upload": { "perMinute": 6, "perDay": 60 },
+  "jsonBytes": 65536
+}

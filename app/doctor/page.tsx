@@ -1,42 +1,58 @@
 "use client";
 // 医師画面（F1・FR-30〜34）：質問・カルテ等の記載（臨床指標）・選択肢・確認ボタン。点数・金額は出さない。
-// 選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない（AHIMA/ACDIS の要件）
+// 選択肢は同じ大きさのボタンで並べ、「その他」「判定不能」も小さくしない（AHIMA/ACDIS の要件）。
+// 上に「確かめてほしい項目」（点検で、医師に確かめる事実として出ている情報不足。app/doctor/fact-requests.tsx）、下に確認の依頼（質問）を並べる
 import { useEffect, useState } from "react";
 import type { DoctorQuery } from "../../src/query/types";
+import { permits, POLICY } from "../../src/server/policy";
+import type { Role } from "../../src/server/roles";
 import { TopBar } from "../nav";
 import { PageGuide } from "../page-guide";
+import { getJson } from "../get-json";
+import { FactRequests } from "./fact-requests";
+import { DoctorAbbrevNotice } from "./abbrev-requests";
 
-const DOCTOR = "院長";
-const STATUS_BADGE: Record<string, string> = { 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
+const STATUS_BADGE: Record<string, string> = { 送る前: "", 未回答: "warn", 保留: "warn", 回答済み: "sky", 承認済み: "ok" };
 
 export default function Doctor() {
   const [qs, setQs] = useState<DoctorQuery[]>([]);
   const [pick, setPick] = useState<Record<string, { option: string; freeText: string }>>({});
   const [err, setErr] = useState("");
-  const load = () => fetch("/api/doctor").then((r) => r.json()).then(setQs);
+  const load = () => getJson<DoctorQuery[]>("/api/doctor").then(setQs).catch((e: Error) => setErr(e.message));
   useEffect(() => { load(); }, []);
+  /** メンターが書いた送る前の質問を、医師に送れるか（権限表の行で決める。サーバーも同じ行で確かめる） */
+  const [canSend, setCanSend] = useState(false);
+  useEffect(() => {
+    getJson<{ role: Role }>("/api/auth/me").then((me) => setCanSend(permits(POLICY["POST /api/doctor/[id]/send"].rule, me, () => false))).catch(() => {});
+  }, []);
 
   async function post(url: string, body: unknown) {
     setErr("");
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(url, body === undefined ? { method: "POST" } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json();
     if (!r.ok) setErr(d.error);
     load();
   }
-  const open = qs.filter((q) => q.status !== "承認済み").length;
+  const open = qs.filter((q) => q.status !== "承認済み" && q.status !== "送る前").length;
+  const unsent = qs.filter((q) => q.status === "送る前").length;
 
   return (
     <main className="shell">
       <TopBar />
       <PageGuide who="suit" title="医師確認">
-        カルテに書かれていないことを、ここで医師に確かめます。医師の役になって選択肢から答え、内容を確かめて承認してください。点数や金額はここには出しません。
+        カルテに書かれていないことを、ここで医師に確かめます。医師の役割で選択肢から答え、内容を確かめて承認してください（1 人で使っているときは、設定で役割を医師に切り替えます）。上の「確かめてほしい項目」は、レセプトの点検で医師に確かめることになった事実です。答えると点検に使われ、「その他」「判定不能」は不明のまま残ります。点数や金額はここには出しません。
       </PageGuide>
       {err && <div className="notice warn">{err}</div>}
+      {/* カルテの書き方のお願い（FR-211。問いとは別の欄。config/doctor-abbrev.json） */}
+      <DoctorAbbrevNotice />
+      <FactRequests />
+      <h2 style={{ margin: "0 0 12px", fontSize: 18 }}>確認の依頼</h2>
       <div className="stats">
         <div className="stat" style={{ ["--stat-color" as string]: "var(--warn-mark)" }}><div className="label">確かめ待ち</div><span className="value">{open}</span><span className="unit">件</span></div>
-        <div className="stat"><div className="label">承認済み</div><span className="value">{qs.length - open}</span><span className="unit">件</span></div>
+        <div className="stat"><div className="label">承認済み</div><span className="value">{qs.length - open - unsent}</span><span className="unit">件</span></div>
+        {unsent > 0 && <div className="stat"><div className="label">送る前（メンターが書いた下書き）</div><span className="value">{unsent}</span><span className="unit">件</span></div>}
       </div>
-      {qs.length === 0 && <div className="panel muted">確認の依頼はありません。算定画面の「医師確認用練習」から送ると、ここに届きます。</div>}
+      {qs.length === 0 && <div className="panel muted">確認の依頼はありません。医療事務が医師確認を送ると、ここに届きます。</div>}
       <div className="card-list">
         {qs.map((q) => {
           const p = pick[q.id] ?? { option: "", freeText: "" };
@@ -55,6 +71,12 @@ export default function Doctor() {
                   <div className="muted" style={{ marginBottom: 4 }}>カルテ等の記載</div>
                   {q.indicators.map((i, k) => <div key={k}>{i.source}：{i.text}</div>)}
                 </div>
+                {q.status === "送る前" && (
+                  <div style={{ marginTop: 12 }}>
+                    <p className="muted">メンター（AI）が書いた下書きです。まだ医師には届いていません。質問・カルテ等の記載・選択肢が正しいか、医師を誘導していないかを確かめてから送ってください。</p>
+                    {canSend && <button className="primary" onClick={() => post(`/api/doctor/${q.id}/send`, undefined)}>中身を確かめた。医師に送る</button>}
+                  </div>
+                )}
                 {(q.status === "未回答" || q.status === "保留") && (
                   <div>
                     <div className="options" role="radiogroup" aria-label="回答">
@@ -63,13 +85,13 @@ export default function Doctor() {
                       ))}
                     </div>
                     {p.option === "その他" && <p><input placeholder="具体的に" value={p.freeText} onChange={(e) => setPick({ ...pick, [q.id]: { ...p, freeText: e.target.value } })} style={{ width: "100%" }} /></p>}
-                    <button className="primary" disabled={!p.option} onClick={() => post(`/api/doctor/${q.id}/answer`, { option: p.option, freeText: p.freeText || undefined, answeredBy: DOCTOR })}>回答する</button>
+                    <button className="primary" disabled={!p.option} onClick={() => post(`/api/doctor/${q.id}/answer`, { option: p.option, freeText: p.freeText || undefined })}>回答する</button>
                   </div>
                 )}
                 {q.status === "回答済み" && q.answer && (
                   <div style={{ marginTop: 12 }}>
                     <p>回答：<strong>{q.answer.option}</strong>{q.answer.freeText ? `（${q.answer.freeText}）` : ""}</p>
-                    <button className="primary" onClick={() => post(`/api/doctor/${q.id}/approve`, { approver: DOCTOR })}>内容を確認して承認する</button>
+                    <button className="primary" onClick={() => post(`/api/doctor/${q.id}/approve`, undefined)}>内容を確認して承認する</button>
                   </div>
                 )}
                 {q.status === "承認済み" && q.approval && <div className="notice ok">承認：{q.approval.approver}　{q.approval.at}</div>}

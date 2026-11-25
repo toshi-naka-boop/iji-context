@@ -1,0 +1,27 @@
+{
+  "id": "GK-R8-08-Q9",
+  "kind": "疑義解釈",
+  "issuer": "厚生労働省保険局医療課",
+  "number": "その8 問9",
+  "issuedOn": "2026-06-17",
+  "url": "https://www.mhlw.go.jp/content/12400000/001712853.pdf",
+  "scope": {
+    "kubun": [
+      "C002_2I1",
+      "C002_2RO1",
+      "C002_2NI1",
+      "C002-2_2I1",
+      "C002-2_2RO1",
+      "C002-2_2NI1"
+    ],
+    "payer": null,
+    "prefecture": null,
+    "conditionNote": "在医総管・施設総管を初めて届け出る施設の場合"
+  },
+  "stance": "認める",
+  "summary": "在医総管・施設総管を初めて届け出る施設は、注16 の基準に当たるものとしてよい。届出後は年4回の確認が要る",
+  "checkedOn": "2026-11-17",
+  "generations": [
+    "R8"
+  ]
+}

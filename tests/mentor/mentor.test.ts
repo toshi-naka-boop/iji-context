@@ -5,14 +5,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import characters from "../../config/characters.json";
 import { evaluate } from "../../src/engine";
+import { claimForAi } from "../../src/llm/outbound";
 import { applyEvent, createKnowledge, readKnowledge } from "../../src/lifecycle/store";
 import { guardExpression, leakedTerms, parseMentorOutput } from "../../src/mentor/output";
 import { buildSystemPrompt, levelBehavior } from "../../src/mentor/prompt";
 import { askPeerThenHuman, markCited, queryHistory } from "../../src/mentor/tools";
 import { clerkMemo, ensureWorkspace, skillGuard, skillNames, workspaceRoot, workspaceSkillNames } from "../../src/mentor/workspace";
 import { loadCase, without } from "../engine/helpers";
+import { at, claimId, day, month, YM } from "../helpers/period";
 
-const T = "2025-03-10T09:00:00+09:00";
+const T = at(12);
 
 describe("出力の検査と表情（FR-21〜24）", () => {
   it("形が正しい出力は通り、引用 id は重複を除く", () => {
@@ -66,7 +68,7 @@ describe("ツールの中身", () => {
     const src = layer === "地域" ? "返戻" : layer === "院内" ? "手動" : "エスカレーション";
     const m = createKnowledge(
       store(),
-      { layer, slug, summary: `${slug} BNP`, body: `${slug} の本文`, source: { type: src, ref: slug }, match: layer === "地域" ? { kubunAll: ["D008_18"], payer: "支払基金", prefecture: "東京都" } : {} },
+      { layer, slug, summary: `${slug} BNP`, body: `${slug} の本文`, source: { type: src, ref: slug }, match: layer === "地域" ? { kubunAll: ["D008_19"], payer: "支払基金", prefecture: "東京都" } : {} },
       T,
     );
     if (approve) applyEvent(store(), m.id, { type: "VERIFY_APPROVE" }, T);
@@ -96,7 +98,7 @@ describe("ツールの中身", () => {
   });
 
   it("query_history は過去月の算定を返す（K6 は 1 月・2 月に BNP）", () => {
-    expect(queryHistory(loadCase("K6")).map((h) => h.yearMonth)).toEqual(["2025-01", "2025-02"]);
+    expect(queryHistory(loadCase("K6")).map((h) => h.yearMonth)).toEqual([month(-2), month(-1)]);
   });
 
   it("ベテランのメンターが答えられなければ、ベテラン本人に届ける", async () => {
@@ -122,7 +124,7 @@ describe("Agent SDK への登録（API は呼ばない）", () => {
       askPeerMentor: async () => null,
       askHuman: async () => ({ queued: "x" }),
     };
-    const server = mentorServer(deps, loadCase("K2"), () => T);
+    const server = mentorServer(deps, claimForAi(loadCase("K2")), () => T);
     expect(server).toMatchObject({ type: "sdk", name: "resemen" });
   });
 });
@@ -139,6 +141,10 @@ describe("指摘の文言", () => {
     for (const k of keys) expect(FINDING_TEXT[k], k).toBeTruthy();
     for (const t of Object.values(FINDING_TEXT)) expect(t).not.toMatch(/教育|学習|学ぶ|教える|円/);
     expect(findingText({ ruleId: "R03", kind: "情報不足", lineRefs: [], missing: { target: "clerk", field: "careLevel" }, messageKey: "R03.missing_fact", reference: "" })).toBe("要介護度が入っていません。介護保険証で確かめて入力してください");
+    // 日付ごとの事実は、医師あてでも日付を添える。処方の記録と対応がとれない行は、入力を求めず、記録を確かめるよう案内する
+    const at = (field: string, target: "doctor" | "clerk") => findingText({ ruleId: "R07", kind: "情報不足", lineRefs: [], missing: { target, field, date: "2026-10-28" }, messageKey: "R07.missing_fact", reference: "" });
+    expect(at("rxLongPsychotropic", "doctor")).toBe("その日の処方が、不安・不眠の薬の 1 年以上の継続処方に当たるか（10月28日）がカルテから分かりません。医師確認で確かめましょう");
+    expect(at("rxRecord", "clerk")).toBe("処方箋料の行（10月28日）に当たる処方の記録が、1 件に決まりません。その日の処方の記録を確かめてください");
   });
 });
 
@@ -190,7 +196,7 @@ describe("一人ひとりの作業場所", () => {
 
   it("本人の CLAUDE.md：レベルと、直近で確認が入ったルールを数える", () => {
     const k2 = without(loadCase("K2"), "C002_N10_HOKATSU");
-    const q = (id: string, ctx = k2) => ({ id, clerkId: "new1", claimId: ctx.claimId, phase: "完了" as const, startedAt: `2025-03-1${id}T09:00:00+09:00`, drafts: [], confirmed: { lines: ctx.lines, result: evaluate(ctx), at: T }, correct: false, finishedAt: T });
+    const q = (id: string, ctx = k2) => ({ id, clerkId: "new1", claimId: ctx.claimId, phase: "完了" as const, startedAt: `${YM}-1${id}T09:00:00+09:00`, drafts: [], confirmed: { lines: ctx.lines, result: evaluate(ctx), at: T }, correct: false, finishedAt: T });
     const memo = clerkMemo({ name: "新人", callName: "さん", role: "clerk", level: 2, count: 25, streak: 0 }, [q("1"), q("2")]);
     expect(memo).toContain("Lv.2（処理 25 件");
     expect(memo).toContain("R03 2 回");
@@ -221,7 +227,7 @@ describe("役割ごとのモデル（config/models.json）", () => {
 });
 
 describe("医師に聞く前に正しい決まりを読む（照合の不一致 M01）", () => {
-  const draft = { claimId: "K4-2025-03", field: "SY:心房細動の病型", why: "w", question: "q", indicators: [{ source: "s", text: "t" }], options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"], createdBy: "clerk" as const };
+  const draft = { claimId: claimId("K4"), field: "SY:心房細動の病型", why: "w", question: "q", indicators: [{ source: "s", text: "t" }], options: ["非弁膜症性心房細動", "弁膜症性心房細動", "その他", "判定不能"], createdBy: "clerk" as const };
   const item = { ruleId: "M01", disease: "心房細動", why: "w", draft, sent: false };
   it("Hooks：このレセプトに当てはまる決まり（applied と照合の規則）のどれかを読むまで医師確認を作らせない。決まりがなければベテランへ。医療事務あては止めない", async () => {
     const { doctorReadGuard, relevantRules } = await import("../../src/mentor/session");
@@ -244,7 +250,7 @@ describe("医師に聞く前に正しい決まりを読む（照合の不一致 
     try {
       const offered: string[] = [];
       const deps = { store: { knowledgeDir: path.join(root, "k"), skillsDir: path.join(root, "s") }, queryLog: { dir: path.join(root, "q") }, askPeerMentor: async () => null, askHuman: async () => ({ queued: "x" }), crosscheck: () => [item] };
-      const server = mentorServer(deps, loadCase("K4"), () => T, (items) => offered.push(...items.map((m) => m.ruleId)));
+      const server = mentorServer(deps, claimForAi(loadCase("K4")), () => T, (items) => offered.push(...items.map((m) => m.ruleId)));
       const tools = (server.instance as unknown as { _registeredTools: Record<string, { handler?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }>; callback?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> })._registeredTools;
       const t = tools.ask_doctor;
       const fn = t.handler ?? t.callback!;
@@ -252,6 +258,23 @@ describe("医師に聞く前に正しい決まりを読む（照合の不一致 
       expect(r.content[0].text).toContain("needsClerkChoice");
       expect(offered).toEqual(["M01"]);
       expect(existsSync(path.join(root, "q"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it("照合の不一致がなければ、メンターの医師確認は「送る前」で作り、医師には届けない（医療事務が確かめて送る。採点 r2 エンジニアの上司 #4）", async () => {
+    const { mentorServer } = await import("../../src/mentor/session");
+    const { listQueries } = await import("../../src/query/doctor-query");
+    const root = mkdtempSync(path.join(tmpdir(), "iji-hold-"));
+    try {
+      const deps = { store: { knowledgeDir: path.join(root, "k"), skillsDir: path.join(root, "s") }, queryLog: { dir: path.join(root, "q") }, askPeerMentor: async () => null, askHuman: async () => ({ queued: "x" }), crosscheck: () => [] };
+      const server = mentorServer(deps, claimForAi(loadCase("K4")), () => T);
+      const tools = (server.instance as unknown as { _registeredTools: Record<string, { handler?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }>; callback?: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> })._registeredTools;
+      const t = tools.ask_doctor;
+      const fn = t.handler ?? t.callback!;
+      const r = await fn({ field: "病型", why: "w", question: "心房細動の病型について、診療録に記載がありません。該当するものを選んでください。", indicators: [{ source: "カルテ", text: "AF" }], options: ["発作性", "持続性", "その他", "判定不能"] }, {});
+      expect(r.content[0].text).toContain("まだ医師には届いていません");
+      expect(listQueries(deps.queryLog).map((q) => [q.createdBy, q.status])).toEqual([["mentor", "送る前"]]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -300,10 +323,10 @@ describe("雑談（3 回続いたら算定に戻る声かけ）", () => {
 describe("ヒントの段階で渡すもの（prompt-eval M5 の改訂）", () => {
   it("情報不足は、入っていない事実と確かめ方を渡す。取り忘れの項目名は渡さない。今日の日付を添える", async () => {
     const { turnContext } = await import("../../src/mentor/prompt");
-    const k4 = turnContext(evaluate(loadCase("K4")), false, [], 0, "2025-03-10");
+    const k4 = turnContext(evaluate(loadCase("K4")), false, [], 0, day(12));
     expect(k4).toContain("情報不足（本人の誤りではない）：要介護度が入っていません。介護保険証で確かめて入力してください");
     expect(k4).toContain("その行に加算が付いているという意味ではない");
-    expect(k4).toContain("今日の日付：2025-03-10");
+    expect(k4).toContain(`今日の日付：${day(12)}`);
     const k2 = turnContext(evaluate(without(loadCase("K2"), "C002_N10_HOKATSU")), false);
     expect(k2).not.toContain("包括的支援加算");
     expect(k2).not.toContain("情報不足（");

@@ -1,16 +1,18 @@
 // 医師確認（F1）と ask_missing（F1/F3 の振り分け）。spec FR-30〜37、EM 19-2（AHIMA/ACDIS 2026 年版の 7 要件）
 // 質問の文面はメンター（LLM）が作ってよいが、ここで決まった規則で検証し、通らないものは医師に届けない
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { readSealed, writeSealed } from "../db/sealed";
 import { assertTime, ms } from "../lifecycle/time";
 import type { ClerkTask, ConfirmedDisease, DoctorQuery } from "./types";
+import { badRequest, conflict, notFound } from "../server/errors";
 
 export const OTHER = "その他";
 export const UNDETERMINABLE = "判定不能";
 
 /** ④ 点数・金額・請求への言及（医師への質問・選択肢・引用に出さない） */
-const MONEY = /点数|[0-9０-９,，]+\s*点|円|金額|報酬|算定|請求|査定|返戻|加算/;
+export const MONEY = /点数|[0-9０-９,，]+\s*点|円|金額|報酬|算定|請求|査定|返戻|加算/;
 /** ② 誘導（答えを示して同意を求める言い回し） */
 const LEADING = /ではないでしょうか|ではありませんか|ですよね|でよろしいですか|と考えてよいですか|と診断してよい|にしてください|を追記してください/;
 
@@ -57,10 +59,9 @@ export function businessDaysElapsed(at: string, now: string, cal: BusinessDays):
 
 export type QueryLog = { dir: string };
 
+/** 書き換えは、いったん別の名前に書いてから置き換える。鍵があれば暗号化して置く（spec FR-212。src/db/sealed.ts） */
 function writeAtomic(file: string, content: string): void {
-  const tmp = `${file}.tmp-${process.pid}`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, file);
+  writeSealed(file, content);
 }
 
 function markdown(q: DoctorQuery): string {
@@ -71,6 +72,7 @@ function markdown(q: DoctorQuery): string {
     `- 確認したいこと: ${q.field}`,
     `- 作成: ${q.createdBy === "mentor" ? "メンター（AI）" : "医療事務"} ${q.createdAt}`,
     `- 状態: ${q.status}`,
+    ...(q.sentAt ? [`- 医師に送った: ${q.sentAt}`] : []),
     "",
     "## 質問",
     "",
@@ -103,8 +105,8 @@ function save(log: QueryLog, q: DoctorQuery): void {
 
 export function readQuery(log: QueryLog, id: string): DoctorQuery {
   const file = path.join(log.dir, `${id}.json`);
-  if (!existsSync(file)) throw new Error(`医師確認が見つからない: ${id}`);
-  return JSON.parse(readFileSync(file, "utf8")) as DoctorQuery;
+  if (!existsSync(file)) throw notFound(`医師確認が見つからない: ${id}`);
+  return JSON.parse(readSealed(file).toString("utf8")) as DoctorQuery;
 }
 
 export function listQueries(log: QueryLog): DoctorQuery[] {
@@ -112,7 +114,7 @@ export function listQueries(log: QueryLog): DoctorQuery[] {
   return readdirSync(log.dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => JSON.parse(readFileSync(path.join(log.dir, f), "utf8")) as DoctorQuery);
+    .map((f) => JSON.parse(readSealed(path.join(log.dir, f)).toString("utf8")) as DoctorQuery);
 }
 
 // ---------------------------------------------------------------------------
@@ -120,26 +122,39 @@ export function listQueries(log: QueryLog): DoctorQuery[] {
 
 export type QueryDraft = Pick<DoctorQuery, "claimId" | "field" | "why" | "question" | "indicators" | "options" | "createdBy">;
 
-/** 質問を作る。7 要件の検証に落ちたら例外（医師に届けない） */
-export function createQuery(log: QueryLog, draft: QueryDraft, now: string): DoctorQuery {
+/**
+ * 質問を作る。7 要件の検証に落ちたら例外（医師に届けない）。
+ * initial が「送る前」なら、医療事務が中身を確かめて送る（sendQuery）まで医師に届けない（メンターが書いたもの）
+ */
+export function createQuery(log: QueryLog, draft: QueryDraft, now: string, initial: "未回答" | "送る前" = "未回答"): DoctorQuery {
   assertTime(now, "now");
   const errors = validateQuery(draft);
   if (errors.length) throw new Error(`医師確認の要件を満たさない: ${errors.join(" / ")}`);
   const id = `q-${createHash("sha256").update([draft.claimId, draft.field, now].join("\0")).digest("hex").slice(0, 12)}`;
-  if (existsSync(path.join(log.dir, `${id}.json`))) throw new Error(`同じ医師確認がすでにある: ${id}`);
-  const q: DoctorQuery = { ...draft, id, createdAt: now, status: "未回答", answer: null, approval: null, remindedAt: null, heldAt: null };
+  if (existsSync(path.join(log.dir, `${id}.json`))) throw conflict(`同じ医師確認がすでにある: ${id}`);
+  const q: DoctorQuery = { ...draft, id, createdAt: now, status: initial, answer: null, approval: null, remindedAt: null, heldAt: null };
   save(log, q);
   return q;
 }
 
-/** 医師の回答。選択肢から 1 つ。「その他」は自由記述が必須 */
-export function answerQuery(log: QueryLog, id: string, a: { option: string; freeText?: string; answeredBy: string }, now: string): DoctorQuery {
+/** 送る前の質問を、医療事務が中身を確かめて医師に送る（未回答にする）。送った日時を残し、リマインドと保留はここから数える */
+export function sendQuery(log: QueryLog, id: string, now: string): DoctorQuery {
   assertTime(now, "now");
   const q = readQuery(log, id);
-  if (q.status !== "未回答" && q.status !== "保留") throw new Error(`回答できない状態: ${q.status}`);
-  if (!q.options.includes(a.option)) throw new Error(`選択肢にない回答: ${a.option}`);
-  if (a.option === OTHER && !a.freeText?.trim()) throw new Error("「その他」には自由記述が必要");
-  const next: DoctorQuery = { ...q, status: "回答済み", answer: { option: a.option, freeText: a.freeText?.trim() || null, answeredBy: a.answeredBy, at: now } };
+  if (q.status !== "送る前") throw conflict(`送れない状態: ${q.status}`);
+  const next: DoctorQuery = { ...q, status: "未回答", sentAt: now };
+  save(log, next);
+  return next;
+}
+
+/** 医師の回答。選択肢から 1 つ。「その他」は自由記述が必須 */
+export function answerQuery(log: QueryLog, id: string, a: { option: string; freeText?: string; answeredBy: string; answeredById?: string }, now: string): DoctorQuery {
+  assertTime(now, "now");
+  const q = readQuery(log, id);
+  if (q.status !== "未回答" && q.status !== "保留") throw conflict(`回答できない状態: ${q.status}`);
+  if (!q.options.includes(a.option)) throw badRequest(`選択肢にない回答: ${a.option}`);
+  if (a.option === OTHER && !a.freeText?.trim()) throw badRequest("「その他」には自由記述が必要");
+  const next: DoctorQuery = { ...q, status: "回答済み", answer: { option: a.option, freeText: a.freeText?.trim() || null, answeredBy: a.answeredBy, ...(a.answeredById ? { answeredById: a.answeredById } : {}), at: now } };
   save(log, next);
   return next;
 }
@@ -148,12 +163,12 @@ export function answerQuery(log: QueryLog, id: string, a: { option: string; free
  * 医師の承認（確認ボタン）。承認者名と日時を残す（FR-33）。
  * 傷病名が確定するのは回答と承認がそろったときだけ（FR-32）。「判定不能」では確定しない
  */
-export function approveQuery(log: QueryLog, id: string, approver: string, now: string): { query: DoctorQuery; confirmed: ConfirmedDisease | null } {
+export function approveQuery(log: QueryLog, id: string, approver: string, now: string, approverId?: string): { query: DoctorQuery; confirmed: ConfirmedDisease | null } {
   assertTime(now, "now");
   if (!approver.trim()) throw new Error("承認者名が必要");
   const q = readQuery(log, id);
-  if (q.status !== "回答済み" || !q.answer) throw new Error(`承認できない状態: ${q.status}`);
-  const next: DoctorQuery = { ...q, status: "承認済み", approval: { approver, at: now } };
+  if (q.status !== "回答済み" || !q.answer) throw conflict(`承認できない状態: ${q.status}`);
+  const next: DoctorQuery = { ...q, status: "承認済み", approval: { approver, ...(approverId ? { approverId } : {}), at: now } };
   save(log, next);
   // 傷病名を確かめる質問（field が "SY:" で始まる）だけが傷病名を確定する。代行入力の確認などは確定しない
   const name = !q.field.startsWith("SY:") || q.answer.option === UNDETERMINABLE ? null : q.answer.option === OTHER ? q.answer.freeText : q.answer.option;
@@ -167,7 +182,7 @@ export function tickQueries(log: QueryLog, now: string, cal: BusinessDays): { re
   const held: string[] = [];
   for (const q of listQueries(log)) {
     if (q.status !== "未回答") continue;
-    const n = businessDaysElapsed(q.createdAt, now, cal);
+    const n = businessDaysElapsed(q.sentAt ?? q.createdAt, now, cal);
     if (n >= 3) {
       save(log, { ...q, status: "保留", heldAt: now, remindedAt: q.remindedAt ?? now });
       held.push(q.id);
@@ -183,15 +198,16 @@ export function tickQueries(log: QueryLog, now: string, cal: BusinessDays): { re
 // ask_missing（FR-36）：宛先が医師なら F1、医療事務なら F3
 
 export type AskMissing =
-  | { target: "doctor"; claimId: string; field: string; why: string; question: string; indicators: DoctorQuery["indicators"]; options: string[]; createdBy: DoctorQuery["createdBy"] }
+  | { target: "doctor"; claimId: string; field: string; why: string; question: string; indicators: DoctorQuery["indicators"]; options: string[]; createdBy: DoctorQuery["createdBy"]; hold?: boolean }
   | { target: "clerk"; claimId: string; field: string; why: string };
 
 export function askMissing(log: QueryLog, req: AskMissing, now: string): { route: "F1"; query: DoctorQuery } | { route: "F3"; task: ClerkTask } {
   assertTime(now, "now");
   if (!req.field.trim() || !req.why.trim()) throw new Error("ask_missing には field と why が必要");
   if (req.target === "doctor") {
-    const { target: _t, ...draft } = req;
-    return { route: "F1", query: createQuery(log, draft, now) };
+    // hold は、医療事務が確かめて送るまで医師に届けない（メンターが書いたもの）
+    const { target: _t, hold, ...draft } = req;
+    return { route: "F1", query: createQuery(log, draft, now, hold ? "送る前" : "未回答") };
   }
   const id = `t-${createHash("sha256").update([req.claimId, req.field, now].join("\0")).digest("hex").slice(0, 12)}`;
   return { route: "F3", task: { id, claimId: req.claimId, field: req.field, why: req.why, createdAt: now } };

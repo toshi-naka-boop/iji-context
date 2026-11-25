@@ -4,7 +4,7 @@
 import { createKnowledge, type StoreOptions } from "../lifecycle/store";
 import type { KnowledgeMeta } from "../lifecycle/types";
 import { modelOptions, type ModelChoice } from "./models";
-import { runOnce, type RunStats } from "./run";
+import { runOnce, type RunStats, type Sender, type SessionStore } from "../llm/outbound";
 import { skillGuard } from "./workspace";
 
 export const PEER_OUTPUT_SCHEMA = {
@@ -36,14 +36,17 @@ export const PEER_SYSTEM_PROMPT = [
 
 /** ベテランのメンター（別セッション）に問う。答えられなければ answerable=false。根拠は実際に読んだスキルに限る */
 export async function askVeteranMentor(
+  by: Sender,
   store: StoreOptions,
   question: string,
   sessionId: string | null,
   workspace: { cwd: string; skills: string[] },
   model?: ModelChoice,
+  /** 会話の記録の置き場（クリニックの app.db。spec FR-214） */
+  sessionStore?: SessionStore,
 ): Promise<{ answer: PeerAnswer; sessionId: string; stats: RunStats }> {
   const guard = skillGuard(store);
-  const r = await runOnce("veteranMentor", question, {
+  const r = await runOnce(by, "veteranMentor", question, {
     systemPrompt: PEER_SYSTEM_PROMPT,
     cwd: workspace.cwd,
     settingSources: ["project"],
@@ -54,6 +57,7 @@ export async function askVeteranMentor(
     outputFormat: { type: "json_schema", schema: PEER_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
     maxTurns: 8,
     ...(sessionId ? { resume: sessionId } : {}),
+    ...(sessionStore ? { sessionStore } : {}),
     ...modelOptions(model),
   });
   const a = parsePeerAnswer(r.structured);

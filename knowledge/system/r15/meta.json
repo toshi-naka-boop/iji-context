@@ -1,0 +1,39 @@
+{
+  "id": "system/r15",
+  "layer": "制度",
+  "status": "承認済み",
+  "summary": "R15：外来・在宅物価対応料は、訪問診療料を算定した日は訪問診療時の区分、往診料だけの日は再診時等の区分を使う。訪問診療料と往診料の両方を算定した日に再診時等を重ねられるかは、施設で確かめた設定による",
+  "rev": "db08ddc424dd",
+  "polarity": "allow",
+  "matchApprox": false,
+  "conditionNote": null,
+  "source_event": {
+    "type": "初期投入",
+    "ref": "design.md §2-3 R15",
+    "at": "2026-10-01T00:00:00+09:00"
+  },
+  "relates_to": null,
+  "valid_from": "2026-10-01T00:00:00+09:00",
+  "review_by": null,
+  "hits": 0,
+  "misses": 0,
+  "last_hit_at": null,
+  "last_used_at": null,
+  "status_since": "2026-10-01T00:00:00+09:00",
+  "retired_reason": null,
+  "empathy": 0,
+  "official_seen": [],
+  "match": {
+    "ruleId": "R15"
+  },
+  "history": [
+    {
+      "at": "2026-10-01T00:00:00+09:00",
+      "from": "",
+      "to": "承認済み",
+      "event": "CREATE",
+      "actor": "system",
+      "basis": null
+    }
+  ]
+}

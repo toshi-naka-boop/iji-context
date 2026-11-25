@@ -3,6 +3,7 @@
 import type { ClaimContext } from "../engine/types";
 import { applyEvent, readKnowledge, type StoreOptions } from "../lifecycle/store";
 import { askMissing, type AskMissing, type QueryDraft, type QueryLog } from "../query/doctor-query";
+import type { SessionStore } from "../llm/outbound";
 
 export type MentorDeps = {
   store: StoreOptions;
@@ -13,6 +14,8 @@ export type MentorDeps = {
   askHuman: (question: string) => Promise<{ queued: string }>;
   /** カルテとの照合で見つかった不一致（F4）。医師確認は決まった質問で送る */
   crosscheck?: () => CrossItem[];
+  /** 会話の記録の置き場（クリニックの app.db。spec FR-214）。渡せば SDK が記録をここへ写し、続きの会話はここから読む */
+  sessionStore?: SessionStore;
 };
 
 /** 照合の不一致 1 件。sent は同じ項目の医師確認がもう送られているか */
@@ -20,7 +23,7 @@ export type CrossItem = { ruleId: string; disease: string; why: string; draft: Q
 
 
 /** query_history：その請求の過去月の算定（設定ファイルの固定値。決定62） */
-export function queryHistory(ctx: ClaimContext): { yearMonth: string; kubun: string[] }[] {
+export function queryHistory(ctx: Pick<ClaimContext, "history">): { yearMonth: string; kubun: string[] }[] {
   return ctx.history ?? [];
 }
 

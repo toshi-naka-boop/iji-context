@@ -9,10 +9,13 @@
 // FR-56「多く取る方向の表示・誘導をしない」の趣旨は、経営の目線を持たせすぎて、取れない算定まで取りにいかせないこと。
 // ここで数えるのはルールエンジンが正しいと判定した確定版との差だけなので、この趣旨に反しない
 // 同じ区分の変化は 1 つの指摘にだけ数える（重なるルールで二重に数えない）
-import { RULES } from "../engine";
-import { pointsOf } from "../engine/points-2024";
+// 記載もれ（摘要欄の記載。R17）には点数を付けない：金額の合計に入れず、「見つけて直した件数」だけを別に返す（design.md §11-13）
+import { period } from "../demo/period";
+import { pointsOf, resolveRevision, REVISIONS } from "../engine/revisions";
+import type { Revision } from "../engine/revisions/types";
 import type { ClaimLine, Finding } from "../engine/types";
 import type { Question } from "../practice/practice";
+import type { ReviewReport } from "../review/report";
 
 export const YEN_PER_POINT = 10;
 export const ESTIMATE_LABEL = "推定";
@@ -21,35 +24,49 @@ export type PreventedItem = {
   questionId: string;
   claimId: string;
   ruleId: string;
-  kind: "取りこぼし" | "差し戻し" | "医師記載起因";
+  /** 記載もれは点数を持たない（points は 0） */
+  kind: "取りこぼし" | "差し戻し" | "医師記載起因" | "記載もれ";
   points: number;
 };
 
-const key = (f: Finding) => `${f.ruleId}|${f.messageKey}`;
-const linePoints = (lines: ClaimLine[], kubun: string) => {
+// 日付ごとの情報不足（R10 の sameDaySeparate）は日付も、摘要欄の記載（R17）はどの記載か（params.rule）も合わせて見分ける
+const key = (f: Finding) => `${f.ruleId}|${f.messageKey}${f.missing?.date ? `|${f.missing.date}` : ""}${f.params?.rule ? `|${f.params.rule}` : ""}`;
+const linePoints = (rev: Revision, lines: ClaimLine[], kubun: string) => {
   const l = lines.find((x) => x.kubun === kubun);
-  const p = l ? pointsOf(kubun) : null;
+  const p = l ? pointsOf(rev, kubun) : null;
   return l && p !== null ? p * l.count : 0;
+};
+/**
+ * 判定に使った版（EngineResult.revisionId）。版の印を持たない古い記録は、基準月の版で数える。
+ * 同梱の版にない id（消した版で判定した、作り直していないデータの記録）は null：数えずに飛ばす（例外にしない。design.md §10 段 2）
+ */
+const revisionOf = (revisionId: string | undefined): Revision | null => {
+  if (revisionId === undefined) return resolveRevision(period.yearMonth);
+  return REVISIONS.find((r) => r.id === revisionId) ?? null;
 };
 
 /** 1 問ぶんの「防いだ」項目。resolvedByDoctor は F1 で解決した不足項目（field） */
 export function preventedOf(q: Question, resolvedByDoctor: string[] = []): PreventedItem[] {
   if (!q.confirmed || q.drafts.length === 0) return [];
   const final = q.confirmed;
+  const rev = revisionOf(final.result.revisionId);
+  if (!rev) return [];
   const finalKeys = new Set(final.result.findings.map(key));
   const seen = new Set<string>();
   const counted = new Set<string>();
   const out: PreventedItem[] = [];
   /** そのルールの対象区分のうち、まだ数えていないものの点数の変化（確定版 − 下書き） */
   const delta = (draft: ClaimLine[], ruleId: string): number => {
-    const kubun = (RULES.find((r) => r.id === ruleId)?.kubun ?? []).filter((k) => !counted.has(k));
-    const d = kubun.reduce((sum, k) => sum + linePoints(final.lines, k) - linePoints(draft, k), 0);
-    if (d !== 0) for (const k of kubun) if (linePoints(final.lines, k) !== linePoints(draft, k)) counted.add(k);
+    const kubun = (rev.rules.find((r) => r.id === ruleId)?.kubun ?? []).filter((k) => !counted.has(k));
+    const d = kubun.reduce((sum, k) => sum + linePoints(rev, final.lines, k) - linePoints(rev, draft, k), 0);
+    if (d !== 0) for (const k of kubun) if (linePoints(rev, final.lines, k) !== linePoints(rev, draft, k)) counted.add(k);
     return d;
   };
   for (const d of q.drafts) {
     for (const f of d.findings) {
       if (finalKeys.has(key(f)) || seen.has(key(f))) continue;
+      // 条件つきの指摘（申告のとおりなら。R20・R21。design.md §18-3 判断 F）は防いだ額に数えない
+      if (f.params?.conditional === "1") continue;
       seen.add(key(f));
       const base = { questionId: q.id, claimId: q.claimId, ruleId: f.ruleId };
       if (f.kind === "情報不足") {
@@ -59,6 +76,11 @@ export function preventedOf(q: Question, resolvedByDoctor: string[] = []): Preve
           seen.add(`field|${field}`);
           out.push({ ...base, kind: "医師記載起因", points: Math.max(0, delta(d.lines, f.ruleId)) });
         }
+        continue;
+      }
+      // 記載もれは、行の点数の変化を数えない（同じ区分の変化を、ほかの指摘から奪わない）
+      if (f.kind === "記載もれ") {
+        out.push({ ...base, kind: "記載もれ", points: 0 });
         continue;
       }
       const change = delta(d.lines, f.ruleId);
@@ -74,6 +96,8 @@ export type PreventedSummary = {
   取りこぼし: { count: number; yen: number };
   差し戻し: { count: number; yen: number };
   医師記載起因: { count: number; yen: number };
+  /** 提出までに直した記載もれの件数（金額はない） */
+  記載もれ: { count: number };
 };
 
 export function summarize(items: PreventedItem[]): PreventedSummary {
@@ -84,6 +108,7 @@ export function summarize(items: PreventedItem[]): PreventedSummary {
     取りこぼし: { count: sum("取りこぼし").length, yen: yen(sum("取りこぼし")) },
     差し戻し: { count: sum("差し戻し").length, yen: yen(sum("差し戻し")) },
     医師記載起因: { count: sum("医師記載起因").length, yen: yen(sum("医師記載起因")) },
+    記載もれ: { count: sum("記載もれ").length },
   };
 }
 
@@ -94,6 +119,26 @@ export function personalView(items: PreventedItem[], optIn: boolean): { visible:
 
 /** 事務長向け：月次の集計だけ。見逃した額（返戻・査定になった行の点数）もここにだけ出す（FR-58）。個人別には分けない */
 export function managerReport(items: PreventedItem[], missed: { claimId: string; kubun: string[]; lines: ClaimLine[] }[]): PreventedSummary & { 見逃し: { count: number; yen: number } } {
-  const missedPoints = missed.reduce((s, m) => s + m.kubun.reduce((t, k) => t + linePoints(m.lines, k), 0), 0);
+  // 見逃した行は診療年月を持たないので、基準月の版の点数で数える
+  const rev = resolveRevision(period.yearMonth);
+  const missedPoints = missed.reduce((s, m) => s + m.kubun.reduce((t, k) => t + linePoints(rev, m.lines, k), 0), 0);
   return { ...summarize(items), 見逃し: { count: missed.length, yen: missedPoints * YEN_PER_POINT } };
+}
+
+/**
+ * 事務長レポートの「見逃し」：査定・返戻の突き合わせ（spec FR-202 の I-1）で人が判定した記録から数える。
+ * 今の点検のコードの回（指紋が今のもの）で、判定した明細のうち「同じ論点で指摘していた」でないもの（別の論点・指摘なし）。
+ * 判定の記録がなければ数えない（0 件と言わない）。円は出さない（返戻の明細は点数を持たない）
+ */
+export type MissedSummary = { counted: false } | { counted: true; missed: number; judged: number; notYet: number };
+
+export function missedOf(report: ReviewReport & { fingerprint: string }): MissedSummary {
+  const run = report.runs.find((r) => r.fingerprint === report.fingerprint);
+  if (!run || run.judged.items === 0) return { counted: false };
+  return {
+    counted: true,
+    missed: run.other.items + run.none.items,
+    judged: run.judged.items,
+    notYet: run.unjudged.items + report.pending.unmatched.items + report.pending.unconfirmed.items,
+  };
 }

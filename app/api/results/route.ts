@@ -1,12 +1,11 @@
 // API Route（薄い入口。処理は src/server/app.ts）
-import { body, authed } from "../../../src/server/http";
+import { route } from "../../../src/server/http";
 import { getApp } from "../../../src/server/instance";
-import type { SubmissionResult } from "../../../src/lifecycle/applications";
+import { allow } from "../../../src/server/policy";
+import { resultBody } from "../../../src/server/schemas/results";
 
 /** 提出結果の取り込み（記録だけ。知識は会議まで更新しない） */
-export async function POST(req: Request) {
-  return authed(req, async () => getApp().importClaimResult(await body<SubmissionResult>(req)));
-}
+export const POST = route({ roles: allow("POST /api/results"), body: resultBody, audit: { target: ({ body }) => body.submissionId } }, ({ body }) => getApp().importClaimResult(body));
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

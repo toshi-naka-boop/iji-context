@@ -1,0 +1,99 @@
+{
+  "generation": "R8",
+  "datasets": {
+    "shinryo": {
+      "title": "医科診療行為マスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/sFile", "dateFrom": "file", "date": "^s_(\\d{8})\\.csv$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "shinryo", "name": "^s_\\d{8}\\.csv$", "fields": 150 }]
+    },
+    "iyakuhin": {
+      "title": "医薬品マスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/yFile", "dateFrom": "file", "date": "^y_(\\d{8})\\.csv$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "iyakuhin", "name": "^y_\\d{8}\\.csv$", "fields": 42 }]
+    },
+    "tokutei": {
+      "title": "特定器材マスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/tFile", "dateFrom": "file", "date": "^t_(\\d{8})\\.csv$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "tokutei", "name": "^t_\\d{8}\\.csv$", "fields": 38 }]
+    },
+    "shobyo": {
+      "title": "傷病名マスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/standardMenu/doStandardMasterBz",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/bFile", "dateFrom": "file", "date": "^b_(\\d{8})\\.txt$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "shobyo", "name": "^b_\\d{8}\\.txt$", "fields": 46 }]
+    },
+    "shushokugo": {
+      "title": "修飾語マスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/standardMenu/doStandardMasterBz",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/zFile", "dateFrom": "file", "date": "^z_(\\d{8})\\.txt$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "shushokugo", "name": "^z_\\d{8}\\.txt$", "fields": 19 }]
+    },
+    "comment": {
+      "title": "コメントマスター",
+      "publisher": "厚生労働省 診療報酬情報提供サービス",
+      "page": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/",
+      "download": { "url": "https://shinryohoshu.mhlw.go.jp/shinryohoshu/downloadMenu/cFile", "dateFrom": "file", "date": "^c_(\\d{8})\\.csv$" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "comment", "name": "^c_\\d{8}\\.csv$", "fields": 30 }]
+    },
+    "tensuhyo": {
+      "title": "電子点数表（医科）",
+      "publisher": "医療情報基盤・診療報酬審査支払機構",
+      "page": "https://www.hpdx.or.jp/seikyushiharai/tensuhyo/ikashika/index.html",
+      "download": { "href": "^index\\.files/tensuhyo_02\\.zip$", "dateFrom": "link", "date": "医科電子点数表テーブル【令和(\\d+)年(\\d+)月(\\d+)日】" },
+      "encoding": "shift_jis",
+      "files": [
+        { "layout": "hojo", "name": "^01[ _].*\\.csv$", "fields": 27 },
+        { "layout": "houkatsu", "name": "^02[ _].*\\.csv$", "fields": 7 },
+        { "layout": "haihan1", "name": "^03-1[ _].*\\.csv$", "fields": 10 },
+        { "layout": "haihan2", "name": "^03-2[ _].*\\.csv$", "fields": 10 },
+        { "layout": "haihan3", "name": "^03-3[ _].*\\.csv$", "fields": 10 },
+        { "layout": "haihan4", "name": "^03-4[ _].*\\.csv$", "fields": 10 },
+        { "layout": "kaisu", "name": "^05[ _].*\\.csv$", "fields": 14 }
+      ]
+    },
+    "comment_kanren": {
+      "title": "コメント関連テーブル",
+      "publisher": "医療情報基盤・診療報酬審査支払機構",
+      "page": "https://www.hpdx.or.jp/seikyushiharai/tensuhyo/kihonmasta/kihonmasta_06.html",
+      "download": { "href": "^kihonmasta_06\\.files/ck_ALL_(\\d{8})\\.zip$", "dateFrom": "link", "date": "ck_ALL_(\\d{8})\\.zip" },
+      "encoding": "shift_jis",
+      "files": [{ "layout": "comment_kanren", "name": "^ck_ALL_\\d{8}\\.csv$", "fields": 30 }]
+    },
+    "checkmaster": {
+      "title": "チェックマスタ（コンピュータチェック対象事例）",
+      "publisher": "医療情報基盤・診療報酬審査支払機構",
+      "page": "https://www.hpdx.or.jp/shinryohoshu/hpdx_cc/index.html",
+      "download": { "href": "^index\\.files/(\\d{8})_CC_JIREI?_CHECKMASTA\\.zip$", "dateFrom": "link", "date": "(\\d{8})_CC_JIREI?_CHECKMASTA\\.zip" },
+      "encoding": "shift_jis",
+      "since": "20260601",
+      "files": [
+        { "layout": "cm_tekio", "name": "^IY_Tekio_.*\\.csv$", "fields": 24 },
+        { "layout": "cm_si_shobyo", "name": "^SI_Shobyo_.*\\.csv$", "fields": 13 },
+        { "layout": "cm_heiyo_kinki", "name": "^IY_HeiyoKinki_.*\\.csv$", "fields": 10 }
+      ]
+    },
+    "manbyo": {
+      "title": "万病辞書 MANBYO",
+      "publisher": "奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室",
+      "page": "https://sociocom.naist.jp/manbyou-dic/",
+      "manual": true,
+      "encoding": "utf-8",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/deed.ja", "credit": "万病辞書 MANBYO_202106（奈良先端科学技術大学院大学 ソーシャル・コンピューティング研究室。CC BY 4.0）を、略語の意味の候補に使っています。辞書の中身は変えていません" },
+      "files": [{ "layout": "manbyo", "name": "^MANBYO_\\d{8}\\.csv$", "fields": 6 }]
+    }
+  }
+}
