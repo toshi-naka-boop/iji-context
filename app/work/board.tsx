@@ -56,7 +56,7 @@ export function Board(props: {
   const next = drills.fix.find((d) => !d.cleared)?.id;
 
   // 実在のデータで使うクリニックには、作り物の訪問記録と練習問題を出さない（2026-11-22 利用者の判断）
-  if (kind === "real") return <p className="muted">このクリニックは実在のデータで使う設定です。作り物の訪問記録と練習問題は出しません。取り込んだ UKE は下の「月末の点検」に並びます。</p>;
+  if (kind === "real") return <p className="muted">このクリニックは実在のデータで使う設定です。作り物の訪問記録と練習問題は出しません。月末の点検は <a href="/uke">UKE 取り込みの全件の一覧</a>で行います。</p>;
   if (kind === null) return null;
 
   return (

@@ -82,7 +82,7 @@ export default function UkeImport() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return setErr(d.error ?? "アップロードできませんでした");
       setList(d);
-      setDone("取り込みました。上の一覧の「取り込んだレセプトの点検」から、UKE に書いてあるとおりの点検（摘要欄の記載まで見ます）と、版を選ぶ試算を開けます。診療年月に版があるレセプトは、算定画面の「月末の点検」にも並びます（摘要欄の記載は見ません）。");
+      setDone("取り込みました。月末の点検は、上の「取り込んだレセプトの全件」の一覧から行います（UKE に書いてあるとおりに点検し、摘要欄の記載まで見ます）。行の「開く」から、その請求の点検と、版を選ぶ試算を開けます。");
     } catch {
       setErr("アップロードできませんでした。通信の状態を確かめて、もう一度試してください");
     } finally {
@@ -95,7 +95,7 @@ export default function UkeImport() {
     <main className="shell">
       <TopBar />
       <PageGuide who="yusti" title="UKE 取り込み" tag="RULE ENGINE">
-        月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します。{real ? "ファイルを選んでアップロードします。" : "見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。"}
+        月末の点検の入口です。月末にレセコンから書き出した UKE（提出用のファイル）を取り込むと、提出前に全件を決まった規則で点検します（摘要欄の記載まで見ます）。{real ? "ファイルを選んでアップロードします。" : "見本の 2 本（合成データ）から選ぶか、ファイルを選んでアップロードします。"}
       </PageGuide>
       {real && <div className="notice">このクリニックは実在のデータで使う設定です。見本の UKE（合成データ）は出しません。同梱の見本と同じ内容のファイルは取り込めません。</div>}
       {err && <div className="notice warn">{err}</div>}
@@ -174,7 +174,7 @@ export default function UkeImport() {
                 {!u.uploaded && <a href={`/api/uke/sample?name=${encodeURIComponent(u.name)}`} download={u.name}>見本をダウンロード</a>}
                 {u.uploaded && canDelete && <button onClick={() => remove(u)}>消す</button>}
               </div>
-              {u.imported && <p className="muted" style={{ margin: "8px 0 0" }}><a href="/work">算定画面の「月末の点検」</a>でも点検できます（明細を入れ直して点検するので、摘要欄の記載は見ません）。</p>}
+              {u.imported && <p className="muted" style={{ margin: "8px 0 0" }}>月末の点検は、ここ（上の全件の一覧と、各請求の点検）で行います。明細を自分で入れ直して確かめたいときは、<a href="/work">算定画面</a>でもできます（摘要欄の記載は見ません）。</p>}
               {u.uploaded && <p className="muted" style={{ margin: "12px 0 0" }}>カルテ側の記録がないレセプトです。足りない事実は「情報不足」として出ます。訪問カルテ・選択モード・練習問題の対象外です。</p>}
             </div>
           </article>
