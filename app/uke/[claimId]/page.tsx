@@ -12,7 +12,8 @@ import type { RowNames } from "../../../src/generic/lookup";
 import type { GenericView } from "../../../src/generic/view";
 import { COMMENT_CHECK_NOTE, findingText } from "../../../src/messages";
 import { SignIn, useClerk } from "../../clerk";
-import { CheckedFacts, FactInput } from "../../fact-input";
+import { CheckedFacts, FactInput, useRole } from "../../fact-input";
+import { CoverageCheck } from "../../work/patient-panel";
 import { GenericFindings } from "../../generic-findings";
 import { FindingLevels } from "../../finding-levels";
 import { ConfirmedFixes } from "../../chart/confirmed-fixes";
@@ -22,6 +23,8 @@ import { UkeMentor } from "../uke-mentor";
 import { LocalReturn } from "../../local-pair";
 import { returnsOutside } from "../../../src/generic/local-pair";
 import { getJson } from "../../get-json";
+import { handPremiseKey, isConditionalHand } from "../../../src/uke/premise";
+import { PremiseCheckInput, type PremiseCheckView } from "../../premise-check";
 import { TopBar } from "../../nav";
 import { PageGuide } from "../../page-guide";
 
@@ -70,6 +73,8 @@ type Check = {
   careUnseen?: string[];
   /** 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。確かめていなければ null。design.md §14-3・段 17g） */
   reviewed?: { at: string } | null;
+  /** 条件つきの指摘の「前提を確かめた」（クリニックで 1 つ。採点 r4 医療事務課長 P1-1） */
+  premiseChecks?: PremiseCheckView[];
   /** B の欄（取り忘れ。G11。design.md §15-9）。貼ったカルテで動く */
   torikawasure?: TorikawasureView;
 };
@@ -116,6 +121,7 @@ const KINDS = ["背反", "区分誤り", "要件不足", "不一致", "取り忘
 
 export default function UkeClaimCheck() {
   const { clerk: user, ready } = useClerk();
+  const role = useRole();
   const { claimId } = useParams<{ claimId: string }>();
   const [check, setCheck] = useState<Check | null>(null);
   const [err, setErr] = useState("");
@@ -291,7 +297,7 @@ export default function UkeClaimCheck() {
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
               {(c.commentMissingCount ?? 0) > 0 && <p style={{ margin: 0 }}>記載もれを {c.commentMissingCount} 件見つけました。</p>}
-              {(c.conditionalCount ?? 0) > 0 && <p style={{ margin: 0 }}>条件つきの指摘が {c.conditionalCount} 件あります（医療事務が確かめた申告のとおりなら当たるもの。指摘の数・直した件数の集計には入りません）。</p>}
+              {(c.conditionalCount ?? 0) > 0 && <p style={{ margin: 0 }}>条件つきの指摘が {c.conditionalCount} 件あります（医療事務が確かめた申告のとおりなら当たるもの。指摘の数・直した件数の集計には入りません）。前提を確かめて残すと、全件の一覧の「残り」から外れます。</p>}
               {KINDS.filter((k) => findings.some((f) => f.kind === k)).map((k) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {findings.filter((f) => f.kind === k).map((f, i) => (
@@ -300,6 +306,7 @@ export default function UkeClaimCheck() {
                       {f.params?.g11First && <div className="muted">（条件つき）{f.params.g11First}</div>}
                       {f.lineRefs.length > 0 && <div className="muted">対象の行：{f.lineRefs.map((k, n) => <span key={n}>{n > 0 && "、"}{unitHref(k) ? <a href={unitHref(k)}>{nameOf(k)}</a> : nameOf(k)}</span>)}</div>}
                       {f.reference && <div className="muted">根拠：{f.reference}</div>}
+                      {!trial && isConditionalHand(f) && check?.premiseChecks && <PremiseCheckInput claimId={c.claimId} keys={[handPremiseKey(f)]} checks={check.premiseChecks} onSaved={() => setTick((t) => t + 1)} />}
                     </div>
                   ))}
                 </div>
@@ -316,7 +323,7 @@ export default function UkeClaimCheck() {
                     scope="full"
                     rowHref={codeHref}
                     laterSheets={c.sheetNotes?.later ?? []}
-                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), localReturns: check?.localReturns ?? [], localPairTaken: check?.localPairTaken ?? [], handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
+                    answer={trial ? undefined : { claimId: c.claimId, onSaved: () => setTick((t) => t + 1), localReturns: check?.localReturns ?? [], localPairTaken: check?.localPairTaken ?? [], premiseChecks: check?.premiseChecks ?? [], handAsked: (c.missing ?? []).flatMap((m) => (m.missing ? [{ field: m.missing.field, date: m.missing.date ?? null }] : [])) }}
                     notes={[
                       "公開されているマスターで、全部の行（点検の対象外の行も）を点検します。「条件つき」は、言い切れない指摘です。打ち間違いや、マスターの更新もれがないかを確かめてください。",
                       ...((c.sheetNotes?.later ?? []).length > 0 ? [`診療年月より前の版のマスターを持っていないので、後の版で代えています：${c.sheetNotes!.later.join("、")}。名称や区分番号は、診療年月の後に変わっていることがあります。`] : []),
@@ -424,11 +431,18 @@ export default function UkeClaimCheck() {
 
               {!trial && (
                 <>
-                  <h3 style={{ margin: 0 }}>患者情報の指摘</h3>
-                  {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-                  {(c.patientFindings ?? []).map((f, i) => (
-                    <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
-                  ))}
+                  <h3 id="patient-findings" style={{ margin: 0 }}>患者情報の指摘</h3>
+                  {/* 医療事務（事務・ベテラン）には、算定画面の患者情報の欄と同じ入力（有効期限・負担割合など）をその場に出す（採点 r4 医療事務課長 P1-2）。ほかの役割には指摘だけ */}
+                  {role === "clerk" || role === "veteran" ? (
+                    <CoverageCheck claimId={c.claimId} editable tick={tick} onSaved={() => setTick((t) => t + 1)} />
+                  ) : (
+                    <>
+                      {(c.patientFindings ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
+                      {(c.patientFindings ?? []).map((f, i) => (
+                        <div key={i} className="notice warn"><span className="badge">{f.kind}</span> {f.text}</div>
+                      ))}
+                    </>
+                  )}
                   {check?.reviewed !== undefined && (
                     <div className="notice">
                       {check.reviewed ? (

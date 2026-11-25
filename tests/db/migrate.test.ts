@@ -10,7 +10,7 @@ const tables = (db: Database.Database) =>
 /** 表の定義まで含めた中身（2 回目で何も変わらないことを見る） */
 const schemaOf = (db: Database.Database) => db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all();
 
-const APP_TABLES = ["abbrev_answer_items", "abbrev_answers", "abbrev_dictionary", "abbrev_selections", "app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "sdk_transcripts", "structured_inputs", "submissions"];
+const APP_TABLES = ["abbrev_answer_items", "abbrev_answers", "abbrev_dictionary", "abbrev_selections", "app_settings", "applications", "audit_log", "care_homes", "chart_act_aliases", "chart_comments", "chart_notes", "chart_structured", "claim_facts", "claim_results", "claim_reviews", "clerk_sessions", "clerks", "device_proposals", "digest_items", "doctor_fact_notes", "ext_code_maps", "facility_declarations", "finding_checks", "local_used", "note14_worksheets", "other_institutions", "other_institutions_none", "oxygen_prices", "patient_care", "patient_coverages", "patient_devices", "patient_facts", "patients", "peer_questions", "questions", "rate_daily", "review_items", "review_judgments", "review_uploads", "reviews", "sdk_transcripts", "structured_inputs", "submissions"];
 
 /** マイグレーション 21・22 の表（介護保険・ほかの医療機関との調整。design.md §18-2） */
 const V21_22 = ["care_homes", "patient_care", "other_institutions", "other_institutions_none"];
@@ -22,6 +22,8 @@ const V24 = ["abbrev_answer_items", "abbrev_answers"];
 const V25 = ["abbrev_dictionary", "abbrev_selections"];
 /** マイグレーション 26 の表（メンターとの会話の記録。spec FR-214） */
 const V26 = ["sdk_transcripts"];
+/** マイグレーション 27 の表（条件つきの指摘の「前提を確かめた」。採点 r4 医療事務課長 P1-1） */
+const V27 = ["finding_checks"];
 
 describe("migrate", () => {
   it("空の DB に適用すると、バージョンが上がり表ができる", () => {
@@ -185,7 +187,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     db.prepare("INSERT INTO clerks (id, name, call_name, character_id, role) VALUES ('new1', '新人', 'さん', 'a', 'clerk')").run();
     expect(migrate(db, APP_MIGRATIONS.slice(0, 2))).toBe(2);
     // 患者マスタの表は 4 番、請求ごとに確かめた事実の表は 6 番、算定プレビューで入れた摘要欄の記載の表は 9 番で足す
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t) && !V25.includes(t) && !V26.includes(t)));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "patients" && t !== "patient_coverages" && t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t) && !V25.includes(t) && !V26.includes(t) && !V27.includes(t)));
     expect(db.prepare("SELECT id FROM clerks").all()).toEqual([{ id: "new1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 0 });
   });
@@ -198,7 +200,7 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     ins.run("01139999-00000006", "table7", "true", "カルテ", null, "2025-03-11T09:00:00+09:00", "new1");
     ins.run("39139999-00000004", "homeOxygen", "false", "カルテ", null, "2025-03-12T09:00:00+09:00", "new1");
     expect(migrate(db, APP_MIGRATIONS.slice(0, 4))).toBe(4);
-    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t) && !V25.includes(t) && !V26.includes(t)));
+    expect(tables(db)).toEqual(APP_TABLES.filter((t) => t !== "claim_facts" && t !== "clerk_sessions" && t !== "doctor_fact_notes" && t !== "chart_comments" && t !== "local_used" && t !== "facility_declarations" && t !== "claim_reviews" && t !== "chart_act_aliases" && t !== "note14_worksheets" && t !== "chart_structured" && t !== "structured_inputs" && t !== "ext_code_maps" && t !== "patient_devices" && t !== "device_proposals" && !t.startsWith("review_") && !V21_22.includes(t) && !V23.includes(t) && !V24.includes(t) && !V25.includes(t) && !V26.includes(t) && !V27.includes(t)));
     // 同じ鍵の記録は同じ患者に寄り、ほかの列は変わらない
     expect(db.prepare("SELECT patient_id, fact_key, value, valid_until, checked_by FROM patient_facts ORDER BY id").all()).toEqual([
       { patient_id: "P0001", fact_key: "careLevel", value: "2", valid_until: "2025-05-31", checked_by: "new1" },
@@ -258,6 +260,17 @@ CREATE TRIGGER tenants_kind_fixed BEFORE UPDATE OF kind ON tenants BEGIN SELECT 
     expect(migrate(db, APP_MIGRATIONS.slice(0, 26))).toBe(26);
     expect(tables(db).filter((x) => !before.includes(x))).toEqual(V26);
     expect(db.prepare("SELECT value FROM app_settings WHERE key = 'now'").get()).toEqual({ value: "x" });
+  });
+
+  it("バージョン 26 の app.db を 27 へ上げると、前提を確かめた記録の表だけが足され、中身は残る", () => {
+    const db = new Database(":memory:");
+    migrate(db, APP_MIGRATIONS.slice(0, 26));
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('now', 'x')").run();
+    const before = tables(db);
+    expect(migrate(db, APP_MIGRATIONS.slice(0, 27))).toBe(27);
+    expect(tables(db).filter((x) => !before.includes(x))).toEqual(V27);
+    expect(db.prepare("SELECT value FROM app_settings WHERE key = 'now'").get()).toEqual({ value: "x" });
+    expect((db.prepare("PRAGMA table_info(finding_checks)").all() as { name: string }[]).map((c) => c.name)).toEqual(["id", "claim_id", "finding_key", "outcome", "checked_by", "checked_at"]);
   });
 
   it("番号が連番でなければ、何も適用せずに止める", () => {

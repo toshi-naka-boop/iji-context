@@ -304,6 +304,16 @@ CREATE UNIQUE INDEX sdk_transcripts_uuid ON sdk_transcripts (session_id, subpath
 CREATE INDEX sdk_transcripts_project ON sdk_transcripts (project_key, session_id);
 `,
   },
+  {
+    // 条件つきの指摘の「前提を確かめた」（採点 r4 医療事務課長 P1-1。src/server/app/premise-checks.ts）。追記だけ。
+    // 1 行＝請求×指摘の鍵（src/uke/premise.ts。ルール・文の種類・行やコードで、患者の識別子を含まない）。outcome は notApplies（当たらない）・fix（当たるので直す）・cleared（取り消し）。
+    // 請求と鍵ごとに、いちばん新しい行が効く。取り込んだファイルを消すと、その請求の行も消す（FR-168 の全表走査）
+    version: 27,
+    sql: `
+CREATE TABLE finding_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id TEXT NOT NULL, finding_key TEXT NOT NULL, outcome TEXT NOT NULL, checked_by TEXT NOT NULL, checked_at TEXT NOT NULL);
+CREATE INDEX finding_checks_claim ON finding_checks (claim_id, finding_key, id);
+`,
+  },
 ];
 
 /** ログインの auth.db */

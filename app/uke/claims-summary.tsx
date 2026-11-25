@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { getJson } from "../get-json";
 
-type Row = { claimId: string; label: string; patient: string; patientNo: string | null; state: "checked" | "unreadable" | "noRevision"; confirmed: number; conditional: number; missingOpen: number; unchecked: number; unseen: number; patientFindings: number; open: boolean; fixedUnseen: number; reviewed?: boolean };
+type Row = { claimId: string; label: string; patient: string; patientNo: string | null; state: "checked" | "unreadable" | "noRevision"; confirmed: number; conditional: number; conditionalChecked: number; missingOpen: number; unchecked: number; unseen: number; patientFindings: number; open: boolean; fixedUnseen: number; reviewed?: boolean };
 
 const STATE: Record<Row["state"], string> = { checked: "点検しました", unreadable: "読めません（点検していません）", noRevision: "版がありません（試算だけ）" };
 
@@ -30,7 +30,7 @@ export function ClaimsSummary({ tick }: { tick: unknown }) {
       <div className="card-body">
         <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>取り込んだレセプトの全件（{rows.length} 件）</h2>
         <div className={`notice${open > 0 ? " warn" : " ok"}`} style={{ margin: "0 0 8px" }}>
-          <strong>まだ手を付ける残り：{open} 件</strong>（確定・条件つき・情報不足・患者情報の指摘・聞き取りの答えがない調整のどれかが残るレセプトと、読めないレセプト）。
+          <strong>まだ手を付ける残り：{open} 件</strong>（確定・条件つき（前提を確かめたものを除く）・情報不足・患者情報の指摘・聞き取りの答えがない調整のどれかが残るレセプトと、読めないレセプト）。
           <br />
           仕組み上いつも残るもの（入力では消えません。残りには数えません）：カルテ側の記録で決まる点を見ていないレセプト {noChart} 件、どの点検も見ていない行 {sum("unchecked")} 行{noRevision > 0 ? `、版がなく点検できないレセプト ${noRevision} 件` : ""}。
         </div>
@@ -50,7 +50,7 @@ export function ClaimsSummary({ tick }: { tick: unknown }) {
                   <td>{r.patient}{r.patientNo ? `（${r.patientNo}）` : ""}</td>
                   <td>{STATE[r.state]}</td>
                   <td className="num">{r.state === "checked" ? r.confirmed : "－"}</td>
-                  <td className="num">{r.state === "checked" ? r.conditional : "－"}</td>
+                  <td className="num">{r.state === "checked" ? `${r.conditional}${r.conditionalChecked > 0 ? `（確かめ済み ${r.conditionalChecked}）` : ""}` : "－"}</td>
                   <td className="num">{r.state === "checked" ? r.missingOpen : "－"}</td>
                   <td className="num">{r.state === "checked" ? r.unchecked : "－"}</td>
                   <td className="num">{r.state === "checked" ? r.unseen : "－"}</td>

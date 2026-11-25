@@ -4,6 +4,7 @@ import { CLAIM_FACT_KEYS, CLAIM_FACT_SOURCES, MAX_MAIN_DISEASE } from "../../cla
 import { BUILDING_BANDS } from "../../engine/types";
 import { CARE_CERT_KINDS, FACT_SOURCES, FROM_APPLICATION, PATIENT_FACT_KEYS, RESIDENCES } from "../../patient/facts";
 import { COVERAGE_SOURCES } from "../../patient/profile";
+import { PREMISE_OUTCOMES } from "../../uke/premise";
 import { claimId, date } from "./cases";
 
 export const claimParams = z.strictObject({ claimId });
@@ -66,3 +67,9 @@ export const deviceBody = z.strictObject({ claimId, kind: z.string().min(1).max(
 /** POST /api/patient/device-proposals/[id]：変える案に答える（C150 の案は c150 がないと 400。種類の決まらない案は kind を選ぶ） */
 export const proposalParams = z.strictObject({ id: z.coerce.number().int().positive() });
 export const proposalBody = z.strictObject({ claimId, action: z.enum(["accept", "reject"]), kind: z.string().min(1).max(20).optional(), fromMonth: yearMonth.optional(), endMonth: yearMonth.nullable().optional(), c150: c150.optional() });
+
+/**
+ * POST /api/uke/claims/[claimId]/premise：条件つきの指摘の「前提を確かめた」（採点 r4 医療事務課長 P1-1）。key は src/uke/premise.ts の鍵（形だけ。今の指摘の鍵かは src/server/app/premise-checks.ts が確かめる）。
+ * outcome が null なら取り消す。確かめた人は受け取らない（セッションの本人から決める）
+ */
+export const premiseCheckBody = z.strictObject({ key: z.string().regex(/^(rule|data):/).max(500), outcome: z.enum(PREMISE_OUTCOMES).nullable() });
