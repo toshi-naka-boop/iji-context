@@ -2,7 +2,7 @@
 // - 送る前に「誰の操作か」を受け取り、その利用者が今の版の注意書きに同意しているかを、ここで DB を見て確かめる。ルートの申告（権限表）は信じない
 // - 請求から作る文脈は claimForAi を通ったものだけを受け取る（患者の識別子を持たない形。落とす場所はここ 1 か所）
 // - 記録するのは時間・トークン・モデル名だけで、プロンプトや本文は残さない
-import { createSdkMcpServer, deleteSession, listSessions, query, tool, type HookCallbackMatcher, type HookEvent, type Options, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, deleteSession, listSessions, query, tool, type HookCallbackMatcher, type HookEvent, type Options, type SDKUserMessage, type SessionKey, type SessionStore, type SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk";
 import type { ClaimContext } from "../engine/types";
 import type { User } from "../server/auth";
 import { getAuth } from "../server/auth-db";
@@ -11,6 +11,8 @@ import { ConsentRequired } from "../server/errors";
 // SDK の部品（自前のツールの登録・Hooks の型）も、ここを通して使う。これら自体は何も送らない
 export { createSdkMcpServer, tool };
 export type { HookCallbackMatcher, HookEvent, Options, SDKUserMessage };
+// 会話の記録の置き場の形（spec FR-214。src/llm/session-store.ts）
+export type { SessionKey, SessionStore, SessionStoreEntry };
 
 // ---------------------------------------------------------------------------
 // 誰の操作か
@@ -31,12 +33,14 @@ export function assertMaySend(by: Sender): void {
  * メンターのやり取り（Agent SDK がこのサーバーに残したセッションの記録）を消す。cwd はその人の作業場所。
  * 記録がもうないときは何もしない。AI のサービス側に送った内容は、ここからは消せない
  */
-export async function forgetSession(sessionId: string, cwd: string): Promise<void> {
+export async function forgetSession(sessionId: string, cwd: string, store?: SessionStore): Promise<void> {
   try {
     await deleteSession(sessionId, { dir: cwd });
   } catch {
     /* 記録がない */
   }
+  // 会話の記録の置き場（app.db。spec FR-214）の写しも消す
+  if (store) await store.delete?.({ projectKey: "", sessionId });
 }
 
 /**
@@ -44,14 +48,16 @@ export async function forgetSession(sessionId: string, cwd: string): Promise<voi
  * それに加えて、SDK がその作業場所のものとして挙げるセッション（listSessions）も消す：失敗した呼び出しは id を返さないまま記録だけを残すことがあり、DB からはたどれない。
  * 記録の置き場所は SDK が決める（公開の関数だけを使い、パスを組み立てない）。作業場所のフォルダを消す前に呼ぶ
  */
-export async function forgetSessions(cwd: string, known: string[]): Promise<void> {
-  let listed: string[] = [];
-  try {
-    listed = (await listSessions({ dir: cwd, includeWorktrees: false })).map((s) => s.sessionId);
-  } catch (e) {
-    console.warn(`[claude] セッションの一覧を取れない: ${e instanceof Error ? e.name : "error"}`);
+export async function forgetSessions(cwd: string, known: string[], store?: SessionStore): Promise<void> {
+  const listed: string[] = [];
+  for (const opts of [{ dir: cwd, includeWorktrees: false }, ...(store ? [{ dir: cwd, includeWorktrees: false, sessionStore: store }] : [])]) {
+    try {
+      listed.push(...(await listSessions(opts)).map((s) => s.sessionId));
+    } catch (e) {
+      console.warn(`[claude] セッションの一覧を取れない: ${e instanceof Error ? e.name : "error"}`);
+    }
   }
-  for (const id of new Set([...known, ...listed])) await forgetSession(id, cwd);
+  for (const id of new Set([...known, ...listed])) await forgetSession(id, cwd, store);
 }
 
 // ---------------------------------------------------------------------------

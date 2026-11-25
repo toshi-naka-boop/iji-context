@@ -11,12 +11,14 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 WORKDIR /app
-# HOME も /data に置く（Claude Code がメンターの会話の記録を ~/.claude に残し、続きの会話で使うため）
+# メンターの会話の記録は、暗号化した app.db に写す（spec FR-214。src/llm/session-store.ts）。
+# SDK が手元に置く写し（CLAUDE_CONFIG_DIR）と HOME・一時ファイルは /tmp に置き、/tmp はディスクに残らない場所（tmpfs）にする（deploy/docker-compose.yml）
 ENV NODE_ENV=production \
     PORT=3000 \
     RESEMEN_DATA=/data \
     RESEMEN_WORKSPACES=/data/workspaces \
-    HOME=/data/home
+    HOME=/tmp/home \
+    CLAUDE_CONFIG_DIR=/tmp/claude
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next

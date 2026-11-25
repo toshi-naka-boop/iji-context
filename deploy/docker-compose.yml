@@ -15,6 +15,9 @@ services:
       - RESEMEN_OPEN_SIGNUP=${RESEMEN_OPEN_SIGNUP:-}
     volumes:
       - resemen-data:/data
+    # メンターの会話の記録の手元の写し（CLAUDE_CONFIG_DIR=/tmp/claude）と一時ファイルは、ディスクに残さない（spec FR-214）
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     expose:
       - "3000"
   caddy:

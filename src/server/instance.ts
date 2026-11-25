@@ -226,7 +226,7 @@ export async function deleteUkeUpload(sha256: string): Promise<{ deleted: string
   for (const c of r.clerks) {
     if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
     const cwd = path.join(root, c.id);
-    await forgetSessions(cwd, c.sessionIds);
+    await forgetSessions(cwd, c.sessionIds, getApp().sessionStore);
     rmSync(cwd, { recursive: true, force: true });
   }
   return { deleted: sha256, claims: r.claimIds.length };
@@ -248,7 +248,7 @@ export async function eraseTenant(user: User, confirm: string, password: string)
   const root = path.join(workspaceRoot(), id);
   for (const c of a.allSessions()) {
     if (!/^[A-Za-z0-9_-]+$/.test(c.id)) continue;
-    await forgetSessions(path.join(root, c.id), c.sessionIds);
+    await forgetSessions(path.join(root, c.id), c.sessionIds, a.sessionStore);
   }
   // DB を閉じてから、ファイルごと消す。ログインの行は最後に消す（途中で失敗しても、持ち主がもう一度消せるように）
   tenants.delete(id);
@@ -291,13 +291,13 @@ async function askVeteran(a: App, by: User, question: string, alive: () => boole
   const p = prepare(a, vet.id);
   let r: Awaited<ReturnType<typeof askVeteranMentor>>;
   try {
-    r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor")));
+    r = await withSession(p.sessionId, (sid) => askVeteranMentor(by, a.store, question, sid, p.workspace, modelFor("veteranMentor"), a.sessionStore));
   } catch (e) {
-    if (!alive()) await forgetSessions(p.workspace.cwd, []);
+    if (!alive()) await forgetSessions(p.workspace.cwd, [], a.sessionStore);
     throw e;
   }
   if (!alive()) {
-    await forgetSessions(p.workspace.cwd, [r.sessionId]);
+    await forgetSessions(p.workspace.cwd, [r.sessionId], a.sessionStore);
     throw notFound(ERASED);
   }
   a.setSession(vet.id, r.sessionId);
@@ -325,7 +325,7 @@ export async function talkToMentor(input: { user: User; clerkId: string; questio
   const alive = () => questionExists(a, q.id);
   /** 消されていたとき：待つ間にできた記録（この人のセッションの記録、メンターが作った医師確認）を消す。DB には何も書かない */
   const cleanUp = async (sessionIds: string[]) => {
-    await forgetSessions(p.workspace.cwd, sessionIds);
+    await forgetSessions(p.workspace.cwd, sessionIds, a.sessionStore);
     a.forgetQueries([q.claimId]);
   };
   let r: Awaited<ReturnType<typeof askMentor>>;
@@ -335,6 +335,7 @@ export async function talkToMentor(input: { user: User; clerkId: string; questio
       {
         store: a.store,
         queryLog: a.queryLog,
+        sessionStore: a.sessionStore,
         askPeerMentor: async (question) => {
           const v = await askVeteran(a, input.user, question, alive);
           if (!v.answer.answerable) return null;

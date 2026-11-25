@@ -42,6 +42,7 @@ import { claimOfLines } from "../generic/overlap";
 import { resolveRevision } from "../engine/revisions";
 import { createAudit } from "./audit";
 import { createDailyCounter } from "./rate-limit";
+import { sqliteSessionStore } from "../llm/session-store";
 
 export { cleanName } from "./app/clerks";
 export { DEFAULT_NOW } from "./app/clock";
@@ -154,6 +155,8 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
     queryLog,
     dataset,
     close: () => sqlite.close(),
+    /** メンターとの会話の記録の置き場（spec FR-214。このクリニックの app.db） */
+    sessionStore: sqliteSessionStore(sqlite),
     audit: createAudit(sqlite),
     dailyCounter: createDailyCounter(sqlite),
     cases,

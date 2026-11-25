@@ -156,6 +156,7 @@ export async function askMentor(deps: MentorDeps, t: MentorTurn): Promise<{ outp
     hooks: { ...guard.hooks, PreToolUse: [...(guard.hooks.PreToolUse ?? []), doctorReadGuard(guard.reads, () => relevantRules(t.engine.applied, cross()))] },
     outputFormat: { type: "json_schema" as const, schema: MENTOR_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
     maxTurns: 8,
+    ...(deps.sessionStore ? { sessionStore: deps.sessionStore } : {}),
     ...modelOptions(t.model),
   };
   const r = await runOnce(t.by, "mentor", `${t.message}\n\n${turnContext(t.engine, t.reveal, cross(), t.smalltalkStreak ?? 0, t.now().slice(0, 10), t.ventStreak ?? 0, t.note)}`, { ...options, ...(t.sessionId ? { resume: t.sessionId } : {}) });
