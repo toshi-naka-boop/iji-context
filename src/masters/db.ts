@@ -1,7 +1,9 @@
 // masters.db（公開データを取り込んだ SQLite。design.md §12-1）を、アプリから読む。読み取り専用で開き、なければ「ない」を返す（例外にしない）。
 // 作るのは scripts/build-masters.ts（src/masters/build.ts）だけ。中身は公開元の値そのままで、患者の情報は入らない
 import path from "node:path";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+// アプリのプロセスで読み込む SQLite は 1 つにそろえる（src/db/open.ts と同じライブラリ。暗号化はしない）
+import Sqlite from "better-sqlite3-multiple-ciphers";
 import { YEAR_MONTH } from "../demo/period";
 import { dataDir } from "../server/auth-db";
 import { MASTERS_CONFIG } from "./config";
@@ -15,7 +17,7 @@ export type MastersDb = Database.Database;
 /** masters.db を読み取り専用で開く。ファイルがない・開けないときは null */
 export function openMasters(file: string = mastersDbPath()): MastersDb | null {
   try {
-    return new Database(file, { readonly: true, fileMustExist: true });
+    return new Sqlite(file, { readonly: true, fileMustExist: true }) as unknown as MastersDb;
   } catch {
     return null;
   }
@@ -31,7 +33,7 @@ export function withMasters<T>(fn: (db: MastersDb | null) => T): T {
   try {
     return fn(db);
   } catch (e) {
-    if (e instanceof Database.SqliteError) return fn(null);
+    if (e instanceof Sqlite.SqliteError) return fn(null);
     throw e;
   } finally {
     db.close();

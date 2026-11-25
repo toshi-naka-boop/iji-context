@@ -2,9 +2,10 @@
 // 置き場（SQLite と knowledge/ の組。公開版は tenant ごと）に、作ったときの印（config/demo.json の dataset）を残す。
 // 印が違う置き場を開いても、止めない・作り直さない・退避しない。警告を記録して開くだけ。
 // 退避（置き場を改名して残す）と作り直しは、承認を取ってから scripts/reset-demo.ts で行う
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { existsSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
+import { appPurposeOf, openDatabase } from "../db/open";
 import { period } from "../demo/period";
 
 const KEY = "dataset";
@@ -41,7 +42,7 @@ export function checkDataset(sqlite: Database.Database, fresh: boolean, current:
 /** 置き場の DB から印だけを読む（開いて用意はしない）。DB がなければ null */
 export function readStamp(dbFile: string): string | null {
   if (!existsSync(dbFile)) return null;
-  const sqlite = new Database(dbFile, { readonly: true, fileMustExist: true });
+  const sqlite = openDatabase(dbFile, appPurposeOf(dbFile), { readonly: true, fileMustExist: true });
   try {
     return stampOf(sqlite);
   } catch {
