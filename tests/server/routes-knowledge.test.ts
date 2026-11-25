@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { User } from "../../src/server/auth";
 import { resetLimits } from "../../src/server/rate-limit";
 import type { Role } from "../../src/server/roles";
-import { month } from "../helpers/period";
+import { month, YM } from "../helpers/period";
 import { autoConsent } from "../helpers/consent";
 
 let tmp: string;
@@ -331,6 +331,10 @@ describe("本人のこと・事務長の集計・開発用", () => {
     expect((await GET(get("/api/manager", cookie))).status).toBe(403);
     await switchTo(cookie, "manager");
     expect((await GET(get("/api/manager", cookie))).status).toBe(200);
+    // 期間（確定した月）：省けば全期間の累計（month は null）。形の違う月は 400
+    expect((await (await GET(get("/api/manager", cookie))).json()).month).toBeNull();
+    expect((await (await GET(get(`/api/manager?month=${YM}`, cookie))).json()).month).toBe(YM);
+    expect((await GET(get(`/api/manager?month=${YM.slice(0, 4)}-13`, cookie))).status).toBe(400);
   });
 
   it("開発用のルートは本番で 404、開発時もログインが要る", async () => {
