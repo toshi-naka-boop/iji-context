@@ -1,6 +1,6 @@
 "use client";
 // 取り込んだレセプトの点検（design.md §11-11・§11-13）：UKE に書いてあるとおりのまま（行もコメントも入れ替えずに）点検した結果を見せる。
-// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → レセプトの行（全部の単位を UKE の並びで 1 つの表に。単位ごとに見た点検と指摘の印）→ 小計と UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
+// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ メンター（app/uke/uke-mentor.tsx）→ 情報不足 → レセプトの行（全部の単位を UKE の並びで 1 つの表に。単位ごとに見た点検と指摘の印）→ 小計と UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
 // 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面。
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
 // 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
@@ -18,6 +18,7 @@ import { FindingLevels } from "../../finding-levels";
 import { ConfirmedFixes } from "../../chart/confirmed-fixes";
 import { Torikawasure, type TorikawasureView } from "../../torikawasure";
 import { RecordPaste } from "../record-paste";
+import { UkeMentor } from "../uke-mentor";
 import { LocalReturn } from "../../local-pair";
 import { returnsOutside } from "../../../src/generic/local-pair";
 import { getJson } from "../../get-json";
@@ -303,6 +304,9 @@ export default function UkeClaimCheck() {
                   ))}
                 </div>
               ))}
+
+              {/* 算定画面と同じメンターに、指摘の理由を聞く（採点 r2 医療事務課長 P1。試算は請求の判定ではないので出さない） */}
+              {!trial && <UkeMentor claimId={c.claimId} doctorMissing={missing.some((f) => f.missing?.target === "doctor")} />}
 
               {c.generic && (
                 <>
