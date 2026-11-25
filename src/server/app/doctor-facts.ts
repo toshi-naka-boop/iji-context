@@ -7,7 +7,9 @@ import { DEATH_PLACES, inputKindOf, isClaimFactKey } from "../../claim/facts";
 import type { Finding } from "../../engine/types";
 import { FACT_LABEL } from "../../messages";
 import { PATIENT_FACT_KEYS } from "../../patient/facts";
-import { OTHER, UNDETERMINABLE } from "../../query/doctor-query";
+import { MONEY, OTHER, UNDETERMINABLE } from "../../query/doctor-query";
+import type { Chart } from "../../uke/crosscheck";
+import { MASK } from "./doctor-abbrevs";
 import { badRequest, notFound } from "../errors";
 import type { Cases } from "./cases";
 import type { Clerks } from "./clerks";
@@ -20,7 +22,9 @@ export const WRITE_IN = "主病を記入する";
 
 /**
  * scope：答えを残す先（patient＝患者ごとの事実、claim＝請求ごとの事実）。input：答えの形。
- * options は画面に同じ大きさで並べる選択肢（必ず「その他」「判定不能」を含む）。note は、前に決められなかったときの答え
+ * options は画面に同じ大きさで並べる選択肢（必ず「その他」「判定不能」を含む）。note は、前に決められなかったときの答え。
+ * evidence は、カルテの記載の引用（医師確認の 7 要件の ①臨床指標。採点 r2 医療事務課長 P1）：その日の問いはその日の記載（なければその月の全部）、
+ * 月の問いはその月の記載を、同じ文どうしは日をまとめて並べる。点数・金額の語は伏せる。カルテの記録がない請求は空で、noRecord が真
  */
 export type DoctorFactItem = {
   claimId: string;
@@ -32,11 +36,38 @@ export type DoctorFactItem = {
   question: string;
   options: string[];
   note: { option: string; freeText: string | null; at: string } | null;
+  evidence: { source: string; text: string }[];
+  noRecord: boolean;
 };
+
+const dayLabel = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+/** 点数・金額の語（MONEY の正規表現そのもの）を伏せる（略語の問いの引用と同じ。src/server/app/doctor-abbrevs.ts の quoteOf） */
+const masked = (text: string) => text.replace(new RegExp(MONEY.source, "g"), MASK);
+
+/** 引用に使うカルテ（照合用のカルテに、貼って確かめたカルテの O を足せる形） */
+export type EvidenceChart = { entries: { date: string; s: string; o?: string; a: string; p: string }[]; prescriptions: Chart["prescriptions"] };
+
+/** カルテの記載の引用。chart がない・記載がないときは null（カルテの記録がない請求） */
+export function evidenceOf(chart: EvidenceChart | null, date: string | null): DoctorFactItem["evidence"] | null {
+  if (!chart || chart.entries.length === 0) return null;
+  const onDay = date ? chart.entries.filter((e) => e.date === date) : [];
+  const entries = onDay.length > 0 ? onDay : chart.entries;
+  const groups = new Map<string, string[]>();
+  for (const e of entries) {
+    const text = [["S", e.s], ["O", e.o ?? ""], ["A", e.a], ["P", e.p]].filter(([, v]) => v.trim() !== "").map(([k, v]) => `${k}: ${v.trim()}`).join(" / ");
+    if (text === "") continue;
+    groups.set(text, [...(groups.get(text) ?? []), e.date]);
+  }
+  const out = [...groups].map(([text, dates]) => ({ source: `カルテ ${dates.map(dayLabel).join("・")}`, text: masked(text) }));
+  const rx = [...new Set(chart.prescriptions.filter((p) => onDay.length === 0 || p.date === date).map((p) => p.category))];
+  if (rx.length > 0) out.push({ source: "処方", text: masked(rx.join("、")) });
+  return out.length > 0 ? out : null;
+}
 
 const isPatientKey = (field: string) => (PATIENT_FACT_KEYS as readonly string[]).includes(field);
 
-export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks, casesOf: Cases) {
+/** chartOf は、引用に使うカルテ（合成カルテと、取り込んだ請求に貼って確かめたカルテ。src/server/app.ts が渡す） */
+export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks, casesOf: Cases, chartOf: (claimId: string) => EvidenceChart | null = () => null) {
   const { sqlite } = ctx;
 
   type NoteRow = { option: string; free_text: string | null; answered_at: string };
@@ -55,7 +86,8 @@ export function createDoctorFacts(ctx: AppContext, clock: Clock, clerks: Clerks,
     const day = date ? `（${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日）` : "";
     const label = (FACT_LABEL as Record<string, string>)[m.field] ?? m.field;
     const clinical = input === "boolean" ? ["はい", "いいえ"] : input === "deathPlace" ? [...DEATH_PLACES] : [WRITE_IN];
-    return { claimId, yearMonth, field: m.field, date, scope, input, question: `${label}${day}`, options: [...clinical, OTHER, UNDETERMINABLE], note: noteOf(claimId, m.field, date) };
+    const evidence = evidenceOf(chartOf(claimId), date);
+    return { claimId, yearMonth, field: m.field, date, scope, input, question: `${label}${day}`, options: [...clinical, OTHER, UNDETERMINABLE], note: noteOf(claimId, m.field, date), evidence: evidence ?? [], noRecord: evidence === null };
   }
 
   /** 確かめてほしい項目の一覧。同じ請求・同じ項目・同じ日は 1 件（いくつものルールが同じことを聞いても、聞くのは 1 回） */

@@ -1,6 +1,6 @@
 "use client";
 // 取り込んだレセプトの点検（design.md §11-11・§11-13）：UKE に書いてあるとおりのまま（行もコメントも入れ替えずに）点検した結果を見せる。
-// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ 情報不足 → レセプトの行（全部の単位を UKE の並びで 1 つの表に。単位ごとに見た点検と指摘の印）→ 小計と UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
+// 上から：注意の帯 → 指摘（記載もれを含む。種類ごと）→ メンター（app/uke/uke-mentor.tsx）→ 情報不足 → レセプトの行（全部の単位を UKE の並びで 1 つの表に。単位ごとに見た点検と指摘の印）→ 小計と UKE の合計 → 摘要欄の記載 → 患者情報の指摘。
 // 点検は読むだけで、何も記録しない（GET /api/uke/claims/[claimId]/check）。情報不足の項目に残した答えだけが残る（app/fact-input.tsx）。月末の点検（行を入力する問題）とは別の画面。
 // 版を替えると試算（design.md §11-12。GET /api/uke/claims/[claimId]/trial?rev=）：選んだ版の点数表とルールで読み、UKE の点数との違いを並べる。
 // 診療年月に版がないレセプトは点検できないので、開くと選べる版の最初（コードの表を持つ、いちばん古い版）が選ばれた状態で試算を見せる
@@ -18,6 +18,7 @@ import { FindingLevels } from "../../finding-levels";
 import { ConfirmedFixes } from "../../chart/confirmed-fixes";
 import { Torikawasure, type TorikawasureView } from "../../torikawasure";
 import { RecordPaste } from "../record-paste";
+import { UkeMentor } from "../uke-mentor";
 import { LocalReturn } from "../../local-pair";
 import { returnsOutside } from "../../../src/generic/local-pair";
 import { getJson } from "../../get-json";
@@ -65,6 +66,8 @@ type Check = {
   localReturns?: { a: string; b: string; tani: number; ids: string[] }[];
   /** 作る入口が断る向き（その組の院内の知識がすでにある向き）。作る入口を出す G05 の指摘の組ごと（design.md §14-2） */
   localPairTaken?: { a: string; b: string; tani: number; polarities: ("allow" | "avoid")[] }[];
+  /** 介護保険・ほかの医療機関との調整で「見ていません」の文（聞き取りの答えがないなど。点検の範囲にも入っている） */
+  careUnseen?: string[];
   /** 本人がこの請求の点検を確かめたか（実在用のクリニックだけ載る。確かめていなければ null。design.md §14-3・段 17g） */
   reviewed?: { at: string } | null;
   /** B の欄（取り忘れ。G11。design.md §15-9）。貼ったカルテで動く */
@@ -87,8 +90,13 @@ const pts = (n: number | null | undefined) => (n === null || n === undefined ? "
 const monthLabel = (yearMonth: string) => `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
 const signed = (n: number) => (n > 0 ? `+${num(n)}` : num(n));
 const days = (dates: string[]) => [...new Set(dates)].map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`).join("、");
-/** 入力では消えない情報不足（カルテ側の記録がない・点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
-const SHARED_MISSING = ["chartRecord", "unsupportedLines"];
+/** 入力では消えない情報不足（点検の対象外の行がある）。ルールごとに同じ文で返るので、画面では 1 件にまとめる */
+const SHARED_MISSING = ["unsupportedLines"];
+/**
+ * カルテ側の記録がない（chartRecord）は、取り込んだレセプトに記録を足す手段がなく、入力で消えない。情報不足には出さず、「見ていません」の帯にルールを並べる
+ * （採点 r2 医療事務課長 P1-2。全件の一覧の「見ていないこと」と同じ扱い。src/server/app/uke-summary.ts）
+ */
+const UNSEEN_MISSING = "chartRecord";
 /** 情報不足を、画面に出す形にまとめる：同じ文になる項目は最初の 1 件に寄せ、ルールと対象の行は合わせて出す。ほかの項目はそのまま */
 function groupMissing(missing: Finding[]): { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] {
   const out: { finding: Finding; ruleIds: string[]; lineRefs: string[] }[] = [];
@@ -151,6 +159,9 @@ export default function UkeClaimCheck() {
   /** 見せる中身：試算していれば試算、していなければ点検（版のないレセプトは、試算が届くまで中身がない） */
   const c = trial ?? (check && check.revisionId !== null ? check : null);
   const findings = c?.findings ?? [];
+  /** 入力で消える情報不足（カルテ側の記録がない分は「見ていません」に回す） */
+  const missing = (c?.missing ?? []).filter((f) => f.missing?.field !== UNSEEN_MISSING);
+  const unseenRules = [...new Set((c?.missing ?? []).filter((f) => f.missing?.field === UNSEEN_MISSING).map((f) => f.ruleId))];
   const lines = c?.lines ?? [];
   const others = c?.others ?? [];
   const rows = c?.rows ?? [];
@@ -265,7 +276,17 @@ export default function UkeClaimCheck() {
                   <div>対応していないコードを含む行は、ユスティの点検（決まった規則）の対象外です。対象外の行に左右される点は「決められません」と出し、下の小計は請求の合計ではありません。</div>
                 </div>
               )}
-              <div className="notice">カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。</div>
+              <div className="notice">
+                <span className="badge">見ていません</span> カルテ側の記録がないため、記録を読む点検（訪問・処方・退院などの記録で決まる点）はしていません。入力では変わりません。
+                {unseenRules.length > 0 && <div className="muted">記録で決まる点を見ていないルール：{unseenRules.join("・")}</div>}
+              </div>
+              {!trial && (check?.careUnseen ?? []).length > 0 && (
+                <div className="notice warn">
+                  <span className="badge">見ていません</span> 介護保険・ほかの医療機関との調整（R20・R21）
+                  <ul style={{ margin: "4px 0", paddingLeft: 20 }}>{check!.careUnseen!.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                  <a href={`/uke/care-check?claim=${encodeURIComponent(claimId)}`}>聞き取りの画面で答える →</a>
+                </div>
+              )}
 
               <h3 id="yusti-findings" style={{ margin: 0 }}>ユスティの指摘</h3>
               {trial && !trial.rulesAvailable ? <p className="muted" style={{ margin: 0 }}>この版のルールは持っていません（算定行と点数だけ）。</p> : findings.length === 0 && <p className="muted" style={{ margin: 0 }}>指摘はありません。</p>}
@@ -283,6 +304,9 @@ export default function UkeClaimCheck() {
                   ))}
                 </div>
               ))}
+
+              {/* 算定画面と同じメンターに、指摘の理由を聞く（採点 r2 医療事務課長 P1。試算は請求の判定ではないので出さない） */}
+              {!trial && <UkeMentor claimId={c.claimId} doctorMissing={missing.some((f) => f.missing?.target === "doctor")} />}
 
               {c.generic && (
                 <>
@@ -314,8 +338,8 @@ export default function UkeClaimCheck() {
               )}
 
               <h3 style={{ margin: 0 }}>情報不足</h3>
-              {(c.missing ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
-              {groupMissing(c.missing ?? []).map(({ finding: f, ruleIds, lineRefs }, i) => (
+              {missing.length === 0 && <p className="muted" style={{ margin: 0 }}>確かめる点はありません。</p>}
+              {groupMissing(missing).map(({ finding: f, ruleIds, lineRefs }, i) => (
                 <div key={i} className="notice">
                   {ruleIds.map((id) => <span key={id} className="badge" style={{ marginRight: 4 }}>{id}</span>)} {findingText(f)}
                   {lineRefs.length > 0 && <div className="muted">対象の行：{lineRefs.map(nameOf).join("、")}</div>}

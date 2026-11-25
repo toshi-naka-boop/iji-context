@@ -187,6 +187,11 @@ export function createUkeCheck(uke: Uke, cases: Cases, patientProfile: (claimId:
       comments: r.comments.map((c) => ({ code: c.code, text: c.raw })),
       /** 患者情報チェック（P 系。ユスティの指摘とは別の欄） */
       patientFindings: patientProfile(claimId).findings,
+      /**
+       * 介護保険・ほかの医療機関との調整で「見ていません」の文（聞き取りの答えがない・分からないなど。先頭の「見ている場面」は除く）。
+       * 点検の範囲（generic.scope.notDone）にも入っている。全件の一覧の「見ていないこと」と、画面の帯に使う（採点 r2 医療事務課長 P1-3）
+       */
+      careUnseen: careScopeNotes(ctx, rev.consts).slice(1),
     };
   }
 

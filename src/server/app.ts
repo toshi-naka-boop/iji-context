@@ -75,7 +75,13 @@ export function openApp(paths: AppPaths, opts: { kind?: TenantStatus; decidedAt?
   const meeting = createMeeting(ctx, clock);
   const erase = createErase(ctx, uke, patientFactsOf);
   const revision = createRevision(uke, casesOf, notes);
-  const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf);
+  // 医師への問いに添える引用（採点 r2 医療事務課長 P1）：合成カルテと、取り込んだ請求に貼って確かめたカルテ（書いた人によらない）
+  const doctorFacts = createDoctorFacts(ctx, clock, clerks, casesOf, (claimId) => {
+    const base = notes.chartOf(claimId);
+    const records = notes.recordEntries(claimId);
+    if (!base && records.length === 0) return null;
+    return { entries: [...(base?.entries ?? []), ...records].sort((a, b) => (a.date < b.date ? -1 : 1)), prescriptions: base?.prescriptions ?? [] };
+  });
   const facility = createFacility(ctx, clock, uke);
   const note14 = createNote14(ctx, clock, uke, patientFactsOf);
 

@@ -65,4 +65,38 @@ describe("取り込んだレセプトの全件の一覧", () => {
     instance.getAuth().switchRole(owner, "doctor");
     expect((await summary(cookie)).status).toBe(403);
   });
+  it("患者情報の指摘（P 系）の件数が、点検の患者情報の指摘と合う。確定・条件つきには入れない", async () => {
+    const owner = instance.getAuth().register("summary_patient", "かちょう", "password123");
+    const cookie = cookieOf(owner);
+    const clerkId = instance.clerkIdOf(owner);
+    instance.runAs(owner, () => instance.getApp().importUke(clerkId, "kozoka.UKE"));
+    const rows = (await (await summary(cookie)).json()) as { claimId: string; state: string; patientFindings: number }[];
+    for (const row of rows.filter((x) => x.state === "checked")) {
+      const c = instance.runAs(owner, () => instance.getApp().ukeCheck(row.claimId, clerkId)) as { patientFindings: unknown[] };
+      expect([row.claimId, row.patientFindings]).toEqual([row.claimId, c.patientFindings.length]);
+    }
+    // 見本の K12 は保険者番号の検証番号が合わず、P01 が出る（採点 r2 医療事務課長 P1-1）
+    expect(rows.find((x) => x.claimId.startsWith("K12"))?.patientFindings).toBeGreaterThan(0);
+  });
+  it("カルテ側の記録がない（chartRecord）は、一覧の情報不足（missingOpen）に数えず「見ていないこと」に 1 つ数える（入力で消えないため）。介護・ほかの機関の調整の「見ていません」も文の数だけ足す", async () => {
+    const owner = instance.getAuth().register("summary_unseen", "かちょう", "password123");
+    const cookie = cookieOf(owner);
+    const clerkId = instance.clerkIdOf(owner);
+    instance.runAs(owner, () => instance.getApp().importUke(clerkId, "kokuhoren.UKE"));
+    const rows = (await (await summary(cookie)).json()) as { claimId: string; state: string; missingOpen: number; unseen: number }[];
+    const checked = rows.filter((x) => x.state === "checked");
+    expect(checked.length).toBeGreaterThan(0);
+    for (const row of checked) {
+      const c = instance.runAs(owner, () => instance.getApp().ukeCheck(row.claimId, clerkId)) as { missing: { missing?: { field: string } }[]; careUnseen: string[] };
+      const chart = c.missing.filter((f) => f.missing?.field === "chartRecord").length;
+      const rest = c.missing.filter((f) => f.missing?.field !== "chartRecord");
+      const shared = new Set(rest.filter((f) => f.missing?.field === "unsupportedLines").map(() => "unsupportedLines")).size;
+      expect([row.claimId, row.missingOpen, row.unseen]).toEqual([row.claimId, rest.filter((f) => f.missing?.field !== "unsupportedLines").length + shared, (chart > 0 ? 1 : 0) + c.careUnseen.length]);
+    }
+    // 聞き取りに答えていない請求がある（見本の国保連。聞き取りの画面の「見ていない」と同じ文。採点 r2 医療事務課長 P1-3）
+    const k1 = rows.find((x) => x.claimId.startsWith("K1-"))!;
+    const careOfK1 = instance.runAs(owner, () => instance.getApp().careCheck(undefined, k1.claimId)).targets.find((t) => t.claimId === k1.claimId);
+    expect(careOfK1?.notDone).toBe(true);
+    expect(k1.unseen).toBe(1 + careOfK1!.notes.length);
+  });
 });

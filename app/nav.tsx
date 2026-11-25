@@ -12,7 +12,7 @@ const LINKS: [string, string][] = [
   ["/work", "算定"],
   ["/chart", "カルテを書く"],
   ["/doctor", "医師確認"],
-  ["/uke", "UKE 取り込み"],
+  ["/uke", "月末の点検（UKE 取り込み）"],
   ["/review", "査定・返戻の突き合わせ"],
   ["/meeting", "レセメン会議"],
   ["/knowledge", "知識"],

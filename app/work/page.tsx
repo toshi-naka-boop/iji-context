@@ -363,13 +363,18 @@ export default function Work() {
             onVisit={(v) => { const hit = visits.find((x) => x.claimId === v.claimId && x.date === v.date && x.type === v.type); if (hit) void begin(hit.claimId, hit); }}
             onDrill={(d) => void begin(d.claimId, undefined, d)}
           />
-          <section className="hud-panel" style={{ marginTop: 20 }} aria-label="月末の点検">
+          <section className="hud-panel" style={{ marginTop: 20 }} aria-label="取り込んだ請求の明細を入れ直す">
           <div className="with-avatar">
             <img className="yusti-avatar" src="/characters/yusti-face.png" alt="ユスティ" style={{ width: 64, height: 64 }} />
             <div>
               <div className="hud-tag">RULE ENGINE</div>
-              <h2 style={{ margin: 0, fontSize: 20 }}>月末の点検（UKE・提出前）</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>取り込んだ請求の明細を入れ直す（メンターと）</h2>
             </div>
+          </div>
+          {/* 月末の点検の入口は UKE 取り込みの全件の一覧に 1 つにする（採点 r2 医療事務課長 P1）。ここは明細を入れ直すので摘要欄の記載を見ない */}
+          <div className="notice">
+            <strong>月末の点検（提出前）は、<a href="/uke">UKE 取り込みの全件の一覧</a>で行います。</strong>
+            <div className="muted">一覧は UKE に書いてあるとおりに点検し、摘要欄の記載・患者情報・見ていないことまで件数で出します。ここは、取り込んだ請求の明細を自分で入れ直して、メンターと確かめる場所です（摘要欄の記載は見ません）。</div>
           </div>
           <p>
             <label>
